@@ -244,5 +244,11 @@
   "contract_refresh": "atualização do contrato",
   "contract_refreshed": "contrato atualizado",
   "validation_started": "validação iniciada",
-  "block_updated": "bloqueio atualizado"
+  "block_updated": "bloqueio atualizado",
+  "No PRUMO installations found; install an environment first": "Nenhuma instalação do PRUMO encontrada; instale um ambiente primeiro",
+  "Invalid PRUMO installation registry; existing installations were not changed": "Registro de instalações do PRUMO inválido; as instalações existentes não foram alteradas",
+  "Invalid PRUMO update request": "Solicitação de atualização do PRUMO inválida",
+  "PRUMO update was interrupted": "A atualização do PRUMO foi interrompida",
+  "Update automatically selects installed environments; do not select a harness": "A atualização seleciona automaticamente os ambientes instalados; não selecione um ambiente",
+  "Updating {0} with PRUMO {1}": "Atualizando {0} com PRUMO {1}"
 }

@@ -36,6 +36,20 @@ PO First also applies outside PRUMO. It prioritizes outcomes, rules, scope, deci
 
 Open a new session after installation. `doctor` distinguishes installed files, completed configuration and pending activation conditions. Local overrides, explicitly disabled skills and Markdown agents needing an inheritance check are reported; installation does not override harness policies. Filesystem inspection is not proof of model behavior.
 
+## Update installed environments
+
+To make the short command available, install the CLI once:
+
+```sh
+npm install -g @henri-ralmeida/prumo
+prumo update --dry-run
+prumo update
+```
+
+Or use `bunx @henri-ralmeida/prumo@latest update` / `npx @henri-ralmeida/prumo@latest update` without a global CLI installation. `update` fetches the latest published installer through npm and refreshes PRUMO and PO First only where PRUMO is already installed. npm must be available; a download failure leaves installations unchanged.
+
+The installer records installed environments and custom paths in `~/.local/share/prumo/installations.json`. Update also recognizes existing PRUMO markers in standard locations and projects supplied with `--project`. It preserves each installation's language unless `--lang` is supplied, uses the same backups and conflict handling as installation, and skips environments containing only graph-foreman. It never resumes plans or creates attempts. A global CLI's `--version` reports that CLI's version; `update` always runs the latest published installer independently of it.
+
 ## Installing over graph-foreman
 
 No manual migration, stopped agents or stopped dashboard is required in advance. The installer checks standard locations, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, supplied projects and ancestors of the current directory.
@@ -49,7 +63,7 @@ No manual migration, stopped agents or stopped dashboard is required in advance.
 The backup includes a restore command:
 
 ```sh
-npx @henri-ralmeida/prumo@1.0.1 restore "<backup-directory>"
+npx @henri-ralmeida/prumo@1.0.2 restore "<backup-directory>"
 ```
 
 Restore refuses to overwrite files edited since installation. Plans keep their current state: reverting an installation must not erase ongoing work. Maintain your own business-data backups; the installer does not take a consistent snapshot of every live plan.

@@ -1,8 +1,8 @@
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, realpathSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, realpathSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve, join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { spawnSync } from 'node:child_process'
+import { spawnSync, fork } from 'node:child_process'
 import assert from 'node:assert/strict'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -19,12 +19,14 @@ delete env.PRUMO_ROOT
 delete env.GRAPH_ROOT
 delete env.GRAPH_FOREMAN_HOME
 const evidence = []
-function run(executable, args) {
+let registry
+function run(executable, args, success = true) {
   // npm.cmd needs cmd.exe on Windows. Arguments here are fixed literals, never user input.
   const result = spawnSync(executable, args, { cwd, env, shell: process.platform === 'win32' && executable === 'npm', encoding: 'utf8', timeout: 120000, windowsHide: true })
   evidence.push({ command: [executable, ...args], status: result.status, stdout: result.stdout, stderr: result.stderr })
   assert.ifError(result.error)
-  assert.equal(result.status, 0, result.stdout + result.stderr)
+  if (success) assert.equal(result.status, 0, result.stdout + result.stderr)
+  else assert.notEqual(result.status, 0, 'Registry failure must not report success')
   return result.stdout
 }
 try {
@@ -38,7 +40,36 @@ try {
   assert.match(readFileSync(join(home, '.kiro', 'steering', 'po-first.md'), 'utf8'), /inclusion: always/)
   assert.match(readFileSync(join(home, '.codex', 'AGENTS.md'), 'utf8'), /<!-- po-first:start -->/)
   console.log('Packaged npm and Bun entrypoints installed all three adapters into an isolated home')
+  const requestFile = join(home, 'registry-requests')
+  const failureFile = join(home, 'registry-failure')
+  registry = fork(join(root, 'test', 'fixtures', 'update-registry.mjs'), [], { silent: true, env: { ...env, PRUMO_TEST_PACKAGE: join(root, 'package.json'), PRUMO_TEST_ARCHIVE: archive, PRUMO_TEST_REQUESTS: requestFile, PRUMO_TEST_FAILURE: failureFile } })
+  const address = await new Promise((resolve, reject) => { registry.once('message', resolve); registry.once('error', reject); registry.once('exit', () => reject(new Error('Test registry exited before startup'))) })
+  env.npm_config_registry = address.url
+  env.npm_config_fetch_retries = '0'
+  const installedRoots = [join(home, '.claude', 'skills', 'prumo'), join(home, '.kiro', 'skills', 'prumo'), join(home, '.agents', 'skills', 'prumo')]
+  for (const destination of installedRoots) {
+    const markerPath = join(destination, '.prumo-install.json')
+    const marker = JSON.parse(readFileSync(markerPath, 'utf8'))
+    marker.version = '0.0.9'
+    writeFileSync(markerPath, JSON.stringify(marker))
+    writeFileSync(join(destination, 'scripts', 'engine.mjs'), '// previous engine\n')
+  }
+  run('npm', ['exec', '--', 'prumo', 'update', '--dry-run'])
+  for (const destination of installedRoots) assert.equal(JSON.parse(readFileSync(join(destination, '.prumo-install.json'), 'utf8')).version, '0.0.9')
+  run('bun', ['x', '--no-install', 'prumo', 'update'])
+  assert.ok(Number(readFileSync(requestFile, 'utf8')) > 0, 'Update must resolve the latest package from the registry')
+  for (const destination of installedRoots) {
+    assert.equal(JSON.parse(readFileSync(join(destination, '.prumo-install.json'), 'utf8')).version, version)
+    assert.equal(readFileSync(join(destination, 'scripts', 'engine.mjs'), 'utf8'), readFileSync(join(root, 'scripts', 'engine.mjs'), 'utf8'))
+  }
+  const backupCount = readdirSync(join(home, '.local', 'share', 'prumo', 'backups')).length
+  writeFileSync(failureFile, '503')
+  run('bun', ['x', '--no-install', 'prumo', 'update'], false)
+  assert.equal(readdirSync(join(home, '.local', 'share', 'prumo', 'backups')).length, backupCount)
+  for (const destination of installedRoots) assert.equal(readFileSync(join(destination, 'scripts', 'engine.mjs'), 'utf8'), readFileSync(join(root, 'scripts', 'engine.mjs'), 'utf8'))
+  console.log('Public update fetched the latest registry package, previewed without changing installations, updated three old installations, and preserved them on registry failure')
 } finally {
+  if (registry && registry.exitCode === null && registry.signalCode === null) { const closed = new Promise(resolve => registry.once('exit', resolve)); registry.kill(); await closed }
   mkdirSync(join(root, '.test-output'), { recursive: true })
   // Paths in transient command output are local evidence, excluded from the published package.
   writeFileSync(join(root, '.test-output', 'package-smoke.json'), JSON.stringify({ platform: process.platform, node: process.version, evidence }, null, 2))

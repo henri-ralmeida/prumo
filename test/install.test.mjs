@@ -52,7 +52,8 @@ for (const harness of ['claude', 'kiro', 'codex']) test(`${harness}: persistent 
   assert.deepEqual(readdirSync(f.home), before)
   assert.equal(existsSync(join(f.skillRoot, 'prumo')), false)
   const result = f.install()
-  assert.match(read(join(result.backup, 'RESTORE.md')), /npx @henri-ralmeida\/prumo@1\.0\.1 restore/)
+  const version = JSON.parse(read(join(source, 'package.json'))).version
+  assert.ok(read(join(result.backup, 'RESTORE.md')).includes(`npx @henri-ralmeida/prumo@${version} restore`))
   const skill = join(f.skillRoot, 'prumo')
   assert.match(read(join(skill, 'SKILL.md')), /name: prumo/)
   assert.match(read(join(skill, 'references', 'po-first.md')), /senior product partner/)
