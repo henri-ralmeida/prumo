@@ -47,7 +47,12 @@ test('dashboard root names keep the selected legacy workspace unambiguous', t =>
 function isolatedCli(f) {
   const env = { ...process.env, HOME: f.home, USERPROFILE: f.home, CLAUDE_CONFIG_DIR: join(f.home, '.claude'), CODEX_HOME: join(f.home, '.codex'), PRUMO_HOME: join(f.home, 'data'), PRUMO_LANG: 'en' }
   for (const key of Object.keys(env)) if (/^path$/i.test(key) || ['GRAPH_ROOT', 'PRUMO_ROOT', 'GRAPH_FOREMAN_HOME'].includes(key)) delete env[key]
-  env.PATH = ''
+  const commands = join(f.home, 'test-commands')
+  const npm = join(commands, process.platform === 'win32' ? 'npm.cmd' : 'npm')
+  put(npm, process.platform === 'win32' ? '@exit /b 0\r\n' : '#!/bin/sh\nexit 0\n')
+  chmodSync(npm, 0o755)
+  env.PATH = commands
+  if (process.platform === 'win32') env.PATHEXT = '.CMD;.EXE'
   return args => spawnSync(process.execPath, [join(source, 'bin', 'prumo.mjs'), ...args], { cwd: f.cwd, env, encoding: 'utf8', timeout: 20000, windowsHide: true })
 }
 
