@@ -1,13 +1,18 @@
 import { readFileSync } from 'node:fs'
+import { regionalLanguage } from './region.mjs'
 
 export const messages = JSON.parse(readFileSync(new URL('./messages.json', import.meta.url), 'utf8'))
 
-export function language(requested, env = process.env) {
+export function language(requested, env = process.env, detect = regionalLanguage) {
   if (requested !== undefined && !['en', 'pt-BR'].includes(requested)) throw new Error('Language must be en or pt-BR')
   let installed
   try { installed = JSON.parse(readFileSync(new URL('../.prumo-install.json', import.meta.url), 'utf8')).lang } catch { /* source checkout or unconfigured language */ }
-  const detected = requested ?? env.PRUMO_LANG ?? installed ?? env.LC_ALL ?? env.LC_MESSAGES ?? env.LANG ?? Intl.DateTimeFormat().resolvedOptions().locale
+  const detected = requested ?? env.PRUMO_LANG ?? installed ?? detect({ env })
   return /^pt(?:[-_]|$)/i.test(detected) ? 'pt-BR' : 'en'
+}
+
+export function localizeDashboard(html, lang) {
+  return html.replace(/\/\*PRUMO_LANGUAGE\*\/"(?:en|pt-BR)"/, () => JSON.stringify(lang))
 }
 
 // Pure function: the same translator is embedded in the self-contained dashboard.

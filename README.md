@@ -10,19 +10,35 @@ The plan defines the expected outcome; the engine enforces transitions and recor
 
 Requires **Node.js 22 or newer** and the chosen harness. The installer does not install Claude Code, Kiro or Codex, or expand their execution permissions.
 
+Start the interactive installer:
+
+```sh
+bunx @henri-ralmeida/prumo@latest install
+```
+
+It detects available environments from existing user configuration, commands on `PATH` (`claude`, `kiro-cli` / `kiro`, `codex`), and existing Claude/Kiro project skills. A checkbox menu shows only detected environments, initially all selected. Use the arrow keys to move, Space to toggle, A for all/none, Enter to install, or Esc to cancel. Installation is per user and available across projects; no changes are applied before selection.
+
+To install in every detected environment without prompting, including from scripts:
+
+```sh
+bunx @henri-ralmeida/prumo@latest install --all
+```
+
+Without an interactive terminal, use `--all` or an explicit harness flag. If nothing is detected, the installer reports it without writing files. To choose one environment directly:
+
 ```sh
 bunx @henri-ralmeida/prumo@latest install --claude --lang en
 bunx @henri-ralmeida/prumo@latest install --kiro --lang en
 bunx @henri-ralmeida/prumo@latest install --codex --lang en
 ```
 
-Run the command for your harness; repeat for each harness you use. Choose `--lang en` for English or `--lang pt-BR` for Brazilian Portuguese. For example:
+Language is detected from the **country/region configured in the operating system**: Brazil selects Brazilian Portuguese; other regions or an unavailable setting select English. This uses Windows home region, macOS regional preferences, or Linux address locale, independently of display/browser language. It does not use IP geolocation. To override it explicitly, choose `--lang en` or `--lang pt-BR`. For example:
 
 ```sh
 bunx @henri-ralmeida/prumo@latest install --claude --lang pt-BR
 ```
 
-Without `--lang`, the installer preserves an existing installation's language or detects the system language for a new installation, falling back to English. The dashboard has its own persistent language selector; agent responses follow the user's language.
+Without `--lang`, existing installations retain their saved preference. The dashboard follows the installation and has no separate language selector. Agent responses follow the user's language.
 
 Replace `bunx` with `npx` if preferred. Bun is optional; the executable runs under Node.js. Installed files are persistent copies, independent of the package manager cache.
 
@@ -32,7 +48,7 @@ npx @henri-ralmeida/prumo@latest install --claude --lang en
 npx @henri-ralmeida/prumo@latest doctor --claude --lang en
 ```
 
-`--dry-run` only previews changes. A real installation prints affected files before applying them and reports its backup. Repeat the command to update; identical files and instruction blocks are not duplicated. Repeatable `--project <path>` includes additional projects when looking for existing installations and data. It does not scan your entire disk.
+`--dry-run` only previews changes; without a terminal or harness flag, it previews all detected environments. A real installation prints affected files before applying them and reports its backup. Repeat the command to update; identical files and instruction blocks are not duplicated. Repeatable `--project <path>` includes additional projects when looking for existing installations and data. It does not scan your entire disk.
 
 | Harness | Invocation | PO First activation |
 |---|---|---|
@@ -60,14 +76,14 @@ The installer records installed environments and custom paths in `~/.local/share
 
 ## Installing over graph-foreman
 
-Use the same `install` command to replace an existing graph-foreman installation with Prumo. For Claude Code, preview and then apply:
+Use the same `install` command to replace an existing graph-foreman installation with Prumo. For all detected environments, preview and then apply:
 
 ```sh
-bunx @henri-ralmeida/prumo@latest install --claude --lang en --dry-run
-bunx @henri-ralmeida/prumo@latest install --claude --lang en
+bunx @henri-ralmeida/prumo@latest install --all --dry-run
+bunx @henri-ralmeida/prumo@latest install --all
 ```
 
-Replace `--claude` with `--kiro` or `--codex` as needed, one harness per command. For a project-local installation, run from that project or add `--project "<project-path>"`. This first switch uses `install`; `update` only refreshes environments already containing Prumo. Existing `/graph-foreman` invocations remain compatibility aliases; use `/prumo` (or `$prumo` in Codex) for new work.
+Omit `--all` to choose with checkboxes, or use `--claude`, `--kiro` or `--codex` to select one directly. For a project-local installation, run from that project or add `--project "<project-path>"`. This first switch uses `install`; `update` only refreshes environments already containing Prumo. Existing `/graph-foreman` invocations remain compatibility aliases; use `/prumo` (or `$prumo` in Codex) for new work.
 
 No manual migration, stopped agents or stopped dashboard is required in advance. The installer checks standard locations, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, supplied projects and ancestors of the current directory.
 
@@ -80,7 +96,7 @@ No manual migration, stopped agents or stopped dashboard is required in advance.
 The backup includes a restore command:
 
 ```sh
-npx @henri-ralmeida/prumo@1.0.3 restore "<backup-directory>"
+npx @henri-ralmeida/prumo@1.0.4 restore "<backup-directory>"
 ```
 
 Restore refuses to overwrite files edited since installation. Plans keep their current state: reverting an installation must not erase ongoing work. Maintain your own business-data backups; the installer does not take a consistent snapshot of every live plan.
@@ -130,7 +146,7 @@ An approved contract update does not require inventing a failure or another atte
 
 ## Languages and compatibility
 
-Use `--lang en|pt-BR`, `PRUMO_LANG`, environment detection or the persistent dashboard language selector. Interface, messages and documentation support English and Brazilian Portuguese. Internal instructions remain English and direct agents to answer in the user's language. Identifiers, contracts, commands and process output are not translated.
+The initial language follows the system's configured region, with English as fallback. Use `--lang en|pt-BR` or `PRUMO_LANG` for an explicit override. The dashboard follows the saved installation preference and has no language selector. Interface, messages and documentation support English and Brazilian Portuguese. Internal instructions remain English and direct agents to answer in the user's language. Identifiers, contracts, commands and process output are not translated.
 
 Installer and engine checks for Windows, macOS and Linux with Node.js 22 and 24 are defined in [CI](.github/workflows/ci.yml). Each harness remains subject to its vendor's platform support. The [verification matrix](references/verification.md) separates automated checks from real client sessions.
 

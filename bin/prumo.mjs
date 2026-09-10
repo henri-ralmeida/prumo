@@ -2,8 +2,9 @@
 import { parseArgs } from 'node:util'
 import { readFileSync } from 'node:fs'
 import { resolve, join } from 'node:path'
-import { planInstall, applyInstall, restoreInstall, installationStatus, discoverInstallations } from '../lib/install.mjs'
+import { planInstall, applyInstall, restoreInstall, installationStatus, discoverInstallations, detectHarnesses } from '../lib/install.mjs'
 import { launchUpdate, updateRequest } from '../lib/update.mjs'
+import { selectHarnesses } from '../lib/prompt.mjs'
 import { language, createTranslator, messages } from '../scripts/i18n.mjs'
 
 let t = createTranslator(messages, language())
@@ -37,7 +38,7 @@ function runInstall(options, { command = 'install', dryRun = false } = {}) {
 try {
   if (Number(process.versions.node.split('.')[0]) < 22) throw new Error('Prumo requires Node.js 22 or newer')
   const { values, positionals } = parseArgs({ allowPositionals: true, options: {
-    claude: { type: 'boolean' }, kiro: { type: 'boolean' }, codex: { type: 'boolean' },
+    claude: { type: 'boolean' }, kiro: { type: 'boolean' }, codex: { type: 'boolean' }, all: { type: 'boolean' },
     lang: { type: 'string' }, 'dry-run': { type: 'boolean' }, project: { type: 'string', multiple: true },
     help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'v' },
   } })
@@ -46,9 +47,10 @@ try {
   const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
   if (values.version) print(version)
   else if (values.help || positionals.length === 0) {
-    print(`Prumo ${version} — graph-foreman + PO First\n\nprumo install --claude|--kiro|--codex [--lang en|pt-BR] [--dry-run] [--project <path>]\nprumo update [--dry-run] [--lang en|pt-BR] [--project <path>]\nprumo doctor --claude|--kiro|--codex [--lang en|pt-BR] [--project <path>]\nprumo restore <backup>\n`)
+    print(`Prumo ${version} — graph-foreman + PO First\n\nprumo install [--all | --claude|--kiro|--codex] [--lang en|pt-BR] [--dry-run] [--project <path>]\nprumo update [--dry-run] [--lang en|pt-BR] [--project <path>]\nprumo doctor --claude|--kiro|--codex [--lang en|pt-BR] [--project <path>]\nprumo restore <backup>\n`)
+    print('Install opens a selection of detected environments; --all selects all without prompting')
   } else if (['update', '_update'].includes(positionals[0])) {
-    if (positionals.length !== 1 || ['claude', 'kiro', 'codex'].some(name => values[name])) throw new Error('Update automatically selects installed environments; do not select a harness')
+    if (positionals.length !== 1 || ['claude', 'kiro', 'codex', 'all'].some(name => values[name])) throw new Error('Update automatically selects installed environments; do not select a harness')
     if (positionals[0] === 'update') {
       const request = { dryRun: values['dry-run'] ?? false, lang: values.lang, projects: (values.project ?? []).map(path => resolve(path)), cwd: process.cwd() }
       const code = await launchUpdate(request)
@@ -82,9 +84,23 @@ try {
     const command = positionals[0]
     if (!['install', 'doctor'].includes(command) || positionals.length !== 1) throw new Error(t('Unknown command: {0}', positionals.join(' ')))
     const selected = ['claude', 'kiro', 'codex'].filter(name => values[name])
-    if (selected.length !== 1) throw new Error('Choose exactly one of --claude, --kiro or --codex')
-    const options = { harness: selected[0], lang: values.lang, projects: values.project ?? [] }
-    runInstall(options, { command, dryRun: values['dry-run'] })
+    if (selected.length > 1 || command === 'doctor' && selected.length !== 1) throw new Error('Choose exactly one of --claude, --kiro or --codex')
+    if (values.all && (selected.length || command !== 'install')) throw new Error('Use --all only with install and without a harness flag')
+    const options = { lang: values.lang, projects: values.project ?? [] }
+    let harnesses = selected.length ? selected : detectHarnesses(options)
+    if (!harnesses.length) throw new Error('No supported environments detected; choose --claude, --kiro or --codex explicitly')
+    if (!selected.length) {
+      print(t('Detected environments: {0}', harnesses.join(', ')))
+      if (!values.all && (process.stdin.isTTY && process.stdout.isTTY || !values['dry-run'])) harnesses = await selectHarnesses(harnesses, { t })
+    }
+    for (const harness of harnesses) {
+      try { runInstall({ ...options, harness }, { command, dryRun: values['dry-run'] }) }
+      catch (error) {
+        if (selected.length) throw error
+        console.error(`[prumo] ${harness}: ${t(error.message)}`)
+        process.exitCode = 2
+      }
+    }
   }
 } catch (error) {
   console.error(`[prumo] ${t(error.message)}`)

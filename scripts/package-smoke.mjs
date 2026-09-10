@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, realpathSync, readdirSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, realpathSync, readdirSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve, join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -33,13 +33,15 @@ try {
   run('npm', ['install', '--ignore-scripts', '--offline', '--no-audit', '--no-fund'])
   assert.match(run('npm', ['exec', '--offline', '--', 'prumo', '--version']), new RegExp(version.replaceAll('.', '\\.')))
   assert.match(run('bun', ['x', '--no-install', 'prumo', '--version']), new RegExp(version.replaceAll('.', '\\.')))
+  for (const harness of ['claude', 'kiro', 'codex']) mkdirSync(join(home, `.${harness}`), { recursive: true })
+  assert.match(run('npm', ['exec', '--offline', '--', 'prumo', 'install', '--dry-run']), /Detected environments: claude, kiro, codex/)
+  assert.equal(existsSync(join(home, '.local', 'share', 'prumo')), false)
+  run('bun', ['x', '--no-install', 'prumo', 'install', '--all', '--lang', 'pt-BR'])
   run('npm', ['exec', '--offline', '--', 'prumo', 'install', '--claude', '--lang', 'pt-BR'])
-  run('bun', ['x', '--no-install', 'prumo', 'install', '--kiro'])
-  run('npm', ['exec', '--offline', '--', 'prumo', 'install', '--codex'])
   assert.equal(JSON.parse(readFileSync(join(home, '.claude', 'settings.json'), 'utf8')).outputStyle, 'PO First')
   assert.match(readFileSync(join(home, '.kiro', 'steering', 'po-first.md'), 'utf8'), /inclusion: always/)
   assert.match(readFileSync(join(home, '.codex', 'AGENTS.md'), 'utf8'), /<!-- po-first:start -->/)
-  console.log('Packaged npm and Bun entrypoints installed all three adapters into an isolated home')
+  console.log('Packaged npm and Bun entrypoints previewed automatic detection and installed all three adapters into an isolated home')
   const requestFile = join(home, 'registry-requests')
   const failureFile = join(home, 'registry-failure')
   registry = fork(join(root, 'test', 'fixtures', 'update-registry.mjs'), [], { silent: true, env: { ...env, PRUMO_TEST_PACKAGE: join(root, 'package.json'), PRUMO_TEST_ARCHIVE: archive, PRUMO_TEST_REQUESTS: requestFile, PRUMO_TEST_FAILURE: failureFile } })

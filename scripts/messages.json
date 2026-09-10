@@ -1,4 +1,12 @@
 {
+  "Install opens a selection of detected environments; --all selects all without prompting": "Install abre a seleção dos ambientes detectados; --all seleciona todos diretamente",
+  "Interactive selection needs a terminal; use --all or choose a harness flag": "A seleção interativa precisa de um terminal; use --all ou escolha um ambiente por opção",
+  "Installation selection cancelled": "Seleção de instalação cancelada",
+  "Choose environments to install:": "Escolha os ambientes para instalar:",
+  "Arrows: move | Space: select | A: all/none | Enter: install | Esc: cancel": "Setas: mover | Espaço: marcar | A: todos/nenhum | Enter: instalar | Esc: sair",
+  "Use --all only with install and without a harness flag": "Use --all somente com install e sem selecionar um ambiente por opção",
+  "Detected environments: {0}": "Ambientes detectados: {0}",
+  "No supported environments detected; choose --claude, --kiro or --codex explicitly": "Nenhum ambiente compatível detectado; escolha --claude, --kiro ou --codex explicitamente",
   "Choose exactly one of --claude, --kiro or --codex": "Escolha exatamente um: --claude, --kiro ou --codex",
   "Language must be en or pt-BR": "O idioma deve ser en ou pt-BR",
   "Prumo requires Node.js 22 or newer": "Prumo requer Node.js 22 ou superior",
