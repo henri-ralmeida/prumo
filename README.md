@@ -11,17 +11,17 @@ The plan defines the expected outcome; the engine enforces transitions and recor
 Requires **Node.js 22 or newer** and the chosen harness. The installer does not install Claude Code, Kiro or Codex, or expand their execution permissions.
 
 ```sh
-bunx prumo@latest install --claude
-bunx prumo@latest install --kiro
-bunx prumo@latest install --codex
+bunx @henri-ralmeida/prumo@latest install --claude
+bunx @henri-ralmeida/prumo@latest install --kiro
+bunx @henri-ralmeida/prumo@latest install --codex
 ```
 
 Replace `bunx` with `npx` if preferred. Bun is optional; the executable runs under Node.js. Installed files are persistent copies, independent of the package manager cache.
 
 ```sh
-npx prumo@latest install --claude --lang en --dry-run
-npx prumo@latest install --claude --lang en
-npx prumo@latest doctor --claude --lang en
+npx @henri-ralmeida/prumo@latest install --claude --lang en --dry-run
+npx @henri-ralmeida/prumo@latest install --claude --lang en
+npx @henri-ralmeida/prumo@latest doctor --claude --lang en
 ```
 
 `--dry-run` only previews changes. A real installation prints affected files before applying them and reports its backup. Repeat the command to update; identical files and instruction blocks are not duplicated. Repeatable `--project <path>` includes additional projects when looking for existing installations and data. It does not scan your entire disk.
@@ -49,7 +49,7 @@ No manual migration, stopped agents or stopped dashboard is required in advance.
 The backup includes a restore command:
 
 ```sh
-npx prumo@1.0.0 restore "<backup-directory>"
+npx @henri-ralmeida/prumo@1.0.0 restore "<backup-directory>"
 ```
 
 Restore refuses to overwrite files edited since installation. Plans keep their current state: reverting an installation must not erase ongoing work. Maintain your own business-data backups; the installer does not take a consistent snapshot of every live plan.
@@ -93,6 +93,10 @@ An approved contract update does not require inventing a failure or another atte
 Use `--lang en|pt-BR`, `PRUMO_LANG`, environment detection or the persistent dashboard language selector. Interface, messages and documentation support English and Brazilian Portuguese. Internal instructions remain English and direct agents to answer in the user's language. Identifiers, contracts, commands and process output are not translated.
 
 Installer and engine checks for Windows, macOS and Linux with Node.js 22 and 24 are defined in [CI](.github/workflows/ci.yml). Each harness remains subject to its vendor's platform support. The [verification matrix](references/verification.md) separates automated checks from real client sessions.
+
+## Publishing updates
+
+Pushing to `main` runs CI; it does not publish an npm package or update a GitHub release. Each published update needs a new version in `package.json`, matching release checks and changelog, passing CI, and a corresponding Git tag and GitHub release. Publish the tested archive to npm as `@henri-ralmeida/prumo`; the `latest` npm tag selects the version installed by the commands above.
 
 ## Develop and license
 

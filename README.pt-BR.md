@@ -11,17 +11,17 @@ O plano define o resultado esperado; o motor controla estados e registros. O amb
 Requer **Node.js 22 ou superior** e o ambiente escolhido. O instalador não instala Claude Code, Kiro ou Codex, nem altera suas permissões de execução.
 
 ```sh
-bunx prumo@latest install --claude
-bunx prumo@latest install --kiro
-bunx prumo@latest install --codex
+bunx @henri-ralmeida/prumo@latest install --claude
+bunx @henri-ralmeida/prumo@latest install --kiro
+bunx @henri-ralmeida/prumo@latest install --codex
 ```
 
 Pode substituir `bunx` por `npx`. Bun é opcional; o executável usa Node.js. Os arquivos são cópias persistentes, independentes do cache do gerenciador.
 
 ```sh
-npx prumo@latest install --claude --lang pt-BR --dry-run
-npx prumo@latest install --claude --lang pt-BR
-npx prumo@latest doctor --claude --lang pt-BR
+npx @henri-ralmeida/prumo@latest install --claude --lang pt-BR --dry-run
+npx @henri-ralmeida/prumo@latest install --claude --lang pt-BR
+npx @henri-ralmeida/prumo@latest doctor --claude --lang pt-BR
 ```
 
 `--dry-run` apenas mostra as alterações. A instalação real mostra os arquivos antes de aplicá-las e informa o backup. Repita o comando para atualizar; arquivos e blocos idênticos não são duplicados. `--project <caminho>` inclui um projeto adicional na busca por instalações e dados existentes; pode ser repetido. Não há varredura indiscriminada do disco.
@@ -49,7 +49,7 @@ Não é necessário migrar planos, parar agentes ou encerrar o dashboard previam
 O backup informa o comando de reversão:
 
 ```sh
-npx prumo@1.0.0 restore "<diretório-do-backup>"
+npx @henri-ralmeida/prumo@1.0.0 restore "<diretório-do-backup>"
 ```
 
 A reversão recusa sobrescrever arquivos que você editou depois. Os planos continuam no estado atual: reverter uma instalação não deve apagar trabalho em andamento. Mantenha sua rotina de backup dos dados de negócio; o instalador não captura uma imagem consistente de todos os planos ativos.
@@ -93,6 +93,10 @@ Atualizar um contrato aprovado não exige inventar falha ou nova tentativa. `ref
 Use `--lang en|pt-BR`, `PRUMO_LANG`, detecção do ambiente ou o seletor persistente no dashboard. Interface, mensagens e documentação têm inglês e PT-BR; instruções internas ficam em inglês e orientam responder no idioma do usuário. Identificadores, contratos, comandos e saídas dos processos não são traduzidos.
 
 Os testes do instalador e motor para Windows, macOS e Linux, com Node.js 22 e 24, estão definidos em [CI](.github/workflows/ci.yml). Cada aplicativo depende dos sistemas suportados por seu fornecedor. A [matriz de verificação](references/verification.md) distingue testes automatizados e sessões reais.
+
+## Publicação de atualizações
+
+Enviar alterações para `main` executa o CI; isso não publica o pacote npm nem atualiza uma release do GitHub. Cada atualização publicada precisa de uma nova versão em `package.json`, verificações de release e changelog correspondentes, CI aprovado, tag Git e release do GitHub. Publique o arquivo testado no npm como `@henri-ralmeida/prumo`; a tag `latest` do npm determina a versão instalada pelos comandos acima.
 
 ## Desenvolvimento e licença
 
