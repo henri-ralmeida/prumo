@@ -1,48 +1,29 @@
 #!/usr/bin/env node
 /**
- * Graph Engine — observability server. READ-ONLY: it renders the same state.json the
- * orchestrator writes through engine.mjs; it never mutates anything and never decides
- * anything. Kill it and the execution is unaffected.
+ * PRUMO — observability server. It renders state.json without writing it. Optional
+ * --sync-plan delegates approved plan reconciliation to engine.mjs, the only state writer.
+ * Kill it and execution is unaffected.
  *
- * Usage: node <skill>/scripts/serve.mjs [--port 4949] [--run <name>]
+ * Usage: node <skill>/scripts/serve.mjs [--port 4949] [--run <name>] [--sync-plan]
  * Then open http://localhost:4949
  */
 import { createServer } from 'node:http'
-import { readFileSync, existsSync } from 'node:fs'
-import { join, dirname, resolve } from 'node:path'
+import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
+import { execFile } from 'node:child_process'
+import { join, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
+const ENGINE = join(HERE, 'engine.mjs')
 
-/* Same discovery as engine.mjs (duplicated on purpose — importing the engine would run
- * its CLI arg handling). GRAPH_ROOT overrides; otherwise walk up from cwd to the first
- * .git or package.json. Keep in sync. */
-function findRoot() {
-  if (process.env.GRAPH_ROOT) {
-    const r = resolve(process.env.GRAPH_ROOT)
-    if (!existsSync(r)) {
-      console.error(`[graph] ERROR: GRAPH_ROOT points to "${r}", which does not exist`)
-      process.exit(1)
-    }
-    return r
-  }
-  let dir = process.cwd()
-  while (true) {
-    if (existsSync(join(dir, '.git')) || existsSync(join(dir, 'package.json'))) return dir
-    const parent = dirname(dir)
-    if (parent === dir) {
-      console.error(
-        '[graph] ERROR: no project root found (no .git or package.json above cwd) — ' +
-          'run from inside a project, or set GRAPH_ROOT',
-      )
-      process.exit(1)
-    }
-    dir = parent
-  }
-}
+import { findRoot, storageHome, graphRoots as listRoots } from './storage.mjs'
+import { language, log, errorLog, tr } from './i18n.mjs'
 
-const ROOT = findRoot()
+let ROOT
+try { ROOT = findRoot() } catch (error) { errorLog('[prumo] ERROR: ' + error.message); process.exit(1) }
 const GRAPH_DIR = join(ROOT, '.specs', 'graph')
+const ROOT_NAME = basename(ROOT)
+const INDEX_ROOT = storageHome()
 
 const argv = process.argv.slice(2)
 const flag = (name, fallback) => {
@@ -51,6 +32,7 @@ const flag = (name, fallback) => {
 }
 const PORT = Number(flag('port', 4949))
 const RUN_FLAG = flag('run', null)
+const SYNC_PLAN = argv.includes('--sync-plan')
 
 /* The run name reaches join() as a path segment, so it is allowlisted, never trusted:
  * plain slug, no leading dot, no separators. Applies to ?run=, --run and CURRENT alike. */
@@ -58,10 +40,80 @@ function safeRun(name) {
   return name && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name) ? name : null
 }
 
-function currentRun() {
-  if (RUN_FLAG) return safeRun(RUN_FLAG)
-  const p = join(GRAPH_DIR, 'CURRENT')
+function graphRoots() { return listRoots(ROOT, INDEX_ROOT) }
+
+function currentRun(root = ROOT) {
+  if (root === ROOT && RUN_FLAG) return safeRun(RUN_FLAG)
+  const p = join(root, '.specs', 'graph', 'CURRENT')
   return existsSync(p) ? safeRun(readFileSync(p, 'utf8').trim()) : null
+}
+
+function listRuns() {
+  const current = currentRun()
+  const runs = []
+  for (const root of graphRoots()) {
+    if (!existsSync(root.graphDir)) continue
+    for (const entry of readdirSync(root.graphDir, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !safeRun(entry.name)) continue
+      const statePath = join(root.graphDir, entry.name, 'state.json')
+      if (!existsSync(statePath)) continue
+      try {
+        const state = JSON.parse(readFileSync(statePath, 'utf8'))
+        runs.push({
+          root: root.name,
+          run: entry.name,
+          plan: state.plan?.name ?? '',
+          updatedAt: state.updatedAt ?? statSync(statePath).mtime.toISOString(),
+        })
+      } catch { /* one damaged run must not hide the others */ }
+    }
+  }
+  runs.sort((a, b) => a.run.localeCompare(b.run))
+  return { currentRoot: ROOT_NAME, current, runs }
+}
+
+function selectedGraph(url) {
+  const requestedRoot = url.searchParams.get('root')
+  const root = requestedRoot === null
+    ? graphRoots().find((candidate) => candidate.path === ROOT)
+    : graphRoots().find((candidate) => candidate.name === safeRun(requestedRoot))
+  if (!root) return null
+  const requestedRun = url.searchParams.get('run')
+  if (requestedRun !== null && !safeRun(requestedRun)) return null
+  return { graphDir: root.graphDir, run: safeRun(requestedRun) ?? currentRun(root.path) }
+}
+
+let lastPlanSignature = null
+let planSyncing = false
+function syncPlanIfChanged() {
+  if (!SYNC_PLAN) return
+  const run = currentRun()
+  if (!run) return
+  const statePath = join(GRAPH_DIR, run, 'state.json')
+  if (!existsSync(statePath)) return
+  const state = JSON.parse(readFileSync(statePath, 'utf8'))
+  const planPath = state.plan?.source
+  if (!planPath || !existsSync(planPath)) return
+  const signature = `${run}:${planPath}:${statSync(planPath).mtimeMs}`
+  if (signature === lastPlanSignature || planSyncing) return
+  lastPlanSignature = signature
+  planSyncing = true
+  execFile(
+    process.execPath,
+    [ENGINE, 'sync-plan', '--run', run, '--plan', planPath],
+    { cwd: ROOT, env: { ...process.env, GRAPH_ROOT: ROOT, PRUMO_ROOT: ROOT, PRUMO_LANG: 'en' }, encoding: 'utf8' },
+    (error, stdout, stderr) => {
+      planSyncing = false
+      if (error) return errorLog(`[prumo] auto-sync failed: ${(stderr || stdout || error.message).trim()}`)
+      const message = stdout.trim()
+      if (message && !message.includes('already matches plan')) log(message)
+    },
+  )
+}
+
+if (SYNC_PLAN) {
+  syncPlanIfChanged()
+  setInterval(syncPlanIfChanged, 1000)
 }
 
 /** Same derivation the engine uses — duplicated on purpose so this stays dependency-free
@@ -88,22 +140,26 @@ function json(res, code, body) {
   res.end(JSON.stringify(body))
 }
 
-createServer((req, res) => {
+const server = createServer((req, res) => {
   try {
   const url = new URL(req.url, `http://localhost:${PORT}`)
-  const run = safeRun(url.searchParams.get('run')) ?? currentRun()
+
+  if (url.pathname === '/api/runs') return json(res, 200, listRuns())
+
+  const selected = selectedGraph(url)
+  const run = selected?.run
 
   if (url.pathname === '/api/state') {
-    if (!run) return json(res, 404, { error: 'no run' })
-    const p = join(GRAPH_DIR, run, 'state.json')
-    if (!existsSync(p)) return json(res, 404, { error: `run "${run}" not found` })
+    if (!run) return json(res, 404, { error: tr('no run') })
+    const p = join(selected.graphDir, run, 'state.json')
+    if (!existsSync(p)) return json(res, 404, { error: tr(`run "${run}" not found`) })
     const state = JSON.parse(readFileSync(p, 'utf8'))
     return json(res, 200, { ...state, derived: derive(state) })
   }
 
   if (url.pathname === '/api/events') {
     if (!run) return json(res, 404, { error: 'no run' })
-    const p = join(GRAPH_DIR, run, 'events.ndjson')
+    const p = join(selected.graphDir, run, 'events.ndjson')
     if (!existsSync(p)) return json(res, 200, { events: [] })
     const limit = Number(url.searchParams.get('limit') ?? 300)
     const lines = readFileSync(p, 'utf8').trim().split('\n').filter(Boolean)
@@ -123,11 +179,11 @@ createServer((req, res) => {
         "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; " +
         "connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'",
     })
-    return res.end(readFileSync(join(HERE, 'dashboard.html'), 'utf8'))
+    return res.end(readFileSync(join(HERE, 'dashboard.html'), 'utf8').replace('/*PRUMO_LANGUAGE*/"en"', JSON.stringify(language(flag('lang', undefined)))))
   }
 
   res.writeHead(404)
-  res.end('not found')
+  res.end(tr('not found'))
   /* A corrupt state.json (or a mid-write read) must cost one response, never the process. */
   } catch (e) {
     json(res, 500, { error: String(e?.message ?? e) })
@@ -135,13 +191,16 @@ createServer((req, res) => {
 /* Loopback ONLY: this is a read-only dashboard for the dev's own browser. Binding every
  * interface would expose run state to the local network for no benefit. */
 }).listen(PORT, '127.0.0.1', () => {
-  console.log(`[graph] dashboard on http://localhost:${PORT} (run: ${currentRun() ?? '—'})`)
+  log(
+    `[prumo] dashboard on http://localhost:${server.address().port} (run: ${currentRun() ?? '—'}, ` +
+      `auto-sync: ${SYNC_PLAN ? 'on' : 'off'})`,
+  )
 }).on('error', (e) => {
   /* A taken port is the NORMAL second-run case (the previous dashboard is still up and
      already follows CURRENT) — say that, instead of dying with a stack trace. */
   if (e.code === 'EADDRINUSE') {
-    console.error(
-      `[graph] port ${PORT} is already in use — an earlier dashboard is likely still serving ` +
+    errorLog(
+      `[prumo] port ${PORT} is already in use — an earlier dashboard is likely still serving ` +
         `http://localhost:${PORT} (it follows CURRENT). To run a SECOND one: --port <other>` +
         `${RUN_FLAG ? '' : ' (add --run <name> to pin it to one run)'}`,
     )

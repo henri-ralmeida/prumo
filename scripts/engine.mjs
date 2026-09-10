@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * Graph Engine — generic task-graph execution state for agent-driven plans.
+ * PRUMO — generic task-graph execution state for agent-driven plans.
  *
  * The ENGINE is reusable and knows nothing about any particular project. What changes
  * between projects is the PLAN (a JSON file: phases + tasks + deps + how to validate).
  * The orchestrator (a human or an agent) drives it through this CLI; the dashboard
  * (serve.mjs) only READS the same state — it is observability, never a second brain.
  *
- * State lives under .specs/graph/<run>/ (gitignored scratch):
+ * State lives under ~/.local/share/graph-foreman/<workspace>/.specs/graph/<run>/:
  *   state.json     — the single source of truth (plan snapshot + per-task state)
  *   events.ndjson  — append-only history of every transition (feeds the dashboard log)
  *
@@ -26,56 +26,33 @@
  *
  * Usage (ENGINE = path to this file, wherever the skill is installed):
  *   node $ENGINE init --plan <plan.json> --run <name>
+ *   node $ENGINE sync-plan --plan <plan.json> [--run <name>]
  *   node $ENGINE status|ready|graph [--run <name>]
  *   node $ENGINE start <task> --agent <name>   (max 3 executors)
  *   node $ENGINE review <task> --agent <name>  (hands it to a reviewer)
- *   node $ENGINE validate <task> --ok|--failed --evidence "<text>"
+ *   node $ENGINE validate <task> --ok|--failed --evidence "<text>" [--cwd <project>]
+ *   node $ENGINE refresh-contract <task> --plan <approved-plan.json>
  *   node $ENGINE done <task>
  *   node $ENGINE fail <task> --reason "<text>"
  *   node $ENGINE retry <task> [--force]
- *   node $ENGINE block <task> --reason | unblock <task>
+ *   node $ENGINE block <task> --reason | unblock <task> [--reviewer <agent>]
  *   node $ENGINE skip <task> --reason
  *   node $ENGINE note <task> --text "<text>"
  *   node $ENGINE runs
  */
 import {
   mkdirSync, readFileSync, writeFileSync, appendFileSync, renameSync, existsSync, readdirSync,
-  rmSync, statSync,
+  rmSync, statSync, copyFileSync,
 } from 'node:fs'
-import { join, dirname, resolve } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { runValidation, assertValidation, validationContract } from './validation.mjs'
+import { join, resolve } from 'node:path'
 
-/* The project root is DISCOVERED, never assumed from where this script happens to live —
- * the skill can be installed at any depth (.claude/skills/graph-foreman/scripts/, a vendored
- * copy, a global install). GRAPH_ROOT overrides; otherwise walk up from cwd to the first
- * directory that looks like a project (.git or package.json). No marker found = refuse:
- * writing .specs/ into whatever directory happens to be above cwd is the one failure mode
- * this function exists to prevent, and it must be loud, never silent.
- */
-function findRoot() {
-  if (process.env.GRAPH_ROOT) {
-    const r = resolve(process.env.GRAPH_ROOT)
-    if (!existsSync(r)) {
-      console.error(`[graph] ERROR: GRAPH_ROOT points to "${r}", which does not exist`)
-      process.exit(1)
-    }
-    return r
-  }
-  let dir = process.cwd()
-  while (true) {
-    if (existsSync(join(dir, '.git')) || existsSync(join(dir, 'package.json'))) return dir
-    const parent = dirname(dir)
-    if (parent === dir) {
-      console.error(
-        '[graph] ERROR: no project root found (no .git or package.json above cwd) — ' +
-          'run from inside a project, or set GRAPH_ROOT',
-      )
-      process.exit(1)
-    }
-    dir = parent
-  }
-}
+import { findRoot } from './storage.mjs'
+import { log, errorLog, tr } from './i18n.mjs'
 
-const ROOT = findRoot()
+let ROOT
+try { ROOT = findRoot() } catch (error) { errorLog('[prumo] ERROR: ' + error.message); process.exit(1) }
 const GRAPH_DIR = join(ROOT, '.specs', 'graph')
 const CURRENT_FILE = join(GRAPH_DIR, 'CURRENT')
 const MAX_ATTEMPTS_SOFT = 3
@@ -100,7 +77,7 @@ for (let i = 0; i < rest.length; i++) {
 }
 
 function die(msg) {
-  console.error(`[graph] ERROR: ${msg}`)
+  errorLog(`[prumo] ERROR: ${msg}`)
   process.exit(1)
 }
 
@@ -214,6 +191,101 @@ function pathsCollide(a, b) {
   return a.startsWith(b) || b.startsWith(a)
 }
 
+function validatePlan(plan, allowOverlap = false) {
+  if (!Array.isArray(plan.tasks) || plan.tasks.length === 0) die('plan has no tasks')
+  const ids = new Set()
+  for (const t of plan.tasks) {
+    if (!t.id || !t.title) die('every task needs id and title')
+    if (ids.has(t.id)) die(`duplicate task id ${t.id}`)
+    ids.add(t.id)
+  }
+  for (const t of plan.tasks)
+    for (const d of t.deps ?? [])
+      if (!ids.has(d)) die(`task ${t.id} depends on unknown task ${d}`)
+
+  const depsOf = Object.fromEntries(plan.tasks.map((t) => [t.id, t.deps ?? []]))
+  const visitState = {}
+  const path = []
+  const visit = (id) => {
+    if (visitState[id] === 2) return null
+    if (visitState[id] === 1) return [...path.slice(path.indexOf(id)), id]
+    visitState[id] = 1
+    path.push(id)
+    for (const d of depsOf[id]) {
+      const cycle = visit(d)
+      if (cycle) return cycle
+    }
+    path.pop()
+    visitState[id] = 2
+    return null
+  }
+  for (const t of plan.tasks) {
+    const cycle = visit(t.id)
+    if (cycle) die(`plan has a dependency cycle: ${cycle.join(' → ')}`)
+  }
+
+  const byId = Object.fromEntries(plan.tasks.map((t) => [t.id, t]))
+  for (let i = 0; i < plan.tasks.length; i++) {
+    for (let j = i + 1; j < plan.tasks.length; j++) {
+      const a = plan.tasks[i]
+      const b = plan.tasks[j]
+      if (!a.touches?.length || !b.touches?.length) continue
+      if (reaches(byId, a.id, b.id) || reaches(byId, b.id, a.id)) continue
+      const clash = a.touches.find((pa) => b.touches.some((pb) => pathsCollide(pa, pb)))
+      if (clash && !allowOverlap)
+        die(
+          `${a.id} and ${b.id} can run in parallel but both touch "${clash}" — ` +
+            `add a dep between them (or --allow-overlap)`,
+        )
+    }
+  }
+}
+
+function readPlan(planPath) {
+  const source = resolve(planPath)
+  const plan = JSON.parse(readFileSync(source, 'utf8'))
+  validatePlan(plan, args['allow-overlap'] === true)
+  return { plan, source }
+}
+
+function taskFromPlan(t) {
+  return {
+    id: t.id,
+    phase: t.phase ?? null,
+    title: t.title,
+    deps: t.deps ?? [],
+    validation: t.validation ?? '',
+    validationMode: t.validationMode,
+    inspectionReason: t.inspectionReason,
+    requireReview: t.requireReview,
+    maxAttempts: t.maxAttempts,
+    tags: t.tags ?? [],
+    touches: t.touches ?? [],
+    state: 'pending',
+    agent: null,
+    reviewer: null,
+    attempts: [],
+    validations: [],
+    notes: [],
+  }
+}
+
+function planTaskFromState(t) {
+  return {
+    id: t.id,
+    phase: t.phase,
+    title: t.title,
+    deps: t.deps,
+    validation: t.validation,
+    validationMode: t.validationMode,
+    inspectionReason: t.inspectionReason,
+    requireReview: t.requireReview,
+    maxAttempts: t.maxAttempts,
+    tags: t.tags,
+    touches: t.touches,
+  }
+}
+
 /** Derived view: effective state per task (ready is computed, never stored). */
 export function derive(state) {
   const out = {}
@@ -251,6 +323,20 @@ function agentBusy(state, agent) {
   return occupancy(state).busy.find((t) => (t.state === 'reviewing' ? t.reviewer : t.agent) === agent)
 }
 
+// Starting and resuming both acquire a slot; a paused task no longer owns one.
+function assertAvailable(state, task, role, agent) {
+  if (typeof agent !== 'string' || !agent.trim()) die('active work needs a recorded agent')
+  const blockedBy = task.deps.filter((id) => !['done', 'skipped'].includes(state.tasks[id]?.state))
+  if (blockedBy.length && !args.force) die(task.id + ' still waiting on: ' + blockedBy.join(', '))
+  const occ = occupancy(state)
+  if (role === 'running' && occ.executors.length >= occ.maxExec && !args.force)
+    die(occ.executors.length + ' executors already running (max ' + occ.maxExec + ')')
+  if (occ.busy.length >= occ.cap && !args.force)
+    die(occ.busy.length + ' agents busy (cap ' + occ.cap + ')')
+  const busy = agentBusy(state, agent)
+  if (busy && !args.force) die('agent "' + agent + '" is already on ' + busy.id + ' — one agent per task')
+}
+
 function progress(state) {
   const total = Object.keys(state.tasks).length
   const by = {}
@@ -263,55 +349,7 @@ const commands = {
   init() {
     const planPath = args.plan ?? die('init needs --plan <plan.json>')
     const name = args.run ?? die('init needs --run <name>')
-    const plan = JSON.parse(readFileSync(planPath, 'utf8'))
-    if (!Array.isArray(plan.tasks) || plan.tasks.length === 0) die('plan has no tasks')
-    const ids = new Set(plan.tasks.map((t) => t.id))
-    for (const t of plan.tasks)
-      for (const d of t.deps ?? [])
-        if (!ids.has(d)) die(`task ${t.id} depends on unknown task ${d}`)
-    /* The A in DAG, enforced. A cyclic plan would init fine and then deadlock in silence:
-       every task on the cycle waits for the others forever and `ready` never lists them.
-       Refusing here turns a mute hang into an error that names the loop. */
-    {
-      const depsOf = Object.fromEntries(plan.tasks.map((t) => [t.id, t.deps ?? []]))
-      const state = {} // undefined = white, 1 = on current path, 2 = finished
-      const path = []
-      const visit = (id) => {
-        if (state[id] === 2) return null
-        if (state[id] === 1) return [...path.slice(path.indexOf(id)), id]
-        state[id] = 1
-        path.push(id)
-        for (const d of depsOf[id]) {
-          const cycle = visit(d)
-          if (cycle) return cycle
-        }
-        path.pop()
-        state[id] = 2
-        return null
-      }
-      for (const t of plan.tasks) {
-        const cycle = visit(t.id)
-        if (cycle) die(`plan has a dependency cycle: ${cycle.join(' → ')}`)
-      }
-    }
-    /* Two tasks that touch the same paths MUST be ordered by deps — otherwise the graph
-       hands the same file to two agents at once. Only checked where `touches` is authored:
-       a plan that omits it keeps the old behaviour (the dep chain is then the only guard). */
-    const byId = Object.fromEntries(plan.tasks.map((t) => [t.id, t]))
-    for (let i = 0; i < plan.tasks.length; i++) {
-      for (let j = i + 1; j < plan.tasks.length; j++) {
-        const a = plan.tasks[i]
-        const b = plan.tasks[j]
-        if (!a.touches?.length || !b.touches?.length) continue
-        if (reaches(byId, a.id, b.id) || reaches(byId, b.id, a.id)) continue
-        const clash = a.touches.find((pa) => b.touches.some((pb) => pathsCollide(pa, pb)))
-        if (clash && !args['allow-overlap'])
-          die(
-            `${a.id} and ${b.id} can run in parallel but both touch "${clash}" — ` +
-              `add a dep between them (or --allow-overlap)`,
-          )
-      }
-    }
+    const { plan, source } = readPlan(planPath)
     const dir = runDir(name)
     if (existsSync(join(dir, 'state.json')) && !args.force)
       die(`run "${name}" already exists (use --force to overwrite)`)
@@ -325,50 +363,94 @@ const commands = {
         maxParallel: plan.maxParallel ?? DEFAULT_MAX_PARALLEL,
         maxExecutors: plan.maxExecutors ?? DEFAULT_MAX_EXECUTORS,
         requireReview: plan.requireReview !== false,
+        source,
       },
       createdAt: new Date().toISOString(),
       tasks: {},
     }
-    for (const t of plan.tasks) {
-      state.tasks[t.id] = {
-        id: t.id,
-        phase: t.phase ?? null,
-        title: t.title,
-        deps: t.deps ?? [],
-        validation: t.validation ?? '',
-        requireReview: t.requireReview,   // per-task override; undefined = inherit plan
-        maxAttempts: t.maxAttempts,       // per-task override; undefined = soft default
-        tags: t.tags ?? [],
-        touches: t.touches ?? [],
-        state: 'pending',
-        agent: null,
-        reviewer: null,
-        attempts: [],
-        validations: [],
-        notes: [],
-      }
-    }
+    for (const t of plan.tasks) state.tasks[t.id] = taskFromPlan(t)
     writeFileSync(join(dir, 'events.ndjson'), '')
     saveState(name, state)
     writeFileSync(CURRENT_FILE, name)
     emit(name, 'run_init', null, { plan: plan.name, tasks: plan.tasks.length })
-    /* Run state is scratch and must never reach a commit. The engine cannot know the
-       project's ignore policy, so it warns instead of editing .gitignore behind the dev. */
-    if (existsSync(join(ROOT, '.git'))) {
-      const gi = join(ROOT, '.gitignore')
-      const ignored = existsSync(gi) && /^\.specs\/?\s*$/m.test(readFileSync(gi, 'utf8'))
-      if (!ignored)
-        console.warn(`[graph] WARNING: ".specs/" is not in ${gi} — add it, run state is local scratch and must never be committed`)
-    }
-    console.log(
-      `[graph] run "${name}" initialised: ${plan.tasks.length} tasks, ` +
+    log(
+      `[prumo] run "${name}" initialised: ${plan.tasks.length} tasks, ` +
         `${state.plan.maxExecutors} executors + 1 review slot (cap ${state.plan.maxParallel})` +
         `${state.plan.requireReview ? ', review REQUIRED before done' : ''} — set as CURRENT`,
     )
   },
 
+  'sync-plan'() {
+    const name = runName()
+    const state = loadState(name)
+    const planPath = args.plan ?? state.plan.source ?? die('sync-plan needs --plan <plan.json> once')
+    const { plan, source } = readPlan(planPath)
+    const removed = Object.keys(state.tasks).filter((id) => !plan.tasks.some((t) => t.id === id))
+    if (removed.length) die(`sync-plan is additive: plan removed ${removed.join(', ')}`)
+
+    const mutableStates = new Set(['pending', 'failed', 'blocked'])
+    const contractFields = ['phase', 'title', 'deps', 'validation', 'validationMode', 'inspectionReason', 'requireReview', 'maxAttempts', 'tags', 'touches']
+    const added = []
+    const updated = []
+    const preserved = []
+    for (const planTask of plan.tasks) {
+      const current = state.tasks[planTask.id]
+      if (!current) {
+        state.tasks[planTask.id] = taskFromPlan(planTask)
+        added.push(planTask.id)
+        continue
+      }
+      const next = taskFromPlan(planTask)
+      const changed = contractFields.filter(
+        (field) => JSON.stringify(current[field]) !== JSON.stringify(next[field]),
+      )
+      if (!changed.length) continue
+      if (!mutableStates.has(current.state)) {
+        preserved.push(planTask.id)
+        continue
+      }
+      for (const field of changed) current[field] = next[field]
+      if (changed.some((field) => ['validation', 'validationMode', 'inspectionReason'].includes(field)))
+        current.contractRevision = (current.contractRevision ?? 0) + 1
+      updated.push(planTask.id)
+    }
+
+    const effectivePlan = { ...plan, tasks: Object.values(state.tasks).map(planTaskFromState) }
+    validatePlan(effectivePlan, args['allow-overlap'] === true)
+    const nextPlan = {
+      name: plan.name,
+      description: plan.description ?? '',
+      phases: plan.phases ?? [],
+      maxParallel: plan.maxParallel ?? DEFAULT_MAX_PARALLEL,
+      maxExecutors: plan.maxExecutors ?? DEFAULT_MAX_EXECUTORS,
+      requireReview: plan.requireReview !== false,
+      source,
+    }
+    const planChanged = JSON.stringify(state.plan) !== JSON.stringify(nextPlan)
+    if (!added.length && !updated.length && !planChanged) {
+      if (preserved.length)
+        log(`[prumo] no state changes; plan differs for preserved tasks: ${preserved.join(', ')}. Use refresh-contract for an approved validation change; do not fail/retry completed work to refresh a contract.`)
+      else log(`[prumo] run "${name}" already matches plan (${Object.keys(state.tasks).length} tasks)`)
+      return
+    }
+
+    copyFileSync(join(runDir(name), 'state.json'), join(runDir(name), 'state.pre-sync.json'))
+    state.plan = nextPlan
+    saveState(name, state)
+    emit(name, 'plan_sync', null, {
+      added,
+      updated,
+      preserved,
+      tasks: Object.keys(state.tasks).length,
+    })
+    log(
+      `[prumo] run "${name}" synced: +${added.length}, updated ${updated.length}, ` +
+        `preserved ${preserved.length}, total ${Object.keys(state.tasks).length}`,
+    )
+  },
+
   runs() {
-    if (!existsSync(GRAPH_DIR)) return console.log('(no runs)')
+    if (!existsSync(GRAPH_DIR)) return log('(no runs)')
     for (const d of readdirSync(GRAPH_DIR)) {
       if (d === 'CURRENT') continue
       /* Probed, not caught: `loadState` answers a missing state.json with `die()`, which
@@ -377,7 +459,7 @@ const commands = {
       if (!existsSync(join(GRAPH_DIR, d, 'state.json'))) continue
       const s = loadState(d)
       const p = progress(s)
-      console.log(`${d}  ${p.done}/${p.total} done  (updated ${s.updatedAt})`)
+      log(`${d}  ${p.done}/${p.total} done  (updated ${s.updatedAt})`)
     }
   },
 
@@ -386,14 +468,14 @@ const commands = {
     const state = loadState(name)
     const d = derive(state)
     const p = progress(state)
-    console.log(`run: ${name}  plan: ${state.plan.name}  ${p.done}/${p.total} done`)
-    console.log(`states: ${JSON.stringify(p.by)}`)
+    log(`run: ${name}  plan: ${state.plan.name}  ${p.done}/${p.total} done`)
+    log(`states: ${JSON.stringify(p.by)}`)
     const width = Math.max(...Object.values(d).map((t) => t.id.length))
     const row = (t) => {
       const agent = t.state === 'reviewing' ? `  @${t.reviewer} (review)` : t.agent ? `  @${t.agent}` : ''
       const attempts = t.attempts.length > 1 ? `  (attempt ${t.attempts.length})` : ''
       const wait = t.effective === 'waiting' ? `  ← ${t.blockedBy.join(',')}` : ''
-      console.log(`  ${t.id.padEnd(width)}  ${t.effective.padEnd(8)}${agent}${attempts}${wait}`)
+      console.log(`  ${t.id.padEnd(width)}  ${tr(t.effective).padEnd(8)}${agent}${attempts}${wait}`)
     }
     for (const phase of state.plan.phases) {
       console.log(`\n${phase.id} — ${phase.title}`)
@@ -404,7 +486,7 @@ const commands = {
     const known = new Set(state.plan.phases.map((p) => p.id))
     const orphans = Object.values(d).filter((t) => !known.has(t.phase))
     if (orphans.length) {
-      console.log(`\n(no phase)`)
+      log(`\n(no phase)`)
       orphans.forEach(row)
     }
   },
@@ -416,11 +498,11 @@ const commands = {
     const list = Object.values(d).filter((t) => t.effective === 'ready')
     for (const t of list) console.log(`${t.id}  ${t.title}`)
     const slots = Math.max(0, Math.min(occ.maxExec - occ.executors.length, occ.cap - occ.busy.length))
-    console.log(
-      `\n[graph] ${occ.executors.length}/${occ.maxExec} executors, ${occ.reviewers.length} in review ` +
+    log(
+      `\n[prumo] ${occ.executors.length}/${occ.maxExec} executors, ${occ.reviewers.length} in review ` +
         `(cap ${occ.cap}) — dispatch at most ${slots} now`,
     )
-    if (occ.reviewers.length) console.log(`[graph] awaiting review: ${occ.reviewers.map((t) => `${t.id} @${t.reviewer}`).join(', ')}`)
+    if (occ.reviewers.length) log(`[prumo] awaiting review: ${occ.reviewers.map((t) => `${t.id} @${t.reviewer}`).join(', ')}`)
   },
 
   graph() {
@@ -435,25 +517,13 @@ const commands = {
     const state = loadState(name)
     const t = getTask(state, id)
     if (t.state !== 'pending') die(`${id} is ${t.state}, not pending`)
-    const { blockedBy } = derive(state)[id]
-    if (blockedBy.length && !args.force) die(`${id} still waiting on: ${blockedBy.join(', ')} (use --force)`)
-    const occ = occupancy(state)
-    /* Executors are capped BELOW the total so a finished task never waits for a slot to be
-       verified — work done but stuck unverified is the worst state the graph can hold. */
-    if (occ.executors.length >= occ.maxExec && !args.force)
-      die(`${occ.executors.length} executors already running (max ${occ.maxExec}): ${occ.executors.map((x) => x.id).join(', ')} — wait for one (or --force)`)
-    if (occ.busy.length >= occ.cap && !args.force)
-      die(`${occ.busy.length} agents busy (cap ${occ.cap}) — wait for one (or --force)`)
-    /* One agent, one task: a name on two concurrent tasks means either a mislabelled
-       dispatch or one agent doing both — and then the parallelism is a fiction. */
-    const busy = agentBusy(state, agent)
-    if (busy && !args.force) die(`agent "${agent}" is already on ${busy.id} — one agent per task (or --force)`)
+    assertAvailable(state, t, 'running', agent)
     t.state = 'running'
     t.agent = agent
     t.attempts.push({ n: t.attempts.length + 1, agent, startedAt: new Date().toISOString() })
     saveState(name, state)
     emit(name, 'task_start', id, { agent, attempt: t.attempts.length })
-    console.log(`[graph] ${id} running (agent ${agent}, attempt ${t.attempts.length})`)
+    log(`[prumo] ${id} running (agent ${agent}, attempt ${t.attempts.length})`)
   },
 
   /** Hand a finished task to a REVIEWER — a different agent, fresh context, that never
@@ -479,29 +549,80 @@ const commands = {
     t.attempts.at(-1).reviewStartedAt = new Date().toISOString()
     saveState(name, state)
     emit(name, 'task_review', id, { reviewer, attempt: t.attempts.length })
-    console.log(`[graph] ${id} in review (reviewer ${reviewer})`)
+    log(`[prumo] ${id} in review (reviewer ${reviewer})`)
   },
 
-  validate() {
+  'refresh-contract'() {
     const name = runName()
-    const id = args._[0] ?? die('validate <task> --ok|--failed --evidence "<text>"')
-    const ok = args.ok === true ? true : args.failed === true ? false : die('pass --ok or --failed')
+    const id = args._[0] ?? die('refresh-contract <task> --plan <approved-plan.json>')
     const state = loadState(name)
-    const t = getTask(state, id)
-    if (t.state !== 'running' && t.state !== 'reviewing')
-      die(`${id} is ${t.state}, not running or reviewing`)
-    const by = t.state === 'reviewing' ? 'review' : 'executor'
-    t.validations.push({
-      ok,
-      by,
-      agent: by === 'review' ? t.reviewer : t.agent,
-      evidence: args.evidence ?? '',
-      at: new Date().toISOString(),
-      attempt: t.attempts.length,
-    })
+    const task = getTask(state, id)
+    if (['done', 'skipped'].includes(task.state)) die('completed task contracts are immutable; create an explicit follow-up task')
+    const source = args.plan ?? state.plan.source ?? die('refresh-contract needs --plan <approved-plan.json>')
+    const plan = JSON.parse(readFileSync(resolve(source), 'utf8'))
+    const matches = Array.isArray(plan.tasks) ? plan.tasks.filter((candidate) => candidate?.id === id) : []
+    if (matches.length !== 1) die('approved plan must contain exactly one task ' + id)
+    const fields = ['validation', 'validationMode', 'inspectionReason']
+    const changes = Object.fromEntries(fields.map((field) => [field, matches[0][field]]))
+    try { validationContract({ ...task, ...changes }) } catch (e) { die(e.message) }
+    if (fields.every((field) => JSON.stringify(task[field]) === JSON.stringify(changes[field]))) {
+      log('[prumo] ' + id + ' validation contract already matches; state and attempt unchanged')
+      return
+    }
+    Object.assign(task, changes)
+    task.contractRevision = (task.contractRevision ?? 0) + 1
     saveState(name, state)
-    emit(name, 'task_validate', id, { ok, by, evidence: args.evidence ?? '' })
-    console.log(`[graph] ${id} validation recorded by ${by}: ${ok ? 'OK' : 'FAILED'}`)
+    emit(name, 'task_contract_refreshed', id, { revision: task.contractRevision, attempt: task.attempts.length, state: task.state, source: resolve(source) })
+    log('[prumo] ' + id + ' contract refreshed; state ' + task.state + ', attempt ' + task.attempts.length + ' preserved; previous validation receipts are stale')
+  },
+
+  async validate() {
+    const name = runName()
+    const id = args._[0] ?? die('validate <task> --ok|--failed --evidence "<text>" [--cwd <project>]')
+    const requestedOk = args.ok === true ? true : args.failed === true ? false : die('pass --ok or --failed')
+    if (typeof args.evidence !== 'string' || !args.evidence.trim()) die('validation evidence must not be empty')
+    const token = randomUUID()
+    const snapshot = withLock(name, () => {
+      const state = loadState(name)
+      const t = getTask(state, id)
+      if (t.state !== 'running' && t.state !== 'reviewing') die(id + ' is not running or reviewing')
+      const by = t.state === 'reviewing' ? 'review' : 'executor'
+      if (requestedOk && (t.requireReview ?? state.plan.requireReview) !== false &&
+          (by !== 'review' || !t.reviewer || t.reviewer === t.agent))
+        die('passing validation requires an independent reviewer')
+      // Invalidate any previous pass before running commands, including on interruption.
+      t.validations.push({ ok: false, by, agent: by === 'review' ? t.reviewer : t.agent,
+        evidence: args.evidence, at: new Date().toISOString(), attempt: t.attempts.length, token })
+      saveState(name, state)
+      emit(name, 'task_validation_started', id, { token, attempt: t.attempts.length })
+      return t
+    })
+    // Tests must not hold the run lock: other tasks and the dashboard remain usable.
+    let result = {}
+    let error = null
+    if (requestedOk) {
+      try {
+        result = await runValidation(snapshot, args.cwd)
+        assertValidation(snapshot, { ...result, evidence: args.evidence })
+      } catch (e) { error = e.message }
+    }
+    withLock(name, () => {
+      const state = loadState(name)
+      const t = getTask(state, id)
+      const last = t.validations.at(-1)
+      if (t.state !== snapshot.state || t.attempts.length !== snapshot.attempts.length ||
+          t.agent !== snapshot.agent || t.reviewer !== snapshot.reviewer || last?.token !== token ||
+          (t.contractRevision ?? 0) !== (snapshot.contractRevision ?? 0) ||
+          (t.stateRevision ?? 0) !== (snapshot.stateRevision ?? 0) ||
+          JSON.stringify([t.validation, t.validationMode, t.inspectionReason]) !==
+          JSON.stringify([snapshot.validation, snapshot.validationMode, snapshot.inspectionReason]))
+        die('task changed during validation; result discarded — validate the current attempt again')
+      Object.assign(last, result, { ok: requestedOk && !error, error, at: new Date().toISOString() })
+      saveState(name, state)
+      emit(name, 'task_validate', id, { ok: last.ok, by: last.by, evidence: last.evidence, error })
+      log('[prumo] ' + id + ' validation recorded by ' + last.by + ': ' + (last.ok ? 'OK' : 'FAILED'))
+    })
+    if (error) die(error)
   },
 
   done() {
@@ -518,6 +639,9 @@ const commands = {
        work is a self-report, and the whole point of the role split is that it does not count. */
     if ((t.requireReview ?? state.plan.requireReview) !== false && last.by !== 'review')
       die(`${id} was validated by the ${last.by ?? 'executor'}, not a reviewer — run \`review ${id} --agent <name>\` first`)
+    if (last.by === 'review' && (!t.reviewer || last.agent !== t.reviewer || t.reviewer === t.agent))
+      die('passing validation requires the current independent reviewer')
+    try { assertValidation(t, last) } catch (e) { die(e.message) }
     t.state = 'done'
     t.attempts.at(-1).endedAt = new Date().toISOString()
     t.attempts.at(-1).result = 'done'
@@ -526,7 +650,7 @@ const commands = {
     const unlocked = Object.values(derive(state)).filter(
       (o) => o.effective === 'ready' && o.deps.includes(id),
     )
-    console.log(`[graph] ${id} done${unlocked.length ? ` — unlocked: ${unlocked.map((u) => u.id).join(', ')}` : ''}`)
+    log(`[prumo] ${id} done${unlocked.length ? ` — unlocked: ${unlocked.map((u) => u.id).join(', ')}` : ''}`)
   },
 
   fail() {
@@ -543,7 +667,7 @@ const commands = {
     a.reason = args.reason ?? ''
     saveState(name, state)
     emit(name, 'task_fail', id, { reason: args.reason ?? '', attempt: t.attempts.length })
-    console.log(`[graph] ${id} failed (attempt ${t.attempts.length}): ${args.reason ?? ''}`)
+    log(`[prumo] ${id} failed (attempt ${t.attempts.length}): ${args.reason ?? ''}`)
   },
 
   retry() {
@@ -560,7 +684,7 @@ const commands = {
     t.reviewer = null
     saveState(name, state)
     emit(name, 'task_retry', id, { nextAttempt: t.attempts.length + 1 })
-    console.log(`[graph] ${id} back to pending (attempt ${t.attempts.length + 1} when started)`)
+    log(`[prumo] ${id} back to pending (attempt ${t.attempts.length + 1} when started)`)
   },
 
   block() {
@@ -568,26 +692,51 @@ const commands = {
     const id = args._[0] ?? die('block <task> --reason "<text>"')
     const state = loadState(name)
     const t = getTask(state, id)
-    t.stateBeforeBlock = t.state
+    if (['done', 'skipped'].includes(t.state)) die('completed tasks cannot be paused')
+    const alreadyBlocked = t.state === 'blocked'
+    if (!alreadyBlocked) t.stateBeforeBlock = t.state
+    t.stateRevision = (t.stateRevision ?? 0) + 1
     t.state = 'blocked'
     t.blockReason = args.reason ?? ''
     saveState(name, state)
-    emit(name, 'task_block', id, { reason: args.reason ?? '' })
-    console.log(`[graph] ${id} blocked: ${args.reason ?? ''}`)
+    emit(name, alreadyBlocked ? 'task_block_updated' : 'task_block', id, { reason: args.reason ?? '' })
+    log(`[prumo] ${id} blocked: ${args.reason ?? ''}`)
   },
 
   unblock() {
     const name = runName()
-    const id = args._[0] ?? die('unblock <task>')
+    const id = args._[0] ?? die('unblock <task> [--reviewer <agent>]')
     const state = loadState(name)
     const t = getTask(state, id)
-    if (t.state !== 'blocked') die(`${id} is ${t.state}, not blocked`)
-    t.state = 'pending'
+    if (t.state !== 'blocked') die(id + ' is ' + t.state + ', not blocked')
+    // Legacy unstarted tasks can return to pending; never guess the phase of an existing attempt.
+    const previous = t.stateBeforeBlock ?? (t.attempts.length === 0 ? 'pending' : null)
+    if (!['pending', 'running', 'reviewing', 'failed'].includes(previous))
+      die('cannot restore stateBeforeBlock; inspect the recorded history before repairing this task')
+    const handoff = args.reviewer !== undefined
+    if (handoff && !['running', 'reviewing'].includes(previous))
+      die('direct review requires a paused active attempt; pending/failed tasks cannot bypass start/retry')
+    const target = handoff ? 'reviewing' : previous
+    const reviewer = handoff ? args.reviewer : t.reviewer
+    if (target === 'running' || target === 'reviewing') {
+      const attempt = t.attempts.at(-1)
+      if (!attempt || attempt.endedAt || attempt.result || !t.agent || attempt.agent !== t.agent)
+        die('cannot resume without an open attempt and its original executor')
+      if (target === 'reviewing' && reviewer === t.agent)
+        die('passing validation requires an independent reviewer')
+      assertAvailable(state, t, target, target === 'reviewing' ? reviewer : t.agent)
+      if (handoff && reviewer !== t.reviewer) {
+        t.reviewer = reviewer
+        attempt.reviewer = reviewer
+        attempt.reviewStartedAt = new Date().toISOString()
+      }
+    }
+    t.state = target
     delete t.blockReason
     delete t.stateBeforeBlock
     saveState(name, state)
-    emit(name, 'task_unblock', id)
-    console.log(`[graph] ${id} unblocked`)
+    emit(name, 'task_unblock', id, { state: target, agent: target === 'reviewing' ? t.reviewer : t.agent, attempt: t.attempts.length })
+    log('[prumo] ' + id + ' unblocked to ' + target + '; attempt ' + t.attempts.length + ' preserved; no agent dispatched')
   },
 
   skip() {
@@ -600,7 +749,7 @@ const commands = {
     t.skipReason = args.reason ?? ''
     saveState(name, state)
     emit(name, 'task_skip', id, { reason: args.reason ?? '' })
-    console.log(`[graph] ${id} skipped: ${args.reason ?? ''}`)
+    log(`[prumo] ${id} skipped: ${args.reason ?? ''}`)
   },
 
   note() {
@@ -615,13 +764,14 @@ const commands = {
 }
 
 if (!cmd || !commands[cmd]) {
-  console.error(`usage: engine.mjs <${Object.keys(commands).join('|')}> — see file header for details`)
+  errorLog(`usage: engine.mjs <${Object.keys(commands).join('|')}> — see file header for details`)
   process.exit(1)
 }
 
 /* Readers need no lock: saveState renames a complete file into place, so a reader sees
    either the previous state or the next one, never a half-written one. Everything else
-   takes the run's lock for its whole read-modify-write. */
+   takes the run's lock for its whole read-modify-write; validate locks its state updates
+   separately so command execution cannot outlive the short lock lease. */
 const READ_ONLY = new Set(['runs', 'status', 'ready', 'graph'])
-if (READ_ONLY.has(cmd)) commands[cmd]()
+if (READ_ONLY.has(cmd) || cmd === 'validate') await commands[cmd]()
 else withLock(cmd === 'init' ? (args.run ?? die('init needs --run <name>')) : runName(), commands[cmd])
