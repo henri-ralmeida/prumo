@@ -1,5 +1,21 @@
 # Changelog / Histórico
 
+## 1.0.5
+
+### English
+
+- Clarify domain-neutral contracts: separate approved context, current acceptance criteria and executable proof using existing fields. Replace superseded criteria instead of keeping contradictory historical requirements active.
+- Document real rejection combined with an approved contract change: preserve the failure, synchronize the plan before retry, verify persisted criteria and dispatch the actual agent. Recover interrupted dispatch in the same attempt without inventing an implementation failure.
+- Require relevant evidence for every functional criterion; clarify prerequisites, current test execution, artifact preservation and legitimate prose inspection without placeholder commands.
+- Add an executable regression covering the combined rejection/change/retry lifecycle, including rejection of the old behavior and preservation of earlier evidence and unrelated active work. Keep engine commands, run formats and installer behavior unchanged.
+
+### Português (Brasil)
+
+- Esclarece contratos agnósticos: separa contexto aprovado, critérios vigentes e provas executáveis usando os campos existentes. Substitui critérios obsoletos sem manter requisitos históricos contraditórios ativos.
+- Documenta reprovação real com mudança aprovada do contrato: preserva a falha, sincroniza o plano antes do retry, confere critérios persistidos e dispara o agente real. Recupera disparos interrompidos na mesma tentativa sem inventar falha da implementação.
+- Exige evidência relevante para cada critério funcional; esclarece pré-requisitos, execução de testes atuais, preservação de artefatos e inspeção legítima em texto sem comandos de fachada.
+- Adiciona regressão executável do ciclo de reprovação/alteração/retry, incluindo recusa do comportamento antigo e preservação das evidências anteriores e de trabalho ativo independente. Preserva comandos do motor, formatos das runs e comportamento do instalador.
+
 ## 1.0.4
 
 ### English

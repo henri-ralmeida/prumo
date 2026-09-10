@@ -55,20 +55,28 @@ try {
     marker.version = '0.0.9'
     writeFileSync(markerPath, JSON.stringify(marker))
     writeFileSync(join(destination, 'scripts', 'engine.mjs'), '// previous engine\n')
+    writeFileSync(join(destination, 'SKILL.md'), '# Previous instructions\n')
   }
   run('npm', ['exec', '--', 'prumo', 'update', '--dry-run'])
-  for (const destination of installedRoots) assert.equal(JSON.parse(readFileSync(join(destination, '.prumo-install.json'), 'utf8')).version, '0.0.9')
+  for (const destination of installedRoots) {
+    assert.equal(JSON.parse(readFileSync(join(destination, '.prumo-install.json'), 'utf8')).version, '0.0.9')
+    assert.equal(readFileSync(join(destination, 'SKILL.md'), 'utf8'), '# Previous instructions\n')
+  }
   run('bun', ['x', '--no-install', 'prumo', 'update'])
   assert.ok(Number(readFileSync(requestFile, 'utf8')) > 0, 'Update must resolve the latest package from the registry')
   for (const destination of installedRoots) {
     assert.equal(JSON.parse(readFileSync(join(destination, '.prumo-install.json'), 'utf8')).version, version)
     assert.equal(readFileSync(join(destination, 'scripts', 'engine.mjs'), 'utf8'), readFileSync(join(root, 'scripts', 'engine.mjs'), 'utf8'))
+    assert.equal(readFileSync(join(destination, 'SKILL.md'), 'utf8'), readFileSync(join(root, 'SKILL.md'), 'utf8'))
   }
   const backupCount = readdirSync(join(home, '.local', 'share', 'prumo', 'backups')).length
   writeFileSync(failureFile, '503')
   run('bun', ['x', '--no-install', 'prumo', 'update'], false)
   assert.equal(readdirSync(join(home, '.local', 'share', 'prumo', 'backups')).length, backupCount)
-  for (const destination of installedRoots) assert.equal(readFileSync(join(destination, 'scripts', 'engine.mjs'), 'utf8'), readFileSync(join(root, 'scripts', 'engine.mjs'), 'utf8'))
+  for (const destination of installedRoots) {
+    assert.equal(readFileSync(join(destination, 'scripts', 'engine.mjs'), 'utf8'), readFileSync(join(root, 'scripts', 'engine.mjs'), 'utf8'))
+    assert.equal(readFileSync(join(destination, 'SKILL.md'), 'utf8'), readFileSync(join(root, 'SKILL.md'), 'utf8'))
+  }
   console.log('Public update fetched the latest registry package, previewed without changing installations, updated three old installations, and preserved them on registry failure')
 } finally {
   if (registry && registry.exitCode === null && registry.signalCode === null) { const closed = new Promise(resolve => registry.once('exit', resolve)); registry.kill(); await closed }

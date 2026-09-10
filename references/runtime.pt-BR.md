@@ -57,6 +57,14 @@ Os comandos seguem a ordem declarada e param na primeira falha. O recibo registr
 
 O motor verifica execução e integridade. O revisor julga se o teste prova o comportamento pedido e se as classificações são honestas. Um rótulo no plano não comprova qualidade do teste.
 
+Separe contexto, critérios vigentes e provas usando os campos existentes:
+
+- Contexto e decisões ficam em `description` ou nos documentos aprovados referenciados. Critérios substituídos ficam identificados no histórico e nos backups.
+- `expect` descreve o resultado atual que aquele passo pode comprovar. Não carregue o contrato antigo inteiro como critério ativo nem preserve requisitos contraditórios.
+- `run` executa a prova correspondente. Build comprova compilação; escrever um resultado funcional ao lado dele não comprova esse resultado. Não crie passos `echo` para guardar contexto ou instruções.
+
+Um passo funcional é o mínimo estrutural, não a cobertura completa. O revisor confere cada critério funcional vigente. Prepare pré-requisitos antes dos testes dependentes; confirme que testes filtrados ou sem compilação usam a entrega atual e executam casos relevantes. Não esconda falhas nem descarte alterações alheias. Preserve evidências anteriores com saídas distintas e prefira verificações de leitura quando suficientes; repetir efeitos operacionais exige autorização própria.
+
 ## Comandos
 
 Resolva `scripts/engine.mjs` a partir da skill instalada. Acrescente `--run <nome>` para selecionar uma execução.
@@ -88,7 +96,22 @@ Resolva `scripts/engine.mjs` a partir da skill instalada. Acrescente `--run <nom
 
 Use `refresh-contract` para mudar somente o contrato aprovado de uma tarefa ativa. Ele preserva estado, tentativas, agentes, notas e bloqueio. A revisão do contrato invalida recibos anteriores, mesmo quando o texto volta à versão anterior. Tarefas done/skipped exigem acompanhamento explícito.
 
-Trabalho entregue pode seguir à revisão, que pode completar verificações faltantes. Não use fail/retry para atualizar contrato nem registre erro de orquestração como falha do executor. Um bloqueio solicitado permanece até uma decisão explícita de desbloqueio.
+Trabalho entregue pode seguir à revisão, que pode completar verificações faltantes. Não use fail/retry **somente** para atualizar contrato nem registre erro de orquestração como falha do executor. Um bloqueio solicitado permanece até uma decisão explícita de desbloqueio.
+
+### Reprovação real com alteração aprovada do contrato
+
+Corrigir um defeito dentro do escopo aprovado já está autorizado. Uma orientação explícita do usuário pode aprovar um critério novo; peça decisão apenas se o novo escopo continuar indefinido. Solicitação nova não transforma retroativamente uma entrega correta em falha.
+
+Quando a entrega foi realmente reprovada e o contrato aprovado também mudou:
+
+1. Preserve a evidência e registre `fail <tarefa> --reason <critério-real-não-atendido>`.
+2. Edite o plano aprovado, substituindo critérios obsoletos. Use o editor existente, backup único e confira o diff e possíveis alterações concorrentes; não é obrigatório criar um script de adaptação.
+3. Rode `sync-plan --plan <arquivo-aprovado>` enquanto a tarefa está `failed`. Confira em `graph` o contrato, as dependências e os caminhos de escrita persistidos.
+4. Rode `retry <tarefa>`, depois `start <tarefa> --agent <executor>` junto com o disparo real do agente no ambiente.
+
+Acrescente `--run <nome>` em cada chamada. `retry` não recarrega o plano; `refresh-contract` só muda validação e não registra reprovação. Se apenas faltam atualizar verificações da entrega correta, use refresh e revisão na mesma tentativa. Novos requisitos após conclusão exigem acompanhamento explícito.
+
+Retome da fase persistida, sem repetir a sequência inteira. Se `start` ou `review` foi registrado, mas o agente não foi disparado, complete o disparo na mesma tentativa quando autorizado. Confirme o agente real. Se o disparo está indisponível ou o usuário pausou, registre bloqueio pelo motivo de orquestração. Um nome no estado não prova execução. Corrija relatos com notas e preserve tentativas anteriores.
 
 ## Dashboard
 
@@ -98,6 +121,6 @@ node <skill>/scripts/serve.mjs --sync-plan --lang pt-BR
 
 O endereço padrão é `http://localhost:4949`, restrito à máquina. `--port` escolhe outra porta e `--run` fixa uma execução. O seletor mostra workspaces centrais e o workspace legado selecionado. Porta ocupada não provoca encerramento de outro servidor.
 
-O painel apresenta estados, dependências, tentativas, evidências, eventos e tempos derivados. Idioma persiste no navegador. Textos do usuário são escapados e não traduzidos. Os números não provam cobertura de testes, causas de defeitos ou regras de negócio.
+O painel apresenta estados, dependências, tentativas, evidências, eventos e tempos derivados. O idioma segue a preferência da instalação ou a escolha explícita de execução; não há seletor no navegador. Textos do usuário são escapados e não traduzidos. Os números não provam cobertura de testes, causas de defeitos ou regras de negócio.
 
 Encerrar o dashboard não cancela trabalho. Instalar não reinicia dashboard ou agentes. Um processo já aberto passa a usar o código de servidor atualizado quando for reiniciado.

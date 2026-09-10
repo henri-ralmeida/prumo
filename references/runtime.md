@@ -141,6 +141,16 @@ Every field a planning skill needs to emit. Only `id` and `title` are required t
 Plan-level fields: `name` (required), `description`, `phases[]` (`{id, title}`),
 `maxParallel` (4), `maxExecutors` (3), `requireReview` (true).
 
+Keep purpose and background in `description` or referenced approved documents. Keep current,
+consistent acceptance criteria in `validation[].expect` and the checks that establish them in
+`validation[].run`. Superseded criteria belong in history/backups, not an active `echo` step.
+An expected behavior written beside a build does not turn compilation into behavioral proof.
+One functional step is only the structural minimum: the reviewer must check coverage of every
+current functional criterion. Use prerequisites before dependent checks, verify actual relevant
+test execution against the current delivery, and preserve prior artifacts when writing evidence.
+Prefer read-only verification of delivered artifacts when sufficient; validation is not permission
+to repeat operational side effects or overwrite the delivery.
+
 **Structured validation.** When the contract IS executable, prefer steps over prose — the
 reviewer then runs exactly what is written instead of interpreting:
 
@@ -208,9 +218,35 @@ attempts, block reason and historical evidence remain intact. Previous receipts 
 including if a later refresh restores the old text. A fresh validation is required before done.
 Done/skipped tasks cannot be refreshed. The command neither dispatches work nor unblocks tasks.
 Do not use fail/retry solely for contract migration, redo a delivered fix, or enlarge a data
-window because the skill changed. The reviewer can verify delivered code in the same attempt.
+window because the skill changed. The reviewer can verify delivered work in the same attempt.
 Where sync-plan exists, it preserves active/completed task contracts and reports differences;
 use refresh-contract explicitly for active work instead of treating synchronization as proof.
+
+### Rejection with an approved contract change
+
+An actual unmet criterion and a request for new scope are different. A defect within the approved
+scope can be corrected; explicit user steering can approve a changed criterion. Unresolved new
+scope needs a decision, not a fabricated implementation failure. No special adaptation script is
+required: use the existing plan editor, a unique backup and a diff/concurrent-edit check.
+
+For a genuinely rejected delivery whose approved contract also changes:
+
+1. Preserve the review evidence and record `fail <task> --reason <actual-unmet-criterion>`.
+2. Edit the approved plan, replacing superseded criteria rather than retaining contradictions.
+3. Run `sync-plan --plan <approved-plan.json>` while the task is `failed`. Inspect the task in
+   `graph`: validation, dependencies and write scope must match before proceeding.
+4. Run `retry <task>`, then `start <task> --agent <executor>` and dispatch the actual harness agent.
+
+Use the selected `--run` on every call. `retry` does not reload a plan. `refresh-contract` only
+updates validation fields; it does not record rejection. If no implementation was rejected and
+only verification needs updating, refresh and review in the same attempt instead. Completed
+tasks need explicit follow-up work, not rewritten history.
+
+Resume from persisted state rather than replaying the sequence. When `start`/`review` succeeded
+but native agent dispatch did not happen, complete that dispatch in the same attempt if authorized.
+Confirm the actual agent handle; if dispatch is unavailable or the user paused, block with the
+orchestration reason. Do not invent another failed implementation or claim an agent is running
+from its engine label alone. Record corrections in notes, preserving historical attempts.
 
 ### Pause and resume
 
