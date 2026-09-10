@@ -672,3 +672,61 @@ test('sync-plan reports active contract differences instead of already matches',
   assert.equal(f.state().tasks.T1.state, 'running')
   assert.equal(f.state().tasks.T1.attempts.length, 1)
 })
+
+test('real rejection and approved contract change preserve history and verify the new behavior on retry', (t) => {
+  const f = fixture(t, { touches: ['delivery.cjs'] }, {
+    description: 'Original delivery policy; changes require approval.',
+    tasks: [{ id: 'T2', title: 'Independent work', touches: ['other/'], validation: [functionalStep] }],
+  })
+  f.ok('start', 'T2', '--agent', 'other-executor')
+  const other = f.state().tasks.T2
+  writeFileSync(join(f.project, 'delivery.cjs'), 'exports.days = () => 3;\n')
+  f.beginReview()
+  assert.notEqual(f.validate().status, 0)
+  const reason = 'review: express delivery returned 3 days instead of 1'
+  f.ok('fail', 'T1', '--reason', reason)
+  const rejected = f.state().tasks.T1
+  const priorEvents = f.events()
+
+  f.plan.description = 'Approved policy update: normal delivery is now 4 days; original policy is superseded.'
+  f.plan.tasks[0].title = 'Updated delivery policy'
+  f.plan.tasks[0].touches = ['delivery.cjs', 'current-policy.test.cjs']
+  f.plan.tasks[0].validation = [staticStep, {
+    kind: 'functional', run: 'node current-policy.test.cjs',
+    expect: 'express delivery is 1 day; normal delivery is 4 days',
+  }]
+  writeFileSync(join(f.project, 'current-policy.test.cjs'), "const assert = require('node:assert/strict'); const {days} = require('./delivery.cjs'); assert.equal(days(true),1); assert.equal(days(false),4); console.log('2 current policy scenarios passed');\n")
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.ok('sync-plan', '--plan', f.planPath)
+  const synced = f.state()
+  assert.equal(synced.tasks.T1.state, 'failed')
+  assert.equal(synced.plan.description, f.plan.description)
+  assert.deepEqual(synced.tasks.T1.validation, f.plan.tasks[0].validation)
+  assert.deepEqual(synced.tasks.T1.touches, f.plan.tasks[0].touches)
+  assert.deepEqual(synced.tasks.T1.attempts, rejected.attempts)
+  assert.deepEqual(synced.tasks.T1.validations, rejected.validations)
+  assert.deepEqual(synced.tasks.T2, other)
+  assert.deepEqual(f.events().slice(0, priorEvents.length), priorEvents)
+  f.ok('retry', 'T1')
+  assert.equal(f.state().tasks.T1.attempts.length, 1, 'retry must not itself create an attempt')
+  f.ok('start', 'T1', '--agent', 'executor-v2')
+  f.ok('review', 'T1', '--agent', 'reviewer-v2')
+
+  // Fixing only the old defect is insufficient for the newly approved contract.
+  writeFileSync(join(f.project, 'delivery.cjs'), 'exports.days = express => express ? 1 : 3;\n')
+  assert.notEqual(f.validate().status, 0)
+  f.rejected(/no passing validation/, 'done', 'T1')
+  assert.equal(f.state().tasks.T1.validations.at(-1).checks[1].run, 'node current-policy.test.cjs')
+  writeFileSync(join(f.project, 'delivery.cjs'), 'exports.days = express => express ? 1 : 4;\n')
+  assert.equal(f.validate().status, 0)
+  const receipt = f.state().tasks.T1.validations.at(-1)
+  assert.match(receipt.checks[1].stdout, /2 current policy scenarios passed/)
+  f.ok('done', 'T1')
+  const done = f.state().tasks.T1
+  assert.deepEqual(done.attempts[0], rejected.attempts[0])
+  assert.equal(done.attempts[0].reason, reason)
+  assert.equal(done.attempts.length, 2)
+  assert.equal(done.attempts[1].result, 'done')
+  assert.deepEqual(done.validations[0], rejected.validations[0])
+  assert.deepEqual(f.state().tasks.T2, other)
+})

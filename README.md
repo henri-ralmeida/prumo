@@ -96,7 +96,7 @@ No manual migration, stopped agents or stopped dashboard is required in advance.
 The backup includes a restore command:
 
 ```sh
-npx @henri-ralmeida/prumo@1.0.4 restore "<backup-directory>"
+npx @henri-ralmeida/prumo@1.0.5 restore "<backup-directory>"
 ```
 
 Restore refuses to overwrite files edited since installation. Plans keep their current state: reverting an installation must not erase ongoing work. Maintain your own business-data backups; the installer does not take a consistent snapshot of every live plan.
@@ -143,6 +143,8 @@ A functional change needs an executable step marked `kind: "functional"`. Lint, 
 Documentation and other tasks without runtime impact can use `validationMode: "inspection"`, with `inspectionReason` and evidence. This exception must not disguise functional work. A label in a plan does not prove test quality.
 
 An approved contract update does not require inventing a failure or another attempt. `refresh-contract` preserves work and state, including blocks, while invalidating old receipts. Unblocking and resuming are separate decisions; installation does neither.
+
+Keep background and superseded requirements in approved context/history, current criteria in `expect`, and real checks in `run`. Every functional criterion needs relevant evidence; one functional label does not prove the entire task. After a real rejection **and** an approved contract change, record the failure, edit the plan, `sync-plan` while failed, inspect the persisted definition, then `retry` and `start` with the actual agent dispatch. See [rejection and contract changes](references/runtime.md#rejection-with-an-approved-contract-change). Resume from the recorded phase after interruptions; do not manufacture attempts for a dispatch that never happened.
 
 ## Languages and compatibility
 

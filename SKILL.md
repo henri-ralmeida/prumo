@@ -144,6 +144,13 @@ EXISTS. That is the one rule here the engine cannot enforce for you.
 `review` is a subagent call too — a `review` with no reviewer behind it is the same self-report
 wearing a different label. It is not capacity-capped, so it goes out the moment work finishes.
 
+After an interruption, inspect persisted state and the harness's actual agent status before
+repeating commands. If `start` or `review` was recorded but no agent was dispatched, complete
+that dispatch in the same attempt when authorized; do not repeat fail/retry/start. Record the
+actual agent handle in a note if it differs from the engine label. If dispatch is unavailable
+or the user paused work, block with the real orchestration reason. A recorded label is not
+proof that an agent is running, and a dispatch problem is not an implementation failure.
+
 Each executor gets the task and nothing else about the run:
 
 ```text
@@ -151,8 +158,9 @@ You are the EXECUTOR for <T4>: <title>. Deliver exactly that, then stop.
 Read the project's agent rules first.
 Write ONLY under: <touches>  — another executor owns the rest, right now.
 Build on what these already produced: <deps>.
+Relevant approved context: <purpose, constraints and source references; identify superseded history>.
 Your work must satisfy, clause by clause: <validation>
-  A DIFFERENT agent checks your diff against that contract and never sees this message.
+  A DIFFERENT agent checks your delivery against that contract and never sees this message.
 <on a retry: the reviewer's --reason, verbatim>
 Commit policy: <Project overrides>. Never touch .specs/graph/ — the orchestrator owns the state.
 Report back: what you changed, and what a reviewer needs to reproduce it.
@@ -187,6 +195,23 @@ drive a GUI, query a connector or certify a human observation. For such work, us
 verification command when one exists; surface an unsupported verification method rather than
 inventing a passing command or treating unavailable tools as an inspection exception.
 
+Keep these three things distinct, using the existing plan format:
+
+- **Context:** purpose, decisions and background in the plan's `description` or referenced
+  approved documents. Preserve prior criteria in history/backups, clearly marked as superseded.
+- **Current criteria:** consistent, observable acceptance conditions. Each step's `expect`
+  states what that step can actually establish; it is not a place to paste the entire old plan.
+- **Executable proof:** `run` performs the corresponding check against the current delivery.
+  A build proves compilation; writing a behavioral promise beside it does not prove that promise.
+
+When an approved change replaces a criterion, replace the obsolete criterion rather than
+keeping contradictory requirements active. Do not create `echo` steps to store context,
+historical contracts or instructions. For legitimate inspection, a nonempty prose `validation`
+with `validationMode: "inspection"` and `inspectionReason` needs no placeholder command.
+Use the existing plan editor; a custom adaptation script is not required. Before changing a
+plan, keep a uniquely named backup, check for concurrent edits and inspect the resulting diff.
+Record the approved change and its reason in a note; never edit run history to hide a mistake.
+
 ### Behavioral validation and legitimate inspection
 
 Before dispatch, check that the approved plan contains executable behavioral checks for
@@ -197,6 +222,15 @@ An `echo` instruction, static analysis, a test that only searches source text, o
 reimplements the production logic does not qualify as functional coverage. Inspect the test
 and its actual execution count; a successful process with zero relevant tests is insufficient.
 For a bug fix, demonstrate that the behavioral test detects the defect when practical.
+
+At least one functional step is a structural minimum, not sufficient coverage by itself.
+Map every current functional criterion to a relevant check and its observable result before
+dispatch and review. Commands run in order: prepare prerequisites before checks that need
+them, and ensure skipped-build or filtered tests use the current delivery and execute relevant
+cases. Do not hide failures or discard unrelated edits to make a check pass. Preserve earlier
+evidence with distinct output paths when a check writes artifacts. Review existing artifacts
+with read-only checks where sufficient; repeating an operational side effect needs its own
+authorization and must not overwrite the delivery being reviewed.
 
 Documentation and other tasks that do not affect runtime behavior may use
 `validationMode: "inspection"` with a concrete `inspectionReason` in the approved plan.
@@ -221,7 +255,7 @@ permissions; the approved plan is not permission for unrelated or destructive si
 
 A skill upgrade does not add business scope, enlarge a data window, or require a new executor.
 Keep validation proportional to the approved task. A reviewer can run missing verification
-on delivered code in the current attempt. Existing artifacts help the review; an executor's
+on delivered work in the current attempt. Existing artifacts help the review; an executor's
 report alone is still not approval.
 
 After adapting the approved plan, use:
@@ -242,6 +276,35 @@ step.expectedExitCodes for approved nonzero outcomes (default [0]), and step.tim
 long checks (default 600000; 0 explicitly disables the deadline). Never widen accepted codes
 or increase a data window merely to satisfy the gate. See references/runtime.md for execution options.
 
+### Real rejection, including an approved contract change
+
+Distinguish an implementation that failed an applicable criterion from a request for new scope
+or missing verification. Fixing an actual defect within the approved scope is already authorized.
+Reuse explicit user steering as approval; ask only when a new requirement remains undecided.
+
+| Situation | Next action |
+| --- | --- |
+| Actual rejected delivery, unchanged contract | Record `fail --reason`, then `retry`, then `start` paired with the actual executor dispatch. |
+| Actual rejected delivery, approved contract also changed | Record the real failure; edit the approved plan; `sync-plan` while the task is `failed`; inspect the persisted contract, `touches` and dependencies; then `retry` and `start` with the actual executor dispatch. |
+| Delivered work needs only an approved validation update | `refresh-contract`, then verification by an independent reviewer in the same attempt; no invented failure or executor. |
+| New scope after `done`/`skipped` | Create an explicit follow-up through the approved planning workflow; preserve completed history. |
+
+For the combined rejection case, the sequence is:
+
+```bash
+node $ENGINE fail T4 --reason "review: <actual unmet criterion>" --run <run-name>
+# Edit the approved plan; separate current criteria from superseded context.
+node $ENGINE sync-plan --plan <approved-plan.json> --run <run-name>
+node $ENGINE graph --run <run-name>  # inspect T4's persisted definition before retry
+node $ENGINE retry T4 --run <run-name>
+node $ENGINE start T4 --agent <executor> --run <run-name>  # pair with actual dispatch
+```
+
+Resume from the recorded phase if some steps already happened. `retry` alone does not reload
+the plan. `sync-plan` preserves active/completed definitions; refresh only updates validation
+fields and does not record a rejection. Preserve the prior attempt's reason and evidence;
+carry the current contract and actionable rejection into the next executor's assignment.
+
 ### Resuming paused work
 
 `unblock <task>` restores the recorded phase (pending, running, reviewing or failed), preserving
@@ -260,15 +323,16 @@ with a note; do not rewrite it as an implementation failure or erase historical 
 
 ### What the reviewer gets, and what it decides
 
-The task's **validation contract** and the **diff** — and nothing about how the work went. The
-executor's narrative is the thing most likely to talk it into a pass. The reviewer runs the
-project's gate ITSELF (see Project overrides), checks the contract clause by clause, and
-answers `--ok` or `--failed`.
+Give the reviewer the **current validation contract**, relevant **approved context** and the
+**diff or delivered artifacts**, without the executor's persuasive narrative. Identify
+superseded requirements as history. The reviewer runs the project's gate ITSELF (see Project
+overrides), checks the contract clause by clause, and answers `--ok` or `--failed`.
 
 ```text
-You are the REVIEWER for <T4>: <title>. You did NOT write this code.
+You are the REVIEWER for <T4>: <title>. You did NOT produce this delivery.
 Judge these changes: <diff, delivered artifacts or before/after state under `touches`>
 Against this contract, clause by clause: <validation>
+Relevant approved context and constraints: <references; distinguish superseded history>.
 Read the project's agent rules and the relevant implementation, inputs, outputs and checks.
 Check that the contract proves the changed behavior and that any inspection exception fits the diff.
 Run the gate YOURSELF through engine validate: <Project overrides, engine path, absolute project cwd>.
@@ -287,8 +351,8 @@ suite was already green". A fresh agent, a clean context, and the contract.
   Command results are collected by the engine; the reviewer still checks their relevance.
   `done` refuses without a passing review validation for the CURRENT attempt — the one rule
   that stops "it looks right" from becoming state.
-- **Rejected** → `fail T4 --reason "review: <what is missing>"` then `retry T4`. The reason
-  travels to the next executor; a rejection with no actionable reason wastes an attempt.
+- **Rejected delivery** → follow "Real rejection" above; synchronize any approved contract
+  change before retry. The reason travels to the next executor and must be actionable.
 - Past **3 attempts** the engine warns — escalate to the dev instead of spending more.
 - Needs the dev → `block T4 --reason "..."`. Blocked is a real state; leaving it `running`
   while you wait is how a graph lies.
