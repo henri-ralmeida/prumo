@@ -40,7 +40,7 @@ bunx @henri-ralmeida/prumo@latest install --claude --lang en
 
 Sem `--lang`, instalações existentes mantêm a preferência salva. O dashboard segue a instalação e não tem seletor de idioma separado. As respostas dos agentes seguem o idioma do usuário.
 
-Pode substituir `bunx` por `npx`. Bun é opcional; o executável usa Node.js. Os arquivos são cópias persistentes, independentes do cache do gerenciador.
+Pode substituir `bunx` por `npx`. Bun é opcional; o executável usa Node.js. A instalação real também instala a CLI global persistente pelo npm; em um novo terminal, `prumo -v` e `prumo update` ficam disponíveis. Os arquivos dos ambientes continuam independentes do cache do gerenciador. `--dry-run` não altera CLI nem ambientes.
 
 ```sh
 npx @henri-ralmeida/prumo@latest install --claude --lang pt-BR --dry-run
@@ -62,7 +62,7 @@ Abra uma nova sessão depois de instalar. `doctor` distingue arquivos instalados
 
 ## Atualizar os ambientes instalados
 
-Para disponibilizar o comando curto, instale a CLI uma vez:
+O instalador disponibiliza o comando curto. Instalações feitas na 1.0.5 ou anterior podem instalá-lo uma vez pelo npm:
 
 ```sh
 npm install -g @henri-ralmeida/prumo
@@ -70,9 +70,9 @@ prumo update --dry-run
 prumo update
 ```
 
-Também pode usar `bunx @henri-ralmeida/prumo@latest update` ou `npx @henri-ralmeida/prumo@latest update` sem instalar a CLI globalmente. O `update` busca o instalador publicado mais recente pelo npm e atualiza Prumo e PO First somente onde o Prumo já está instalado. O npm precisa estar disponível; falha no download mantém as instalações intactas.
+Também pode usar `bunx @henri-ralmeida/prumo@latest update` ou `npx @henri-ralmeida/prumo@latest update` sem criar uma CLI global. `prumo update` atualiza a CLI global e Prumo/PO First em todos os ambientes instalados detectados. O npm precisa estar disponível; falha no download mantém as instalações intactas.
 
-O instalador registra ambientes e caminhos personalizados em `~/.local/share/prumo/installations.json`. A atualização também reconhece marcadores existentes do Prumo nos locais padrão e nos projetos informados com `--project`. Preserva o idioma de cada instalação, salvo uso de `--lang`, e reutiliza os backups e o tratamento de conflitos da instalação. Ambientes que contêm somente graph-foreman ficam fora da atualização. Não retoma planos nem cria tentativas. O `--version` de uma CLI global mostra a versão dessa CLI; o `update` executa o instalador publicado mais recente independentemente dela.
+O instalador registra ambientes e caminhos personalizados em `~/.local/share/prumo/installations.json`. A atualização também reconhece marcadores existentes do Prumo nos locais padrão e nos projetos informados com `--project`. Preserva o idioma de cada instalação, salvo uso de `--lang`, e reutiliza os backups e o tratamento de conflitos da instalação. Ambientes que contêm somente graph-foreman ficam fora da atualização. Não retoma planos nem cria tentativas. Após `prumo update` concluir, `prumo -v` mostra a versão publicada usada na atualização.
 
 ## Instalação sobre graph-foreman
 
@@ -96,7 +96,7 @@ Não é necessário migrar planos, parar agentes ou encerrar o dashboard previam
 O backup informa o comando de reversão:
 
 ```sh
-npx @henri-ralmeida/prumo@1.0.5 restore "<diretório-do-backup>"
+npx @henri-ralmeida/prumo@1.0.6 restore "<diretório-do-backup>"
 ```
 
 A reversão recusa sobrescrever arquivos que você editou depois. Os planos continuam no estado atual: reverter uma instalação não deve apagar trabalho em andamento. Mantenha sua rotina de backup dos dados de negócio; o instalador não captura uma imagem consistente de todos os planos ativos.
