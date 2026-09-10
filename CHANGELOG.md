@@ -1,18 +1,20 @@
 # Changelog / Histórico
 
-## 1.0.1
+## 1.0.2
 
 ### English
 
-- Retrospective GitHub release prepared on 2026-09-10 from commit 362892b, the npm-scope correction between 1.0.0 and 1.0.2. Release metadata is aligned with 1.0.1; the engine and installer retain that earlier implementation.
-- Package name: @henri-ralmeida/prumo. This release does not include the update command introduced in 1.0.2.
-- No npm 1.0.1 publication took place. Use the latest published version for installation. This entry records the earlier work without backdating its publication.
+- Use the npm package name `@henri-ralmeida/prumo`; keep the product, executable and skill named PRUMO / `prumo`.
+- Add `prumo update`: fetch the latest published installer, detect previously installed environments and registered custom paths, and preserve each installation's language. Preview, backups, independent conflicts and rollback reuse the installation workflow. Environments containing only graph-foreman remain untouched.
+- Verify the public update command against a temporary npm registry, including old installations, preview and download failure.
+- This is the first npm publication. GitHub's initial 1.0.0 release remains in history; no 1.0.1 npm package was published.
 
 ### Português (Brasil)
 
-- Release retrospectiva do GitHub preparada em 2026-09-10 a partir do commit 362892b, que corrigiu o escopo npm entre 1.0.0 e 1.0.2. Os metadados passam a indicar 1.0.1; motor e instalador mantêm aquela implementação anterior.
-- Nome do pacote: @henri-ralmeida/prumo. Esta release não inclui o comando update, introduzido na 1.0.2.
-- Não houve publicação 1.0.1 no npm. Use a versão publicada mais recente para instalar. Este registro representa o trabalho anterior sem retroagir a data de publicação.
+- Usa o nome npm `@henri-ralmeida/prumo`; mantém produto, executável e skill como PRUMO / `prumo`.
+- Adiciona `prumo update`: busca o instalador publicado mais recente, detecta ambientes já instalados e caminhos personalizados registrados, preservando o idioma de cada instalação. Prévia, backups, conflitos independentes e reversão reutilizam a instalação. Ambientes que contêm somente graph-foreman permanecem intactos.
+- Verifica o comando público de atualização com registro npm temporário, instalações antigas, prévia e falha no download.
+- Esta é a primeira publicação no npm. A release inicial 1.0.0 do GitHub permanece no histórico; não houve pacote 1.0.1 publicado no npm.
 
 ## 1.0.0
 

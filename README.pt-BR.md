@@ -36,6 +36,20 @@ PO First vale também fora do PRUMO. Prioriza resultado, regras, escopo, decisõ
 
 Abra uma nova sessão depois de instalar. `doctor` distingue arquivos instalados, configuração concluída e condições pendentes. Configurações locais, skills explicitamente desabilitadas e agentes Markdown que exigem conferência da herança são informados; o instalador não promete sobrepor políticas do ambiente. Inspeção de arquivos não comprova o comportamento de um modelo.
 
+## Atualizar os ambientes instalados
+
+Para disponibilizar o comando curto, instale a CLI uma vez:
+
+```sh
+npm install -g @henri-ralmeida/prumo
+prumo update --dry-run
+prumo update
+```
+
+Também pode usar `bunx @henri-ralmeida/prumo@latest update` ou `npx @henri-ralmeida/prumo@latest update` sem instalar a CLI globalmente. O `update` busca o instalador publicado mais recente pelo npm e atualiza PRUMO e PO First somente onde o PRUMO já está instalado. O npm precisa estar disponível; falha no download mantém as instalações intactas.
+
+O instalador registra ambientes e caminhos personalizados em `~/.local/share/prumo/installations.json`. A atualização também reconhece marcadores existentes do PRUMO nos locais padrão e nos projetos informados com `--project`. Preserva o idioma de cada instalação, salvo uso de `--lang`, e reutiliza os backups e o tratamento de conflitos da instalação. Ambientes que contêm somente graph-foreman ficam fora da atualização. Não retoma planos nem cria tentativas. O `--version` de uma CLI global mostra a versão dessa CLI; o `update` executa o instalador publicado mais recente independentemente dela.
+
 ## Instalação sobre graph-foreman
 
 Não é necessário migrar planos, parar agentes ou encerrar o dashboard previamente. O instalador detecta os locais padrão, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, projetos informados e ancestrais do diretório atual.
@@ -49,7 +63,7 @@ Não é necessário migrar planos, parar agentes ou encerrar o dashboard previam
 O backup informa o comando de reversão:
 
 ```sh
-npx @henri-ralmeida/prumo@1.0.1 restore "<diretório-do-backup>"
+npx @henri-ralmeida/prumo@1.0.2 restore "<diretório-do-backup>"
 ```
 
 A reversão recusa sobrescrever arquivos que você editou depois. Os planos continuam no estado atual: reverter uma instalação não deve apagar trabalho em andamento. Mantenha sua rotina de backup dos dados de negócio; o instalador não captura uma imagem consistente de todos os planos ativos.
