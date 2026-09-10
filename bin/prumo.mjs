@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util'
 import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { resolve, join } from 'node:path'
 import { planInstall, applyInstall, restoreInstall, installationStatus, discoverInstallations, detectHarnesses } from '../lib/install.mjs'
-import { launchUpdate, updateRequest } from '../lib/update.mjs'
+import { isGlobalCli, launchUpdate, updateGlobalCli, updateRequest } from '../lib/update.mjs'
 import { selectHarnesses } from '../lib/prompt.mjs'
 import { language, createTranslator, messages } from '../scripts/i18n.mjs'
 
@@ -45,6 +46,7 @@ try {
   const lang = language(values.lang)
   t = createTranslator(messages, lang)
   const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
+  const runningGlobally = isGlobalCli(fileURLToPath(new URL('..', import.meta.url)))
   if (values.version) print(version)
   else if (values.help || positionals.length === 0) {
     print(`Prumo ${version} — graph-foreman + PO First\n\nprumo install [--all | --claude|--kiro|--codex] [--lang en|pt-BR] [--dry-run] [--project <path>]\nprumo update [--dry-run] [--lang en|pt-BR] [--project <path>]\nprumo doctor --claude|--kiro|--codex [--lang en|pt-BR] [--project <path>]\nprumo restore <backup>\n`)
@@ -52,12 +54,20 @@ try {
   } else if (['update', '_update'].includes(positionals[0])) {
     if (positionals.length !== 1 || ['claude', 'kiro', 'codex', 'all'].some(name => values[name])) throw new Error('Update automatically selects installed environments; do not select a harness')
     if (positionals[0] === 'update') {
-      const request = { dryRun: values['dry-run'] ?? false, lang: values.lang, projects: (values.project ?? []).map(path => resolve(path)), cwd: process.cwd() }
+      const request = { dryRun: values['dry-run'] ?? false, lang: values.lang, projects: (values.project ?? []).map(path => resolve(path)), cwd: process.cwd(), updateCli: runningGlobally }
       const code = await launchUpdate(request)
       if (code === null) print('No Prumo installations found; install an environment first')
       else process.exitCode = code
     } else {
       const request = updateRequest(process.env.PRUMO_UPDATE_REQUEST)
+      if (request.updateCli) {
+        if (request.dryRun) print(t('Would update global Prumo CLI to {0}', version))
+        else {
+          print(t('Updating global Prumo CLI to {0}', version))
+          if (await updateGlobalCli(version) !== 0) throw new Error('Global Prumo CLI update failed')
+          print(t('Global Prumo CLI updated to {0}', version))
+        }
+      }
       const installed = discoverInstallations(request)
       if (!installed.length) print('No Prumo installations found; install an environment first')
       for (const entry of installed) {
@@ -92,6 +102,14 @@ try {
     if (!selected.length) {
       print(t('Detected environments: {0}', harnesses.join(', ')))
       if (!values.all && (process.stdin.isTTY && process.stdout.isTTY || !values['dry-run'])) harnesses = await selectHarnesses(harnesses, { t })
+    }
+    if (command === 'install' && !runningGlobally) {
+      if (values['dry-run']) print(t('Would install global Prumo CLI {0}', version))
+      else {
+        print(t('Installing global Prumo CLI {0}', version))
+        if (await updateGlobalCli(version) !== 0) throw new Error('Global Prumo CLI installation failed')
+        print(t('Global Prumo CLI installed: prumo -v reports {0}', version))
+      }
     }
     for (const harness of harnesses) {
       try { runInstall({ ...options, harness }, { command, dryRun: values['dry-run'] }) }

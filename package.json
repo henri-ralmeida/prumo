@@ -1,6 +1,6 @@
 {
   "name": "@henri-ralmeida/prumo",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Evidence-driven task orchestration with PO First for Claude Code, Kiro and Codex",
   "type": "module",
   "bin": { "prumo": "bin/prumo.mjs" },

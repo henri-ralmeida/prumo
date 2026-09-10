@@ -1,5 +1,19 @@
 # Changelog / Histórico
 
+## 1.0.6
+
+### English
+
+- Make a real installation persist the global `prumo` command. `prumo update` now updates that CLI and installed harness adapters together, so `prumo -v` reports the new version. Runner-based `npx`/`bunx update` remains non-global.
+- Verify install, dry-run, self-update and `prumo -v` against an isolated npm prefix and registry; no test writes to the user's global installation.
+- Remove nested borders from the dashboard's empty parallel-work state and ignore stale requests when switching runs, preventing old data from briefly repainting the selected plan.
+
+### Português (Brasil)
+
+- Faz a instalação real persistir o comando global `prumo`. `prumo update` passa a atualizar a CLI e os adaptadores instalados juntos; `prumo -v` mostra a nova versão. `npx`/`bunx update` continuam sem criar instalação global.
+- Verifica instalação, prévia, autoatualização e `prumo -v` com prefixo e registro npm isolados; nenhum teste grava na instalação global do usuário.
+- Remove bordas duplicadas do estado vazio no dashboard e ignora respostas antigas ao trocar de run, evitando que dados do plano anterior reapareçam brevemente.
+
 ## 1.0.5
 
 ### English
