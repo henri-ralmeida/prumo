@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * PRUMO — observability server. It renders state.json without writing it. Optional
+ * Prumo — observability server. It renders state.json without writing it. Optional
  * --sync-plan delegates approved plan reconciliation to engine.mjs, the only state writer.
  * Kill it and execution is unaffected.
  *

@@ -1,4 +1,4 @@
-name: Verify PRUMO
+name: Verify Prumo
 on:
   push:
   pull_request:

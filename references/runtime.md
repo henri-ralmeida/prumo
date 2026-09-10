@@ -1,4 +1,4 @@
-# PRUMO engine reference
+# Prumo engine reference
 
 **A foreman for your task graph**: executes an approved plan as a DAG — dispatching parallel
 subagent executors, refusing to sign off any task a fresh reviewer has not inspected, and
@@ -22,7 +22,7 @@ npx @henri-ralmeida/prumo@latest install --claude
 - **Live dashboard** — a read-only server on `:4949` renders the DAG as phase swimlanes with
   animated dep edges, per-task state, retries and an event log. Killing it never affects a run.
 - **Zero runtime dependencies** — Node.js 22+. State is plain JSON +
-  append-only NDJSON in a central PRUMO workspace outside project repositories.
+  append-only NDJSON in a central Prumo workspace outside project repositories.
 - **Tokens are spent only by agents** — the engine and the dashboard are plain Node
   processes making no model calls. Executors and reviewers (subagents) are the cost; the
   orchestrator adds a small constant overhead; watching the dashboard costs nothing.

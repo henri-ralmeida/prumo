@@ -1,4 +1,4 @@
-# Referência do motor PRUMO
+# Referência do motor Prumo
 
 [English](runtime.md) · [Instalação](../README.pt-BR.md)
 
