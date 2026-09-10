@@ -11,10 +11,18 @@ The plan defines the expected outcome; the engine enforces transitions and recor
 Requires **Node.js 22 or newer** and the chosen harness. The installer does not install Claude Code, Kiro or Codex, or expand their execution permissions.
 
 ```sh
-bunx @henri-ralmeida/prumo@latest install --claude
-bunx @henri-ralmeida/prumo@latest install --kiro
-bunx @henri-ralmeida/prumo@latest install --codex
+bunx @henri-ralmeida/prumo@latest install --claude --lang en
+bunx @henri-ralmeida/prumo@latest install --kiro --lang en
+bunx @henri-ralmeida/prumo@latest install --codex --lang en
 ```
+
+Run the command for your harness; repeat for each harness you use. Choose `--lang en` for English or `--lang pt-BR` for Brazilian Portuguese. For example:
+
+```sh
+bunx @henri-ralmeida/prumo@latest install --claude --lang pt-BR
+```
+
+Without `--lang`, the installer preserves an existing installation's language or detects the system language for a new installation, falling back to English. The dashboard has its own persistent language selector; agent responses follow the user's language.
 
 Replace `bunx` with `npx` if preferred. Bun is optional; the executable runs under Node.js. Installed files are persistent copies, independent of the package manager cache.
 
@@ -51,6 +59,15 @@ Or use `bunx @henri-ralmeida/prumo@latest update` / `npx @henri-ralmeida/prumo@l
 The installer records installed environments and custom paths in `~/.local/share/prumo/installations.json`. Update also recognizes existing Prumo markers in standard locations and projects supplied with `--project`. It preserves each installation's language unless `--lang` is supplied, uses the same backups and conflict handling as installation, and skips environments containing only graph-foreman. It never resumes plans or creates attempts. A global CLI's `--version` reports that CLI's version; `update` always runs the latest published installer independently of it.
 
 ## Installing over graph-foreman
+
+Use the same `install` command to replace an existing graph-foreman installation with Prumo. For Claude Code, preview and then apply:
+
+```sh
+bunx @henri-ralmeida/prumo@latest install --claude --lang en --dry-run
+bunx @henri-ralmeida/prumo@latest install --claude --lang en
+```
+
+Replace `--claude` with `--kiro` or `--codex` as needed, one harness per command. For a project-local installation, run from that project or add `--project "<project-path>"`. This first switch uses `install`; `update` only refreshes environments already containing Prumo. Existing `/graph-foreman` invocations remain compatibility aliases; use `/prumo` (or `$prumo` in Codex) for new work.
 
 No manual migration, stopped agents or stopped dashboard is required in advance. The installer checks standard locations, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, supplied projects and ancestors of the current directory.
 
