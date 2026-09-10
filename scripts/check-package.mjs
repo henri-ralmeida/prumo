@@ -8,7 +8,7 @@ import { dashboardWithCatalog } from './build-dashboard.mjs'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 assert.equal(pkg.name, 'prumo')
-assert.equal(pkg.version, '0.1.0')
+assert.equal(pkg.version, '1.0.0')
 assert.equal(pkg.bin.prumo, 'bin/prumo.mjs')
 assert.equal(pkg.engines.node, '>=22')
 assert.equal(pkg.dependencies, undefined)

@@ -1,6 +1,6 @@
 # Changelog / Histórico
 
-## 0.1.0
+## 1.0.0
 
 ### English
 
@@ -26,6 +26,6 @@
 
 ## Upstream
 
-Based on [JrSantiaggo/graph-foreman](https://github.com/JrSantiaggo/graph-foreman), retaining its MIT license and Git history. PRUMO's first public release is 0.1.0; earlier local corrections were not published PRUMO releases.
+Based on [JrSantiaggo/graph-foreman](https://github.com/JrSantiaggo/graph-foreman), retaining its MIT license and Git history. PRUMO's first public release is 1.0.0; earlier local corrections were not published PRUMO releases.
 
-Baseado em graph-foreman, preservando a licença MIT e o histórico Git. A primeira release pública do PRUMO é 0.1.0; as correções locais anteriores não foram releases publicadas do PRUMO.
+Baseado em graph-foreman, preservando a licença MIT e o histórico Git. A primeira release pública do PRUMO é 1.0.0; as correções locais anteriores não foram releases publicadas do PRUMO.
