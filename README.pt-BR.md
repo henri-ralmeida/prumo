@@ -10,19 +10,35 @@ O plano define o resultado esperado; o motor controla estados e registros. O amb
 
 Requer **Node.js 22 ou superior** e o ambiente escolhido. O instalador não instala Claude Code, Kiro ou Codex, nem altera suas permissões de execução.
 
+Abra o instalador interativo:
+
+```sh
+bunx @henri-ralmeida/prumo@latest install
+```
+
+Ele detecta os ambientes disponíveis pelas configurações de usuário existentes, pelos comandos no `PATH` (`claude`, `kiro-cli` / `kiro`, `codex`) e pelas skills de projeto existentes do Claude/Kiro. O menu mostra somente os ambientes detectados, inicialmente todos marcados. Use as setas para navegar, Espaço para marcar/desmarcar, A para todos/nenhum, Enter para instalar ou Esc para cancelar. A instalação é por usuário e vale para seus projetos; nenhuma alteração é aplicada antes da seleção.
+
+Para instalar em todos os ambientes detectados sem perguntas, inclusive em scripts:
+
+```sh
+bunx @henri-ralmeida/prumo@latest install --all
+```
+
+Sem terminal interativo, use `--all` ou uma opção explícita de ambiente. Se nenhum ambiente for detectado, o instalador informa isso sem gravar arquivos. Para escolher um ambiente diretamente:
+
 ```sh
 bunx @henri-ralmeida/prumo@latest install --claude --lang pt-BR
 bunx @henri-ralmeida/prumo@latest install --kiro --lang pt-BR
 bunx @henri-ralmeida/prumo@latest install --codex --lang pt-BR
 ```
 
-Execute o comando do seu ambiente; repita para cada ambiente que utiliza. Escolha `--lang pt-BR` para português do Brasil ou `--lang en` para inglês. Por exemplo:
+O idioma é detectado pelo **país/região configurado no sistema operacional**: Brasil seleciona português do Brasil; outras regiões ou configuração indisponível selecionam inglês. Usa a região residencial do Windows, as preferências regionais do macOS ou a localidade de endereços do Linux, independentemente do idioma de exibição/navegador. Não usa geolocalização por IP. Para escolher explicitamente, use `--lang pt-BR` ou `--lang en`. Por exemplo:
 
 ```sh
 bunx @henri-ralmeida/prumo@latest install --claude --lang en
 ```
 
-Sem `--lang`, o instalador preserva o idioma de uma instalação existente ou detecta o idioma do sistema em uma instalação nova, usando inglês como fallback. O dashboard tem seu próprio seletor persistente de idioma; as respostas dos agentes seguem o idioma do usuário.
+Sem `--lang`, instalações existentes mantêm a preferência salva. O dashboard segue a instalação e não tem seletor de idioma separado. As respostas dos agentes seguem o idioma do usuário.
 
 Pode substituir `bunx` por `npx`. Bun é opcional; o executável usa Node.js. Os arquivos são cópias persistentes, independentes do cache do gerenciador.
 
@@ -32,7 +48,7 @@ npx @henri-ralmeida/prumo@latest install --claude --lang pt-BR
 npx @henri-ralmeida/prumo@latest doctor --claude --lang pt-BR
 ```
 
-`--dry-run` apenas mostra as alterações. A instalação real mostra os arquivos antes de aplicá-las e informa o backup. Repita o comando para atualizar; arquivos e blocos idênticos não são duplicados. `--project <caminho>` inclui um projeto adicional na busca por instalações e dados existentes; pode ser repetido. Não há varredura indiscriminada do disco.
+`--dry-run` apenas mostra as alterações; sem terminal ou opção de ambiente, mostra a prévia de todos os detectados. A instalação real mostra os arquivos antes de aplicá-las e informa o backup. Repita o comando para atualizar; arquivos e blocos idênticos não são duplicados. `--project <caminho>` inclui um projeto adicional na busca por instalações e dados existentes; pode ser repetido. Não há varredura indiscriminada do disco.
 
 | Ambiente | Invocação | PO First |
 |---|---|---|
@@ -60,14 +76,14 @@ O instalador registra ambientes e caminhos personalizados em `~/.local/share/pru
 
 ## Instalação sobre graph-foreman
 
-Use o mesmo comando `install` para substituir uma instalação existente do graph-foreman pelo Prumo. No Claude Code, confira a prévia e depois aplique:
+Use o mesmo comando `install` para substituir uma instalação existente do graph-foreman pelo Prumo. Para todos os ambientes detectados, confira a prévia e depois aplique:
 
 ```sh
-bunx @henri-ralmeida/prumo@latest install --claude --lang pt-BR --dry-run
-bunx @henri-ralmeida/prumo@latest install --claude --lang pt-BR
+bunx @henri-ralmeida/prumo@latest install --all --dry-run
+bunx @henri-ralmeida/prumo@latest install --all
 ```
 
-Troque `--claude` por `--kiro` ou `--codex` conforme necessário, um ambiente por comando. Se a instalação estiver dentro de um projeto, execute na pasta dele ou acrescente `--project "<caminho-do-projeto>"`. Essa primeira troca usa `install`; `update` só atualiza ambientes que já contêm Prumo. As chamadas existentes de `/graph-foreman` continuam como aliases de compatibilidade; use `/prumo` (ou `$prumo` no Codex) para novas atividades.
+Omita `--all` para escolher pelas caixas de seleção, ou use `--claude`, `--kiro` ou `--codex` para selecionar um diretamente. Se a instalação estiver dentro de um projeto, execute na pasta dele ou acrescente `--project "<caminho-do-projeto>"`. Essa primeira troca usa `install`; `update` só atualiza ambientes que já contêm Prumo. As chamadas existentes de `/graph-foreman` continuam como aliases de compatibilidade; use `/prumo` (ou `$prumo` no Codex) para novas atividades.
 
 Não é necessário migrar planos, parar agentes ou encerrar o dashboard previamente. O instalador detecta os locais padrão, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, projetos informados e ancestrais do diretório atual.
 
@@ -80,7 +96,7 @@ Não é necessário migrar planos, parar agentes ou encerrar o dashboard previam
 O backup informa o comando de reversão:
 
 ```sh
-npx @henri-ralmeida/prumo@1.0.3 restore "<diretório-do-backup>"
+npx @henri-ralmeida/prumo@1.0.4 restore "<diretório-do-backup>"
 ```
 
 A reversão recusa sobrescrever arquivos que você editou depois. Os planos continuam no estado atual: reverter uma instalação não deve apagar trabalho em andamento. Mantenha sua rotina de backup dos dados de negócio; o instalador não captura uma imagem consistente de todos os planos ativos.
@@ -130,7 +146,7 @@ Atualizar um contrato aprovado não exige inventar falha ou nova tentativa. `ref
 
 ## Idiomas e compatibilidade
 
-Use `--lang en|pt-BR`, `PRUMO_LANG`, detecção do ambiente ou o seletor persistente no dashboard. Interface, mensagens e documentação têm inglês e PT-BR; instruções internas ficam em inglês e orientam responder no idioma do usuário. Identificadores, contratos, comandos e saídas dos processos não são traduzidos.
+O idioma inicial segue a região configurada no sistema, com inglês como fallback. Use `--lang en|pt-BR` ou `PRUMO_LANG` para uma escolha explícita. O dashboard segue a preferência salva na instalação e não tem seletor de idioma. Interface, mensagens e documentação têm inglês e PT-BR; instruções internas ficam em inglês e orientam responder no idioma do usuário. Identificadores, contratos, comandos e saídas dos processos não são traduzidos.
 
 Os testes do instalador e motor para Windows, macOS e Linux, com Node.js 22 e 24, estão definidos em [CI](.github/workflows/ci.yml). Cada aplicativo depende dos sistemas suportados por seu fornecedor. A [matriz de verificação](references/verification.md) distingue testes automatizados e sessões reais.
 

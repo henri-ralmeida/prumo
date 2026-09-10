@@ -1,5 +1,21 @@
 # Changelog / Histórico
 
+## 1.0.4
+
+### English
+
+- Detect available Claude Code, Kiro and Codex environments and let users select one, several or all with terminal checkboxes. Add `install --all` for unattended installation; keep explicit harness flags and preview support.
+- Use the operating system's configured country/region for the initial language: Brazil selects PT-BR; other regions or unavailable settings select English. Preserve installed preferences and explicit `--lang` overrides.
+- Remove the dashboard language selector. The dashboard follows the installation, including when served by an already-running legacy server; browser language and old browser preferences no longer override it.
+- Preserve existing graph-foreman runs, backups, compatibility entrypoints and automatic updates.
+
+### Português (Brasil)
+
+- Detecta Claude Code, Kiro e Codex disponíveis e permite selecionar um, vários ou todos com caixas de seleção no terminal. Adiciona `install --all` para instalação sem interação; preserva opções explícitas de ambiente e prévia.
+- Usa o país/região configurado no sistema para o idioma inicial: Brasil seleciona PT-BR; demais regiões ou configuração indisponível selecionam inglês. Preserva preferências instaladas e escolhas explícitas com `--lang`.
+- Remove o seletor de idioma do dashboard. O dashboard segue a instalação, inclusive em servidores legados já abertos; o idioma e as preferências antigas do navegador não o sobrescrevem.
+- Preserva runs do graph-foreman, backups, caminhos de compatibilidade e atualização automática.
+
 ## 1.0.3
 
 ### English

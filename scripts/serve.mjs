@@ -17,7 +17,7 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const ENGINE = join(HERE, 'engine.mjs')
 
 import { findRoot, storageHome, graphRoots as listRoots } from './storage.mjs'
-import { language, log, errorLog, tr } from './i18n.mjs'
+import { language, localizeDashboard, log, errorLog, tr } from './i18n.mjs'
 
 let ROOT
 try { ROOT = findRoot() } catch (error) { errorLog('[prumo] ERROR: ' + error.message); process.exit(1) }
@@ -179,7 +179,7 @@ const server = createServer((req, res) => {
         "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; " +
         "connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'",
     })
-    return res.end(readFileSync(join(HERE, 'dashboard.html'), 'utf8').replace('/*PRUMO_LANGUAGE*/"en"', JSON.stringify(language(flag('lang', undefined)))))
+    return res.end(localizeDashboard(readFileSync(join(HERE, 'dashboard.html'), 'utf8'), language(flag('lang', undefined))))
   }
 
   res.writeHead(404)

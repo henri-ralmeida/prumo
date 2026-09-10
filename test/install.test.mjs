@@ -1,12 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, rmSync, cpSync, realpathSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, rmSync, cpSync, realpathSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync, spawn } from 'node:child_process'
 import { setTimeout } from 'node:timers/promises'
-import { planInstall, applyInstall, restoreInstall, installationStatus } from '../lib/install.mjs'
+import { planInstall, applyInstall, restoreInstall, installationStatus, detectHarnesses } from '../lib/install.mjs'
 import { inside, findRoot, storageHome, graphRoots } from '../scripts/storage.mjs'
 
 const source = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -42,6 +42,93 @@ test('dashboard root names keep the selected legacy workspace unambiguous', t =>
   assert.equal(new Set(roots.map(item => item.name)).size, 3)
   assert.equal(new Set(roots.map(item => item.path)).size, 3)
   assert.deepEqual(graphRoots(root, central), roots)
+})
+
+function isolatedCli(f) {
+  const env = { ...process.env, HOME: f.home, USERPROFILE: f.home, CLAUDE_CONFIG_DIR: join(f.home, '.claude'), CODEX_HOME: join(f.home, '.codex'), PRUMO_HOME: join(f.home, 'data'), PRUMO_LANG: 'en' }
+  for (const key of Object.keys(env)) if (/^path$/i.test(key) || ['GRAPH_ROOT', 'PRUMO_ROOT', 'GRAPH_FOREMAN_HOME'].includes(key)) delete env[key]
+  env.PATH = ''
+  return args => spawnSync(process.execPath, [join(source, 'bin', 'prumo.mjs'), ...args], { cwd: f.cwd, env, encoding: 'utf8', timeout: 20000, windowsHide: true })
+}
+
+test('automatic detection uses existing configuration, local legacy skills and executable paths without running them', t => {
+  const f = fixture(t)
+  const options = { home: f.home, cwd: f.cwd, env: {} }
+  put(join(f.home, '.agents', 'skills', 'shared', 'SKILL.md'), 'Shared skills do not identify a harness')
+  assert.deepEqual(detectHarnesses(options), [])
+  const custom = join(f.home, 'custom-codex')
+  mkdirSync(custom)
+  options.env.CODEX_HOME = custom
+  put(join(f.cwd, '.claude', 'skills', 'graph-foreman', 'SKILL.md'), 'old skill')
+  assert.deepEqual(detectHarnesses(options), ['claude', 'codex'])
+  const commands = join(f.home, 'commands with spaces')
+  const binary = join(commands, process.platform === 'win32' ? 'kiro.cmd' : 'kiro')
+  put(binary, 'THIS IS NOT AN EXECUTABLE PROGRAM AND MUST NEVER BE RUN')
+  chmodSync(binary, 0o755)
+  options.env.PATH = commands
+  options.env.PATHEXT = '.EXE;.CMD'
+  assert.deepEqual(detectHarnesses(options), ['claude', 'kiro', 'codex'])
+  if (process.platform !== 'win32') {
+    chmodSync(binary, 0o644)
+    assert.deepEqual(detectHarnesses(options), ['claude', 'codex'])
+  }
+})
+
+test('automatic CLI installs only detected harnesses, preserves runs and backups, and keeps explicit selection', t => {
+  const f = fixture(t)
+  const cli = isolatedCli(f)
+  const legacy = join(f.home, '.claude', 'skills', 'graph-foreman', 'SKILL.md')
+  put(legacy, 'original legacy skill')
+  put(join(f.home, '.kiro', 'steering', 'existing.md'), 'Keep this instruction')
+  const state = join(f.home, '.local', 'share', 'graph-foreman', 'work', '.specs', 'graph', 'active', 'state.json')
+  put(state, { state: 'blocked', attempts: [1], evidence: 'keep', contract: 'approved' })
+  const before = read(state)
+  const marker = harness => join(f.home, harness === 'codex' ? '.agents' : `.${harness}`, 'skills', 'prumo', '.prumo-install.json')
+  const preview = cli(['install', '--lang', 'pt-BR', '--dry-run'])
+  assert.equal(preview.status, 0, preview.stdout + preview.stderr)
+  assert.match(preview.stdout, /Ambientes detectados: claude, kiro/)
+  assert.equal(existsSync(marker('claude')), false)
+  assert.equal(existsSync(join(f.home, '.local', 'share', 'prumo')), false)
+  const blocked = cli(['install'])
+  assert.equal(blocked.status, 1)
+  assert.match(blocked.stderr, /Interactive selection needs a terminal/)
+  assert.equal(existsSync(marker('claude')), false)
+  const installed = cli(['install', '--all', '--lang', 'pt-BR'])
+  assert.equal(installed.status, 0, installed.stdout + installed.stderr)
+  for (const harness of ['claude', 'kiro']) assert.equal(JSON.parse(read(marker(harness))).lang, 'pt-BR')
+  assert.equal(existsSync(marker('codex')), false)
+  assert.equal(existsSync(join(f.home, '.codex')), false)
+  assert.equal(read(state), before)
+  assert.match(read(legacy), /compatibility alias/)
+  const backups = join(f.home, '.local', 'share', 'prumo', 'backups')
+  const count = readdirSync(backups).length
+  assert.equal(count, 2)
+  assert.equal(cli(['install', '--all']).status, 0)
+  assert.equal(readdirSync(backups).length, count)
+  const explicit = cli(['install', '--codex'])
+  assert.equal(explicit.status, 0, explicit.stdout + explicit.stderr)
+  assert.ok(existsSync(marker('codex')))
+  assert.equal(read(state), before)
+})
+
+test('automatic CLI reports no detection and continues independent harnesses after a configuration conflict', t => {
+  const f = fixture(t)
+  const cli = isolatedCli(f)
+  const before = readdirSync(f.home)
+  const empty = cli(['install'])
+  assert.equal(empty.status, 1)
+  assert.match(empty.stderr, /No supported environments detected/)
+  assert.deepEqual(readdirSync(f.home), before)
+  assert.equal(cli(['doctor']).status, 1)
+  assert.equal(cli(['install', '--claude', '--kiro']).status, 1)
+  assert.equal(cli(['install', '--all', '--claude']).status, 1)
+  put(join(f.home, '.claude', 'settings.json'), '{broken')
+  mkdirSync(join(f.home, '.kiro'))
+  const conflict = cli(['install', '--all'])
+  assert.equal(conflict.status, 2, conflict.stdout + conflict.stderr)
+  assert.equal(read(join(f.home, '.claude', 'settings.json')), '{broken')
+  assert.ok(existsSync(join(f.home, '.kiro', 'skills', 'prumo', 'SKILL.md')))
+  assert.match(read(join(f.home, '.kiro', 'steering', 'po-first.md')), /inclusion: always/)
 })
 
 for (const harness of ['claude', 'kiro', 'codex']) test(`${harness}: persistent install, activation, idempotence and restore`, t => {
