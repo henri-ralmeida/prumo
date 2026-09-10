@@ -6,13 +6,13 @@ import { spawnSync } from 'node:child_process'
 import assert from 'node:assert/strict'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version
-const archive = join(root, `prumo-${version}.tgz`)
+const { name, version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+const archive = join(root, `${name.replace('@', '').replace('/', '-')}-${version}.tgz`)
 const base = realpathSync(tmpdir())
 const home = mkdtempSync(join(base, 'prumo-package-'))
 const cwd = join(home, 'project')
 mkdirSync(join(cwd, '.git'), { recursive: true })
-writeFileSync(join(cwd, 'package.json'), JSON.stringify({ name: 'prumo-package-smoke', private: true, dependencies: { prumo: `file:${archive.replace(/\\/g, '/')}` } }))
+writeFileSync(join(cwd, 'package.json'), JSON.stringify({ name: 'prumo-package-smoke', private: true, dependencies: { [name]: `file:${archive.replace(/\\/g, '/')}` } }))
 const env = { ...process.env, HOME: home, USERPROFILE: home, CODEX_HOME: join(home, '.codex'), CLAUDE_CONFIG_DIR: join(home, '.claude'), PRUMO_HOME: join(home, 'data'), PRUMO_LANG: 'en',
   npm_config_cache: join(home, 'npm-cache'), npm_config_userconfig: join(home, 'npmrc'), BUN_INSTALL_CACHE_DIR: join(home, 'bun-cache') }
 delete env.PRUMO_ROOT

@@ -7,7 +7,7 @@ watching the whole site on a live dashboard.
 Install the skill and PO First for your environment; see the [installation guide](../README.md).
 
 ```bash
-npx prumo@latest install --claude
+npx @henri-ralmeida/prumo@latest install --claude
 ```
 
 ## What it does
