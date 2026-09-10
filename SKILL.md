@@ -34,7 +34,7 @@ Argument: a plan file, a run name to RESUME, or nothing (then
 `$PRUMO_ROOT/.specs/graph/CURRENT`). With
 neither, do not guess — use the plan this session just produced, or ask where it lives, naming
 any candidates you found. The source plan lives wherever the project keeps it; only run state
-is fixed under the central PRUMO workspace.
+is fixed under the central Prumo workspace.
 
 ## Product-first behavior
 
@@ -54,16 +54,20 @@ Node.js 22+, no project dependencies to install. New run state **lives in a cent
 engine or dashboard command, select one central workspace:
 
 ```bash
-PRUMO_HOME="${PRUMO_HOME:-${GRAPH_FOREMAN_HOME:-$HOME/.local/share/prumo}}"
+DEFAULT_PRUMO_HOME="$HOME/.local/share/prumo"
+[ ! -d "$HOME/.local/share/graph-foreman" ] || DEFAULT_PRUMO_HOME="$HOME/.local/share/graph-foreman"
+PRUMO_HOME="${PRUMO_HOME:-${GRAPH_FOREMAN_HOME:-$DEFAULT_PRUMO_HOME}}"
 PRUMO_ROOT="$PRUMO_HOME/<workspace>"
 mkdir -p "$PRUMO_ROOT/.specs/graph/plans"
 export PRUMO_HOME PRUMO_ROOT
 ```
 
+Local harnesses running as the same user share this central store. Preserve existing overrides and the legacy store; do not choose a different store per harness. These commands create missing directories. Access still depends on each harness's permissions; cloud sessions do not automatically share local files.
+
 `<workspace>` groups related runs, for example `ai-memory-migration`. `PRUMO_ROOT` must be an
 existing child of `PRUMO_HOME` for new work; existing legacy workspaces are also accepted. When cwd is already
 inside a central workspace, `PRUMO_ROOT` may be omitted. Never add `.specs/` to a project's
-`.gitignore` for PRUMO.
+`.gitignore` for Prumo.
 
 ## 1. The plan file
 

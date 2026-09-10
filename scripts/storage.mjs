@@ -8,7 +8,7 @@ export function inside(parent, child) {
 }
 
 export function storageHome(env = process.env, home = homedir()) {
-  // Keep an existing installation's data in place. New installations use PRUMO.
+  // Keep an existing installation's data in place. New installations use Prumo.
   const legacy = join(home, '.local', 'share', 'graph-foreman')
   return resolve(env.PRUMO_HOME ?? env.GRAPH_FOREMAN_HOME ??
     (existsSync(legacy) ? legacy : join(home, '.local', 'share', 'prumo')))

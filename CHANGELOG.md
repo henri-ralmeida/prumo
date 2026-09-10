@@ -1,17 +1,33 @@
 # Changelog / Histórico
 
+## 1.0.3
+
+### English
+
+- Standardize the displayed product name as Prumo across documentation, the installer, messages, skill instructions and dashboard. Keep commands, environment variables, storage keys and data formats compatible.
+- Use version-only GitHub release titles. Register 1.0.1 retrospectively from the npm-scope change preceding 1.0.2; it was not previously published on npm.
+- Align workspace setup examples with the engine: preserve explicit paths and reuse an existing central graph-foreman store across local harnesses; create the central directories when absent.
+- Preserve the immutable npm 1.0.2 package; the branding adjustment ships as 1.0.3.
+
+### Português (Brasil)
+
+- Padroniza o nome visível como Prumo na documentação, instalador, mensagens, instruções da skill e dashboard. Preserva comandos, variáveis de ambiente, identificadores de armazenamento e formatos de dados.
+- Usa somente a versão nos títulos das releases do GitHub. Registra a 1.0.1 retrospectivamente a partir da alteração do escopo npm anterior à 1.0.2; ela não havia sido publicada no npm.
+- Alinha os exemplos de preparação ao motor: preserva caminhos explícitos e reutiliza o armazenamento central existente do graph-foreman entre ambientes locais; cria as pastas centrais quando ausentes.
+- Preserva o pacote npm 1.0.2, que é imutável; o ajuste de marca sai na 1.0.3.
+
 ## 1.0.2
 
 ### English
 
-- Use the npm package name `@henri-ralmeida/prumo`; keep the product, executable and skill named PRUMO / `prumo`.
+- Use the npm package name `@henri-ralmeida/prumo`; keep the product, executable and skill named Prumo / `prumo`.
 - Add `prumo update`: fetch the latest published installer, detect previously installed environments and registered custom paths, and preserve each installation's language. Preview, backups, independent conflicts and rollback reuse the installation workflow. Environments containing only graph-foreman remain untouched.
 - Verify the public update command against a temporary npm registry, including old installations, preview and download failure.
 - This is the first npm publication. GitHub's initial 1.0.0 release remains in history; no 1.0.1 npm package was published.
 
 ### Português (Brasil)
 
-- Usa o nome npm `@henri-ralmeida/prumo`; mantém produto, executável e skill como PRUMO / `prumo`.
+- Usa o nome npm `@henri-ralmeida/prumo`; mantém produto, executável e skill como Prumo / `prumo`.
 - Adiciona `prumo update`: busca o instalador publicado mais recente, detecta ambientes já instalados e caminhos personalizados registrados, preservando o idioma de cada instalação. Prévia, backups, conflitos independentes e reversão reutilizam a instalação. Ambientes que contêm somente graph-foreman permanecem intactos.
 - Verifica o comando público de atualização com registro npm temporário, instalações antigas, prévia e falha no download.
 - Esta é a primeira publicação no npm. A release inicial 1.0.0 do GitHub permanece no histórico; não houve pacote 1.0.1 publicado no npm.
@@ -20,7 +36,7 @@
 
 ### English
 
-- Introduce PRUMO: graph-foreman plus PO First, with one shared engine for Claude Code, Kiro and Codex.
+- Introduce Prumo: graph-foreman plus PO First, with one shared engine for Claude Code, Kiro and Codex.
 - Add a persistent, dependency-free installer with preview, complete installation/configuration backups, independent conflict handling and restore.
 - Preserve existing run locations, schemas and old entrypoints; installing never resumes tasks or manufactures attempts.
 - Require executable behavioral evidence for functional approval while preserving justified inspection for documentation and other non-runtime work.
@@ -31,7 +47,7 @@
 
 ### Português (Brasil)
 
-- Apresenta PRUMO: graph-foreman com PO First e motor comum para Claude Code, Kiro e Codex.
+- Apresenta Prumo: graph-foreman com PO First e motor comum para Claude Code, Kiro e Codex.
 - Adiciona instalador persistente, sem dependências, com prévia, backup completo das instalações/configurações, conflitos isolados e reversão.
 - Preserva locais dos planos, formatos e caminhos antigos; instalar não retoma tarefas nem cria tentativas.
 - Exige evidência comportamental executável para mudanças funcionais, preservando inspeções justificadas de documentação e outros trabalhos sem efeito de execução.
@@ -42,6 +58,6 @@
 
 ## Upstream
 
-Based on [JrSantiaggo/graph-foreman](https://github.com/JrSantiaggo/graph-foreman), retaining its MIT license and Git history. PRUMO's first public release is 1.0.0; earlier local corrections were not published PRUMO releases.
+Based on [JrSantiaggo/graph-foreman](https://github.com/JrSantiaggo/graph-foreman), retaining its MIT license and Git history. Prumo's first public release is 1.0.0; earlier local corrections were not published Prumo releases.
 
-Baseado em graph-foreman, preservando a licença MIT e o histórico Git. A primeira release pública do PRUMO é 1.0.0; as correções locais anteriores não foram releases publicadas do PRUMO.
+Baseado em graph-foreman, preservando a licença MIT e o histórico Git. A primeira release pública do Prumo é 1.0.0; as correções locais anteriores não foram releases publicadas do Prumo.

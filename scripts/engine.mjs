@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * PRUMO — generic task-graph execution state for agent-driven plans.
+ * Prumo — generic task-graph execution state for agent-driven plans.
  *
  * The ENGINE is reusable and knows nothing about any particular project. What changes
  * between projects is the PLAN (a JSON file: phases + tasks + deps + how to validate).

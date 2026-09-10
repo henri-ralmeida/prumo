@@ -32,4 +32,4 @@ function inspect(folder) {
   }
 }
 for (const dir of ['bin', 'lib', 'scripts', 'references']) inspect(join(root, dir))
-console.log(`PRUMO ${pkg.version}: package, skill, translations and source checks passed`)
+console.log(`Prumo ${pkg.version}: package, skill, translations and source checks passed`)

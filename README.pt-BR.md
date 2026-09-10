@@ -1,8 +1,8 @@
-# PRUMO
+# Prumo
 
 [English](README.md) · **Português (Brasil)**
 
-PRUMO reúne o motor do [graph-foreman](https://github.com/JrSantiaggo/graph-foreman) com PO First: execução de planos aprovados, tarefas ordenadas por dependências, revisão independente, evidências de validação e um dashboard local. O mesmo fluxo atende software, dados, automação, migrações e outras demandas.
+Prumo reúne o motor do [graph-foreman](https://github.com/JrSantiaggo/graph-foreman) com PO First: execução de planos aprovados, tarefas ordenadas por dependências, revisão independente, evidências de validação e um dashboard local. O mesmo fluxo atende software, dados, automação, migrações e outras demandas.
 
 O plano define o resultado esperado; o motor controla estados e registros. O ambiente de IA executa o trabalho e dispara seus agentes.
 
@@ -32,7 +32,7 @@ npx @henri-ralmeida/prumo@latest doctor --claude --lang pt-BR
 | Kiro | `/prumo` | Steering permanente e recursos explícitos dos agentes JSON encontrados |
 | Codex | `$prumo` / seletor de skills | Bloco no arquivo global de instruções efetivamente carregado |
 
-PO First vale também fora do PRUMO. Prioriza resultado, regras, escopo, decisões e evidência; não depende de outras skills pessoais. No Claude, as instruções de programação permanecem habilitadas no estilo.
+PO First vale também fora do Prumo. Prioriza resultado, regras, escopo, decisões e evidência; não depende de outras skills pessoais. No Claude, as instruções de programação permanecem habilitadas no estilo.
 
 Abra uma nova sessão depois de instalar. `doctor` distingue arquivos instalados, configuração concluída e condições pendentes. Configurações locais, skills explicitamente desabilitadas e agentes Markdown que exigem conferência da herança são informados; o instalador não promete sobrepor políticas do ambiente. Inspeção de arquivos não comprova o comportamento de um modelo.
 
@@ -46,15 +46,15 @@ prumo update --dry-run
 prumo update
 ```
 
-Também pode usar `bunx @henri-ralmeida/prumo@latest update` ou `npx @henri-ralmeida/prumo@latest update` sem instalar a CLI globalmente. O `update` busca o instalador publicado mais recente pelo npm e atualiza PRUMO e PO First somente onde o PRUMO já está instalado. O npm precisa estar disponível; falha no download mantém as instalações intactas.
+Também pode usar `bunx @henri-ralmeida/prumo@latest update` ou `npx @henri-ralmeida/prumo@latest update` sem instalar a CLI globalmente. O `update` busca o instalador publicado mais recente pelo npm e atualiza Prumo e PO First somente onde o Prumo já está instalado. O npm precisa estar disponível; falha no download mantém as instalações intactas.
 
-O instalador registra ambientes e caminhos personalizados em `~/.local/share/prumo/installations.json`. A atualização também reconhece marcadores existentes do PRUMO nos locais padrão e nos projetos informados com `--project`. Preserva o idioma de cada instalação, salvo uso de `--lang`, e reutiliza os backups e o tratamento de conflitos da instalação. Ambientes que contêm somente graph-foreman ficam fora da atualização. Não retoma planos nem cria tentativas. O `--version` de uma CLI global mostra a versão dessa CLI; o `update` executa o instalador publicado mais recente independentemente dela.
+O instalador registra ambientes e caminhos personalizados em `~/.local/share/prumo/installations.json`. A atualização também reconhece marcadores existentes do Prumo nos locais padrão e nos projetos informados com `--project`. Preserva o idioma de cada instalação, salvo uso de `--lang`, e reutiliza os backups e o tratamento de conflitos da instalação. Ambientes que contêm somente graph-foreman ficam fora da atualização. Não retoma planos nem cria tentativas. O `--version` de uma CLI global mostra a versão dessa CLI; o `update` executa o instalador publicado mais recente independentemente dela.
 
 ## Instalação sobre graph-foreman
 
 Não é necessário migrar planos, parar agentes ou encerrar o dashboard previamente. O instalador detecta os locais padrão, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, projetos informados e ancestrais do diretório atual.
 
-- Instala PRUMO na mesma raiz de skills e mantém compatibilidade com os caminhos antigos dos scripts.
+- Instala Prumo na mesma raiz de skills e mantém compatibilidade com os caminhos antigos dos scripts.
 - Preserva os dados no lugar, incluindo `.specs/graph` dentro de projetos e o armazenamento central antigo. Instalar não executa comandos do motor nem modifica contratos, estados, tentativas, evidências ou histórico.
 - Faz backup completo das instalações e configurações afetadas antes de escrever. Dados vivos dos planos ficam fora da transação e não são revertidos junto com a instalação.
 - Aplica cada conjunto separadamente. Configuração inválida, caminho vinculado ou arquivo ocupado impede somente aquele conjunto. Não encerra processos para liberar arquivos.
@@ -63,7 +63,7 @@ Não é necessário migrar planos, parar agentes ou encerrar o dashboard previam
 O backup informa o comando de reversão:
 
 ```sh
-npx @henri-ralmeida/prumo@1.0.2 restore "<diretório-do-backup>"
+npx @henri-ralmeida/prumo@1.0.3 restore "<diretório-do-backup>"
 ```
 
 A reversão recusa sobrescrever arquivos que você editou depois. Os planos continuam no estado atual: reverter uma instalação não deve apagar trabalho em andamento. Mantenha sua rotina de backup dos dados de negócio; o instalador não captura uma imagem consistente de todos os planos ativos.
@@ -77,7 +77,12 @@ Apresente e aprove o plano no ambiente de IA. Invoque `/prumo <plano-ou-execuç�
 Para novos planos, selecione um workspace central. No PowerShell:
 
 ```powershell
-$env:PRUMO_HOME = Join-Path $HOME '.local/share/prumo'
+$prumoDefault = Join-Path $HOME '.local/share/prumo'
+$prumoLegacy = Join-Path $HOME '.local/share/graph-foreman'
+if (Test-Path -LiteralPath $prumoLegacy) { $prumoDefault = $prumoLegacy }
+if (-not $env:PRUMO_HOME) {
+  $env:PRUMO_HOME = if ($env:GRAPH_FOREMAN_HOME) { $env:GRAPH_FOREMAN_HOME } else { $prumoDefault }
+}
 $env:PRUMO_ROOT = Join-Path $env:PRUMO_HOME 'meu-workspace'
 New-Item -ItemType Directory -Force -Path $env:PRUMO_ROOT | Out-Null
 ```
@@ -85,12 +90,16 @@ New-Item -ItemType Directory -Force -Path $env:PRUMO_ROOT | Out-Null
 No macOS/Linux:
 
 ```sh
-export PRUMO_HOME="$HOME/.local/share/prumo"
+DEFAULT_PRUMO_HOME="$HOME/.local/share/prumo"
+[ ! -d "$HOME/.local/share/graph-foreman" ] || DEFAULT_PRUMO_HOME="$HOME/.local/share/graph-foreman"
+export PRUMO_HOME="${PRUMO_HOME:-${GRAPH_FOREMAN_HOME:-$DEFAULT_PRUMO_HOME}}"
 export PRUMO_ROOT="$PRUMO_HOME/meu-workspace"
 mkdir -p "$PRUMO_ROOT"
 ```
 
 Nos planos existentes, preserve o workspace original. `GRAPH_ROOT` e `GRAPH_FOREMAN_HOME` continuam aceitos; as variáveis `PRUMO_*` têm precedência quando definidas. Sem configuração explícita, o armazenamento central legado existente é reutilizado. Nos demais casos, novos planos usam `~/.local/share/prumo`.
+
+Claude Code, Kiro e Codex locais, executados pelo mesmo usuário, compartilham essa pasta. Os comandos criam as pastas ausentes. Preserve os caminhos existentes e use as mesmas configurações nos três ambientes. O acesso depende das permissões de cada ambiente; sessões na nuvem não compartilham automaticamente os arquivos locais.
 
 Os scripts ficam em `scripts/`, junto da skill. Resolva caminhos a partir dela. Consulte a [referência do motor](references/runtime.pt-BR.md) para comandos, contratos e estados.
 
@@ -122,4 +131,4 @@ npm pack
 
 Ao editar traduções: `node scripts/build-dashboard.mjs --write`. O dashboard incorpora o catálogo para funcionar em servidores antigos sem novas rotas de arquivos.
 
-PRUMO é um fork do graph-foreman de **JrSantiaggo**, com histórico e [licença MIT](LICENSE) preservados. As alterações estão documentadas no [changelog](CHANGELOG.md).
+Prumo é um fork do graph-foreman de **JrSantiaggo**, com histórico e [licença MIT](LICENSE) preservados. As alterações estão documentadas no [changelog](CHANGELOG.md).

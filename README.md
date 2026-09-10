@@ -1,8 +1,8 @@
-# PRUMO
+# Prumo
 
 **English** · [Português (Brasil)](README.pt-BR.md)
 
-PRUMO combines the [graph-foreman](https://github.com/JrSantiaggo/graph-foreman) engine with PO First: approved plans, dependency-aware tasks, independent review, validation evidence and a local dashboard. The same workflow supports software, data, automation, migrations and other domains.
+Prumo combines the [graph-foreman](https://github.com/JrSantiaggo/graph-foreman) engine with PO First: approved plans, dependency-aware tasks, independent review, validation evidence and a local dashboard. The same workflow supports software, data, automation, migrations and other domains.
 
 The plan defines the expected outcome; the engine enforces transitions and records evidence. Your AI harness performs the work and dispatches its agents.
 
@@ -32,7 +32,7 @@ npx @henri-ralmeida/prumo@latest doctor --claude --lang en
 | Kiro | `/prumo` | Always-included steering and explicit resources in discovered JSON agents |
 | Codex | `$prumo` / skill picker | Managed block in the effective global instructions file |
 
-PO First also applies outside PRUMO. It prioritizes outcomes, rules, scope, decisions and evidence without requiring other personal skills. Claude's coding instructions stay enabled in the output style.
+PO First also applies outside Prumo. It prioritizes outcomes, rules, scope, decisions and evidence without requiring other personal skills. Claude's coding instructions stay enabled in the output style.
 
 Open a new session after installation. `doctor` distinguishes installed files, completed configuration and pending activation conditions. Local overrides, explicitly disabled skills and Markdown agents needing an inheritance check are reported; installation does not override harness policies. Filesystem inspection is not proof of model behavior.
 
@@ -46,15 +46,15 @@ prumo update --dry-run
 prumo update
 ```
 
-Or use `bunx @henri-ralmeida/prumo@latest update` / `npx @henri-ralmeida/prumo@latest update` without a global CLI installation. `update` fetches the latest published installer through npm and refreshes PRUMO and PO First only where PRUMO is already installed. npm must be available; a download failure leaves installations unchanged.
+Or use `bunx @henri-ralmeida/prumo@latest update` / `npx @henri-ralmeida/prumo@latest update` without a global CLI installation. `update` fetches the latest published installer through npm and refreshes Prumo and PO First only where Prumo is already installed. npm must be available; a download failure leaves installations unchanged.
 
-The installer records installed environments and custom paths in `~/.local/share/prumo/installations.json`. Update also recognizes existing PRUMO markers in standard locations and projects supplied with `--project`. It preserves each installation's language unless `--lang` is supplied, uses the same backups and conflict handling as installation, and skips environments containing only graph-foreman. It never resumes plans or creates attempts. A global CLI's `--version` reports that CLI's version; `update` always runs the latest published installer independently of it.
+The installer records installed environments and custom paths in `~/.local/share/prumo/installations.json`. Update also recognizes existing Prumo markers in standard locations and projects supplied with `--project`. It preserves each installation's language unless `--lang` is supplied, uses the same backups and conflict handling as installation, and skips environments containing only graph-foreman. It never resumes plans or creates attempts. A global CLI's `--version` reports that CLI's version; `update` always runs the latest published installer independently of it.
 
 ## Installing over graph-foreman
 
 No manual migration, stopped agents or stopped dashboard is required in advance. The installer checks standard locations, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, supplied projects and ancestors of the current directory.
 
-- Installs PRUMO under the same skills root and preserves compatibility with old script paths.
+- Installs Prumo under the same skills root and preserves compatibility with old script paths.
 - Keeps data in its original location, including project-local `.specs/graph` and the old central store. Installation never runs engine commands or changes contracts, states, attempts, evidence or history.
 - Takes complete backups of affected installations and configuration before writing. Live plan data is outside this transaction and is never rolled back with the installation.
 - Applies independent groups separately. Invalid configuration, linked paths or busy files block only their affected group. The installer does not kill processes to release files.
@@ -63,7 +63,7 @@ No manual migration, stopped agents or stopped dashboard is required in advance.
 The backup includes a restore command:
 
 ```sh
-npx @henri-ralmeida/prumo@1.0.2 restore "<backup-directory>"
+npx @henri-ralmeida/prumo@1.0.3 restore "<backup-directory>"
 ```
 
 Restore refuses to overwrite files edited since installation. Plans keep their current state: reverting an installation must not erase ongoing work. Maintain your own business-data backups; the installer does not take a consistent snapshot of every live plan.
@@ -77,7 +77,9 @@ Present and approve the plan in your AI harness. Invoke `/prumo <plan-or-run>` o
 For new work, select a central workspace. On macOS/Linux:
 
 ```sh
-export PRUMO_HOME="$HOME/.local/share/prumo"
+DEFAULT_PRUMO_HOME="$HOME/.local/share/prumo"
+[ ! -d "$HOME/.local/share/graph-foreman" ] || DEFAULT_PRUMO_HOME="$HOME/.local/share/graph-foreman"
+export PRUMO_HOME="${PRUMO_HOME:-${GRAPH_FOREMAN_HOME:-$DEFAULT_PRUMO_HOME}}"
 export PRUMO_ROOT="$PRUMO_HOME/my-workspace"
 mkdir -p "$PRUMO_ROOT"
 ```
@@ -85,12 +87,19 @@ mkdir -p "$PRUMO_ROOT"
 On PowerShell:
 
 ```powershell
-$env:PRUMO_HOME = Join-Path $HOME '.local/share/prumo'
+$prumoDefault = Join-Path $HOME '.local/share/prumo'
+$prumoLegacy = Join-Path $HOME '.local/share/graph-foreman'
+if (Test-Path -LiteralPath $prumoLegacy) { $prumoDefault = $prumoLegacy }
+if (-not $env:PRUMO_HOME) {
+  $env:PRUMO_HOME = if ($env:GRAPH_FOREMAN_HOME) { $env:GRAPH_FOREMAN_HOME } else { $prumoDefault }
+}
 $env:PRUMO_ROOT = Join-Path $env:PRUMO_HOME 'my-workspace'
 New-Item -ItemType Directory -Force -Path $env:PRUMO_ROOT | Out-Null
 ```
 
 For existing plans, preserve their original workspace. `GRAPH_ROOT` and `GRAPH_FOREMAN_HOME` remain supported; explicitly set `PRUMO_*` variables take precedence. Without an explicit setting, an existing legacy central store is reused. Otherwise new installations use `~/.local/share/prumo`.
+
+Local harnesses running as the same user share this central store. Preserve existing overrides and the legacy store; do not choose a different store per harness. These commands create missing directories. Access still depends on each harness's permissions; cloud sessions do not automatically share local files.
 
 Scripts are under `scripts/` beside the installed skill. Resolve paths from that skill, not from the project directory. See the [engine reference](references/runtime.md) for commands, contracts and states.
 
@@ -122,4 +131,4 @@ npm pack
 
 After changing translations, run `node scripts/build-dashboard.mjs --write`. The dashboard embeds its catalog so already-running legacy servers need no new asset routes.
 
-PRUMO is a fork of graph-foreman by **JrSantiaggo**, preserving its history and [MIT license](LICENSE). PRUMO and PO First additions are described in the [changelog](CHANGELOG.md).
+Prumo is a fork of graph-foreman by **JrSantiaggo**, preserving its history and [MIT license](LICENSE). Prumo and PO First additions are described in the [changelog](CHANGELOG.md).
