@@ -1,11 +1,10 @@
 ---
-name: graph-foreman
+name: prumo
 description: Executes an approved plan as a task GRAPH — orchestrator + parallel subagents, validation before any task counts as done, live dashboard. Use for any plan big enough that the order of work matters.
 ---
 
-# /graph-foreman [plan|run]
+# /prumo [plan|run]
 
-![Live dashboard of a run: phase swimlanes, parallel executors, a task under review](https://raw.githubusercontent.com/JrSantiaggo/graph-foreman/media/dashboard.png)
 
 Runs an **already approved** plan through the graph engine bundled with this skill: a DAG of
 tasks, subagents executing the independent ones in parallel, a validation gate before anything
@@ -31,10 +30,15 @@ mechanical and fine; inventing the tasks is planning, and planning is not this s
 Arriving with only a prompt: route to the planning workflow, or draft the plan and SHOW it.
 The run starts after their yes, never before.
 
-Argument: a plan file, a run name to RESUME, or nothing (then `.specs/graph/CURRENT`). With
+Argument: a plan file, a run name to RESUME, or nothing (then
+`$PRUMO_ROOT/.specs/graph/CURRENT`). With
 neither, do not guess — use the plan this session just produced, or ask where it lives, naming
 any candidates you found. The source plan lives wherever the project keeps it; only run state
-is fixed at `.specs/graph/`.
+is fixed under the central PRUMO workspace.
+
+## Product-first behavior
+
+Apply [PO First](references/po-first.md), also configured globally by the installer. Respond in the user's language. A functional check means evidence of the requested effect, whether the work concerns data, automation, migration, software, or another domain. Use the host's native subagent tools; if independent execution and review are unavailable, report that limitation rather than inventing agent dispatch. The engine records transitions; it does not create agents. In Codex invoke this skill as `$prumo`; Claude Code and Kiro use `/prumo`.
 
 ## 0. Resolving the engine
 
@@ -42,18 +46,29 @@ The scripts live under `scripts/` in **this skill's own directory** — resolve 
 where this `SKILL.md` sits, never the workspace root, never a fixed install path:
 
 ```bash
-ENGINE="<this skill's directory>/scripts/engine.mjs"    # e.g. .claude/skills/graph-foreman/scripts/engine.mjs
+ENGINE="<this skill's directory>/scripts/engine.mjs"    # e.g. .claude/skills/prumo/scripts/engine.mjs
 SERVE="<this skill's directory>/scripts/serve.mjs"
 ```
 
-Node 18+, no npm install. State lives in `.specs/graph/` at the **project root**, discovered by
-walking up from cwd to the first `.git` or `package.json` (`GRAPH_ROOT` overrides). **`.specs/`
-must be gitignored** — run state is local scratch; `init` warns when it is not.
+Node.js 22+, no project dependencies to install. New run state **lives in a central workspace**. Existing legacy runs remain at their original paths, including project-local state. Reuse their existing GRAPH_ROOT / GRAPH_FOREMAN_HOME settings or select that same existing workspace; do not move or recreate its state. For new work, before every
+engine or dashboard command, select one central workspace:
+
+```bash
+PRUMO_HOME="${PRUMO_HOME:-${GRAPH_FOREMAN_HOME:-$HOME/.local/share/prumo}}"
+PRUMO_ROOT="$PRUMO_HOME/<workspace>"
+mkdir -p "$PRUMO_ROOT/.specs/graph/plans"
+export PRUMO_HOME PRUMO_ROOT
+```
+
+`<workspace>` groups related runs, for example `ai-memory-migration`. `PRUMO_ROOT` must be an
+existing child of `PRUMO_HOME` for new work; existing legacy workspaces are also accepted. When cwd is already
+inside a central workspace, `PRUMO_ROOT` may be omitted. Never add `.specs/` to a project's
+`.gitignore` for PRUMO.
 
 ## 1. The plan file
 
-Plans live in `.specs/graph/plans/<name>.plan.json`. Translation is mechanical; three fields
-carry judgment:
+Plans live in `$PRUMO_ROOT/.specs/graph/plans/<name>.plan.json`. Translation is mechanical;
+three fields carry judgment:
 
 - **`deps` is the entire scheduling model.** A task is ready when every dep is `done` or
   `skipped`. Anything that must not run in parallel is a dep chain — migrations serialize
@@ -62,7 +77,8 @@ carry judgment:
 - **`validation` is what must be TRUE before done**, written so a DIFFERENT agent could check
   it. "tests pass" is not that; "suite green + the 3 new cases named in the task" is. When the
   contract is executable, prefer `[{ "run": "<command>", "expect": "<what green means>" }]` so
-  the reviewer runs exactly what is written instead of interpreting prose.
+  the engine executes the approved commands and records their results. Include `kind: "functional"`
+  for behavioral tests and `kind: "static"` for lint/build/typecheck. See the gate rules below.
 - **`touches` lists the path prefixes the task writes.** `init` refuses two parallel tasks with
   overlapping paths, catching the collision while it is still a planning mistake. Optional;
   omitting it leaves the dep chain as the only guard.
@@ -70,18 +86,26 @@ carry judgment:
 A task is **isolated in space, ordered in time**.
 
 Full task contract (every field, defaults, per-task `requireReview`/`maxAttempts`) and the CLI:
-[README.md](README.md) beside this file.
+[runtime reference](references/runtime.md).
 
 ## 2. Start the run AND the dashboard
 
 ```bash
-node $ENGINE init --plan .specs/graph/plans/<name>.plan.json --run <name>-01
-node $SERVE     # http://localhost:4949 — background, read-only, safe to kill anytime
+node $ENGINE init --plan "$PRUMO_ROOT/.specs/graph/plans/<name>.plan.json" --run <name>-01
+node $SERVE --sync-plan  # http://localhost:4949 — background, safe to kill anytime
 ```
+
+`--sync-plan` watches the plan recorded by `init`. When an approved plan changes, it calls
+`engine.mjs sync-plan` through the run lock: new tasks are added, pending/failed/blocked task
+contracts are refreshed, and active/done task history is preserved. Task removal is refused.
+If a preserved task differs, sync-plan reports it; an approved validation change for active
+work needs refresh-contract, not fail/retry. Always check the persisted task before review.
+
+On Windows, use PowerShell environment assignment ($env:PRUMO_ROOT) and quoted paths instead of POSIX shell syntax. Start background helpers hidden. Keep the actual working directory in the approved validation step; do not translate or rewrite its commands.
 
 Start the server **in the background and give the dev the URL before dispatching a single
 agent** — a dashboard offered after the run is a log, not observability. It follows
-`.specs/graph/CURRENT`, which `init` just repointed at this run. A taken port usually means the
+`$PRUMO_ROOT/.specs/graph/CURRENT`, which `init` just repointed at this run. A taken port usually means the
 previous run's dashboard is still up and already serving this one.
 
 **Two runs at once** work only when neither leans on the defaults: pass `--run <name>` to every
@@ -100,7 +124,7 @@ recorded. That is the contract, and everything below serves it.
 node $ENGINE ready                              # what can start NOW, and free EXECUTOR slots
 node $ENGINE start T4 --agent ag-scenes         # dispatch up to the cap, in the SAME message
 node $ENGINE review T4 --agent rev-scenes       # executor finished → hand to a fresh reviewer
-node $ENGINE validate T4 --ok --evidence "..."  # the REVIEWER's verdict
+node $ENGINE validate T4 --ok --evidence "..." --cwd <absolute-project>  # the REVIEWER's verdict
 node $ENGINE done T4
 ```
 
@@ -143,6 +167,93 @@ Report back: what you changed, and what a reviewer needs to reproduce it.
 - **A FRESH reviewer per task.** One agent reviewing thirty accumulates exactly the context the
   graph exists to avoid, and stops reading with fresh eyes long before the end.
 
+### Domain-neutral contracts
+
+The engine manages dependencies, roles, attempts, pauses and evidence, independent of domain.
+Execution can produce code, transformed data, automation results, migrated configuration or
+other deliverables. Do not infer new scope or prescribe a framework from the task category.
+Here, functional means verifying the intended observable outcome, not necessarily a unit test:
+check migrated values and the destination consumer, resulting records, or an automation's
+completed action, as appropriate. The plan supplies the criterion and verification method.
+When there is no code diff, give the reviewer the delivered artifacts and relevant before/after state.
+An inspection exception is for deliverables whose correctness can be established by inspection;
+it must not replace observing a changed executable workflow or an operational side effect.
+The engine currently collects executable checks through shell commands. It does not itself
+drive a GUI, query a connector or certify a human observation. For such work, use an approved
+verification command when one exists; surface an unsupported verification method rather than
+inventing a passing command or treating unavailable tools as an inspection exception.
+
+### Behavioral validation and legitimate inspection
+
+Before dispatch, check that the approved plan contains executable behavioral checks for
+functional tasks. The default is `validationMode: "functional"`. At least one validation
+step must have `kind: "functional"`, a real `run` command, and an observable `expect`.
+Classify lint, syntax, build and typecheck steps as `kind: "static"`; untyped steps are static.
+An `echo` instruction, static analysis, a test that only searches source text, or a test that
+reimplements the production logic does not qualify as functional coverage. Inspect the test
+and its actual execution count; a successful process with zero relevant tests is insufficient.
+For a bug fix, demonstrate that the behavioral test detects the defect when practical.
+
+Documentation and other tasks that do not affect runtime behavior may use
+`validationMode: "inspection"` with a concrete `inspectionReason` in the approved plan.
+Review the actual diff before accepting the exception. Do not use inspection for changed
+runtime behavior, missing tools, unavailable environments, or a failing test. Those need an
+actionable rejection or a blocked task. `requireReview: false` never waives functional checks.
+
+The reviewer must inspect the full behavioral path and the relevance of the tests, not only
+the changed lines. Browser/API workflows need checks that exercise that workflow at the
+appropriate layer; a pure helper test cannot prove a user journey. Keep tests scoped to the
+task and add a final integration check when separate tasks must work together.
+
+Call `validate --ok --evidence "<observations against each criterion>" --cwd <absolute-project>`
+after inspecting the diff and the approved commands. This runs the plan's commands and records
+their output and exit codes; inspect those receipts before `done`. Avoid logging credentials.
+Do not mutate the reviewed code while checks run; rerun validation if it changes afterward.
+The engine checks execution, not the semantic truth of `expect` or the declared `kind`.
+Never label lint as functional to satisfy the gate. Shell commands execute with the caller's
+permissions; the approved plan is not permission for unrelated or destructive side effects.
+
+### Adapting an existing run without redoing delivered work
+
+A skill upgrade does not add business scope, enlarge a data window, or require a new executor.
+Keep validation proportional to the approved task. A reviewer can run missing verification
+on delivered code in the current attempt. Existing artifacts help the review; an executor's
+report alone is still not approval.
+
+After adapting the approved plan, use:
+
+```bash
+node $ENGINE refresh-contract T4 --plan <approved-plan.json> --run <run-name>
+```
+
+This copies only validation, validationMode and inspectionReason to the task, preserving its
+state, executor, reviewer, attempt history and block reason. It invalidates older validation
+receipts, so the reviewer must validate the current contract. It does not dispatch an agent
+or unblock a paused task. Done/skipped history is immutable. Never use fail/retry solely to
+refresh a contract; reserve that path for an actual rejected implementation.
+
+Before executing a check, make its environment and accepted outcomes explicit: use step.env
+for environment variables (Unix NAME=value prefixes do not work in Windows cmd.exe),
+step.expectedExitCodes for approved nonzero outcomes (default [0]), and step.timeoutMs for
+long checks (default 600000; 0 explicitly disables the deadline). Never widen accepted codes
+or increase a data window merely to satisfy the gate. See references/runtime.md for execution options.
+
+### Resuming paused work
+
+`unblock <task>` restores the recorded phase (pending, running, reviewing or failed), preserving
+the attempt and previous work. For delivered work paused during execution or review, use
+`unblock <task> --reviewer <independent-agent>` to hand it directly to review in the same attempt.
+This does not acquire an executor slot. It does recheck dependencies, total capacity and the
+reviewer's availability; ordinary execution resume also checks executor capacity. A refusal
+leaves the task blocked. Pending/failed tasks cannot use this handoff to bypass start/retry.
+
+These commands record state only. Resume the appropriate actual agent or dispatch the reviewer;
+do not start a new executor for work already delivered. Respect the user's pause until resumption
+is authorized. For an approved contract change while paused, refresh-contract comes before
+unblock. Both a pending in-flight validation and a changed contract need fresh verification;
+completed evidence and attempt history remain recorded. Explain an earlier orchestration mistake
+with a note; do not rewrite it as an implementation failure or erase historical attempts.
+
 ### What the reviewer gets, and what it decides
 
 The task's **validation contract** and the **diff** — and nothing about how the work went. The
@@ -152,9 +263,13 @@ answers `--ok` or `--failed`.
 
 ```text
 You are the REVIEWER for <T4>: <title>. You did NOT write this code.
-Judge this diff: <the paths under `touches`>
+Judge these changes: <diff, delivered artifacts or before/after state under `touches`>
 Against this contract, clause by clause: <validation>
-Run the gate YOURSELF: <Project overrides>. Reproduce it — never accept a claim.
+Read the project's agent rules and the relevant implementation, inputs, outputs and checks.
+Check that the contract proves the changed behavior and that any inspection exception fits the diff.
+Run the gate YOURSELF through engine validate: <Project overrides, engine path, absolute project cwd>.
+Check the recorded output, actual relevant test count, and results against every criterion.
+Never accept lint/build/typecheck, echo instructions, or zero relevant tests as functional proof.
 Answer:
   verdict:  ok | failed
   evidence: what you RAN and what it ANSWERED — commands and counts, not impressions.
@@ -164,7 +279,8 @@ Answer:
 What is absent from that message is the point: no executor report, no attempt count, no "the
 suite was already green". A fresh agent, a clean context, and the contract.
 
-- **`--evidence` is a claim the reviewer is making**: what was run, and what it answered.
+- **`--evidence` records the reviewer's behavioral observations** and must not be empty.
+  Command results are collected by the engine; the reviewer still checks their relevance.
   `done` refuses without a passing review validation for the CURRENT attempt — the one rule
   that stops "it looks right" from becoming state.
 - **Rejected** → `fail T4 --reason "review: <what is missing>"` then `retry T4`. The reason

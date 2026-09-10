@@ -1,2 +1,7 @@
 .specs/
 /dashboard.png
+
+node_modules/
+*.tgz
+.test-output/
+.npm-cache/

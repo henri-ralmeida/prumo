@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Graph Engine</title>
+<title>PRUMO</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='4' cy='8' r='3' fill='%2334c268'/%3E%3Ccircle cx='12' cy='8' r='3' fill='%23fcb400'/%3E%3C/svg%3E" />
 <style>
@@ -16,7 +16,10 @@
   body { background: var(--bg); color: var(--text); font: 13px/1.45 ui-monospace, "Cascadia Code", Menlo, monospace; overflow: hidden; }
   header { display: flex; align-items: center; padding: 10px 18px; border-bottom: 1px solid var(--line); height: 46px; }
   header h1 { font-size: 14px; font-weight: 600; margin-right: 14px; }
-  header .run { color: var(--dim); margin-right: auto; font-size: 12px; }
+  header .run { color: var(--dim); color-scheme: dark; margin-right: auto; max-width: 360px; background: transparent;
+                border: 1px solid transparent; border-radius: 5px; padding: 3px 22px 3px 6px;
+                font: inherit; font-size: 12px; cursor: pointer; }
+  header .run:hover, header .run:focus { color: var(--text); border-color: var(--line); outline: none; }
   .counts span { margin-left: 12px; color: var(--dim); font-size: 12px; }
   .counts b { color: var(--text); }
   main { display: grid; grid-template-columns: 1fr 330px; height: calc(100vh - 46px - 44px); }
@@ -279,19 +282,20 @@
 </head>
 <body>
 <header>
-  <h1>graph</h1><span class="run" id="runName">—</span>
-  <button class="lbtn" id="layoutBtn" onclick="toggleLayout()">layout: phase</button>
-  <button class="lbtn" onclick="fitView()" title="fit to screen (0)">fit</button>
-  <button class="lbtn" id="resBtn" onclick="toggleResults()" title="run metrics (r)">results</button>
+  <h1>PRUMO</h1><select class="run" id="runName" aria-label="Select graph run" data-i18n-aria="Select graph run" onchange="selectRun(this.value)"></select>
+  <select class="run" id="language" aria-label="Language" data-i18n-aria="Language" onchange="setLanguage(this.value)"><option value="en">English</option><option value="pt-BR">Português (BR)</option></select>
+  <button class="lbtn" id="layoutBtn" onclick="toggleLayout()"><span data-i18n="layout: phase">layout: phase</span></button>
+  <button class="lbtn" onclick="fitView()" title="fit to screen (0)" data-i18n-title="fit to screen (0)"><span data-i18n="fit">fit</span></button>
+  <button class="lbtn" id="resBtn" onclick="toggleResults()" title="run metrics (r)" data-i18n-title="run metrics (r)"><span data-i18n="results">results</span></button>
   <span id="zoomLvl">100%</span>
-  <span class="orch" id="orch"><span class="hb"></span>orchestrator</span>
+  <span class="orch" id="orch"><span class="hb"></span><span data-i18n="orchestrator">orchestrator</span></span>
   <div class="counts" id="counts"></div>
 </header>
 <main>
   <div id="viewport"><div id="canvas">
     <div id="lanes"></div>
-    <div id="orchNode"><span class="obeat"></span><span class="oh">orchestrator</span><span class="os" id="orchSub">idle</span></div>
-    <div id="revNode"><span class="obeat"></span><span class="oh">reviewer</span><span class="os" id="revSub">idle</span></div>
+    <div id="orchNode"><span class="obeat"></span><span class="oh"><span data-i18n="orchestrator">orchestrator</span></span><span class="os" id="orchSub"><span data-i18n="idle">idle</span></span></div>
+    <div id="revNode"><span class="obeat"></span><span class="oh"><span data-i18n="reviewer">reviewer</span></span><span class="os" id="revSub"><span data-i18n="idle">idle</span></span></div>
     <svg id="edges">
       <defs id="edgeDefs"></defs>
       <g id="edgePaths"></g>
@@ -299,35 +303,83 @@
     <div id="nodes"></div>
   </div></div>
   <aside>
-    <h3>Legend</h3>
+    <h3><span data-i18n="Legend">Legend</span></h3>
     <div class="legend">
-      <span><i style="background:var(--done)"></i>done</span>
-      <span><i style="background:var(--running)"></i>running</span>
-      <span><i style="background:var(--review)"></i>in review</span>
-      <span><i style="background:var(--ready)"></i>ready</span>
-      <span><i style="background:var(--waiting)"></i>waiting</span>
-      <span><i style="background:var(--failed)"></i>failed</span>
-      <span><i style="background:var(--blocked)"></i>blocked</span>
-      <span><i class="l-edge"></i>unlocks next</span>
-      <span><i style="background:var(--blocked)"></i>dep crosses back a phase</span>
-      <span><i style="background:var(--ready)"></i>✓ = validated, awaiting done</span>
+      <span><i style="background:var(--done)"></i><span data-i18n="done">done</span></span>
+      <span><i style="background:var(--running)"></i><span data-i18n="running">running</span></span>
+      <span><i style="background:var(--review)"></i><span data-i18n="in review">in review</span></span>
+      <span><i style="background:var(--ready)"></i><span data-i18n="ready">ready</span></span>
+      <span><i style="background:var(--waiting)"></i><span data-i18n="waiting">waiting</span></span>
+      <span><i style="background:var(--failed)"></i><span data-i18n="failed">failed</span></span>
+      <span><i style="background:var(--blocked)"></i><span data-i18n="blocked">blocked</span></span>
+      <span><i class="l-edge"></i><span data-i18n="unlocks next">unlocks next</span></span>
+      <span><i style="background:var(--blocked)"></i><span data-i18n="dep crosses back a phase">dep crosses back a phase</span></span>
+      <span><i style="background:var(--ready)"></i><span data-i18n="✓ = validated, awaiting done">✓ = validated, awaiting done</span></span>
     </div>
-    <h3 id="parTitle">Running in parallel</h3>
-    <div class="par" id="parallel"><span class="empty">nothing running</span></div>
-    <h3>Failures &amp; retries</h3>
-    <div id="failures"><span class="empty">none</span></div>
-    <h3>Event log</h3>
+    <h3 id="parTitle"><span data-i18n="Running in parallel">Running in parallel</span></h3>
+    <div class="par" id="parallel"><span class="empty"><span data-i18n="nothing running">nothing running</span></span></div>
+    <h3><span data-i18n="Failures &amp; retries">Failures &amp; retries</span></h3>
+    <div id="failures"><span class="empty"><span data-i18n="none">none</span></span></div>
+    <h3><span data-i18n="Event log">Event log</span></h3>
     <div id="events"></div>
   </aside>
 </main>
 <footer>
-  <span class="lbl">graph</span>
+  <span class="lbl">PRUMO</span>
   <div id="bar"><div class="seg-done"></div><div class="seg-run"></div><div class="seg-fail"></div></div>
   <span class="n" id="doneCount"></span>
 </footer>
 <div id="results"></div>
 <div id="pop"><span class="close" onclick="closePop()">✕</span><div id="popBody"></div></div>
 <script>
+/*PRUMO_I18N_START*/
+const PRUMO_MESSAGES = {"Choose exactly one of --claude, --kiro or --codex":"Escolha exatamente um: --claude, --kiro ou --codex","Language must be en or pt-BR":"O idioma deve ser en ou pt-BR","PRUMO requires Node.js 22 or newer":"PRUMO requer Node.js 22 ou superior","Changes / {0}":"Alterações / {0}","write":"gravar","remove":"remover","unchanged":"sem alterações","installed":"instalado","configured":"configurado","preview":"prévia","conflict":"conflito","pending activation":"ativação pendente","yes":"sim","no":"não","Existing data stays in place: {0}":"Os dados existentes permanecem no lugar: {0}","Backup: {0}":"Backup: {0}","Dry run: no files changed":"Prévia: nenhum arquivo alterado","Open a new session to load PRUMO and PO First":"Abra uma nova sessão para carregar PRUMO e PO First","Restored {0} files; run data was not changed":"Restaurados {0} arquivos; os dados das execuções não foram alterados","Unknown command: {0}":"Comando desconhecido: {0}","Restore needs a backup directory":"A restauração requer um diretório de backup","Linked path requires an explicit installation at its real location: {0}":"O caminho vinculado exige instalação explícita no local real: {0}","Linked file cannot be replaced automatically: {0}":"O arquivo vinculado não pode ser substituído automaticamente: {0}","Malformed PO First block; repair its markers before installing":"Bloco PO First inválido; corrija os marcadores antes de instalar","Expected a settings object: {0}":"Esperado um objeto de configurações: {0}","Expected a resources array: {0}":"Esperada uma lista resources: {0}","Local outputStyle overrides PO First: {0}":"O outputStyle local substitui PO First: {0}","Unreadable local settings: {0}":"Configurações locais ilegíveis: {0}","Skill explicitly disabled; activation needs a settings change: {0}":"Skill desabilitada explicitamente; a ativação requer ajuste na configuração: {0}","Verify default resource inheritance for this Markdown agent: {0}":"Verifique a herança dos recursos padrão deste agente Markdown: {0}","File changed after installation; manual recovery required: {0}":"O arquivo mudou após a instalação; recuperação manual necessária: {0}","File changed during installation: {0}":"O arquivo mudou durante a instalação: {0}","Integrity check failed: {0}":"Falha na verificação de integridade: {0}","Choose a PRUMO backup inside your home directory":"Escolha um backup PRUMO dentro do seu diretório de usuário","Invalid PRUMO backup":"Backup PRUMO inválido","Backup target is outside the configured locations: {0}":"O destino do backup está fora dos locais configurados: {0}","File changed since this backup; restore manually: {0}":"O arquivo mudou desde este backup; restaure manualmente: {0}","Invalid backup file path":"Caminho de arquivo do backup inválido","Backup integrity check failed: {0}":"Falha de integridade no backup: {0}","PRUMO_ROOT points to \"{0}\", which does not exist":"PRUMO_ROOT aponta para \"{0}\", que não existe","PRUMO_ROOT must be a central workspace inside \"{0}\" or an existing legacy workspace":"PRUMO_ROOT deve ser um workspace central dentro de \"{0}\" ou um workspace legado existente","Select a workspace inside \"{0}\" with PRUMO_ROOT, or enter an existing legacy workspace":"Selecione um workspace dentro de \"{0}\" com PRUMO_ROOT ou entre em um workspace legado existente","no run selected — pass --run <name> or init one":"nenhuma execução selecionada — informe --run <name> ou inicialize uma","invalid run name \"{0}\" — letters, digits, \".\", \"_\" and \"-\" only (no leading dot, no path separators)":"nome de execução inválido \"{0}\" — use letras, números, \".\", \"_\" e \"-\" (sem ponto inicial ou separadores de caminho)","run \"{0}\" has no state.json":"a execução \"{0}\" não tem state.json","run \"{0}\" is locked by another command (waited {1}ms) — retry":"a execução \"{0}\" está bloqueada por outro comando (espera de {1}ms) — tente novamente","unknown task \"{0}\"":"tarefa desconhecida \"{0}\"","plan has no tasks":"o plano não contém tarefas","every task needs id and title":"toda tarefa precisa de id e title","duplicate task id {0}":"id de tarefa duplicado: {0}","task {0} depends on unknown task {1}":"a tarefa {0} depende da tarefa desconhecida {1}","plan has a dependency cycle: {0}":"o plano contém um ciclo de dependências: {0}","{0} and {1} can run in parallel but both touch \"{2}\" — add a dep between them (or --allow-overlap)":"{0} e {1} podem executar em paralelo, mas alteram \"{2}\" — adicione uma dependência entre elas (ou --allow-overlap)","active work needs a recorded agent":"trabalho ativo exige um agente registrado","{0} still waiting on: {1}":"{0} ainda depende de: {1}","{0} executors already running (max {1})":"{0} executores já estão em execução (máximo {1})","{0} agents busy (cap {1})":"{0} agentes ocupados (limite {1})","agent \"{0}\" is already on {1} — one agent per task":"o agente \"{0}\" já está em {1} — um agente por tarefa","agent \"{0}\" is already on {1} — one agent per task (or --force)":"o agente \"{0}\" já está em {1} — um agente por tarefa (ou --force)","init needs --plan <plan.json>":"init requer --plan <plan.json>","init needs --run <name>":"init requer --run <name>","run \"{0}\" already exists (use --force to overwrite)":"a execução \"{0}\" já existe (use --force para sobrescrever)","run \"{0}\" initialised: {1} tasks, {2} executors + 1 review slot (cap {3}){4}":"execução \"{0}\" inicializada: {1} tarefas, {2} executores + 1 vaga de revisão (limite {3}){4}","sync-plan needs --plan <plan.json> once":"sync-plan requer --plan <plan.json> na primeira chamada","sync-plan is additive: plan removed {0}":"sync-plan é aditivo: o plano removeu {0}","no state changes; plan differs for preserved tasks: {0}. Use refresh-contract for an approved validation change; do not fail/retry completed work to refresh a contract.":"nenhum estado alterado; o plano difere nas tarefas preservadas: {0}. Use refresh-contract para uma alteração aprovada na validação; não use fail/retry em trabalho entregue para atualizar o contrato.","run \"{0}\" already matches plan ({1} tasks)":"a execução \"{0}\" já corresponde ao plano ({1} tarefas)","run \"{0}\" synced: +{1}, updated {2}, preserved {3}, total {4}":"execução \"{0}\" sincronizada: +{1}, atualizadas {2}, preservadas {3}, total {4}","(no runs)":"(nenhuma execução)","{0}  {1}/{2} done  (updated {3})":"{0}  {1}/{2} concluídas  (atualização {3})","run: {0}  plan: {1}  {2}/{3} done":"execução: {0}  plano: {1}  {2}/{3} concluídas","states: {0}":"estados: {0}","\n(no phase)":"\n(sem fase)","\n[prumo] {0}/{1} executors, {2} in review (cap {3}) — dispatch at most {4} now":"\n[prumo] {0}/{1} executores, {2} em revisão (limite {3}) — dispare no máximo {4} agora","awaiting review: {0}":"aguardando revisão: {0}","start needs --agent <name>":"start requer --agent <name>","review needs --agent <name>":"review requer --agent <name>","{0} is {1}, not pending":"{0} está em {1}, e não em pending","{0} is {1}, not running":"{0} está em {1}, e não em running","{0} is {1}, not failed":"{0} está em {1}, e não em failed","{0} is {1}, not blocked":"{0} está em {1}, e não em blocked","{0} is {1}, not running or reviewing":"{0} está em {1}, e não em running ou reviewing","{0} is not running or reviewing":"{0} não está em running ou reviewing","{0} running (agent {1}, attempt {2})":"{0} em execução (agente {1}, tentativa {2})","\"{0}\" wrote {1} — a reviewer must be a different agent (or --force)":"\"{0}\" implementou {1} — o revisor deve ser outro agente (ou --force)","{0} in review (reviewer {1})":"{0} em revisão (revisor {1})","completed task contracts are immutable; create an explicit follow-up task":"contratos de tarefas concluídas são imutáveis; crie uma tarefa posterior explícita","refresh-contract needs --plan <approved-plan.json>":"refresh-contract requer --plan <approved-plan.json>","approved plan must contain exactly one task {0}":"o plano aprovado deve conter exatamente uma tarefa {0}","{0} validation contract already matches; state and attempt unchanged":"o contrato de validação de {0} já corresponde; estado e tentativa preservados","{0} contract refreshed; state {1}, attempt {2} preserved; previous validation receipts are stale":"contrato de {0} atualizado; estado {1} e tentativa {2} preservados; recibos anteriores de validação estão desatualizados","pass --ok or --failed":"informe --ok ou --failed","validation evidence must not be empty":"a evidência de validação não pode estar vazia","passing validation requires an independent reviewer":"a aprovação da validação exige um revisor independente","passing validation requires the current independent reviewer":"a aprovação da validação exige o revisor independente atual","task changed during validation; result discarded — validate the current attempt again":"a tarefa mudou durante a validação; resultado descartado — valide novamente a tentativa atual","{0} validation recorded by {1}: {2}":"validação de {0} registrada por {1}: {2}","{0} has no passing validation for the current attempt — validate first":"{0} não tem validação aprovada na tentativa atual — valide primeiro","{0} was validated by the {1}, not a reviewer — run `review {2} --agent <name>` first":"{0} foi validada por {1}, e não por um revisor — execute `review {2} --agent <name>` primeiro","{0} done — unlocked: {1}":"{0} concluída — liberadas: {1}","{0} done":"{0} concluída","{0} failed (attempt {1}): {2}":"{0} falhou (tentativa {1}): {2}","{0} already has {1} attempts (cap {2}) — escalate instead, or --force":"{0} já tem {1} tentativas (limite {2}) — escale a decisão ou use --force","{0} back to pending (attempt {1} when started)":"{0} voltou a pending (tentativa {1} ao iniciar)","completed tasks cannot be paused":"tarefas concluídas não podem ser pausadas","{0} blocked: {1}":"{0} bloqueada: {1}","cannot restore stateBeforeBlock; inspect the recorded history before repairing this task":"não foi possível restaurar stateBeforeBlock; confira o histórico registrado antes de reparar esta tarefa","direct review requires a paused active attempt; pending/failed tasks cannot bypass start/retry":"revisão direta exige uma tentativa ativa pausada; tarefas pending/failed não podem pular start/retry","cannot resume without an open attempt and its original executor":"não é possível retomar sem uma tentativa aberta e seu executor original","{0} unblocked to {1}; attempt {2} preserved; no agent dispatched":"{0} desbloqueada para {1}; tentativa {2} preservada; nenhum agente disparado","{0} already done":"{0} já está concluída","{0} skipped: {1}":"{0} pulada: {1}","usage: engine.mjs <{0}> — see file header for details":"uso: engine.mjs <{0}> — consulte o cabeçalho do arquivo","validationMode must be functional or inspection":"validationMode deve ser functional ou inspection","inspection requires inspectionReason explaining why runtime behavior is unaffected":"inspection exige inspectionReason explicando por que o comportamento de execução não foi afetado","validation contract must not be empty":"o contrato de validação não pode estar vazio","each validation step needs nonempty run and expect":"cada passo de validação exige run e expect preenchidos","step kind must be static or functional":"kind do passo deve ser static ou functional","expectedExitCodes must be a nonempty array of integer process exit codes from 0 to 255":"expectedExitCodes deve ser uma lista não vazia de códigos de saída inteiros entre 0 e 255","env must map environment variable names to string values":"env deve mapear nomes de variáveis de ambiente para valores de texto","shell must be an executable name or path":"shell deve ser o nome ou caminho de um executável","timeoutMs must be an integer from 0 to 2147483647; 0 explicitly disables the deadline":"timeoutMs deve ser um inteiro de 0 a 2147483647; 0 desabilita explicitamente o prazo","Unix environment assignment does not run in cmd.exe; move NAME=value into step.env or declare step.shell explicitly":"atribuição de ambiente Unix não executa em cmd.exe; mova NAME=value para step.env ou declare step.shell explicitamente","functional task requires an executable functional check; lint, build, typecheck or prose alone cannot approve it":"tarefa funcional exige verificação funcional executável; lint, build, typecheck ou texto isolados não podem aprová-la","executable validation needs an absolute --cwd or step.cwd":"validação executável exige --cwd ou step.cwd absoluto","validation cwd is not a directory: {0}":"cwd da validação não é um diretório: {0}","running check {0}/{1}; timeout {2}; expected exit {3}":"executando verificação {0}/{1}; prazo {2}; saída esperada {3}","check {0}/{1} ({2}): exit {3}":"verificação {0}/{1} ({2}): saída {3}","validation lacks an execution receipt for this contract — validate again":"a validação não tem recibo de execução deste contrato — valide novamente","contract was refreshed after validation — validate the current contract again":"o contrato mudou após a validação — valide novamente o contrato atual","not all validation commands completed":"nem todos os comandos de validação foram concluídos","validation check {0} did not pass — functional failures cannot be replaced by lint":"a verificação {0} não passou — falhas funcionais não podem ser substituídas por lint","auto-sync failed: {0}":"falha na sincronização automática: {0}","dashboard on http://localhost:{0} (run: {1}, auto-sync: {2})":"dashboard em http://localhost:{0} (execução: {1}, sincronização automática: {2})","port {0} is already in use — an earlier dashboard is likely still serving http://localhost:{1} (it follows CURRENT). To run a SECOND one: --port <other>{2}":"a porta {0} já está em uso — um dashboard anterior pode estar atendendo em http://localhost:{1} (acompanha CURRENT). Para abrir outro: --port <other>{2}","no run":"nenhuma execução","run \"{0}\" not found":"execução \"{0}\" não encontrada","not found":"não encontrado","Language":"Idioma","Select graph run":"Selecionar execução","layout: phase":"layout: fase","layout: depth":"layout: profundidade","fit to screen (0)":"ajustar à tela (0)","run metrics (r)":"métricas da execução (r)","fit":"ajustar","results":"resultados","orchestrator":"orquestrador","reviewer":"revisor","idle":"inativo","Legend":"Legenda","done":"concluído","running":"em execução","in review":"em revisão","reviewing":"em revisão","ready":"pronto","waiting":"aguardando","failed":"falhou","blocked":"bloqueado","pending":"pendente","skipped":"pulado","unlocks next":"libera a próxima tarefa","dep crosses back a phase":"dependência retorna a uma fase","✓ = validated, awaiting done":"✓ = validado, aguardando conclusão","Running in parallel":"Executando em paralelo","nothing running":"nenhuma tarefa em execução","Failures & retries":"Falhas e novas tentativas","none":"nenhum","Event log":"Histórico de eventos","✋ waiting on you":"✋ aguardando sua decisão","✗ rejected":"✗ reprovado","✓ validated":"✓ validado","✗ rework":"✗ retrabalho","dispatching {0}/{1}":"coordenando {0}/{1}","judging {0}":"revisando {0}","complete":"concluído","orch":"orquestrador","orchestrator idle":"orquestrador inativo","Working":"Executando","review":"revisão","attempt(s)":"tentativa(s)","Phase":"Fase","Depends on":"Depende de","Unlocks":"Libera","Validation contract":"Contrato de validação","Blocked":"Bloqueado","Skipped":"Pulado","Attempts":"Tentativas","Validations":"Validações","Notes":"Notas","FAILED":"REPROVADO","click the task to pin · moves away, closes":"clique na tarefa para fixar · afastar o cursor fecha","← graph":"← grafo","← back to the graph":"← voltar ao grafo","Wall clock":"Tempo decorrido","Agent time":"Tempo dos agentes","Parallel gain":"Ganho com paralelismo","Critical path":"Caminho crítico","Review share":"Parcela de revisão","Retries":"Novas tentativas","so far":"até agora","init → last task":"início → última tarefa","sum of recorded agent intervals":"soma dos intervalos registrados dos agentes","{0} executors + review headroom":"{0} executores + capacidade de revisão","{0}% of wall clock":"{0}% do tempo decorrido","{0} verdicts · {1} rejected":"{0} pareceres · {1} reprovados","blocked {0}":"bloqueado por {0}","no human blocks":"sem bloqueios humanos","Agent time: building vs verifying":"Tempo dos agentes: executar e verificar","exec {0}":"execução {0}","review {0}":"revisão {0}","Per task":"Por tarefa","Task":"Tarefa","Exec":"Execução","Review":"Revisão","build vs verify":"executar e verificar","Queued":"Na fila","Att.":"Tent.","Verdicts":"Pareceres","gate only":"somente validação","What the numbers support":"O que os números mostram","Not enough finished work to say anything yet.":"Ainda não há trabalho concluído suficiente para analisar.","The dependency chain limits parallel progress.":"A cadeia de dependências limita o progresso paralelo.","Critical path: {0}; elapsed: {1}; share: {2}%. Chain: {3}.":"Caminho crítico: {0}; tempo decorrido: {1}; parcela: {2}%. Cadeia: {3}.","Inspect time outside the critical path.":"Confira o tempo fora do caminho crítico.","Elapsed: {0}; critical path: {1}; difference: {2}. Check queues, blocks and retries before changing capacity.":"Tempo decorrido: {0}; caminho crítico: {1}; diferença: {2}. Confira filas, bloqueios e tentativas antes de mudar a capacidade.","Review durations are similar.":"Os tempos de revisão são semelhantes.","Review durations vary across tasks.":"Os tempos de revisão variam entre as tarefas.","Mean review: {0}; variation: {1}%. Timing alone does not establish coverage or a cause.":"Revisão média: {0}; variação: {1}%. O tempo, isoladamente, não comprova cobertura ou causa.","Review outcomes":"Resultados das revisões","{0} rejections in {1} verdicts. Review used {2}% of agent time. Inspect the evidence before changing the review policy.":"{0} reprovações em {1} pareceres. A revisão usou {2}% do tempo dos agentes. Confira as evidências antes de mudar a política de revisão.","Derived from attempt timestamps and events. Tokens belong to the harness and are not measured by this engine.":"Derivado dos horários das tentativas e eventos. Tokens pertencem ao ambiente de agentes e não são medidos por este motor.","Run still active; figures may change.":"Execução ainda ativa; os números podem mudar.","start":"início","validate":"validação","fail":"falha","retry":"nova tentativa","block":"bloqueio","unblock":"desbloqueio","skip":"pular","note":"nota","init":"inicialização","plan_sync":"sincronização do plano","contract_refresh":"atualização do contrato","contract_refreshed":"contrato atualizado","validation_started":"validação iniciada","block_updated":"bloqueio atualizado"}
+function createTranslator(dictionary, lang) {
+  const templates = Object.entries(dictionary).filter(([key]) => /\{\d+\}/.test(key)).map(([key, translated]) => {
+    const slots = []
+    const pattern = key.split(/(\{\d+\})/).map(part => {
+      if (/^\{\d+\}$/.test(part)) { slots.push(Number(part.slice(1, -1))); return '(.*?)' }
+      return part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    }).join('')
+    return { pattern: new RegExp(`^${pattern}$`, 's'), slots, translated }
+  })
+  function translate(value, ...parameters) {
+    if (typeof value !== 'string') return value
+    const fill = (text, values) => text.replace(/\{(\d+)\}/g, (all, index) => values[index] === undefined ? all : String(values[index]))
+    if (parameters.length) return fill(lang === 'pt-BR' ? dictionary[value] ?? value : value, parameters)
+    if (lang !== 'pt-BR') return value
+    if (Object.hasOwn(dictionary, value)) return dictionary[value]
+    for (const { pattern, slots, translated } of templates) {
+      const match = pattern.exec(value)
+      if (match) return translated.replace(/\{(\d+)\}/g, (all, index) => match[slots.indexOf(Number(index)) + 1] ?? all)
+    }
+    const prefix = /^(\s*\[prumo\] )(ERROR: )?([\s\S]*)$/.exec(value)
+    if (prefix) return prefix[1] + (prefix[2] ? 'ERRO: ' : '') + translate(prefix[3])
+    return value
+  }
+  return translate
+}
+/*PRUMO_I18N_END*/
+const defaultLanguage = /*PRUMO_LANGUAGE*/"en"
+let UI_LANG = (() => {
+  try { return localStorage.getItem('prumoLanguage') ?? (/^pt/i.test(navigator.language) ? 'pt-BR' : defaultLanguage) }
+  catch { return /^pt/i.test(navigator.language) ? 'pt-BR' : defaultLanguage }
+})()
+let tr = createTranslator(PRUMO_MESSAGES, UI_LANG)
+function localize() {
+  document.documentElement.lang = UI_LANG
+  document.querySelectorAll('[data-i18n]').forEach(node => { node.textContent = tr(node.dataset.i18n) })
+  document.querySelectorAll('[data-i18n-aria]').forEach(node => { node.setAttribute('aria-label', tr(node.dataset.i18nAria)) })
+  document.querySelectorAll('[data-i18n-title]').forEach(node => { node.title = tr(node.dataset.i18nTitle) })
+  document.querySelector('#language').value = UI_LANG
+}
+function setLanguage(value) {
+  UI_LANG = value === 'pt-BR' ? 'pt-BR' : 'en'
+  try { localStorage.setItem('prumoLanguage', UI_LANG) } catch { /* private browsing */ }
+  tr = createTranslator(PRUMO_MESSAGES, UI_LANG)
+  localize()
+  if (STATE) { render(STATE, EVENTS); if (POP) fillPop(POP.id); if (RESULTS_OPEN) renderResults(STATE) }
+}
 const $ = (s) => document.querySelector(s)
 let STATE = null
 let FOCUS = null        // node id under the mouse (transient lineage highlight)
@@ -349,6 +401,46 @@ const VIEW = { x: 0, y: 0, k: 1 }   // the whiteboard transform, survives every 
 let fitted = false                  // auto-fit once, on the first paint
 let LAST_POS = null                 // last computed positions, for centring on a task
 let suppressClick = false           // a drag must not open the popover it ended on
+const SEARCH = new URLSearchParams(location.search)
+let SELECTED_ROOT = SEARCH.get('root')
+let SELECTED_RUN = SEARCH.get('run')
+
+function apiUrl(path) {
+  const url = new URL(path, location.origin)
+  if (SELECTED_ROOT) url.searchParams.set('root', SELECTED_ROOT)
+  if (SELECTED_RUN) url.searchParams.set('run', SELECTED_RUN)
+  return url
+}
+
+function updateRunSelect({ currentRoot, current, runs = [] }) {
+  const select = $('#runName')
+  const signature = runs.map(({ root, run, plan }) => `${root}\0${run}\0${plan}`).join('\0')
+  if (select.dataset.signature !== signature) {
+    /* A run named by convention is "<plan>-NN", so appending the plan repeats it —
+     * show the plan ONLY when it adds information the run name does not carry. */
+    select.replaceChildren(...runs.map(({ root, run, plan }) =>
+      new Option(plan && !run.startsWith(plan) ? `${run} - ${plan}` : run, `${root}/${run}`)))
+    select.dataset.signature = signature
+  }
+  select.value = SELECTED_ROOT && SELECTED_RUN
+    ? `${SELECTED_ROOT}/${SELECTED_RUN}`
+    : currentRoot && current ? `${currentRoot}/${current}` : ''
+}
+
+function selectRun(value) {
+  const [root, run] = value.split('/', 2)
+  if (!root || !run || (root === SELECTED_ROOT && run === SELECTED_RUN)) return
+  SELECTED_ROOT = root
+  SELECTED_RUN = run
+  const url = new URL(location.href)
+  url.searchParams.set('root', root)
+  url.searchParams.set('run', run)
+  history.replaceState(null, '', url)
+  fitted = false
+  FULL_EVENTS = []
+  closePop()
+  tick()
+}
 
 /** The transform lives on ONE container: no re-layout, no re-render, and the SVG edges
  *  stay vector-crisp at any zoom. It is reapplied after every tick so the 1.5s refresh
@@ -392,7 +484,10 @@ const ST_COLOR = { done: 'var(--done)', running: 'var(--running)', reviewing: 'v
 
 async function tick() {
   try {
-    const [sRes, eRes] = await Promise.all([fetch('/api/state'), fetch('/api/events?limit=120')])
+    const [rRes, sRes, eRes] = await Promise.all([
+      fetch('/api/runs'), fetch(apiUrl('/api/state')), fetch(apiUrl('/api/events?limit=120')),
+    ])
+    if (rRes.ok) updateRunSelect(await rRes.json())
     if (!sRes.ok) return
     STATE = await sRes.json()
     EVENTS = (await eRes.json()).events ?? []
@@ -400,6 +495,7 @@ async function tick() {
     if (POP) { fillPop(POP.id); positionPop() }
     if (RESULTS_OPEN) loadResults()   // an open results tab tracks a live run
   } catch { /* server gone — keep last paint */ }
+  finally { setTimeout(tick, 1500) } // schedule after completion; never pile up slow requests
 }
 
 function eff(id) { return STATE.derived[id]?.effective ?? STATE.tasks[id].state }
@@ -662,7 +758,7 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) =>
 const jsq = (v) => esc(String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"))
 
 /* timestamps are stored in UTC (ISO); render them in the viewer's own timezone */
-function fmtTime(iso) { return iso ? new Date(iso).toLocaleTimeString(undefined, { hour12: false }) : '' }
+function fmtTime(iso) { return iso ? new Date(iso).toLocaleTimeString(UI_LANG, { hour12: false }) : '' }
 
 /* validation may be a prose string or a structured list of {run, expect} steps —
    the engine treats it as opaque; here each step renders as its own line. */
@@ -680,22 +776,22 @@ function render(s, events) {
      the var is restamped here every render, and changing animation-delay on a live
      element SHIFTS its phase: that reads as a jump every poll. */
   document.documentElement.style.setProperty('--epoch', `-${(performance.now() / 1000).toFixed(3)}s`)
-  $('#runName').textContent = `${s.run} — ${s.plan.name}`
+  document.title = `${s.run} - PRUMO`
   const tasks = s.tasks
   const list = Object.values(tasks)
   const by = {}
   for (const t of list) by[eff(t.id)] = (by[eff(t.id)] ?? 0) + 1
   $('#counts').innerHTML = ['running', 'reviewing', 'ready', 'waiting', 'blocked', 'failed', 'done', 'skipped']
     .filter((k) => by[k]).map((k) => k === 'blocked'
-      ? `<span class="ask">✋ waiting on you <b>${by[k]}</b></span>`
-      : `<span>${k} <b>${by[k]}</b></span>`).join('')
+      ? `<span class="ask"><span data-i18n="✋ waiting on you">✋ waiting on you</span> <b>${by[k]}</b></span>`
+      : `<span>${esc(tr(k))} <b>${by[k]}</b></span>`).join('')
 
   const { pos, w, h, usePhase, lanes, laneY0 } = layout(tasks, LAYOUT)
   const canvas = $('#canvas')
   canvas.style.width = w + 'px'
   canvas.style.height = h + 'px'
   CANVAS_W = w; CANVAS_H = h; LAST_POS = pos
-  $('#layoutBtn').textContent = `layout: ${usePhase ? 'phase' : 'depth'}`
+  $('#layoutBtn').textContent = tr(`layout: ${usePhase ? 'phase' : 'depth'}`)
   $('#lanes').innerHTML = lanes.map((p, i) => {
     const y = laneY0 + i * LANE_H
     return `<div class="lane" style="top:${y}px;height:${LANE_H - 14}px">
@@ -710,12 +806,12 @@ function render(s, events) {
     const sub2 = subState(t)
     const working = '<span class="work"><i></i><i></i><i></i></span>'
     const sub = e === 'reviewing'
-      ? `<span class="ag">⌕ @${esc(t.reviewer)}</span>${sub2 === 'valfail' ? ' <span class="vbadge bad">✗ rejected</span>' : working}`
+      ? `<span class="ag">⌕ @${esc(t.reviewer)}</span>${sub2 === 'valfail' ? ' <span class="vbadge bad"><span data-i18n="✗ rejected">✗ rejected</span></span>' : working}`
       : e === 'running' && t.agent
-      ? `<span class="ag">@${esc(t.agent)}</span>${sub2 === 'validated' ? ' <span class="vbadge ok">✓ validated</span>'
-          : sub2 === 'valfail' ? ' <span class="vbadge bad">✗ rework</span>' + working : working}`
+      ? `<span class="ag">@${esc(t.agent)}</span>${sub2 === 'validated' ? ' <span class="vbadge ok"><span data-i18n="✓ validated">✓ validated</span></span>'
+          : sub2 === 'valfail' ? ' <span class="vbadge bad"><span data-i18n="✗ rework">✗ rework</span></span>' + working : working}`
       : e === 'blocked'
-      ? `<span class="ask">✋ waiting on you</span>${t.blockReason ? ` <span style="color:var(--dim)">— ${esc(t.blockReason)}</span>` : ''}`
+      ? `<span class="ask"><span data-i18n="✋ waiting on you">✋ waiting on you</span></span>${t.blockReason ? ` <span style="color:var(--dim)">— ${esc(t.blockReason)}</span>` : ''}`
       : e === 'waiting' ? `← ${esc(s.derived[t.id].blockedBy.join(','))}`
       : esc(t.title)
     const retry = t.attempts.length > 1 ? ` ↻${t.attempts.length}` : ''
@@ -783,9 +879,9 @@ function render(s, events) {
   on.style.left = `${ox}px`
   on.style.top = `${oy}px`
   on.classList.toggle('live', runningNow.length > 0)
-  $('#orchSub').textContent = runningNow.length
+  $('#orchSub').textContent = tr(runningNow.length
     ? `dispatching ${runningNow.length}/${s.plan.maxParallel ?? 4}`
-    : 'idle'
+    : 'idle')
   const ocx = ox + ORCH_W / 2, ocy = oy + ORCH_H
   for (const t of runningNow) {
     const b = pos[t.id]
@@ -803,9 +899,9 @@ function render(s, events) {
   rn.style.left = `${rx}px`
   rn.style.top = `${ry}px`
   rn.classList.toggle('live', inReview.length > 0)
-  $('#revSub').textContent = inReview.length
+  $('#revSub').textContent = tr(inReview.length
     ? `judging ${inReview.map((t) => t.id).join(', ')}`
-    : 'idle'
+    : 'idle')
   const rcx = rx + ORCH_W / 2, rcy = ry + ORCH_H
   for (const t of inReview) {
     const b = pos[t.id]
@@ -825,11 +921,13 @@ function render(s, events) {
   }
 
   // footer progress
-  const total = list.length
-  $('#bar .seg-done').style.width = `${(100 * (by.done ?? 0)) / total}%`
-  $('#bar .seg-run').style.width = `${(100 * (by.running ?? 0)) / total}%`
-  $('#bar .seg-fail').style.width = `${(100 * (by.failed ?? 0)) / total}%`
-  $('#doneCount').innerHTML = `<b>${by.done ?? 0}</b> done / ${total}`
+  const total = list.length - (by.skipped ?? 0)
+  const done = by.done ?? 0
+  const scale = total ? 100 / total : 0
+  $('#bar .seg-done').style.width = `${scale * done}%`
+  $('#bar .seg-run').style.width = `${scale * (by.running ?? 0)}%`
+  $('#bar .seg-fail').style.width = `${scale * (by.failed ?? 0)}%`
+  $('#doneCount').innerHTML = `<b>${Math.round(scale * done)}%</b> ${esc(tr('complete'))} · <b>${done}</b> ${esc(tr('done'))} / ${total}`
 
   // orchestrator heartbeat — the last thing it did and how long ago; beating while active
   const last = events.at(-1)
@@ -837,29 +935,29 @@ function render(s, events) {
   if (last) {
     const age = Math.max(0, Math.floor((Date.now() - Date.parse(last.at)) / 1000))
     orch.classList.toggle('live', age < 30)
-    orch.innerHTML = `<span class="hb"></span>orch <b>${esc(last.type.replace('task_', '').replace('run_', ''))}</b> ${esc(last.task ?? '')} · ${fmtAge(age)}`
+    orch.innerHTML = `<span class="hb"></span>${esc(tr('orch'))} <b>${esc(tr(last.type.replace('task_', '').replace('run_', '')))}</b> ${esc(last.task ?? '')} · ${fmtAge(age)}`
   } else {
     orch.classList.remove('live')
-    orch.innerHTML = '<span class="hb"></span>orchestrator idle'
+    orch.innerHTML = `<span class="hb"></span>${esc(tr('orchestrator idle'))}`
   }
 
   // side panels — logs and run state only
   const running = list.filter((t) => eff(t.id) === 'running')
   const maxExec = s.plan.maxExecutors ?? 3
-  $('#parTitle').innerHTML = `Working <span style="color:${running.length >= maxExec ? 'var(--running)' : 'var(--dim)'}">${running.length}/${maxExec}</span> · review <span style="color:${inReview.length ? 'var(--review)' : 'var(--dim)'}">${inReview.length}</span>`
+  $('#parTitle').innerHTML = `${esc(tr('Working'))} <span style="color:${running.length >= maxExec ? 'var(--running)' : 'var(--dim)'}">${running.length}/${maxExec}</span> · ${esc(tr('review'))} <span style="color:${inReview.length ? 'var(--review)' : 'var(--dim)'}">${inReview.length}</span>`
   $('#parallel').innerHTML = running.length || inReview.length
     ? [
         ...running.map((t) => `<span onclick="openTask('${jsq(t.id)}')"><i class="sp"></i>${esc(t.id)} <span style="color:var(--accent)">@${esc(t.agent)}</span></span>`),
         ...inReview.map((t) => `<span class="rev" onclick="openTask('${jsq(t.id)}')"><i class="sp rev"></i>${esc(t.id)} <span style="color:var(--review)">⌕ @${esc(t.reviewer)}</span></span>`),
       ].join('')
-    : '<span class="empty">nothing running</span>'
+    : '<span class="empty"><span data-i18n="nothing running">nothing running</span></span>'
   const bad = list.filter((t) => eff(t.id) === 'failed' || t.attempts.length > 1)
   $('#failures').innerHTML = bad.length
-    ? bad.map((t) => `<div class="ev">${esc(t.id)} — ${t.attempts.length} attempt(s)${t.attempts.at(-1)?.reason ? ` · ${esc(t.attempts.at(-1).reason)}` : ''}</div>`).join('')
-    : '<span class="empty">none</span>'
+    ? bad.map((t) => `<div class="ev">${esc(t.id)} — ${t.attempts.length} ${esc(tr('attempt(s)'))}${t.attempts.at(-1)?.reason ? ` · ${esc(t.attempts.at(-1).reason)}` : ''}</div>`).join('')
+    : '<span class="empty"><span data-i18n="none">none</span></span>'
   $('#events').innerHTML = events.slice().reverse().map((e) => {
     const extra = e.reason ?? e.evidence ?? e.agent ?? e.text ?? ''
-    return `<div class="ev"><span class="t-${esc(e.type)}"><time>${fmtTime(e.at)}</time><b>${esc(e.type.replace('task_', ''))}</b> ${esc(e.task ?? '')} <span style="color:var(--dim)">${esc(String(extra).slice(0, 80))}</span></span></div>`
+    return `<div class="ev"><span class="t-${esc(e.type)}"><time>${fmtTime(e.at)}</time><b>${esc(tr(e.type.replace('task_', '').replace('run_', '')))}</b> ${esc(e.task ?? '')} <span style="color:var(--dim)">${esc(String(extra).slice(0, 80))}</span></span></div>`
   }).join('')
 
   // one-shot flash on nodes touched by events that arrived since the previous tick
@@ -875,6 +973,7 @@ function render(s, events) {
     if (n && cls) n.classList.add(cls)
   }
 
+  localize()
   applyFocus()
   if (!fitted) { fitted = true; fitView() } else applyView()
 }
@@ -1004,26 +1103,27 @@ function fillPop(id) {
   const run = t.attempts.at(-1)
   const ss = subState(t)
   const live = e === 'running' && run?.startedAt
-    ? `${ss === 'validated' ? ' ✓ validated' : ss === 'valfail' ? ' ✗ rework' : ''} · ${fmtElapsed(run.startedAt)}` : ''
+    ? `${ss === 'validated' ? ' ' + tr('✓ validated') : ss === 'valfail' ? ' ' + tr('✗ rework') : ''} · ${fmtElapsed(run.startedAt)}` : ''
   const depChip = (d) => `<span class="dep" onclick="openTask('${jsq(d)}')">${DOT[eff(d)] ?? ''} ${esc(d)}</span>`
   const dependents = Object.values(STATE.tasks).filter((x) => x.deps.includes(id)).map((x) => x.id)
   $('#popBody').innerHTML = `
-    <h2>${esc(t.id)} <span class="st" style="color:${c};border-color:${c}">${e}${live}</span></h2>
+    <h2>${esc(t.id)} <span class="st" style="color:${c};border-color:${c}">${esc(tr(e))}${live}</span></h2>
     <div style="color:var(--dim);font-size:12px;margin-top:4px">${esc(t.title)}</div>
     <dl>
-      <dt>Phase</dt><dd>${esc(t.phase ?? '—')}</dd>
-      <dt>Depends on</dt><dd>${t.deps.map(depChip).join('') || '—'}</dd>
-      <dt>Unlocks</dt><dd>${dependents.map(depChip).join('') || '—'}</dd>
-      <dt>Validation contract</dt><dd>${fmtContract(t.validation)}</dd>
-      ${t.blockReason ? `<dt>Blocked</dt><dd>${esc(t.blockReason)}</dd>` : ''}
-      ${t.skipReason ? `<dt>Skipped</dt><dd>${esc(t.skipReason)}</dd>` : ''}
-      <dt>Attempts</dt><dd>${t.attempts.map((a) =>
-        `<div class="att">#${a.n} @${esc(a.agent)} · ${fmtTime(a.startedAt)}${a.endedAt ? ` → ${fmtTime(a.endedAt)}` : ' (running)'} ${esc(a.result ?? '')} ${esc(a.reason ?? '')}</div>`).join('') || '—'}</dd>
-      <dt>Validations</dt><dd>${t.validations.map((v) =>
-        `<div class="vitem ${v.ok ? '' : 'bad'}">${v.ok ? 'OK' : 'FAILED'} · ${fmtTime(v.at)}<br>${esc(v.evidence)}</div>`).join('') || '—'}</dd>
-      <dt>Notes</dt><dd>${t.notes.map((n) => `<div class="att">${fmtTime(n.at)} — ${esc(n.text)}</div>`).join('') || '—'}</dd>
+      <dt><span data-i18n="Phase">Phase</span></dt><dd>${esc(t.phase ?? '—')}</dd>
+      <dt><span data-i18n="Depends on">Depends on</span></dt><dd>${t.deps.map(depChip).join('') || '—'}</dd>
+      <dt><span data-i18n="Unlocks">Unlocks</span></dt><dd>${dependents.map(depChip).join('') || '—'}</dd>
+      <dt><span data-i18n="Validation contract">Validation contract</span></dt><dd>${fmtContract(t.validation)}</dd>
+      ${t.blockReason ? `<dt><span data-i18n="Blocked">Blocked</span></dt><dd>${esc(t.blockReason)}</dd>` : ''}
+      ${t.skipReason ? `<dt><span data-i18n="Skipped">Skipped</span></dt><dd>${esc(t.skipReason)}</dd>` : ''}
+      <dt><span data-i18n="Attempts">Attempts</span></dt><dd>${t.attempts.map((a) =>
+        `<div class="att">#${a.n} @${esc(a.agent)} · ${fmtTime(a.startedAt)}${a.endedAt ? ` → ${fmtTime(a.endedAt)}` : ' (' + tr('running') + ')'} ${esc(tr(a.result ?? ''))} ${esc(a.reason ?? '')}</div>`).join('') || '—'}</dd>
+      <dt><span data-i18n="Validations">Validations</span></dt><dd>${t.validations.map((v) =>
+        `<div class="vitem ${v.ok ? '' : 'bad'}">${v.ok ? 'OK' : tr('FAILED')} · ${fmtTime(v.at)}<br>${esc(v.evidence)}</div>`).join('') || '—'}</dd>
+      <dt><span data-i18n="Notes">Notes</span></dt><dd>${t.notes.map((n) => `<div class="att">${fmtTime(n.at)} — ${esc(n.text)}</div>`).join('') || '—'}</dd>
     </dl>
-    ${POP?.pinned ? '' : '<div class="pin-hint">click the task to pin · moves away, closes</div>'}`
+    ${POP?.pinned ? '' : '<div class="pin-hint"><span data-i18n="click the task to pin · moves away, closes">click the task to pin · moves away, closes</span></div>'}`
+  localize()
 }
 
 /* ---- results tab ---------------------------------------------------------------
@@ -1038,7 +1138,7 @@ async function toggleResults() {
   $('#results').classList.toggle('open', RESULTS_OPEN)
   /* The button that opened the tab is the button that closes it — a view with no visible way
      back reads as a dead end, and "press the same thing again" is not a way back. */
-  $('#resBtn').textContent = RESULTS_OPEN ? '← graph' : 'results'
+  $('#resBtn').textContent = tr(RESULTS_OPEN ? '← graph' : 'results')
   $('#resBtn').style.color = RESULTS_OPEN ? 'var(--text)' : ''
   /* Only the zoom READOUT is dimmed — layout and fit stay lit because here they still do
      something (they take you back), and dimming a control that works reads as disabled. */
@@ -1050,7 +1150,7 @@ function backToGraph() { if (RESULTS_OPEN) toggleResults() }
 
 async function loadResults() {
   try {
-    const r = await fetch('/api/events?limit=100000')
+    const r = await fetch(apiUrl('/api/events?limit=100000'))
     FULL_EVENTS = (await r.json()).events ?? []
   } catch { /* keep whatever we had */ }
   if (STATE) renderResults(STATE)
@@ -1063,71 +1163,52 @@ function renderResults(s) {
     const lp = pct(l, l + r)
     return `<span class="minibar"><i style="width:${lp}%;background:var(--running)"></i><i style="width:${100 - lp}%;background:var(--review)"></i></span>`
   }
-  const tile = (k, v, sub) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${sub ?? ''}</div></div>`
+  const tile = (k, v, sub) => `<div class="tile"><div class="k">${esc(tr(k))}</div><div class="v">${esc(v)}</div><div class="s">${esc(tr(sub ?? ''))}</div></div>`
 
   const execPct = pct(a.execTotal, a.agentTotal)
   const ranked = a.per.filter((p) => p.agentTime > 0).sort((x, y) => y.agentTime - x.agentTime)
 
-  // findings: only what the numbers actually support, each with the evidence beside it
+  // Describe observed timings; they do not prove defects, coverage or business scope.
   const f = []
+  const finding = (tone, title, body) => `<div class="finding ${tone}"><b>${esc(tr(title))}</b><span class="why">${esc(body)}</span></div>`
   if (a.cpLen > 0) {
     const headroom = a.wall - a.cpLen
     f.push(headroom / Math.max(1, a.wall) < 0.25
-      ? `<div class="finding good"><b>The graph shape is the limit, not the agent count.</b>
-         <span class="why">The critical path (${fmtMs(a.cpLen)}) is ${pct(a.cpLen, a.wall)}% of the wall clock (${fmtMs(a.wall)}) — more executors cannot beat that chain. To go faster, break the chain: ${esc(a.cpChain.join(' → '))}.</span></div>`
-      : `<div class="finding warn"><b>There is parallelism left on the table.</b>
-         <span class="why">The critical path is only ${fmtMs(a.cpLen)} of a ${fmtMs(a.wall)} run, so ${fmtMs(headroom)} went to waiting rather than to dependency — check retries, blocks and dispatch gaps before adding executors.</span></div>`)
+      ? finding('good', 'The dependency chain limits parallel progress.', tr('Critical path: {0}; elapsed: {1}; share: {2}%. Chain: {3}.', fmtMs(a.cpLen), fmtMs(a.wall), pct(a.cpLen, a.wall), a.cpChain.join(' → ')))
+      : finding('warn', 'Inspect time outside the critical path.', tr('Elapsed: {0}; critical path: {1}; difference: {2}. Check queues, blocks and retries before changing capacity.', fmtMs(a.wall), fmtMs(a.cpLen), fmtMs(headroom))))
   }
-  if (a.reviewTotal > 0) {
-    f.push(a.reviewCV < 0.35
-      ? `<div class="finding warn"><b>Review cost looks FIXED, not proportional — suspect the gate.</b>
-         <span class="why">Review takes ${fmtMs(a.reviewMean)} on average with little spread between tasks (variation ${Math.round(a.reviewCV * 100)}%). A reviewer that costs the same on a one-line task and a large one is paying a constant: usually the full suite running per task. Scope the gate to what the task changed and keep the full run for the end.</span></div>`
-      : `<div class="finding info"><b>Review cost scales with the task.</b>
-         <span class="why">Spread across tasks is ${Math.round(a.reviewCV * 100)}% of the mean, so review time tracks task size rather than a fixed per-task toll — the gate is not the constant here.</span></div>`)
-  }
-  if (a.reviews > 0) {
-    f.push(a.rejections > 0
-      ? `<div class="finding good"><b>Review caught ${a.rejections} defect(s) in ${a.reviews} verdict(s).</b>
-         <span class="why">A ${pct(a.rejections, a.reviews)}% rejection rate is what the ${pct(a.reviewTotal, a.agentTotal)}% of agent time spent reviewing bought. Compare that against the cost of those defects reaching the tasks built on top of them, not against zero.</span></div>`
-      : `<div class="finding info"><b>Review approved everything it saw (${a.reviews} verdicts, 0 rejections).</b>
-         <span class="why">One clean run is not proof the gate is redundant — but it is the signal to start marking the safest tasks below as <code>requireReview: false</code> and watch whether defects appear.</span></div>`)
-  }
-  /* Candidates are DESCRIBED, never applied: turning off a task's gate is the dev's call,
-     made in the plan. The tab's job is to replace a guess with evidence. */
-  const cands = ranked.filter((p) => !p.skipsReview && p.reviewed && p.rejected === 0 && p.attempts === 1 && p.review >= a.taskReviewMid)
-  if (cands.length) {
-    f.push(`<div class="finding info"><b>${cands.length} task(s) where review cost above average and never found anything:</b>
-      <span class="why">${cands.map((p) => `${esc(p.id)} (${fmtMs(p.review)})`).join(', ')} — passed first try, no rejection. If they are mechanical by nature, <code>"requireReview": false</code> in the next plan reclaims ${fmtMs(cands.reduce((n, p) => n + p.review, 0))}. If they are merely easy-looking, leave the gate on: those are where a confident agent errs quietly.</span></div>`)
-  }
-
+  if (a.reviewTotal > 0) f.push(finding('info', a.reviewCV < 0.35 ? 'Review durations are similar.' : 'Review durations vary across tasks.',
+    tr('Mean review: {0}; variation: {1}%. Timing alone does not establish coverage or a cause.', fmtMs(a.reviewMean), Math.round(a.reviewCV * 100))))
+  if (a.reviews > 0) f.push(finding('info', 'Review outcomes',
+    tr('{0} rejections in {1} verdicts. Review used {2}% of agent time. Inspect the evidence before changing the review policy.', a.rejections, a.reviews, pct(a.reviewTotal, a.agentTotal))))
   $('#results').innerHTML = `
-    <button class="lbtn" onclick="backToGraph()" style="margin-bottom:14px">← back to the graph</button>
+    <button class="lbtn" onclick="backToGraph()" style="margin-bottom:14px"><span data-i18n="← back to the graph">← back to the graph</span></button>
     <h2>${esc(s.run)} — ${esc(s.plan.name)}</h2>
-    <div class="note">Derived from this run's attempt timestamps and event log${a.anyLive ? ' · run still ACTIVE, figures move' : ''}. Tokens are not shown: the engine makes no model calls and never sees them — read those from your agent harness.</div>
+    <div class="note">${esc(tr("Derived from attempt timestamps and events. Tokens belong to the harness and are not measured by this engine."))}${a.anyLive ? " " + esc(tr("Run still active; figures may change.")) : ""}</div>
 
     <div class="tiles">
       ${tile('Wall clock', fmtMs(a.wall), a.anyLive ? 'so far' : 'init → last task')}
-      ${tile('Agent time', fmtMs(a.agentTotal), 'what one agent would have spent')}
+      ${tile('Agent time', fmtMs(a.agentTotal), 'sum of recorded agent intervals')}
       ${tile('Parallel gain', `${a.speedup.toFixed(2)}×`, `${a.maxExec} executors + review headroom`)}
       ${tile('Critical path', fmtMs(a.cpLen), `${pct(a.cpLen, a.wall)}% of wall clock`)}
       ${tile('Review share', `${pct(a.reviewTotal, a.agentTotal)}%`, `${a.reviews} verdicts · ${a.rejections} rejected`)}
       ${tile('Retries', String(a.retries), a.blockedTotal > 0 ? `blocked ${fmtMs(a.blockedTotal)}` : 'no human blocks')}
     </div>
 
-    <h3>Agent time: building vs verifying</h3>
+    <h3><span data-i18n="Agent time: building vs verifying">Agent time: building vs verifying</span></h3>
     <div class="split">
-      <div style="width:${execPct}%;background:var(--running)">${execPct >= 12 ? `exec ${fmtMs(a.execTotal)}` : ''}</div>
-      <div style="width:${100 - execPct}%;background:var(--review)">${100 - execPct >= 12 ? `review ${fmtMs(a.reviewTotal)}` : ''}</div>
+      <div style="width:${execPct}%;background:var(--running)">${execPct >= 12 ? esc(tr(`exec ${fmtMs(a.execTotal)}`)) : ''}</div>
+      <div style="width:${100 - execPct}%;background:var(--review)">${100 - execPct >= 12 ? esc(tr(`review ${fmtMs(a.reviewTotal)}`)) : ''}</div>
     </div>
 
-    <h3>Per task</h3>
+    <h3><span data-i18n="Per task">Per task</span></h3>
     <table class="rtable">
-      <tr><th>Task</th><th class="num">Exec</th><th class="num">Review</th><th>build vs verify</th>
-          <th class="num">Queued</th><th class="num">Blocked</th><th class="num">Att.</th><th class="num">Verdicts</th></tr>
+      <tr><th><span data-i18n="Task">Task</span></th><th class="num"><span data-i18n="Exec">Exec</span></th><th class="num"><span data-i18n="Review">Review</span></th><th><span data-i18n="build vs verify">build vs verify</span></th>
+          <th class="num"><span data-i18n="Queued">Queued</span></th><th class="num"><span data-i18n="Blocked">Blocked</span></th><th class="num"><span data-i18n="Att.">Att.</span></th><th class="num"><span data-i18n="Verdicts">Verdicts</span></th></tr>
       ${ranked.map((p) => `<tr>
         <td class="tid" onclick="jumpTo('${jsq(p.id)}')">${esc(p.id)} <span style="color:var(--dim)">${esc((p.title ?? '').slice(0, 34))}</span></td>
         <td class="num">${fmtMs(p.exec)}</td>
-        <td class="num">${p.skipsReview ? '<span style="color:var(--dim)">gate only</span>' : fmtMs(p.review)}</td>
+        <td class="num">${p.skipsReview ? '<span style="color:var(--dim)"><span data-i18n="gate only">gate only</span></span>' : fmtMs(p.review)}</td>
         <td>${p.review > 0 ? bar(p.exec, p.review) : ''}</td>
         <td class="num">${p.queue == null ? '—' : fmtMs(p.queue)}</td>
         <td class="num">${p.blocked > 0 ? `<span style="color:var(--blocked)">${fmtMs(p.blocked)}</span>` : '—'}</td>
@@ -1136,8 +1217,9 @@ function renderResults(s) {
       </tr>`).join('')}
     </table>
 
-    <h3>What the numbers support</h3>
-    ${f.join('') || '<div class="finding">Not enough finished work to say anything yet.</div>'}`
+    <h3><span data-i18n="What the numbers support">What the numbers support</span></h3>
+    ${f.join('') || '<div class="finding"><span data-i18n="Not enough finished work to say anything yet.">Not enough finished work to say anything yet.</span></div>'}`
+  localize()
 }
 
 function jumpTo(id) {
@@ -1183,8 +1265,8 @@ document.addEventListener('click', (e) => {
   if (POP?.pinned && !e.target.closest('#pop') && !e.target.closest('.node') && !e.target.closest('.par')) closePop()
 })
 
+localize()
 tick()
-setInterval(tick, 1500)
 </script>
 </body>
 </html>
