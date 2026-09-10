@@ -49,7 +49,7 @@ No manual migration, stopped agents or stopped dashboard is required in advance.
 The backup includes a restore command:
 
 ```sh
-npx prumo@0.1.0 restore "<backup-directory>"
+npx prumo@1.0.0 restore "<backup-directory>"
 ```
 
 Restore refuses to overwrite files edited since installation. Plans keep their current state: reverting an installation must not erase ongoing work. Maintain your own business-data backups; the installer does not take a consistent snapshot of every live plan.
