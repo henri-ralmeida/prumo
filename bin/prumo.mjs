@@ -10,25 +10,31 @@ import { language, createTranslator, messages } from '../scripts/i18n.mjs'
 
 let t = createTranslator(messages, language())
 const print = (...parts) => console.log(...parts.map(part => t(part)))
-const color = (code, value) => process.stdout.isTTY && !('NO_COLOR' in process.env) ? `\x1b[${code}m${value}\x1b[0m` : value
+const color = (code, value, stream = process.stdout) => stream.isTTY && !('NO_COLOR' in process.env) ? `\x1b[${code}m${value}\x1b[0m` : value
 
-function progressUi(enabled) {
+function progressUi(enabled, stream = process.stdout) {
   let active = false
+  const clear = () => {
+    if (!active) return
+    if (typeof stream.clearLine === 'function' && typeof stream.cursorTo === 'function') {
+      stream.clearLine(0)
+      stream.cursorTo(0)
+    } else stream.write('\r\x1b[2K')
+    active = false
+  }
   return {
     update(percent, label) {
-      if (!enabled || !process.stdout.isTTY) return
+      if (!enabled || !stream.isTTY) return
+      clear()
       active = true
       const width = 24
       const filled = Math.round(width * percent / 100)
-      process.stdout.write(`\r${color('36', `[${'█'.repeat(filled)}${'░'.repeat(width - filled)}]`)} ${String(percent).padStart(3)}% ${label}`)
+      stream.write(`${color('36', `[${'='.repeat(filled)}${'-'.repeat(width - filled)}]`, stream)} ${String(percent).padStart(3)}% ${label}`)
     },
-    clear() {
-      if (active) process.stdout.write('\r\x1b[2K')
-      active = false
-    },
-    success(message) {
-      this.clear()
-      console.log(color('32', `✓ ${message}`))
+    clear,
+    success(message, version) {
+      clear()
+      stream.write(`${color('32', `✓ ${message}`, stream)}\nPrumo v${version}\n`)
     },
   }
 }
@@ -119,7 +125,7 @@ try {
           }
         } catch (error) { console.error(`[prumo] ${t(error.message)}`); process.exitCode = 2 }
       }
-      if (quiet && !process.exitCode) progress.success(t('Prumo updated successfully'))
+      if (quiet && !process.exitCode) progress.success(t('Prumo updated successfully'), version)
       else progress.clear()
     }
   } else if (positionals[0] === 'restore') {
