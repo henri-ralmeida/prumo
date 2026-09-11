@@ -103,16 +103,21 @@ function workspaceRevision(directory) {
   return hash.digest('hex')
 }
 
-export async function runValidation(task, cwd, previousReceipt = null) {
-  const contract = validationContract(task)
-  const checks = []
-  // Resolve every working directory before executing any command.
-  const directories = contract.steps.map((step) => {
+export function validationDirectories(task, cwd) {
+  return validationContract(task).steps.map((step) => {
     const directory = step.cwd ?? cwd
+    if (typeof directory === 'string' && /^[A-Za-z]:(?![\\\\/])/.test(directory))
+      throw new Error('validation cwd looks like a Windows path whose backslashes were consumed by the shell; use a quoted absolute path with forward slashes, for example "C:/work/project"')
     insist(nonempty(directory) && isAbsolute(directory), 'executable validation needs an absolute --cwd or step.cwd')
     insist(statSync(directory).isDirectory(), `validation cwd is not a directory: ${directory}`)
     return directory
   })
+}
+
+export async function runValidation(task, cwd, previousReceipt = null) {
+  const contract = validationContract(task)
+  const checks = []
+  const directories = validationDirectories(task, cwd)
   for (const [index, step] of contract.steps.entries()) {
     const revision = step.cacheable ? workspaceRevision(directories[index]) : null
     const prior = previousReceipt?.checks?.[index]

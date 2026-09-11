@@ -41,11 +41,12 @@
  *   node $ENGINE runs
  */
 import {
-  mkdirSync, readFileSync, writeFileSync, appendFileSync, renameSync, existsSync, readdirSync,
+  mkdirSync, readFileSync, writeFileSync, appendFileSync, existsSync, readdirSync,
   rmSync, statSync, copyFileSync,
 } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import { runValidation, assertValidation, validationContract } from './validation.mjs'
+import { writeAtomicState } from './atomic-state.mjs'
+import { runValidation, assertValidation, validationContract, validationDirectories } from './validation.mjs'
 import { join, resolve } from 'node:path'
 
 import { findRoot } from './storage.mjs'
@@ -111,9 +112,7 @@ function loadState(name) {
 function saveState(name, state) {
   state.updatedAt = new Date().toISOString()
   const dir = runDir(name)
-  const tmp = join(dir, 'state.json.tmp')
-  writeFileSync(tmp, JSON.stringify(state, null, 2))
-  renameSync(tmp, join(dir, 'state.json'))
+  writeAtomicState(join(dir, 'state.json'), JSON.stringify(state, null, 2))
 }
 
 /* Every mutating command is a read-modify-write of state.json from its OWN short-lived
@@ -192,13 +191,14 @@ function pathsCollide(a, b) {
   return a.startsWith(b) || b.startsWith(a)
 }
 
-function validatePlan(plan, allowOverlap = false) {
+function validatePlan(plan, allowOverlap = false, historical = new Set()) {
   if (!Array.isArray(plan.tasks) || plan.tasks.length === 0) die('plan has no tasks')
   const ids = new Set()
   for (const t of plan.tasks) {
     if (!t.id || !t.title) die('every task needs id and title')
     if (ids.has(t.id)) die(`duplicate task id ${t.id}`)
-    try { validationContract(t) } catch (error) { die(`task ${t.id}: ${error.message}`) }
+    if (!historical.has(t.id))
+      try { validationContract(t) } catch (error) { die(`task ${t.id}: ${error.message}`) }
     ids.add(t.id)
   }
   for (const t of plan.tasks)
@@ -243,10 +243,14 @@ function validatePlan(plan, allowOverlap = false) {
   }
 }
 
-function readPlan(planPath) {
+function historicalTasks(state) {
+  return new Set(Object.values(state?.tasks ?? {}).filter(t => ['done', 'skipped'].includes(t.state)).map(t => t.id))
+}
+
+function readPlan(planPath, state) {
   const source = resolve(planPath)
   const plan = JSON.parse(readFileSync(source, 'utf8'))
-  validatePlan(plan, args['allow-overlap'] === true)
+  validatePlan(plan, args['allow-overlap'] === true, historicalTasks(state))
   return { plan, source }
 }
 
@@ -386,7 +390,7 @@ const commands = {
     const name = runName()
     const state = loadState(name)
     const planPath = args.plan ?? state.plan.source ?? die('sync-plan needs --plan <plan.json> once')
-    const { plan, source } = readPlan(planPath)
+    const { plan, source } = readPlan(planPath, state)
     const removed = Object.keys(state.tasks).filter((id) => !plan.tasks.some((t) => t.id === id))
     if (removed.length) die(`sync-plan is additive: plan removed ${removed.join(', ')}`)
 
@@ -418,7 +422,7 @@ const commands = {
     }
 
     const effectivePlan = { ...plan, tasks: Object.values(state.tasks).map(planTaskFromState) }
-    validatePlan(effectivePlan, args['allow-overlap'] === true)
+    validatePlan(effectivePlan, args['allow-overlap'] === true, historicalTasks(state))
     const nextPlan = {
       name: plan.name,
       description: plan.description ?? '',
@@ -515,7 +519,9 @@ const commands = {
   start() {
     const name = runName()
     const id = args._[0] ?? die('start <task> --agent <name>')
-    const agent = args.agent ?? die('start needs --agent <name>')
+    if (args.agent && args.executor && args.agent !== args.executor) die('start: --agent and --executor must name the same agent')
+    const agent = args.agent ?? args.executor ?? die('start needs --agent <name> (alias: --executor)')
+    if (typeof agent !== 'string' || !agent.trim()) die('start needs a nonempty agent name')
     const state = loadState(name)
     const t = getTask(state, id)
     if (t.state !== 'pending') die(`${id} is ${t.state}, not pending`)
@@ -595,6 +601,9 @@ const commands = {
       if (requestedOk && (t.requireReview ?? state.plan.requireReview) !== false &&
           (by !== 'review' || !t.reviewer || t.reviewer === t.agent))
         die('passing validation requires an independent reviewer')
+      if (requestedOk) {
+        try { validationDirectories(t, args.cwd) } catch (error) { die(error.message) }
+      }
       // Invalidate any previous pass before running commands, including on interruption.
       t.validations.push({ ok: false, by, agent: by === 'review' ? t.reviewer : t.agent,
         evidence: args.evidence, at: new Date().toISOString(), attempt: t.attempts.length, token })
@@ -682,7 +691,7 @@ const commands = {
     const t = getTask(state, id)
     if (t.state !== 'failed') die(`${id} is ${t.state}, not failed`)
     if (state.plan.source && existsSync(state.plan.source)) {
-      const { plan } = readPlan(state.plan.source)
+      const { plan } = readPlan(state.plan.source, state)
       const approved = plan.tasks.find((candidate) => candidate.id === id)
       if (!approved) die(`approved plan no longer contains ${id} — inspect it before retry`)
       const next = taskFromPlan(approved)

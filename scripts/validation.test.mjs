@@ -300,6 +300,48 @@ test('malformed prose, echo instructions and untyped steps cannot enter a functi
   }
 })
 
+for (const terminal of ['done', 'skipped']) test(`sync-plan and retry preserve legacy ${terminal} contracts`, (t) => {
+  const f = fixture(t, {}, { tasks: [{ id: 'T0', title: 'Historical work', validation: [functionalStep] }] })
+  const state = f.state()
+  state.tasks.T0.state = terminal
+  state.tasks.T0.validation = 'Historical prose'
+  f.save(state)
+  f.plan.tasks[1].validation = 'Historical prose'
+  f.plan.tasks[0].title = 'Updated delivery'
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.ok('sync-plan', '--plan', f.planPath)
+  assert.deepEqual(f.state().tasks.T0, state.tasks.T0)
+  assert.equal(f.state().tasks.T1.title, 'Updated delivery')
+  Object.assign(f.plan.tasks[1], { validationMode: 'inspection', inspectionReason: 'Historical inspection' })
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.ok('sync-plan', '--plan', f.planPath)
+  assert.deepEqual(f.state().tasks.T0, state.tasks.T0)
+  f.ok('start', 'T1', '--executor', 'executor')
+  f.ok('fail', 'T1', '--reason', 'Rejected implementation')
+  f.ok('retry', 'T1')
+  assert.deepEqual(f.state().tasks.T0, state.tasks.T0)
+  f.plan.tasks[0].validation = 'Invalid current contract'
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  const before = f.state()
+  f.rejected(/functional validation must be a nonempty array/, 'sync-plan', '--plan', f.planPath)
+  assert.deepEqual(f.state(), before)
+})
+
+test('start rejects conflicting executor aliases without changing state', (t) => {
+  const f = fixture(t)
+  const before = f.state()
+  f.rejected(/must name the same agent/, 'start', 'T1', '--agent', 'one', '--executor', 'two')
+  assert.deepEqual(f.state(), before)
+})
+
+test('shell-consumed Windows cwd is rejected before recording a gate', (t) => {
+  const f = fixture(t)
+  f.beginReview()
+  const before = f.state()
+  f.rejected(/backslashes were consumed.*forward slashes/, 'validate', 'T1', '--ok', '--evidence', 'Review', '--cwd', 'C:workproject')
+  assert.deepEqual(f.state(), before)
+})
+
 test('a legacy pending run must synchronize a malformed contract before dispatch', (t) => {
   const f = fixture(t)
   const legacy = f.state()
