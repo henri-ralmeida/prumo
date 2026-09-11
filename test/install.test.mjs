@@ -117,7 +117,7 @@ test('automatic CLI installs only detected harnesses, preserves runs and backups
   assert.equal(existsSync(marker('codex')), false)
   assert.equal(existsSync(join(f.home, '.codex')), false)
   assert.equal(read(state), before)
-  assert.match(read(legacy), /compatibility alias/)
+  assert.equal(existsSync(legacy), false)
   const backups = join(f.home, '.local', 'share', 'prumo', 'backups')
   const count = readdirSync(backups).length
   assert.equal(count, 2)
@@ -162,6 +162,7 @@ for (const harness of ['claude', 'kiro', 'codex']) test(`${harness}: persistent 
   const version = JSON.parse(read(join(source, 'package.json'))).version
   assert.ok(read(join(result.backup, 'RESTORE.md')).includes(`npx @henri-ralmeida/prumo@${version} restore`))
   const skill = join(f.skillRoot, 'prumo')
+  assert.equal(existsSync(join(f.skillRoot, 'graph-foreman')), false)
   assert.match(read(join(skill, 'SKILL.md')), /name: prumo/)
   assert.match(read(join(skill, 'references', 'po-first.md')), /senior product partner/)
   assert.ok(existsSync(join(skill, 'scripts', 'engine.mjs')))
@@ -191,15 +192,16 @@ test('restore supports an explicitly selected project outside the user home', t 
   for (const item of plan.groups.flatMap(group => group.changes)) assert.ok(inside(f.home, item.file) || inside(project, item.file))
   const installed = applyInstall(plan)
   assert.ok(installed.groups.every(group => group.status !== 'conflict'))
-  assert.match(read(legacy), /Compatibility alias/)
+  assert.equal(existsSync(legacy), false)
   restoreInstall(installed.backup, { home: f.home, env: {} })
   assert.equal(read(legacy), 'existing project skill')
   assert.equal(existsSync(join(project, '.claude', 'skills', 'prumo', 'SKILL.md')), false)
 })
 
-test('overlay preserves legacy data, old commands, custom files and complete installation backup', t => {
+test('overlay migrates the legacy skill, preserves run data and supports complete restore', t => {
   const f = fixture(t)
   const legacy = join(f.skillRoot, 'graph-foreman')
+  const prumo = join(f.skillRoot, 'prumo')
   put(join(legacy, 'SKILL.md'), 'old skill instructions')
   put(join(legacy, 'scripts', 'engine.mjs'), '// old engine')
   put(join(legacy, 'custom.bin'), 'custom bytes preserved')
@@ -219,11 +221,11 @@ test('overlay preserves legacy data, old commands, custom files and complete ins
   assert.ok(f.plan().data.some(data => data.root === root))
   const result = f.install()
   assert.deepEqual([read(statePath), read(eventsPath), read(planPath)], before)
-  assert.equal(read(join(legacy, 'custom.bin')), 'custom bytes preserved')
-  assert.match(read(join(legacy, 'SKILL.md')), /compatibility alias/)
-  const legacyCall = spawnSync(process.execPath, [join(legacy, 'scripts', 'engine.mjs'), 'graph'], { env, encoding: 'utf8' })
-  assert.equal(legacyCall.status, 0, legacyCall.stderr)
-  const task = JSON.parse(legacyCall.stdout).tasks.T1
+  assert.equal(existsSync(legacy), false)
+  assert.equal(read(join(prumo, 'custom.bin')), 'custom bytes preserved')
+  const prumoCall = spawnSync(process.execPath, [join(prumo, 'scripts', 'engine.mjs'), 'graph'], { env, encoding: 'utf8' })
+  assert.equal(prumoCall.status, 0, prumoCall.stderr)
+  const task = JSON.parse(prumoCall.stdout).tasks.T1
   assert.equal(task.state, 'blocked')
   assert.equal(task.attempts.length, 1)
   assert.equal(task.blockReason, 'User pause')
@@ -231,7 +233,24 @@ test('overlay preserves legacy data, old commands, custom files and complete ins
   assert.ok(readdirSync(snapshots).some(name => existsSync(join(snapshots, name, 'custom.bin'))))
   restoreInstall(result.backup, { home: f.home, env: {} })
   assert.equal(read(join(legacy, 'scripts', 'engine.mjs')), '// old engine')
+  assert.equal(read(join(legacy, 'custom.bin')), 'custom bytes preserved')
+  assert.equal(existsSync(join(prumo, 'SKILL.md')), false)
   assert.deepEqual([read(statePath), read(eventsPath), read(planPath)], before)
+})
+
+test('legacy migration blocks conflicting custom files without changing either skill', t => {
+  const f = fixture(t)
+  const legacy = join(f.skillRoot, 'graph-foreman', 'custom.txt')
+  const destination = join(f.skillRoot, 'prumo', 'custom.txt')
+  put(legacy, 'legacy value')
+  put(destination, 'Prumo value')
+  const plan = f.plan()
+  const group = plan.groups.find(item => item.name.startsWith('skill:'))
+  assert.match(group.conflicts.join('\n'), /Legacy file conflicts with Prumo destination/)
+  const result = applyInstall(plan)
+  assert.equal(result.groups.find(item => item.name === group.name).status, 'conflict')
+  assert.equal(read(legacy), 'legacy value')
+  assert.equal(read(destination), 'Prumo value')
 })
 
 test('configuration preserves unrelated settings and uses effective Codex override', t => {
@@ -373,7 +392,7 @@ test('an in-flight validation finishes across overlay without a new attempt or s
   assert.equal(read(statePath), before)
   put(join(f.cwd, 'continue'), 'yes')
   assert.equal(await exit, 0, output)
-  const done = cli(['done', 'T1'])
+  const done = spawnSync(process.execPath, [join(f.skillRoot, 'prumo', 'scripts', 'engine.mjs'), 'done', 'T1'], { env, cwd: f.cwd, encoding: 'utf8', timeout: 20000 })
   assert.equal(done.status, 0, done.stderr)
   const state = JSON.parse(read(statePath))
   assert.equal(state.tasks.T1.attempts.length, 1)

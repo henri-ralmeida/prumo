@@ -1,5 +1,17 @@
 # Changelog / Histórico
 
+## 1.0.10
+
+### English
+
+- Migrate an existing graph-foreman skill into Prumo during installation: preserve non-product files, verify every written byte, then remove the legacy skill directory.
+- Block conflicting custom files and roll back the affected installation group; existing run data stays at its original path.
+
+### Português (Brasil)
+
+- Migra uma skill graph-foreman existente para Prumo durante a instalação: preserva arquivos adicionais, confere cada byte gravado e depois remove a pasta legada da skill.
+- Bloqueia conflitos entre arquivos personalizados e reverte o conjunto afetado; os dados das runs permanecem no caminho original.
+
 ## 1.0.9
 
 ### English
