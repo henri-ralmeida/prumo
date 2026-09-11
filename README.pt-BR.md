@@ -84,20 +84,20 @@ bunx @henri-ralmeida/prumo@latest install --all --dry-run
 bunx @henri-ralmeida/prumo@latest install --all
 ```
 
-Omita `--all` para escolher pelas caixas de seleção, ou use `--claude`, `--kiro` ou `--codex` para selecionar um diretamente. Se a instalação estiver dentro de um projeto, execute na pasta dele ou acrescente `--project "<caminho-do-projeto>"`. Essa primeira troca usa `install`; `update` só atualiza ambientes que já contêm Prumo. As chamadas existentes de `/graph-foreman` continuam como aliases de compatibilidade; use `/prumo` (ou `$prumo` no Codex) para novas atividades.
+Omita `--all` para escolher pelas caixas de seleção, ou use `--claude`, `--kiro` ou `--codex` para selecionar um diretamente. Se a instalação estiver dentro de um projeto, execute na pasta dele ou acrescente `--project "<caminho-do-projeto>"`. Essa primeira troca usa `install`; `update` só atualiza ambientes que já contêm Prumo. Depois da migração, use `/prumo` (ou `$prumo` no Codex); a skill legada `/graph-foreman` é removida.
 
-Não é necessário migrar planos, parar agentes ou encerrar o dashboard previamente. O instalador detecta os locais padrão, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, projetos informados e ancestrais do diretório atual.
+Não é necessário migrar os dados manualmente. Encerre sessões que estejam carregando arquivos da skill graph-foreman antes de instalar; o instalador nunca encerra processos. Ele detecta os locais padrão, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, projetos informados e ancestrais do diretório atual.
 
-- Instala Prumo na mesma raiz de skills e mantém compatibilidade com os caminhos antigos dos scripts.
-- Preserva os dados no lugar, incluindo `.specs/graph` dentro de projetos e o armazenamento central antigo. Instalar não executa comandos do motor nem modifica contratos, estados, tentativas, evidências ou histórico.
+- Instala Prumo na mesma raiz de skills, copia arquivos adicionais da instalação legada quando não há conflito, confere a instalação e depois remove a pasta da skill graph-foreman.
+- Preserva os dados das runs no lugar, incluindo `.specs/graph` dentro de projetos e o armazenamento central antigo. Instalar não executa comandos do motor nem modifica contratos, estados, tentativas, evidências ou histórico.
 - Faz backup completo das instalações e configurações afetadas antes de escrever. Dados vivos dos planos ficam fora da transação e não são revertidos junto com a instalação.
-- Aplica cada conjunto separadamente. Configuração inválida, caminho vinculado ou arquivo ocupado impede somente aquele conjunto. Não encerra processos para liberar arquivos.
-- Confere os bytes gravados e reverte o conjunto em caso de falha. Alterações concorrentes de configurações são detectadas.
+- Aplica cada conjunto separadamente. Arquivos personalizados conflitantes, configuração inválida, caminho vinculado ou arquivo ocupado impedem somente aquele conjunto. O instalador não encerra processos.
+- Confere os bytes gravados e reverte o conjunto antes de informar sucesso em caso de falha. Alterações concorrentes são detectadas.
 
 O backup informa o comando de reversão:
 
 ```sh
-npx @henri-ralmeida/prumo@1.0.9 restore "<diretório-do-backup>"
+npx @henri-ralmeida/prumo@1.0.10 restore "<diretório-do-backup>"
 ```
 
 A reversão recusa sobrescrever arquivos que você editou depois. Os planos continuam no estado atual: reverter uma instalação não deve apagar trabalho em andamento. Mantenha sua rotina de backup dos dados de negócio; o instalador não captura uma imagem consistente de todos os planos ativos.

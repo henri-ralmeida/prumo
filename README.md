@@ -84,20 +84,20 @@ bunx @henri-ralmeida/prumo@latest install --all --dry-run
 bunx @henri-ralmeida/prumo@latest install --all
 ```
 
-Omit `--all` to choose with checkboxes, or use `--claude`, `--kiro` or `--codex` to select one directly. For a project-local installation, run from that project or add `--project "<project-path>"`. This first switch uses `install`; `update` only refreshes environments already containing Prumo. Existing `/graph-foreman` invocations remain compatibility aliases; use `/prumo` (or `$prumo` in Codex) for new work.
+Omit `--all` to choose with checkboxes, or use `--claude`, `--kiro` or `--codex` to select one directly. For a project-local installation, run from that project or add `--project "<project-path>"`. This first switch uses `install`; `update` only refreshes environments already containing Prumo. After migration, use `/prumo` (or `$prumo` in Codex); the legacy `/graph-foreman` skill is removed.
 
-No manual migration, stopped agents or stopped dashboard is required in advance. The installer checks standard locations, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, supplied projects and ancestors of the current directory.
+No manual data migration is required. Finish sessions that are actively loading files from the graph-foreman skill before installing; the installer never kills processes. It checks standard locations, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, supplied projects and ancestors of the current directory.
 
-- Installs Prumo under the same skills root and preserves compatibility with old script paths.
-- Keeps data in its original location, including project-local `.specs/graph` and the old central store. Installation never runs engine commands or changes contracts, states, attempts, evidence or history.
+- Installs Prumo under the same skills root, copies non-product legacy files when they do not conflict, verifies the installed files and then removes the graph-foreman skill directory.
+- Keeps run data in its original location, including project-local `.specs/graph` and the old central store. Installation never runs engine commands or changes contracts, states, attempts, evidence or history.
 - Takes complete backups of affected installations and configuration before writing. Live plan data is outside this transaction and is never rolled back with the installation.
-- Applies independent groups separately. Invalid configuration, linked paths or busy files block only their affected group. The installer does not kill processes to release files.
-- Verifies written bytes and rolls back a failed group. Concurrent configuration edits are detected.
+- Applies independent groups separately. Conflicting custom files, invalid configuration, linked paths or busy files block only their affected group. The installer does not kill processes to release files.
+- Verifies written bytes and rolls back a failed group before reporting success. Concurrent changes are detected.
 
 The backup includes a restore command:
 
 ```sh
-npx @henri-ralmeida/prumo@1.0.9 restore "<backup-directory>"
+npx @henri-ralmeida/prumo@1.0.10 restore "<backup-directory>"
 ```
 
 Restore refuses to overwrite files edited since installation. Plans keep their current state: reverting an installation must not erase ongoing work. Maintain your own business-data backups; the installer does not take a consistent snapshot of every live plan.
