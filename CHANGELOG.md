@@ -1,5 +1,19 @@
 # Changelog / Histórico
 
+## 1.0.7
+
+### English
+
+- Replace Windows `shell: true` npm launches with an explicit `cmd.exe` invocation, removing Node's `DEP0190` warning from `prumo -v`, installation and future updates.
+- Make normal updates concise: hide npm chatter, show a colored phase progress bar in interactive terminals and finish with a single `Prumo updated successfully` result. `--dry-run` retains the detailed file and conflict preview; failures retain actionable errors.
+- Detect complete same-version harness installations and report them without rewriting files or creating backups. The installer also skips reinstalling an already-current global CLI.
+
+### Português (Brasil)
+
+- Substitui chamadas npm com `shell: true` no Windows por invocação explícita do `cmd.exe`, removendo o aviso `DEP0190` de `prumo -v`, instalações e atualizações futuras.
+- Torna a atualização normal enxuta: oculta o ruído do npm, exibe uma barra colorida de progresso por etapas em terminais interativos e termina com `Prumo atualizado com sucesso`. `--dry-run` preserva a prévia detalhada de arquivos e conflitos; falhas preservam erros úteis.
+- Detecta instalações completas da mesma versão e informa o estado sem regravar arquivos nem criar backups. O instalador também evita reinstalar uma CLI global já atualizada.
+
 ## 1.0.6
 
 ### English
