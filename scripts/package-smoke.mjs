@@ -46,6 +46,10 @@ try {
   env.npm_config_registry = address.url
   env.npm_config_fetch_retries = '0'
   for (const harness of ['claude', 'kiro', 'codex']) mkdirSync(join(home, `.${harness}`), { recursive: true })
+  writeFileSync(join(home, '.claude', 'settings.json'), '{}')
+  writeFileSync(join(home, '.codex', 'config.toml'), '')
+  mkdirSync(join(home, '.kiro', 'steering'), { recursive: true })
+  writeFileSync(join(home, '.kiro', 'steering', 'project.md'), '# Project guidance')
   assert.match(run('npm', ['exec', '--offline', '--', 'prumo', 'install', '--dry-run']), /Detected environments: claude, kiro, codex/)
   assert.equal(existsSync(join(home, '.local', 'share', 'prumo')), false)
   const legacyCodex = join(home, '.agents', 'skills', 'prumo')
@@ -66,7 +70,7 @@ try {
   assert.match(readFileSync(join(home, '.codex', 'AGENTS.md'), 'utf8'), /<!-- po-first:start -->/)
   for (const harness of ['.claude', '.kiro', '.agents']) {
     const skill = join(home, harness, 'skills', 'prumo')
-    for (const file of ['SKILL.md', 'scripts/engine.mjs', 'scripts/serve.mjs', 'scripts/validation.mjs', 'scripts/storage.mjs', 'scripts/dashboard.html']) {
+    for (const file of ['SKILL.md', 'scripts/engine.mjs', 'scripts/serve.mjs', 'scripts/validation.mjs', 'scripts/atomic-state.mjs', 'scripts/storage.mjs', 'scripts/dashboard.html']) {
       assert.ok(existsSync(join(skill, file)), `${harness} installation must contain ${file}`)
     }
   }
