@@ -12,6 +12,7 @@ import { inside, findRoot, storageHome, graphRoots } from '../scripts/storage.mj
 const source = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const put = (path, value) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, typeof value === 'string' ? value : JSON.stringify(value, null, 2)) }
 const read = path => readFileSync(path, 'utf8')
+const packageVersion = JSON.parse(read(join(source, 'package.json'))).version
 
 function fixture(t, harness = 'claude') {
   const parent = realpathSync(tmpdir())
@@ -108,7 +109,9 @@ test('automatic CLI installs only detected harnesses, preserves runs and backups
   const backups = join(f.home, '.local', 'share', 'prumo', 'backups')
   const count = readdirSync(backups).length
   assert.equal(count, 2)
-  assert.equal(cli(['install', '--all']).status, 0)
+  const repeated = cli(['install'])
+  assert.equal(repeated.status, 0, repeated.stdout + repeated.stderr)
+  assert.match(repeated.stdout, new RegExp(`Prumo v${packageVersion.replaceAll('.', '\\.')} is already installed in claude, kiro`))
   assert.equal(readdirSync(backups).length, count)
   const explicit = cli(['install', '--codex'])
   assert.equal(explicit.status, 0, explicit.stdout + explicit.stderr)

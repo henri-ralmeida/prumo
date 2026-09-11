@@ -4,17 +4,39 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { resolve, join } from 'node:path'
 import { planInstall, applyInstall, restoreInstall, installationStatus, discoverInstallations, detectHarnesses } from '../lib/install.mjs'
-import { isGlobalCli, launchUpdate, updateGlobalCli, updateRequest } from '../lib/update.mjs'
+import { globalCliState, isGlobalCli, launchUpdate, updateGlobalCli, updateRequest } from '../lib/update.mjs'
 import { selectHarnesses } from '../lib/prompt.mjs'
 import { language, createTranslator, messages } from '../scripts/i18n.mjs'
 
 let t = createTranslator(messages, language())
 const print = (...parts) => console.log(...parts.map(part => t(part)))
+const color = (code, value) => process.stdout.isTTY && !('NO_COLOR' in process.env) ? `\x1b[${code}m${value}\x1b[0m` : value
 
-function runInstall(options, { command = 'install', dryRun = false } = {}) {
+function progressUi(enabled) {
+  let active = false
+  return {
+    update(percent, label) {
+      if (!enabled || !process.stdout.isTTY) return
+      active = true
+      const width = 24
+      const filled = Math.round(width * percent / 100)
+      process.stdout.write(`\r${color('36', `[${'█'.repeat(filled)}${'░'.repeat(width - filled)}]`)} ${String(percent).padStart(3)}% ${label}`)
+    },
+    clear() {
+      if (active) process.stdout.write('\r\x1b[2K')
+      active = false
+    },
+    success(message) {
+      this.clear()
+      console.log(color('32', `✓ ${message}`))
+    },
+  }
+}
+
+function runInstall(options, { command = 'install', dryRun = false, quiet = false } = {}) {
   const plan = planInstall(options)
   t = createTranslator(messages, plan.lang)
-  if (command === 'install') {
+  if (command === 'install' && !quiet) {
     for (const group of plan.groups) {
       print(t('Changes / {0}', group.name))
       for (const item of group.changes) print(`  ${t(item.after === null ? 'remove' : 'write')}: ${item.file}`)
@@ -29,11 +51,18 @@ function runInstall(options, { command = 'install', dryRun = false } = {}) {
     if (result.groups.some(group => group.status === 'conflict')) process.exitCode = 2
     if (dryRun) print('Dry run: no files changed')
     else print('Open a new session to load Prumo and PO First')
+  } else if (command === 'install') {
+    const result = applyInstall(plan, { dryRun })
+    for (const group of result.groups.filter(group => group.status === 'conflict')) {
+      console.error(`[prumo] ${group.name}: ${group.errors.map(error => t(error)).join('; ') || t('conflict')}`)
+    }
+    if (result.groups.some(group => group.status === 'conflict')) process.exitCode = 2
   }
   const status = installationStatus(command === 'install' && !dryRun ? planInstall(options) : plan)
-  print(`${t('installed')}: ${t(status.installed ? 'yes' : 'no')}; ${t('configured')}: ${t(status.configured ? 'yes' : 'no')}`)
-  for (const warning of status.pendingActivation) if (command !== 'install' || !plan.warnings.includes(warning)) print(`${t('pending activation')}: ${t(warning)}`)
+  if (!quiet) print(`${t('installed')}: ${t(status.installed ? 'yes' : 'no')}; ${t('configured')}: ${t(status.configured ? 'yes' : 'no')}`)
+  for (const warning of status.pendingActivation) if (command !== 'install' || !plan.warnings.includes(warning)) (quiet ? console.error : print)(`${t('pending activation')}: ${t(warning)}`)
   if (status.pendingActivation.length || command === 'doctor' && !status.configured) process.exitCode = 2
+  return status
 }
 
 try {
@@ -46,7 +75,7 @@ try {
   const lang = language(values.lang)
   t = createTranslator(messages, lang)
   const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
-  const runningGlobally = isGlobalCli(fileURLToPath(new URL('..', import.meta.url)))
+  const packageRoot = fileURLToPath(new URL('..', import.meta.url))
   if (values.version) print(version)
   else if (values.help || positionals.length === 0) {
     print(`Prumo ${version} — graph-foreman + PO First\n\nprumo install [--all | --claude|--kiro|--codex] [--lang en|pt-BR] [--dry-run] [--project <path>]\nprumo update [--dry-run] [--lang en|pt-BR] [--project <path>]\nprumo doctor --claude|--kiro|--codex [--lang en|pt-BR] [--project <path>]\nprumo restore <backup>\n`)
@@ -54,23 +83,26 @@ try {
   } else if (['update', '_update'].includes(positionals[0])) {
     if (positionals.length !== 1 || ['claude', 'kiro', 'codex', 'all'].some(name => values[name])) throw new Error('Update automatically selects installed environments; do not select a harness')
     if (positionals[0] === 'update') {
+      const runningGlobally = isGlobalCli(packageRoot)
       const request = { dryRun: values['dry-run'] ?? false, lang: values.lang, projects: (values.project ?? []).map(path => resolve(path)), cwd: process.cwd(), updateCli: runningGlobally }
       const code = await launchUpdate(request)
       if (code === null) print('No Prumo installations found; install an environment first')
       else process.exitCode = code
     } else {
       const request = updateRequest(process.env.PRUMO_UPDATE_REQUEST)
+      const quiet = !request.dryRun
+      const progress = progressUi(quiet)
+      progress.update(10, t('Preparing Prumo update'))
       if (request.updateCli) {
         if (request.dryRun) print(t('Would update global Prumo CLI to {0}', version))
         else {
-          print(t('Updating global Prumo CLI to {0}', version))
+          progress.update(30, t('Updating Prumo CLI'))
           if (await updateGlobalCli(version) !== 0) throw new Error('Global Prumo CLI update failed')
-          print(t('Global Prumo CLI updated to {0}', version))
         }
       }
       const installed = discoverInstallations(request)
       if (!installed.length) print('No Prumo installations found; install an environment first')
-      for (const entry of installed) {
+      for (const [index, entry] of installed.entries()) {
         try {
           const variants = new Map()
           for (const root of entry.roots) {
@@ -81,11 +113,14 @@ try {
           }
           for (const [lang, roots] of variants) {
             t = createTranslator(messages, language(lang))
-            print(t('Updating {0} with Prumo {1}', entry.harness, version))
-            runInstall({ harness: entry.harness, configRoot: entry.config, skillRoots: roots, onlyInstalled: true, cwd: request.cwd, projects: entry.projects, lang }, { dryRun: request.dryRun })
+            if (!quiet) print(t('Updating {0} with Prumo {1}', entry.harness, version))
+            else progress.update(45 + Math.round(45 * (index + 1) / Math.max(installed.length, 1)), t('Updating {0}', entry.harness))
+            runInstall({ harness: entry.harness, configRoot: entry.config, skillRoots: roots, onlyInstalled: true, cwd: request.cwd, projects: entry.projects, lang }, { dryRun: request.dryRun, quiet })
           }
         } catch (error) { console.error(`[prumo] ${t(error.message)}`); process.exitCode = 2 }
       }
+      if (quiet && !process.exitCode) progress.success(t('Prumo updated successfully'))
+      else progress.clear()
     }
   } else if (positionals[0] === 'restore') {
     if (!positionals[1] || positionals.length !== 2) throw new Error('Restore needs a backup directory')
@@ -101,9 +136,24 @@ try {
     if (!harnesses.length) throw new Error('No supported environments detected; choose --claude, --kiro or --codex explicitly')
     if (!selected.length) {
       print(t('Detected environments: {0}', harnesses.join(', ')))
-      if (!values.all && (process.stdin.isTTY && process.stdout.isTTY || !values['dry-run'])) harnesses = await selectHarnesses(harnesses, { t })
+      const allCurrent = command === 'install' && harnesses.every(harness => {
+        const status = installationStatus(planInstall({ ...options, harness }))
+        return status.installed && status.configured
+      })
+      if (!allCurrent && !values.all && (process.stdin.isTTY && process.stdout.isTTY || !values['dry-run'])) harnesses = await selectHarnesses(harnesses, { t })
     }
-    if (command === 'install' && !runningGlobally) {
+    if (command === 'install') {
+      const current = []
+      const pending = []
+      for (const harness of harnesses) {
+        const status = installationStatus(planInstall({ ...options, harness }))
+        ;(status.installed && status.configured ? current : pending).push(harness)
+      }
+      if (current.length) print(color('32', t('Prumo v{0} is already installed in {1}', version, current.join(', '))))
+      harnesses = pending
+    }
+    const global = command === 'install' ? globalCliState(packageRoot) : null
+    if (command === 'install' && global.version !== version) {
       if (values['dry-run']) print(t('Would install global Prumo CLI {0}', version))
       else {
         print(t('Installing global Prumo CLI {0}', version))

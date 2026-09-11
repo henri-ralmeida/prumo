@@ -6,7 +6,7 @@ import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { planInstall, applyInstall, discoverInstallations } from '../lib/install.mjs'
-import { isGlobalCli, updateRequest } from '../lib/update.mjs'
+import { globalCliState, isGlobalCli, npmProcess, updateRequest } from '../lib/update.mjs'
 import { inside } from '../scripts/storage.mjs'
 
 const source = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -73,4 +73,15 @@ test('update rejects malformed requests before applying installations', () => {
   assert.equal(updateRequest(JSON.stringify({ dryRun: false, cwd: source, projects: [], updateCli: false })).updateCli, false)
   assert.equal(isGlobalCli(join(source, 'package'), { platform: 'linux', run: () => ({ status: 0, stdout: source }) }), true)
   assert.equal(isGlobalCli(source, { platform: 'linux', run: () => ({ status: 0, stdout: join(source, 'elsewhere') }) }), false)
+  const windows = npmProcess(['root', '--global'], { platform: 'win32', env: { ComSpec: 'C:\\Windows\\System32\\cmd.exe' } })
+  assert.equal(windows.command, 'C:\\Windows\\System32\\cmd.exe')
+  assert.deepEqual(windows.args, ['/d', '/s', '/c', 'npm', 'root', '--global'])
+  let options
+  const state = globalCliState(source, {
+    platform: 'win32', env: { ComSpec: 'cmd.exe' },
+    run(command, args, received) { options = received; assert.equal(command, 'cmd.exe'); assert.deepEqual(args, ['/d', '/s', '/c', 'npm', 'root', '--global']); return { status: 0, stdout: source } },
+    read: () => JSON.stringify({ version: '1.0.7' }),
+  })
+  assert.equal(options.shell, undefined, 'npm must not receive shell:true')
+  assert.deepEqual(state, { running: false, version: '1.0.7' })
 })

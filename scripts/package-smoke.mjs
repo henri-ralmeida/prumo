@@ -24,8 +24,11 @@ delete env.GRAPH_FOREMAN_HOME
 const evidence = []
 let registry
 function run(executable, args, success = true) {
-  // npm.cmd needs cmd.exe on Windows. Arguments here are fixed literals, never user input.
-  const result = spawnSync(executable, args, { cwd, env, shell: process.platform === 'win32' && (executable === 'npm' || executable.endsWith('.cmd')), encoding: 'utf8', timeout: 120000, windowsHide: true })
+  // npm.cmd needs cmd.exe on Windows. Arguments here are fixed test literals.
+  const command = process.platform === 'win32' && (executable === 'npm' || executable.endsWith('.cmd'))
+    ? { executable: process.env.ComSpec ?? process.env.COMSPEC ?? 'cmd.exe', args: ['/d', '/s', '/c', executable, ...args] }
+    : { executable, args }
+  const result = spawnSync(command.executable, command.args, { cwd, env, encoding: 'utf8', timeout: 120000, windowsHide: true })
   evidence.push({ command: [executable, ...args], status: result.status, stdout: result.stdout, stderr: result.stderr })
   assert.ifError(result.error)
   if (success) assert.equal(result.status, 0, result.stdout + result.stderr)
@@ -48,6 +51,7 @@ try {
   run('bun', ['x', '--no-install', 'prumo', 'install', '--all', '--lang', 'pt-BR'])
   assert.equal(JSON.parse(readFileSync(join(globalPackage, 'package.json'), 'utf8')).version, version)
   assert.match(run(globalExecutable, ['-v']), new RegExp(version.replaceAll('.', '\\.')))
+  assert.doesNotMatch(evidence.at(-1).stderr, /DEP0190/)
   run('npm', ['exec', '--offline', '--', 'prumo', 'install', '--claude', '--lang', 'pt-BR'])
   assert.equal(JSON.parse(readFileSync(join(home, '.claude', 'settings.json'), 'utf8')).outputStyle, 'PO First')
   assert.match(readFileSync(join(home, '.kiro', 'steering', 'po-first.md'), 'utf8'), /inclusion: always/)
@@ -58,6 +62,9 @@ try {
       assert.ok(existsSync(join(skill, file)), `${harness} installation must contain ${file}`)
     }
   }
+  const reinstallBackups = readdirSync(join(home, '.local', 'share', 'prumo', 'backups')).length
+  assert.match(run(globalExecutable, ['install', '--all']), new RegExp(`Prumo v${version.replaceAll('.', '\\.')} is already installed`))
+  assert.equal(readdirSync(join(home, '.local', 'share', 'prumo', 'backups')).length, reinstallBackups)
   console.log('Packaged npm and Bun entrypoints previewed automatic detection and installed all three adapters into an isolated home')
   const installedRoots = [join(home, '.claude', 'skills', 'prumo'), join(home, '.kiro', 'skills', 'prumo'), join(home, '.agents', 'skills', 'prumo')]
   for (const destination of installedRoots) {
@@ -77,7 +84,10 @@ try {
     assert.equal(readFileSync(join(destination, 'SKILL.md'), 'utf8'), '# Previous instructions\n')
   }
   assert.equal(JSON.parse(readFileSync(globalPackageJson, 'utf8')).version, '0.0.9')
-  run(globalExecutable, ['update'])
+  const updateOutput = run(globalExecutable, ['update'])
+  assert.match(updateOutput, /Prumo updated successfully|Prumo atualizado com sucesso/)
+  assert.doesNotMatch(updateOutput, /Changes \/|Existing data stays|Backup:/)
+  assert.doesNotMatch(evidence.at(-1).stderr, /DEP0190/)
   assert.ok(Number(readFileSync(requestFile, 'utf8')) > 0, 'Update must resolve the latest package from the registry')
   assert.equal(JSON.parse(readFileSync(globalPackageJson, 'utf8')).version, version)
   assert.match(run(globalExecutable, ['-v']), new RegExp(version.replaceAll('.', '\\.')))
