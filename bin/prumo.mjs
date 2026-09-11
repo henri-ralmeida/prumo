@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { resolve, join } from 'node:path'
 import { planInstall, applyInstall, restoreInstall, installationStatus, discoverInstallations, detectHarnesses } from '../lib/install.mjs'
-import { globalCliState, isGlobalCli, launchUpdate, updateGlobalCli, updateRequest } from '../lib/update.mjs'
+import { globalCliState, launchUpdate, updateGlobalCli, updateRequest } from '../lib/update.mjs'
 import { selectHarnesses } from '../lib/prompt.mjs'
 import { language, createTranslator, messages } from '../scripts/i18n.mjs'
 
@@ -89,8 +89,7 @@ try {
   } else if (['update', '_update'].includes(positionals[0])) {
     if (positionals.length !== 1 || ['claude', 'kiro', 'codex', 'all'].some(name => values[name])) throw new Error('Update automatically selects installed environments; do not select a harness')
     if (positionals[0] === 'update') {
-      const runningGlobally = isGlobalCli(packageRoot)
-      const request = { dryRun: values['dry-run'] ?? false, lang: values.lang, projects: (values.project ?? []).map(path => resolve(path)), cwd: process.cwd(), updateCli: runningGlobally }
+      const request = { dryRun: values['dry-run'] ?? false, lang: values.lang, projects: (values.project ?? []).map(path => resolve(path)), cwd: process.cwd(), updateCli: true }
       const code = await launchUpdate(request)
       if (code === null) print('No Prumo installations found; install an environment first')
       else process.exitCode = code

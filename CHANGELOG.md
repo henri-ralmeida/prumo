@@ -1,5 +1,17 @@
 # Changelog / Histórico
 
+## 1.0.9
+
+### English
+
+- Make `npx`/`bunx prumo update` install or update the global CLI, closing the upgrade gap for installations created by 1.0.5 or earlier; dry runs remain non-mutating.
+- Keep one personal Prumo skill in Codex: prefer the shared `.agents/skills` root, while preserving `.codex/skills` when it is the only legacy installation.
+
+### Português (Brasil)
+
+- Faz `prumo update` via `npx`/`bunx` instalar ou atualizar a CLI global, fechando a lacuna de atualização para instalações criadas pela 1.0.5 ou anterior; a prévia continua sem alterações.
+- Mantém uma única skill pessoal do Prumo no Codex: prioriza a raiz compartilhada `.agents/skills`, preservando `.codex/skills` quando ela for a única instalação legada.
+
 ## 1.0.8
 
 ### English

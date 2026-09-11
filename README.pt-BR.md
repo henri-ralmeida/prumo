@@ -62,15 +62,14 @@ Abra uma nova sessão depois de instalar. `doctor` distingue arquivos instalados
 
 ## Atualizar os ambientes instalados
 
-O instalador disponibiliza o comando curto. Instalações feitas na 1.0.5 ou anterior podem instalá-lo uma vez pelo npm:
+O instalador e o atualizador disponibilizam o comando curto:
 
 ```sh
-npm install -g @henri-ralmeida/prumo
 prumo update --dry-run
 prumo update
 ```
 
-Também pode usar `bunx @henri-ralmeida/prumo@latest update` ou `npx @henri-ralmeida/prumo@latest update` sem criar uma CLI global. `prumo update` atualiza a CLI global e Prumo/PO First em todos os ambientes instalados detectados. O npm precisa estar disponível; falha no download mantém as instalações intactas.
+Também pode usar `bunx @henri-ralmeida/prumo@latest update` ou `npx @henri-ralmeida/prumo@latest update`. Uma atualização real instala ou atualiza a CLI global e atualiza Prumo/PO First em todos os ambientes instalados detectados; `--dry-run` apenas mostra essas alterações. O npm precisa estar disponível; falha no download mantém as instalações intactas.
 
 Atualizações normais mostram uma barra colorida e compacta de progresso por etapas em terminais interativos e terminam com `Prumo atualizado com sucesso`, seguido da versão instalada em `Prumo v<versão>`. Use `prumo update --dry-run` para ver a prévia detalhada de arquivos e conflitos. O instalador registra ambientes e caminhos personalizados em `~/.local/share/prumo/installations.json`. A atualização também reconhece marcadores existentes do Prumo nos locais padrão e nos projetos informados com `--project`. Preserva o idioma de cada instalação, salvo uso de `--lang`, e reutiliza os backups e o tratamento de conflitos da instalação. Ambientes que contêm somente graph-foreman ficam fora da atualização. Não retoma planos nem cria tentativas. Após `prumo update` concluir, `prumo -v` mostra a versão publicada usada na atualização.
 
@@ -98,7 +97,7 @@ Não é necessário migrar planos, parar agentes ou encerrar o dashboard previam
 O backup informa o comando de reversão:
 
 ```sh
-npx @henri-ralmeida/prumo@1.0.8 restore "<diretório-do-backup>"
+npx @henri-ralmeida/prumo@1.0.9 restore "<diretório-do-backup>"
 ```
 
 A reversão recusa sobrescrever arquivos que você editou depois. Os planos continuam no estado atual: reverter uma instalação não deve apagar trabalho em andamento. Mantenha sua rotina de backup dos dados de negócio; o instalador não captura uma imagem consistente de todos os planos ativos.
