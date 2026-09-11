@@ -13,8 +13,11 @@ assert.equal(pkg.bin.prumo, 'bin/prumo.mjs')
 assert.equal(pkg.engines.node, '>=22')
 assert.equal(pkg.dependencies, undefined)
 const releaseNotes = JSON.parse(readFileSync(join(root, 'scripts', 'release-notes.json'), 'utf8'))
-assert.deepEqual(releaseNotes[pkg.version]?.en?.map(section => section.title), ['Fixed', 'Added'])
-assert.deepEqual(releaseNotes[pkg.version]?.['pt-BR']?.map(section => section.title), ['Corrigido', 'Adicionado'])
+assert.deepEqual(releaseNotes[pkg.version]?.en?.map(section => section.title), [
+  'Fixed — Installation, retry and validation',
+  'Added — Update visibility and compatibility'
+])
+assert.equal(releaseNotes[pkg.version]?.['pt-BR'], undefined)
 for (const file of ['SKILL.md', 'README.md', 'README.pt-BR.md', 'CHANGELOG.md', 'LICENSE', 'references/po-first.md', 'references/runtime.md', 'references/runtime.pt-BR.md']) assert.ok(existsSync(join(root, file)), file)
 const skill = readFileSync(join(root, 'SKILL.md'), 'utf8')
 assert.match(skill, /^---\nname: prumo\n/)

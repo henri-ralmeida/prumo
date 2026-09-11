@@ -40,8 +40,8 @@ function progressUi(enabled, stream = process.stdout) {
   }
 }
 
-function printReleaseNotes(version, lang) {
-  for (const section of releaseNotes(version, lang)) {
+function printReleaseNotes(version) {
+  for (const section of releaseNotes(version)) {
     console.log(color('1;36', section.title))
     for (const item of section.items) console.log(`- ${item}`)
   }
@@ -135,7 +135,7 @@ try {
       if (quiet && !process.exitCode) {
         t = createTranslator(messages, lang)
         progress.success(t('Prumo updated successfully'), version)
-        printReleaseNotes(version, lang)
+        printReleaseNotes(version)
       } else progress.clear()
     }
   } else if (positionals[0] === 'restore') {

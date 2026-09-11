@@ -14,7 +14,7 @@
 
 #### Added
 
-- Successful updates now show localized `Fixed` and `Added` highlights for the installed version.
+- Successful updates now show English `Fixed` and `Added` highlights with descriptive subtitles for the installed version.
 - The README now includes direct commands for automatic selection and each supported harness.
 
 ### Português (Brasil)
