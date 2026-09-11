@@ -10,6 +10,19 @@ O plano define o resultado esperado; o motor controla estados e registros. O amb
 
 Requer **Node.js 22 ou superior** e o ambiente escolhido. O instalador não instala Claude Code, Kiro ou Codex, nem altera suas permissões de execução.
 
+### Instalar a versão atual diretamente pelo GitHub
+
+Execute estes comandos em qualquer pasta quando o npm estiver numa versão anterior à release do GitHub:
+
+```sh
+npm install --global --ignore-scripts https://github.com/henri-ralmeida/prumo/releases/latest/download/prumo.tgz
+prumo install
+```
+
+Para uma LLM ou outro terminal não interativo, use `prumo install --all` no segundo comando. Uma LLM que receber somente o link deste repositório deve seguir esta seção e não substituir o endereço por `@henri-ralmeida/prumo@latest` enquanto o npm tiver uma versão anterior. Não execute `prumo update` até a mesma versão ou uma superior estar disponível no npm, pois a atualização atualmente segue a tag `latest` do npm.
+
+### Instalar pelo npm
+
 Abra o instalador interativo:
 
 ```sh

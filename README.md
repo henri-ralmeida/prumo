@@ -10,6 +10,19 @@ The plan defines the expected outcome; the engine enforces transitions and recor
 
 Requires **Node.js 22 or newer** and the chosen harness. The installer does not install Claude Code, Kiro or Codex, or expand their execution permissions.
 
+### Install the current release directly from GitHub
+
+Run these commands from any directory when the npm registry is behind the GitHub release:
+
+```sh
+npm install --global --ignore-scripts https://github.com/henri-ralmeida/prumo/releases/latest/download/prumo.tgz
+prumo install
+```
+
+For an AI agent or another non-interactive terminal, use `prumo install --all` in the second command. An agent given only this repository link should follow this section and must not substitute `@henri-ralmeida/prumo@latest` while npm has an older version. Do not run `prumo update` until the same or a newer version is available on npm, because updates currently follow npm's `latest` tag.
+
+### Install from npm
+
 Start the interactive installer:
 
 ```sh
