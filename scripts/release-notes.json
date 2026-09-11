@@ -1,4 +1,11 @@
 {
+  "1.1.2": {
+    "en": [
+      { "title": "Fixed — Legacy run recovery", "items": ["Preserve terminal contracts during sync-plan and retry", "Reject malformed working directories before recording validation"] },
+      { "title": "Fixed — Windows state persistence", "items": ["Retry transient state-file locks without deleting previous state"] },
+      { "title": "Added — Executor alias and review guidance", "items": ["Accept start --executor as an alias for --agent", "Clarify executable gates, environment failures and independent review"] }
+    ]
+  },
   "1.1.1": {
     "en": [
       {

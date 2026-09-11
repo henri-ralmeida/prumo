@@ -1,5 +1,21 @@
 # Changelog / Histórico
 
+## 1.1.2
+
+### Fixed — Legacy run recovery
+
+- Preserve completed and skipped legacy contracts during synchronization and retry; keep current contract and graph validation mandatory.
+- Diagnose shell-consumed Windows paths before recording a validation attempt.
+
+### Fixed — Windows state persistence
+
+- Retry transient atomic rename failures with bounded backoff, preserve the previous state on failure and clean up owned temporary files when possible.
+
+### Added — Executor alias and review guidance
+
+- Accept `start --executor` as an alias for `--agent`, rejecting conflicting names.
+- Explain that `validate --ok` executes real checks, environment failures require revalidation, and only an actual independent reviewer may approve work.
+
 ## 1.1.1
 
 ### English

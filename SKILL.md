@@ -340,6 +340,15 @@ unblock. Both a pending in-flight validation and a changed contract need fresh v
 completed evidence and attempt history remain recorded. Explain an earlier orchestration mistake
 with a note; do not rewrite it as an implementation failure or erase historical attempts.
 
+### Legacy runs and validation failures
+
+- `sync-plan` preserves `done` and `skipped` contracts as history. Their old prose does not block synchronization or retry of other tasks. Do not relabel completed functional work as inspection. New and nonterminal tasks still need valid contracts; graph structure is checked for every task.
+- `start --executor <name>` is an alias for `start --agent <name>`. These commands record assignment; they do not spawn the agent.
+- `validate --ok` **executes the contract commands**, including database and network operations. It is not a manual approval flag. Read each check's output and failed index before deciding whether failure is implementation, environment, or contract related.
+- A failed network/VPN check keeps the gate failed even if the reviewer considers the implementation correct. Restore the environment and have the independent reviewer validate again in the same attempt. Use `fail`/`retry` for an actual rejected implementation, not a transient environment failure. Functional checks always rerun; only explicitly cacheable static checks can reuse unchanged evidence.
+- The executor must not approve its own work. The orchestrator must not impersonate the reviewer by issuing approval on its behalf. The engine checks recorded roles, not the identity of the shell caller. If the reviewer session is gone, dispatch a fresh independent review agent; hand off through `block` and `unblock --reviewer <new-agent>`, then let that actual agent run validation.
+- Quote absolute working directories. In a POSIX shell on Windows use forward slashes, for example `--cwd "C:/work/project"`. Invalid directories are rejected before a gate receipt is created.
+
 ### What the reviewer gets, and what it decides
 
 Give the reviewer the **current validation contract**, relevant **approved context** and the
