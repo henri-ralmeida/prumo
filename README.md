@@ -62,15 +62,14 @@ Open a new session after installation. `doctor` distinguishes installed files, c
 
 ## Update installed environments
 
-The installer makes the short command available. Existing installations from 1.0.5 or earlier can install it once with npm:
+The installer and updater make the short command available:
 
 ```sh
-npm install -g @henri-ralmeida/prumo
 prumo update --dry-run
 prumo update
 ```
 
-Or use `bunx @henri-ralmeida/prumo@latest update` / `npx @henri-ralmeida/prumo@latest update` without creating a global CLI. `prumo update` updates both the global CLI and Prumo/PO First in every detected installed harness. npm must be available; a download failure leaves installations unchanged.
+You can also use `bunx @henri-ralmeida/prumo@latest update` or `npx @henri-ralmeida/prumo@latest update`. A real update installs or updates the global CLI and refreshes Prumo/PO First in every detected installed harness; `--dry-run` only previews those changes. npm must be available; a download failure leaves installations unchanged.
 
 Normal updates show a compact colored progress bar in interactive terminals and finish with `Prumo updated successfully`, followed by the installed `Prumo v<version>`. Use `prumo update --dry-run` for the detailed file and conflict preview. The installer records installed environments and custom paths in `~/.local/share/prumo/installations.json`. Update also recognizes existing Prumo markers in standard locations and projects supplied with `--project`. It preserves each installation's language unless `--lang` is supplied, uses the same backups and conflict handling as installation, and skips environments containing only graph-foreman. It never resumes plans or creates attempts. After a successful `prumo update`, `prumo -v` reports the published version used for the update.
 
@@ -98,7 +97,7 @@ No manual migration, stopped agents or stopped dashboard is required in advance.
 The backup includes a restore command:
 
 ```sh
-npx @henri-ralmeida/prumo@1.0.8 restore "<backup-directory>"
+npx @henri-ralmeida/prumo@1.0.9 restore "<backup-directory>"
 ```
 
 Restore refuses to overwrite files edited since installation. Plans keep their current state: reverting an installation must not erase ongoing work. Maintain your own business-data backups; the installer does not take a consistent snapshot of every live plan.
