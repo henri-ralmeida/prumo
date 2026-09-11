@@ -1,5 +1,19 @@
 # Changelog / Histórico
 
+## 1.0.8
+
+### English
+
+- Repaint the update progress line before every phase and use ASCII segments, preventing stale labels and broken bar glyphs in Windows terminals.
+- Print the installed version below the success result and suppress successful npm runner notices while preserving actionable failure output.
+- Move GitHub Actions from Node.js 20 runtimes to Node.js 24 and silence the optional empty-artifact warning.
+
+### Português (Brasil)
+
+- Limpa a linha de progresso antes de cada etapa e usa segmentos ASCII, evitando texto antigo e caracteres quebrados da barra em terminais Windows.
+- Exibe a versão instalada abaixo do resultado de sucesso e oculta avisos do executor npm quando a atualização funciona, preservando erros úteis em falhas.
+- Migra as GitHub Actions do runtime Node.js 20 para Node.js 24 e silencia o aviso de artefato opcional vazio.
+
 ## 1.0.7
 
 ### English
