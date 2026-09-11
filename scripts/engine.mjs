@@ -58,6 +58,7 @@ const CURRENT_FILE = join(GRAPH_DIR, 'CURRENT')
 const MAX_ATTEMPTS_SOFT = 3
 const DEFAULT_MAX_PARALLEL = 4
 const DEFAULT_MAX_EXECUTORS = 3   // the 4th slot is RESERVED for review
+const TASK_CONTRACT_FIELDS = ['phase', 'title', 'deps', 'validation', 'validationMode', 'inspectionReason', 'requireReview', 'maxAttempts', 'tags', 'touches']
 const LOCK_WAIT_MS = 5000         // how long a command waits for the run's lock
 const LOCK_STALE_MS = 30000       // a lock older than this belonged to a process that died
 
@@ -197,6 +198,7 @@ function validatePlan(plan, allowOverlap = false) {
   for (const t of plan.tasks) {
     if (!t.id || !t.title) die('every task needs id and title')
     if (ids.has(t.id)) die(`duplicate task id ${t.id}`)
+    try { validationContract(t) } catch (error) { die(`task ${t.id}: ${error.message}`) }
     ids.add(t.id)
   }
   for (const t of plan.tasks)
@@ -389,7 +391,7 @@ const commands = {
     if (removed.length) die(`sync-plan is additive: plan removed ${removed.join(', ')}`)
 
     const mutableStates = new Set(['pending', 'failed', 'blocked'])
-    const contractFields = ['phase', 'title', 'deps', 'validation', 'validationMode', 'inspectionReason', 'requireReview', 'maxAttempts', 'tags', 'touches']
+    const contractFields = TASK_CONTRACT_FIELDS
     const added = []
     const updated = []
     const preserved = []
@@ -517,6 +519,9 @@ const commands = {
     const state = loadState(name)
     const t = getTask(state, id)
     if (t.state !== 'pending') die(`${id} is ${t.state}, not pending`)
+    try { validationContract(t) } catch (error) {
+      die(`${id} has an invalid legacy validation contract: ${error.message} — correct the approved plan and run sync-plan before start`)
+    }
     assertAvailable(state, t, 'running', agent)
     t.state = 'running'
     t.agent = agent
@@ -602,7 +607,7 @@ const commands = {
     let error = null
     if (requestedOk) {
       try {
-        result = await runValidation(snapshot, args.cwd)
+        result = await runValidation(snapshot, args.cwd, snapshot.validations.at(-2))
         assertValidation(snapshot, { ...result, evidence: args.evidence })
       } catch (e) { error = e.message }
     }
@@ -676,6 +681,14 @@ const commands = {
     const state = loadState(name)
     const t = getTask(state, id)
     if (t.state !== 'failed') die(`${id} is ${t.state}, not failed`)
+    if (state.plan.source && existsSync(state.plan.source)) {
+      const { plan } = readPlan(state.plan.source)
+      const approved = plan.tasks.find((candidate) => candidate.id === id)
+      if (!approved) die(`approved plan no longer contains ${id} — inspect it before retry`)
+      const next = taskFromPlan(approved)
+      const changed = TASK_CONTRACT_FIELDS.filter((field) => JSON.stringify(t[field]) !== JSON.stringify(next[field]))
+      if (changed.length) die(`${id} contract differs from the approved plan (${changed.join(', ')}) — run sync-plan and inspect the persisted contract before retry`)
+    }
     const cap = t.maxAttempts ?? MAX_ATTEMPTS_SOFT
     if (t.attempts.length >= cap && !args.force)
       die(`${id} already has ${t.attempts.length} attempts (cap ${cap}) — escalate instead, or --force`)

@@ -1,0 +1,42 @@
+{
+  "1.1.0": {
+    "en": [
+      {
+        "title": "Fixed",
+        "items": [
+          "Concise installation progress",
+          "Accurate harness detection",
+          "Safe retry after approved contract changes",
+          "Plan contract preflight and legacy-run recovery",
+          "Resumable deterministic validation steps"
+        ]
+      },
+      {
+        "title": "Added",
+        "items": [
+          "Release highlights after updates",
+          "Harness installation matrix"
+        ]
+      }
+    ],
+    "pt-BR": [
+      {
+        "title": "Corrigido",
+        "items": [
+          "Progresso enxuto na instalação",
+          "Detecção correta dos ambientes",
+          "Retry seguro após alterações aprovadas de contrato",
+          "Validação prévia de contratos e recuperação de runs legadas",
+          "Retomada de passos de validação determinísticos"
+        ]
+      },
+      {
+        "title": "Adicionado",
+        "items": [
+          "Resumo da versão após atualizações",
+          "Matriz de instalação por ambiente"
+        ]
+      }
+    ]
+  }
+}

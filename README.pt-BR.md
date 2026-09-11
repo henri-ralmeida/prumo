@@ -10,26 +10,17 @@ O plano define o resultado esperado; o motor controla estados e registros. O amb
 
 Requer **Node.js 22 ou superior** e o ambiente escolhido. O instalador não instala Claude Code, Kiro ou Codex, nem altera suas permissões de execução.
 
-### Instalar a versão atual diretamente pelo GitHub
+Abra o instalador interativo ou escolha um ambiente diretamente:
 
-Execute estes comandos em qualquer pasta quando o npm estiver numa versão anterior à release do GitHub:
+| Destino | Comando |
+|---|---|
+| Detectar e escolher ambientes disponíveis | `bunx @henri-ralmeida/prumo@latest install` |
+| Todos os ambientes detectados, sem perguntas | `bunx @henri-ralmeida/prumo@latest install --all` |
+| Claude Code | `bunx @henri-ralmeida/prumo@latest install --claude` |
+| Kiro | `bunx @henri-ralmeida/prumo@latest install --kiro` |
+| Codex | `bunx @henri-ralmeida/prumo@latest install --codex` |
 
-```sh
-npm install --global --ignore-scripts https://github.com/henri-ralmeida/prumo/releases/latest/download/prumo.tgz
-prumo install
-```
-
-Para uma LLM ou outro terminal não interativo, use `prumo install --all` no segundo comando. Uma LLM que receber somente o link deste repositório deve seguir esta seção e não substituir o endereço por `@henri-ralmeida/prumo@latest` enquanto o npm tiver uma versão anterior. Não execute `prumo update` até a mesma versão ou uma superior estar disponível no npm, pois a atualização atualmente segue a tag `latest` do npm.
-
-### Instalar pelo npm
-
-Abra o instalador interativo:
-
-```sh
-bunx @henri-ralmeida/prumo@latest install
-```
-
-Ele detecta os ambientes disponíveis pelas configurações de usuário existentes, pelos comandos no `PATH` (`claude`, `kiro-cli` / `kiro`, `codex`) e pelas skills de projeto existentes do Claude/Kiro. O menu mostra somente os ambientes detectados, inicialmente todos marcados. Use as setas para navegar, Espaço para marcar/desmarcar, A para todos/nenhum, Enter para instalar ou Esc para cancelar. A instalação é por usuário e vale para seus projetos; nenhuma alteração é aplicada antes da seleção.
+Ele detecta ambientes por configurações reais ou comandos no `PATH` (`claude`, `kiro-cli` / `kiro`, `codex`). Pastas vazias como `~/.claude`, `~/.kiro` e `~/.codex` não bastam. O menu mostra somente os ambientes detectados, inicialmente todos marcados. Use as setas para navegar, Espaço para marcar/desmarcar, A para todos/nenhum, Enter para instalar ou Esc para cancelar. A instalação é por usuário e vale para seus projetos; nenhuma alteração é aplicada antes da seleção.
 
 Para instalar em todos os ambientes detectados sem perguntas, inclusive em scripts:
 
@@ -53,15 +44,14 @@ bunx @henri-ralmeida/prumo@latest install --claude --lang en
 
 Sem `--lang`, instalações existentes mantêm a preferência salva. O dashboard segue a instalação e não tem seletor de idioma separado. As respostas dos agentes seguem o idioma do usuário.
 
-Pode substituir `bunx` por `npx`. Bun é opcional; o executável usa Node.js. A instalação real também instala a CLI global persistente pelo npm; em um novo terminal, `prumo -v` e `prumo update` ficam disponíveis. Os arquivos dos ambientes continuam independentes do cache do gerenciador. `--dry-run` não altera CLI nem ambientes.
+A instalação real também instala a CLI global persistente pelo npm; em um novo terminal, `prumo -v` e `prumo update` ficam disponíveis. Os arquivos dos ambientes continuam independentes do cache do Bun. `--dry-run` não altera CLI nem ambientes.
 
 ```sh
-npx @henri-ralmeida/prumo@latest install --claude --lang pt-BR --dry-run
-npx @henri-ralmeida/prumo@latest install --claude --lang pt-BR
-npx @henri-ralmeida/prumo@latest doctor --claude --lang pt-BR
+bunx @henri-ralmeida/prumo@latest install --claude --lang pt-BR --dry-run
+bunx @henri-ralmeida/prumo@latest doctor --claude --lang pt-BR
 ```
 
-`--dry-run` apenas mostra as alterações; sem terminal ou opção de ambiente, mostra a prévia de todos os detectados. A instalação real mostra os arquivos antes de aplicá-las e informa o backup. Repita o comando para atualizar; arquivos e blocos idênticos não são duplicados. `--project <caminho>` inclui um projeto adicional na busca por instalações e dados existentes; pode ser repetido. Não há varredura indiscriminada do disco.
+`--dry-run` apenas mostra as alterações; sem terminal ou opção de ambiente, mostra a prévia de todos os detectados. A instalação real mostra progresso enxuto; `--dry-run` informa arquivos, backups e conflitos. Repita o comando para atualizar; arquivos e blocos idênticos não são duplicados. `--project <caminho>` inclui um projeto adicional na busca por instalações e dados existentes; pode ser repetido. Não há varredura indiscriminada do disco.
 
 | Ambiente | Invocação | PO First |
 |---|---|---|
@@ -82,7 +72,7 @@ prumo update --dry-run
 prumo update
 ```
 
-Também pode usar `bunx @henri-ralmeida/prumo@latest update` ou `npx @henri-ralmeida/prumo@latest update`. Uma atualização real instala ou atualiza a CLI global e atualiza Prumo/PO First em todos os ambientes instalados detectados; `--dry-run` apenas mostra essas alterações. O npm precisa estar disponível; falha no download mantém as instalações intactas.
+`bunx @henri-ralmeida/prumo@latest update` oferece a mesma atualização em qualquer pasta. Uma atualização real instala ou atualiza a CLI global e atualiza Prumo/PO First em todos os ambientes instalados detectados; `--dry-run` apenas mostra essas alterações. O npm precisa estar disponível; falha no download mantém as instalações intactas.
 
 Atualizações normais mostram uma barra colorida e compacta de progresso por etapas em terminais interativos e terminam com `Prumo atualizado com sucesso`, seguido da versão instalada em `Prumo v<versão>`. Use `prumo update --dry-run` para ver a prévia detalhada de arquivos e conflitos. O instalador registra ambientes e caminhos personalizados em `~/.local/share/prumo/installations.json`. A atualização também reconhece marcadores existentes do Prumo nos locais padrão e nos projetos informados com `--project`. Preserva o idioma de cada instalação, salvo uso de `--lang`, e reutiliza os backups e o tratamento de conflitos da instalação. Ambientes que contêm somente graph-foreman ficam fora da atualização. Não retoma planos nem cria tentativas. Após `prumo update` concluir, `prumo -v` mostra a versão publicada usada na atualização.
 
@@ -110,7 +100,7 @@ Não é necessário migrar os dados manualmente. Encerre sessões que estejam ca
 O backup informa o comando de reversão:
 
 ```sh
-npx @henri-ralmeida/prumo@1.0.10 restore "<diretório-do-backup>"
+bunx @henri-ralmeida/prumo@1.1.0 restore "<diretório-do-backup>"
 ```
 
 A reversão recusa sobrescrever arquivos que você editou depois. Os planos continuam no estado atual: reverter uma instalação não deve apagar trabalho em andamento. Mantenha sua rotina de backup dos dados de negócio; o instalador não captura uma imagem consistente de todos os planos ativos.

@@ -1,5 +1,6 @@
 import { log } from './i18n.mjs'
 import { spawn, spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { isAbsolute } from 'node:path'
 import { statSync } from 'node:fs'
 
@@ -7,6 +8,8 @@ const nonempty = (value) => typeof value === 'string' && value.trim().length > 0
 const insist = (condition, message) => { if (!condition) throw new Error(message) }
 const expectedExitCodes = (step) => step.expectedExitCodes ?? [0]
 const passed = (step, check) => expectedExitCodes(step).includes(check.exitCode) && !check.error && !check.signal
+const failureMessage = (step, check, index, total) =>
+  `validation check ${index + 1}/${total} (${step.kind ?? 'static'}) failed: ${check?.error ?? `exit ${check?.exitCode ?? 'not run'}`}; command: ${step.run} — functional failures cannot be replaced by lint`
 
 // The plan classifies checks; only the reviewer can judge their behavioral coverage.
 export function validationContract(task) {
@@ -15,10 +18,15 @@ export function validationContract(task) {
   if (mode === 'inspection')
     insist(nonempty(task.inspectionReason), 'inspection requires inspectionReason explaining why runtime behavior is unaffected')
   const steps = Array.isArray(task.validation) ? task.validation : []
-  insist(steps.length > 0 || nonempty(task.validation), 'validation contract must not be empty')
+  if (mode === 'functional')
+    insist(Array.isArray(task.validation) && steps.length > 0,
+      'functional validation must be a nonempty array of executable steps; prose is allowed only for justified inspection')
+  else insist(steps.length > 0 || nonempty(task.validation), 'inspection validation must not be empty')
   for (const step of steps) {
     insist(step && nonempty(step.run) && nonempty(step.expect), 'each validation step needs nonempty run and expect')
     insist(['static', 'functional'].includes(step.kind ?? 'static'), 'step kind must be static or functional')
+    if (step.cacheable !== undefined) insist(typeof step.cacheable === 'boolean', 'cacheable must be true or false')
+    if (step.cacheable) insist((step.kind ?? 'static') === 'static', 'only static validation steps can be cacheable')
     if (step.expectedExitCodes !== undefined)
       insist(Array.isArray(step.expectedExitCodes) && step.expectedExitCodes.length > 0 &&
         step.expectedExitCodes.every((code) => Number.isInteger(code) && code >= 0 && code <= 255),
@@ -78,7 +86,24 @@ function execute(run, options, timeoutMs) {
   })
 }
 
-export async function runValidation(task, cwd) {
+function workspaceRevision(directory) {
+  const options = { encoding: 'utf8', windowsHide: true, timeout: 10000, maxBuffer: 16 * 1024 * 1024 }
+  const git = (...args) => spawnSync('git', ['-C', directory, ...args], options)
+  const root = git('rev-parse', '--show-toplevel')
+  const head = git('rev-parse', 'HEAD')
+  const diff = git('diff', '--binary', '--no-ext-diff', 'HEAD', '--')
+  const untracked = git('ls-files', '--others', '--exclude-standard', '-z')
+  if ([root, head, diff, untracked].some(result => result.status !== 0 || result.error)) return null
+  const hash = createHash('sha256').update(root.stdout.trim()).update('\0').update(head.stdout.trim()).update('\0').update(diff.stdout)
+  for (const file of untracked.stdout.split('\0').filter(Boolean)) {
+    const blob = git('hash-object', '--', file)
+    if (blob.status !== 0 || blob.error) return null
+    hash.update('\0').update(file).update('\0').update(blob.stdout.trim())
+  }
+  return hash.digest('hex')
+}
+
+export async function runValidation(task, cwd, previousReceipt = null) {
   const contract = validationContract(task)
   const checks = []
   // Resolve every working directory before executing any command.
@@ -89,6 +114,19 @@ export async function runValidation(task, cwd) {
     return directory
   })
   for (const [index, step] of contract.steps.entries()) {
+    const revision = step.cacheable ? workspaceRevision(directories[index]) : null
+    const prior = previousReceipt?.checks?.[index]
+    if (revision && previousReceipt?.contract === contract.key &&
+        (previousReceipt.contractRevision ?? 0) === (task.contractRevision ?? 0) &&
+        previousReceipt.attempt === task.attempts?.length &&
+        (previousReceipt.stateRevision ?? 0) === (task.stateRevision ?? 0) &&
+        previousReceipt.by === task.validations?.at(-1)?.by &&
+        previousReceipt.agent === task.validations?.at(-1)?.agent &&
+        prior?.workspaceRevision === revision && passed(step, prior)) {
+      checks.push({ ...prior, reusedAt: new Date().toISOString() })
+      log(`[prumo] reused check ${index + 1}/${contract.steps.length} (static, unchanged workspace)`)
+      continue
+    }
     const timeoutMs = step.timeoutMs ?? 600000
     const shell = step.shell ?? (process.platform === 'win32' ? process.env.ComSpec ?? 'cmd.exe' : '/bin/sh')
     const env = { ...process.env }
@@ -107,12 +145,14 @@ export async function runValidation(task, cwd) {
       shell, timeoutMs, expectedExitCodes: expectedExitCodes(step),
       exitCode: result.status, signal: result.signal, error: result.error?.message ?? null,
       stdout: result.stdout ?? '', stderr: result.stderr ?? '', at: new Date().toISOString(),
+      workspaceRevision: revision,
     }
     checks.push(check)
     log(`[prumo] check ${index + 1}/${contract.steps.length} (${check.kind}): exit ${check.exitCode}${check.error ? ` — ${check.error}` : ''}`)
     if (!passed(step, check)) break
   }
-  return { contract: contract.key, contractRevision: task.contractRevision ?? 0, checks }
+  return { contract: contract.key, contractRevision: task.contractRevision ?? 0,
+    stateRevision: task.stateRevision ?? 0, checks }
 }
 
 export function assertValidation(task, receipt) {
@@ -121,12 +161,17 @@ export function assertValidation(task, receipt) {
   insist(receipt.contract === contract.key, 'validation lacks an execution receipt for this contract — validate again')
   insist((receipt.contractRevision ?? 0) === (task.contractRevision ?? 0),
     'contract was refreshed after validation — validate the current contract again')
-  insist(Array.isArray(receipt.checks) && receipt.checks.length === contract.steps.length,
-    'not all validation commands completed')
+  insist(Array.isArray(receipt.checks), 'validation receipt has no checks')
+  if (receipt.checks.length !== contract.steps.length) {
+    const index = receipt.checks.length - 1
+    if (index >= 0 && !passed(contract.steps[index], receipt.checks[index]))
+      throw new Error(failureMessage(contract.steps[index], receipt.checks[index], index, contract.steps.length))
+    throw new Error('not all validation commands completed')
+  }
   for (const [index, step] of contract.steps.entries()) {
     const check = receipt.checks[index]
     insist(check.run === step.run && check.kind === (step.kind ?? 'static') &&
       check.expect === step.expect && passed(step, check),
-    `validation check ${index + 1} did not pass — functional failures cannot be replaced by lint`)
+    failureMessage(step, check, index, contract.steps.length))
   }
 }

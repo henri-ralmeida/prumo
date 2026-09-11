@@ -1,5 +1,37 @@
 # Changelog / Histórico
 
+## 1.1.0
+
+### English
+
+#### Fixed
+
+- Normal installation now uses the same compact progress display as updates; detailed file, backup and conflict output remains available with `--dry-run`.
+- Harness detection now requires an executable, real configuration or managed installation marker; empty `~/.claude`, `~/.kiro` and `~/.codex` directories no longer select an environment.
+- `retry` now refuses a failed task when its recorded contract differs from the approved plan and directs the agent to synchronize and inspect it first.
+- New plans reject malformed functional validation during `init`; legacy pending tasks refuse dispatch until `sync-plan`, while active work can use `refresh-contract` without losing its attempt.
+- Deterministic `static` steps marked `cacheable: true` can resume within the same attempt when the task, contract and Git workspace are unchanged; functional steps always run, and failures identify the exact step.
+
+#### Added
+
+- Successful updates now show localized `Fixed` and `Added` highlights for the installed version.
+- The README now includes direct commands for automatic selection and each supported harness.
+
+### Português (Brasil)
+
+#### Corrigido
+
+- A instalação normal agora usa o mesmo progresso enxuto das atualizações; arquivos, backups e conflitos continuam disponíveis com `--dry-run`.
+- A detecção dos ambientes agora exige executável, configuração real ou marcador de instalação gerenciado; pastas vazias `~/.claude`, `~/.kiro` e `~/.codex` não selecionam mais um ambiente.
+- `retry` agora recusa uma tarefa reprovada quando o contrato registrado difere do plano aprovado e orienta sincronizar e conferir primeiro.
+- Planos novos recusam validação funcional malformada no `init`; tarefas legadas pendentes não são disparadas até `sync-plan`, enquanto trabalho ativo pode usar `refresh-contract` sem perder a tentativa.
+- Passos `static` determinísticos marcados com `cacheable: true` podem ser retomados na mesma tentativa quando tarefa, contrato e árvore Git continuam iguais; passos funcionais sempre executam, e falhas identificam o passo exato.
+
+#### Adicionado
+
+- Atualizações concluídas agora mostram destaques localizados de `Corrigido` e `Adicionado` para a versão instalada.
+- O README agora inclui comandos diretos para seleção automática e cada ambiente compatível.
+
 ## 1.0.10
 
 ### English

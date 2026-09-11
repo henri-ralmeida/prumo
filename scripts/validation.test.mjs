@@ -11,7 +11,7 @@ const engine = resolve(process.env.GRAPH_TEST_ENGINE ?? join(dirname(fileURLToPa
 const staticStep = { run: 'node --check delivery.cjs', kind: 'static', expect: 'valid JavaScript syntax' }
 const functionalStep = { run: 'node delivery.test.cjs', kind: 'functional', expect: 'express delivery is 1 day; normal delivery is 3 days' }
 
-function fixture(t, task = {}, planOptions = {}) {
+function fixture(t, task = {}, planOptions = {}, { init = true } = {}) {
   const parent = resolve(tmpdir())
   const home = mkdtempSync(join(parent, 'graph-validation-'))
   t.after(() => {
@@ -54,7 +54,7 @@ function fixture(t, task = {}, planOptions = {}) {
     ok('start', 'T1', '--agent', 'executor')
     ok('review', 'T1', '--agent', 'reviewer')
   }
-  ok('init', '--plan', planPath, '--run', 'regression')
+  if (init) ok('init', '--plan', planPath, '--run', 'regression')
   const events = () => readFileSync(join(root, '.specs/graph/regression/events.ndjson'), 'utf8').trim().split('\n').map(JSON.parse)
   return { cli, ok, rejected, state, save, project, validate, beginReview, options, plan, planPath, events }
 }
@@ -285,21 +285,29 @@ test('the same lifecycle validates data, automation and migration artifacts with
   }
 })
 
-test('functional task with lint only is refused, including --force', (t) => {
-  const f = fixture(t, { validation: [staticStep] })
-  f.beginReview()
-  assert.notEqual(f.validate('--force').status, 0)
-  assert.match(f.state().tasks.T1.validations.at(-1).error, /requires an executable functional check/)
-  f.rejected(/no passing validation/, 'done', 'T1', '--force')
+test('functional task with lint only is refused during plan initialization', (t) => {
+  const f = fixture(t, { validation: [staticStep] }, {}, { init: false })
+  f.rejected(/requires an executable functional check/, 'init', '--plan', f.planPath, '--run', 'regression', '--force')
 })
 
-test('legacy prose, echo instructions and untyped steps cannot approve functionality', (t) => {
-  for (const validation of ['Tests pass', [{ run: 'echo reviewer-check-this', expect: 'works' }]]) {
-    const f = fixture(t, { validation })
-    f.beginReview()
-    assert.notEqual(f.validate().status, 0)
-    f.rejected(/no passing validation/, 'done', 'T1')
+test('malformed prose, echo instructions and untyped steps cannot enter a functional run', (t) => {
+  for (const [validation, error] of [
+    ['Tests pass', /functional validation must be a nonempty array/],
+    [[{ run: 'echo reviewer-check-this', expect: 'works' }], /requires an executable functional check/],
+  ]) {
+    const f = fixture(t, { validation }, {}, { init: false })
+    f.rejected(error, 'init', '--plan', f.planPath, '--run', 'regression')
   }
+})
+
+test('a legacy pending run must synchronize a malformed contract before dispatch', (t) => {
+  const f = fixture(t)
+  const legacy = f.state()
+  legacy.tasks.T1.validation = 'Tests pass'
+  f.save(legacy)
+  f.rejected(/invalid legacy validation contract.*sync-plan before start/, 'start', 'T1', '--agent', 'executor')
+  f.ok('sync-plan', '--plan', f.planPath)
+  f.ok('start', 'T1', '--agent', 'executor')
 })
 
 test('passing functional checks execute real code and record commands, output and directory', (t) => {
@@ -341,10 +349,8 @@ test('documentation may use a static checker; inspection needs a justification',
   f.beginReview()
   assert.equal(f.validate().status, 0)
   f.ok('done', 'T1')
-  const bad = fixture(t, { validationMode: 'inspection', validation: 'Review docs' })
-  bad.beginReview()
-  assert.notEqual(bad.validate().status, 0)
-  assert.match(bad.state().tasks.T1.validations.at(-1).error, /inspectionReason/)
+  const bad = fixture(t, { validationMode: 'inspection', validation: 'Review docs' }, {}, { init: false })
+  bad.rejected(/inspectionReason/, 'init', '--plan', bad.planPath, '--run', 'regression')
 })
 
 test('empty evidence and pre-upgrade bare approval cannot reach done', (t) => {
@@ -359,10 +365,8 @@ test('empty evidence and pre-upgrade bare approval cannot reach done', (t) => {
 })
 
 test('review opt-out does not opt out of functional verification', (t) => {
-  const f = fixture(t, { requireReview: false, validation: [staticStep] })
-  f.ok('start', 'T1', '--agent', 'executor')
-  assert.notEqual(f.validate().status, 0)
-  f.rejected(/no passing validation/, 'done', 'T1')
+  const f = fixture(t, { requireReview: false, validation: [staticStep] }, {}, { init: false })
+  f.rejected(/requires an executable functional check/, 'init', '--plan', f.planPath, '--run', 'regression')
   const docs = fixture(t, { requireReview: false, validationMode: 'inspection', inspectionReason: 'Documentation only', validation: 'Confirm spelling correction' })
   docs.ok('start', 'T1', '--agent', 'executor')
   docs.ok('validate', 'T1', '--ok', '--evidence', 'Confirmed spelling and unchanged instructions')
@@ -493,14 +497,10 @@ test('step env passes values without shell interpolation and records the shell',
   f.ok('done', 'T1')
 })
 
-test('Windows Unix-style environment assignment fails preflight with an actionable message', (t) => {
+test('Windows Unix-style environment assignment fails plan preflight with an actionable message', (t) => {
   if (process.platform !== 'win32') return t.skip('Windows shell compatibility')
-  const f = fixture(t, { validation: [functionalStep, { ...functionalStep, run: 'ASPNETCORE_ENVIRONMENT=Development node delivery.test.cjs' }] })
-  writeFileSync(join(f.project, 'delivery.test.cjs'), "require('node:fs').writeFileSync('executed','yes');\n")
-  f.beginReview()
-  const result = f.validate()
-  assert.notEqual(result.status, 0)
-  assert.match(result.output, /move NAME=value into step.env/)
+  const f = fixture(t, { validation: [functionalStep, { ...functionalStep, run: 'ASPNETCORE_ENVIRONMENT=Development node delivery.test.cjs' }] }, {}, { init: false })
+  f.rejected(/move NAME=value into step.env/, 'init', '--plan', f.planPath, '--run', 'regression')
   assert.equal(existsSync(join(f.project, 'executed')), false)
 })
 
@@ -535,12 +535,10 @@ test('timeouts may be extended or explicitly disabled; actual timeout blocks app
   f.rejected(/no passing validation/, 'done', 'T1')
 })
 
-test('invalid execution options are refused before any command runs', (t) => {
+test('invalid execution options are refused before a run is created', (t) => {
   for (const options of [{ expectedExitCodes: [] }, { expectedExitCodes: [null] }, { env: { MODE: 3 } }, { shell: '' }, { timeoutMs: -1 }]) {
-    const f = fixture(t, { validation: [{ ...functionalStep, ...options }] })
-    f.beginReview()
-    assert.notEqual(f.validate().status, 0)
-    f.rejected(/no passing validation/, 'done', 'T1')
+    const f = fixture(t, { validation: [{ ...functionalStep, ...options }] }, {}, { init: false })
+    f.rejected(/task T1:/, 'init', '--plan', f.planPath, '--run', 'regression')
   }
 })
 
@@ -697,6 +695,8 @@ test('real rejection and approved contract change preserve history and verify th
   }]
   writeFileSync(join(f.project, 'current-policy.test.cjs'), "const assert = require('node:assert/strict'); const {days} = require('./delivery.cjs'); assert.equal(days(true),1); assert.equal(days(false),4); console.log('2 current policy scenarios passed');\n")
   writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.rejected(/contract differs from the approved plan.*sync-plan.*before retry/, 'retry', 'T1')
+  assert.deepEqual(f.state().tasks.T1, rejected, 'a stale retry must not change the rejected task')
   f.ok('sync-plan', '--plan', f.planPath)
   const synced = f.state()
   assert.equal(synced.tasks.T1.state, 'failed')

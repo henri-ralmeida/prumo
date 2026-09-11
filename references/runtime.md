@@ -7,7 +7,7 @@ watching the whole site on a live dashboard.
 Install the skill and PO First for your environment; see the [installation guide](../README.md).
 
 ```bash
-npx @henri-ralmeida/prumo@latest install --claude
+bunx @henri-ralmeida/prumo@latest install --claude
 ```
 
 ## What it does
@@ -130,7 +130,7 @@ Every field a planning skill needs to emit. Only `id` and `title` are required t
 | `title`         | string                        | required  | What this task delivers, one line                                                             |
 | `phase`         | string                        | —         | Id of a `phases[]` entry; groups the task in status and dashboard swimlanes                   |
 | `deps`          | string[]                      | `[]`      | Task ids that must be `done`/`skipped` first — the ENTIRE scheduling model                    |
-| `validation`    | string \| {run, expect, kind, cwd?, env?, shell?, expectedExitCodes?, timeoutMs?}[]    | `""`      | What must be TRUE before done. Prose, or structured steps (see below)                         |
+| `validation`    | string \| {run, expect, kind, cacheable?, cwd?, env?, shell?, expectedExitCodes?, timeoutMs?}[]    | `""`      | What must be TRUE before done. Prose, or structured steps (see below)                         |
 | `validationMode` | "functional" \| "inspection" | "functional" | Behavioral checks required unless this is a justified non-runtime inspection. |
 | `inspectionReason` | string | — | Required for inspection; explain why runtime behavior is unaffected. |
 | `touches`       | string[]                      | `[]`      | Path prefixes the task writes; `init` refuses parallel tasks with overlapping paths           |
@@ -180,6 +180,11 @@ own absolute `cwd` for multi-repository checks. Commands use cmd.exe on Windows 
 on Unix. Optional `shell` selects an installed shell executable; the command must use that
 shell's syntax. Use `env` for portable environment variables, not Unix NAME=value prefixes
 under cmd.exe. Values must be strings; do not put secrets in plans or evidence.
+Steps run in order and stop on the first failure. A `static` step may declare `cacheable: true`;
+during another validation in the same attempt and task state, Prumo reuses its passing result
+only when the contract and Git HEAD/worktree snapshot are unchanged. Functional steps always
+run. Without an explicit cacheable marker, every step runs again.
+
 Each step defaults to a 10-minute deadline. `timeoutMs` accepts 0–2147483647 milliseconds;
 0 explicitly disables the deadline. Choose a suitable limit before an approved long check.
 The engine prints the selected deadline before executing and records it with the shell.
@@ -237,10 +242,13 @@ For a genuinely rejected delivery whose approved contract also changes:
    `graph`: validation, dependencies and write scope must match before proceeding.
 4. Run `retry <task>`, then `start <task> --agent <executor>` and dispatch the actual harness agent.
 
-Use the selected `--run` on every call. `retry` does not reload a plan. `refresh-contract` only
-updates validation fields; it does not record rejection. If no implementation was rejected and
-only verification needs updating, refresh and review in the same attempt instead. Completed
-tasks need explicit follow-up work, not rewritten history.
+Use the selected `--run` on every call. `retry` does not reload a plan and refuses a failed
+task whose recorded contract differs from its approved source; synchronize and inspect first.
+`refresh-contract` only updates validation fields; it does not record rejection. If no
+implementation was rejected and only verification needs updating, refresh and review in the
+same attempt instead. Completed tasks need explicit follow-up work, not rewritten history.
+Prefer structured file editing. If a temporary program is needed for a large plan, verify its
+backup and exact diff and remove it afterward; it is not an engine command.
 
 Resume from persisted state rather than replaying the sequence. When `start`/`review` succeeded
 but native agent dispatch did not happen, complete that dispatch in the same attempt if authorized.

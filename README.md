@@ -10,26 +10,17 @@ The plan defines the expected outcome; the engine enforces transitions and recor
 
 Requires **Node.js 22 or newer** and the chosen harness. The installer does not install Claude Code, Kiro or Codex, or expand their execution permissions.
 
-### Install the current release directly from GitHub
+Start the interactive installer or select a harness directly:
 
-Run these commands from any directory when the npm registry is behind the GitHub release:
+| Target | Command |
+|---|---|
+| Detect and choose available harnesses | `bunx @henri-ralmeida/prumo@latest install` |
+| Every detected harness, unattended | `bunx @henri-ralmeida/prumo@latest install --all` |
+| Claude Code | `bunx @henri-ralmeida/prumo@latest install --claude` |
+| Kiro | `bunx @henri-ralmeida/prumo@latest install --kiro` |
+| Codex | `bunx @henri-ralmeida/prumo@latest install --codex` |
 
-```sh
-npm install --global --ignore-scripts https://github.com/henri-ralmeida/prumo/releases/latest/download/prumo.tgz
-prumo install
-```
-
-For an AI agent or another non-interactive terminal, use `prumo install --all` in the second command. An agent given only this repository link should follow this section and must not substitute `@henri-ralmeida/prumo@latest` while npm has an older version. Do not run `prumo update` until the same or a newer version is available on npm, because updates currently follow npm's `latest` tag.
-
-### Install from npm
-
-Start the interactive installer:
-
-```sh
-bunx @henri-ralmeida/prumo@latest install
-```
-
-It detects available environments from existing user configuration, commands on `PATH` (`claude`, `kiro-cli` / `kiro`, `codex`), and existing Claude/Kiro project skills. A checkbox menu shows only detected environments, initially all selected. Use the arrow keys to move, Space to toggle, A for all/none, Enter to install, or Esc to cancel. Installation is per user and available across projects; no changes are applied before selection.
+It detects available environments from real configuration or commands on `PATH` (`claude`, `kiro-cli` / `kiro`, `codex`). Empty `~/.claude`, `~/.kiro` and `~/.codex` directories are not enough. A checkbox menu shows only detected environments, initially all selected. Use the arrow keys to move, Space to toggle, A for all/none, Enter to install, or Esc to cancel. Installation is per user and available across projects; no changes are applied before selection.
 
 To install in every detected environment without prompting, including from scripts:
 
@@ -53,15 +44,14 @@ bunx @henri-ralmeida/prumo@latest install --claude --lang pt-BR
 
 Without `--lang`, existing installations retain their saved preference. The dashboard follows the installation and has no separate language selector. Agent responses follow the user's language.
 
-Replace `bunx` with `npx` if preferred. Bun is optional; the executable runs under Node.js. A real installation also installs the persistent global CLI through npm, so `prumo -v` and `prumo update` are available in a new terminal. Installed harness files remain independent of the package manager cache. `--dry-run` changes neither the CLI nor harnesses.
+A real installation also installs the persistent global CLI through npm, so `prumo -v` and `prumo update` are available in a new terminal. Installed harness files remain independent of the Bun cache. `--dry-run` changes neither the CLI nor harnesses.
 
 ```sh
-npx @henri-ralmeida/prumo@latest install --claude --lang en --dry-run
-npx @henri-ralmeida/prumo@latest install --claude --lang en
-npx @henri-ralmeida/prumo@latest doctor --claude --lang en
+bunx @henri-ralmeida/prumo@latest install --claude --lang en --dry-run
+bunx @henri-ralmeida/prumo@latest doctor --claude --lang en
 ```
 
-`--dry-run` only previews changes; without a terminal or harness flag, it previews all detected environments. A real installation prints affected files before applying them and reports its backup. Repeat the command to update; identical files and instruction blocks are not duplicated. Repeatable `--project <path>` includes additional projects when looking for existing installations and data. It does not scan your entire disk.
+`--dry-run` only previews changes; without a terminal or harness flag, it previews all detected environments. A real installation shows compact progress; `--dry-run` reports affected files, backups and conflicts. Repeat the command to update; identical files and instruction blocks are not duplicated. Repeatable `--project <path>` includes additional projects when looking for existing installations and data. It does not scan your entire disk.
 
 | Harness | Invocation | PO First activation |
 |---|---|---|
@@ -82,7 +72,7 @@ prumo update --dry-run
 prumo update
 ```
 
-You can also use `bunx @henri-ralmeida/prumo@latest update` or `npx @henri-ralmeida/prumo@latest update`. A real update installs or updates the global CLI and refreshes Prumo/PO First in every detected installed harness; `--dry-run` only previews those changes. npm must be available; a download failure leaves installations unchanged.
+`bunx @henri-ralmeida/prumo@latest update` provides the same update from any directory. A real update installs or updates the global CLI and refreshes Prumo/PO First in every detected installed harness; `--dry-run` only previews those changes. npm must be available; a download failure leaves installations unchanged.
 
 Normal updates show a compact colored progress bar in interactive terminals and finish with `Prumo updated successfully`, followed by the installed `Prumo v<version>`. Use `prumo update --dry-run` for the detailed file and conflict preview. The installer records installed environments and custom paths in `~/.local/share/prumo/installations.json`. Update also recognizes existing Prumo markers in standard locations and projects supplied with `--project`. It preserves each installation's language unless `--lang` is supplied, uses the same backups and conflict handling as installation, and skips environments containing only graph-foreman. It never resumes plans or creates attempts. After a successful `prumo update`, `prumo -v` reports the published version used for the update.
 
@@ -110,7 +100,7 @@ No manual data migration is required. Finish sessions that are actively loading 
 The backup includes a restore command:
 
 ```sh
-npx @henri-ralmeida/prumo@1.0.10 restore "<backup-directory>"
+bunx @henri-ralmeida/prumo@1.1.0 restore "<backup-directory>"
 ```
 
 Restore refuses to overwrite files edited since installation. Plans keep their current state: reverting an installation must not erase ongoing work. Maintain your own business-data backups; the installer does not take a consistent snapshot of every live plan.
