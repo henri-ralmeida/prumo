@@ -6,7 +6,7 @@ import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync, spawn } from 'node:child_process'
 import { setTimeout } from 'node:timers/promises'
-import { planInstall, applyInstall, restoreInstall, installationStatus, detectHarnesses } from '../lib/install.mjs'
+import { planInstall, applyInstall, restoreInstall, installationStatus, detectHarnesses, discoverInstallations } from '../lib/install.mjs'
 import { inside, findRoot, storageHome, graphRoots } from '../scripts/storage.mjs'
 
 const source = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -78,6 +78,18 @@ test('automatic detection uses existing configuration, local legacy skills and e
     chmodSync(binary, 0o644)
     assert.deepEqual(detectHarnesses(options), ['claude', 'codex'])
   }
+})
+
+test('Codex uses one personal skill root while preserving a legacy installation', t => {
+  const f = fixture(t, 'codex')
+  const legacyRoot = join(f.config, 'skills')
+  put(join(legacyRoot, 'graph-foreman', 'SKILL.md'), 'old skill')
+  assert.deepEqual(f.plan().groups.filter(group => group.name.startsWith('skill:')).map(group => group.name), [`skill:${legacyRoot}`])
+
+  const installed = applyInstall(planInstall({ ...f.options, skillRoots: [f.skillRoot, legacyRoot] }))
+  assert.ok(installed.groups.every(group => group.status !== 'conflict'))
+  assert.deepEqual(discoverInstallations({ home: f.home, cwd: f.cwd, env: {} }).find(entry => entry.harness === 'codex').roots, [f.skillRoot])
+  assert.deepEqual(f.plan().groups.filter(group => group.name.startsWith('skill:')).map(group => group.name), [`skill:${f.skillRoot}`])
 })
 
 test('automatic CLI installs only detected harnesses, preserves runs and backups, and keeps explicit selection', t => {
