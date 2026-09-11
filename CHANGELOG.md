@@ -29,7 +29,7 @@
 
 #### Adicionado
 
-- Atualizações concluídas agora mostram destaques localizados de `Corrigido` e `Adicionado` para a versão instalada.
+- Atualizações concluídas agora mostram destaques em inglês com subtítulos descritivos de `Fixed` e `Added` para a versão instalada.
 - O README agora inclui comandos diretos para seleção automática e cada ambiente compatível.
 
 ## 1.0.10
