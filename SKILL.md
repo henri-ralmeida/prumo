@@ -30,6 +30,14 @@ mechanical and fine; inventing the tasks is planning, and planning is not this s
 Arriving with only a prompt: route to the planning workflow, or draft the plan and SHOW it.
 The run starts after their yes, never before.
 
+Claude Code Plan mode and Kiro Plan/Spec mode are authoring and approval layers, not Prumo
+plan formats. After approval, invoke Prumo and mechanically translate their tasks into
+`.plan.json`; do not treat native plan approval or native execution as a Prumo run. Prumo
+must pass `init` before dispatch. A functional task always uses a nonempty validation array,
+for example `"validation": [{ "kind": "functional", "run": "<real check>", "expect": "<observable result>" }]`.
+A prose validation is valid only with `validationMode: "inspection"` and a concrete
+`inspectionReason`.
+
 Argument: a plan file, a run name to RESUME, or nothing (then
 `$PRUMO_ROOT/.specs/graph/CURRENT`). With
 neither, do not guess — use the plan this session just produced, or ask where it lives, naming
@@ -247,7 +255,10 @@ Call `validate --ok --evidence "<observations against each criterion>" --cwd <ab
 after inspecting the diff and the approved commands. This runs the plan's commands and records
 their output and exit codes; inspect those receipts before `done`. Avoid logging credentials.
 Do not mutate the reviewed code while checks run; rerun validation if it changes afterward.
-The engine checks execution, not the semantic truth of `expect` or the declared `kind`.
+All steps rerun by default. Mark only deterministic `static` steps as `cacheable: true`; Prumo
+may reuse their passing result within the same attempt and task state when the contract and Git
+workspace are unchanged. Functional steps always run. The engine checks execution, not the
+semantic truth of `expect` or the declared `kind`.
 Never label lint as functional to satisfy the gate. Shell commands execute with the caller's
 permissions; the approved plan is not permission for unrelated or destructive side effects.
 
@@ -257,6 +268,10 @@ A skill upgrade does not add business scope, enlarge a data window, or require a
 Keep validation proportional to the approved task. A reviewer can run missing verification
 on delivered work in the current attempt. Existing artifacts help the review; an executor's
 report alone is still not approval.
+
+For a legacy graph-foreman run, preserve state and history. If a pending task has an invalid
+functional contract, `start` refuses dispatch; correct the approved source and run `sync-plan`.
+If work is already running or reviewing, keep the attempt and use `refresh-contract` below.
 
 After adapting the approved plan, use:
 
@@ -301,9 +316,13 @@ node $ENGINE start T4 --agent <executor> --run <run-name>  # pair with actual di
 ```
 
 Resume from the recorded phase if some steps already happened. `retry` alone does not reload
-the plan. `sync-plan` preserves active/completed definitions; refresh only updates validation
-fields and does not record a rejection. Preserve the prior attempt's reason and evidence;
-carry the current contract and actionable rejection into the next executor's assignment.
+the plan and refuses to proceed when the recorded failed task differs from its approved source;
+run `sync-plan` and inspect first. `sync-plan` preserves active/completed definitions; refresh
+only updates validation fields and does not record a rejection. Preserve the prior attempt's
+reason and evidence; carry the current contract and actionable rejection into the next
+executor's assignment. Prefer the harness's structured editor for the approved plan. If a
+temporary program is the safest way to change a large plan, verify its backup and exact diff,
+then remove it; that helper is not a Prumo transition.
 
 ### Resuming paused work
 

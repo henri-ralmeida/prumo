@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { resolve, join } from 'node:path'
 import { planInstall, applyInstall, restoreInstall, installationStatus, discoverInstallations, detectHarnesses } from '../lib/install.mjs'
 import { globalCliState, launchUpdate, updateGlobalCli, updateRequest } from '../lib/update.mjs'
+import { releaseNotes } from '../lib/release-notes.mjs'
 import { selectHarnesses } from '../lib/prompt.mjs'
 import { language, createTranslator, messages } from '../scripts/i18n.mjs'
 
@@ -36,6 +37,13 @@ function progressUi(enabled, stream = process.stdout) {
       clear()
       stream.write(`${color('32', `✓ ${message}`, stream)}\nPrumo v${version}\n`)
     },
+  }
+}
+
+function printReleaseNotes(version, lang) {
+  for (const section of releaseNotes(version, lang)) {
+    console.log(color('1;36', section.title))
+    for (const item of section.items) console.log(`- ${item}`)
   }
 }
 
@@ -124,8 +132,11 @@ try {
           }
         } catch (error) { console.error(`[prumo] ${t(error.message)}`); process.exitCode = 2 }
       }
-      if (quiet && !process.exitCode) progress.success(t('Prumo updated successfully'), version)
-      else progress.clear()
+      if (quiet && !process.exitCode) {
+        t = createTranslator(messages, lang)
+        progress.success(t('Prumo updated successfully'), version)
+        printReleaseNotes(version, lang)
+      } else progress.clear()
     }
   } else if (positionals[0] === 'restore') {
     if (!positionals[1] || positionals.length !== 2) throw new Error('Restore needs a backup directory')
@@ -157,23 +168,34 @@ try {
       if (current.length) print(color('32', t('Prumo v{0} is already installed in {1}', version, current.join(', '))))
       harnesses = pending
     }
+    const dryRun = values['dry-run'] ?? false
+    const quiet = command === 'install' && !dryRun
+    const progress = progressUi(quiet)
+    if (quiet) progress.update(10, t('Preparing Prumo installation'))
     const global = command === 'install' ? globalCliState(packageRoot) : null
     if (command === 'install' && global.version !== version) {
-      if (values['dry-run']) print(t('Would install global Prumo CLI {0}', version))
+      if (dryRun) print(t('Would install global Prumo CLI {0}', version))
       else {
-        print(t('Installing global Prumo CLI {0}', version))
-        if (await updateGlobalCli(version) !== 0) throw new Error('Global Prumo CLI installation failed')
-        print(t('Global Prumo CLI installed: prumo -v reports {0}', version))
+        progress.update(30, t('Installing Prumo CLI'))
+        if (await updateGlobalCli(version) !== 0) {
+          progress.clear()
+          throw new Error('Global Prumo CLI installation failed')
+        }
       }
     }
-    for (const harness of harnesses) {
-      try { runInstall({ ...options, harness }, { command, dryRun: values['dry-run'] }) }
-      catch (error) {
+    for (const [index, harness] of harnesses.entries()) {
+      try {
+        if (quiet) progress.update(40 + Math.round(50 * (index + 1) / Math.max(harnesses.length, 1)), t('Installing {0}', harness))
+        runInstall({ ...options, harness }, { command, dryRun, quiet })
+      } catch (error) {
+        progress.clear()
         if (selected.length) throw error
         console.error(`[prumo] ${harness}: ${t(error.message)}`)
         process.exitCode = 2
       }
     }
+    if (quiet && !process.exitCode) progress.success(t('Prumo installed successfully'), version)
+    else progress.clear()
   }
 } catch (error) {
   console.error(`[prumo] ${t(error.message)}`)
