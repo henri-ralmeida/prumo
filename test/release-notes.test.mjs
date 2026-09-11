@@ -5,13 +5,13 @@ import { releaseNotes } from '../lib/release-notes.mjs'
 
 const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 
-test('current release has concise localized update highlights', () => {
-  const en = releaseNotes(version, 'en')
-  const pt = releaseNotes(version, 'pt-BR')
-  assert.deepEqual(en.map(section => section.title), ['Fixed', 'Added'])
-  assert.deepEqual(pt.map(section => section.title), ['Corrigido', 'Adicionado'])
-  assert.ok(en.flatMap(section => section.items).includes('Safe retry after approved contract changes'))
-  assert.ok(pt.flatMap(section => section.items).includes('Retry seguro após alterações aprovadas de contrato'))
-  assert.deepEqual(releaseNotes(version, 'unsupported'), en)
-  assert.deepEqual(releaseNotes('0.0.0', 'en'), [])
+test('current release has concise English update highlights with descriptive subtitles', () => {
+  const notes = releaseNotes(version)
+  assert.deepEqual(notes.map(section => section.title), [
+    'Fixed — Installation, retry and validation',
+    'Added — Update visibility and compatibility'
+  ])
+  assert.ok(notes.flatMap(section => section.items).includes('Safe retry after approved contract changes'))
+  assert.deepEqual(releaseNotes(version, 'pt-BR'), notes)
+  assert.deepEqual(releaseNotes('0.0.0'), [])
 })

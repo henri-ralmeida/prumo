@@ -2,7 +2,7 @@
   "1.1.0": {
     "en": [
       {
-        "title": "Fixed",
+        "title": "Fixed — Installation, retry and validation",
         "items": [
           "Concise installation progress",
           "Accurate harness detection",
@@ -12,29 +12,10 @@
         ]
       },
       {
-        "title": "Added",
+        "title": "Added — Update visibility and compatibility",
         "items": [
           "Release highlights after updates",
           "Harness installation matrix"
-        ]
-      }
-    ],
-    "pt-BR": [
-      {
-        "title": "Corrigido",
-        "items": [
-          "Progresso enxuto na instalação",
-          "Detecção correta dos ambientes",
-          "Retry seguro após alterações aprovadas de contrato",
-          "Validação prévia de contratos e recuperação de runs legadas",
-          "Retomada de passos de validação determinísticos"
-        ]
-      },
-      {
-        "title": "Adicionado",
-        "items": [
-          "Resumo da versão após atualizações",
-          "Matriz de instalação por ambiente"
         ]
       }
     ]
