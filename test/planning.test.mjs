@@ -55,14 +55,35 @@ function fixture(t, tasks = [{ id: 'T1', title: 'Delivery estimate' }], options 
       openQuestions: [],
     }
   }
+  const discovery = () => ({
+    research: [{ source: join(project, 'delivery.cjs'), findings: 'Current delivery behavior and dependency outputs were inspected.' }],
+    questions: [{ question: 'Should this task preserve the approved delivery behavior?', answer: 'Yes.', channel: 'chat-fallback', round: 1 }],
+    coverage: {
+      problem: 'Keep delivery estimates aligned with the approved contract.', affected: 'Customers requesting delivery estimates.',
+      outcome: 'Express and normal estimates remain correct.', currentBehavior: 'The implementation returns one or three days.',
+      desiredBehavior: 'Preserve the approved one-day and three-day results.', rules: 'Use the approved validation contract.',
+      exceptions: 'No additional exception was approved.', scope: 'Only the current task and its declared files.',
+      acceptance: 'The recorded functional check passes.',
+    },
+    decisions: [{ question: 'Preserve the approved behavior?', answer: 'Yes.' }], deferred: [],
+    closure: 'The user confirmed the only task-specific gray area; no consequential uncertainty remains.',
+  })
+  const contextPath = (value = discovery(), id = 'T1') => {
+    const path = join(root, id + '-discovery.json')
+    writeFileSync(path, JSON.stringify(value))
+    return path
+  }
   const finish = (id = 'T1', value = artifact(id)) => {
     const path = join(root, id + '-task-plan.json')
     writeFileSync(path, JSON.stringify(value))
     return ok('finish-planning', id, '--plan', path)
   }
-  const planTask = (id = 'T1', agent = 'planner-' + id) => { ok('plan-task', id, '--agent', agent); finish(id) }
+  const beginPlan = (id = 'T1', agent = 'planner-' + id, value = discovery()) =>
+    ok('plan-task', id, '--agent', agent, '--context', contextPath(value, id))
+  const planTask = (id = 'T1', agent = 'planner-' + id) => { beginPlan(id, agent); finish(id) }
   ok('init', '--plan', planPath, '--run', 'planning')
-  return { root, project, plan, planPath, writePlan, cli, ok, rejected, state, save, events, graph, artifact, finish, planTask }
+  return { root, project, plan, planPath, writePlan, cli, ok, rejected, state, save, events, graph,
+    artifact, discovery, contextPath, beginPlan, finish, planTask }
 }
 
 test('new tasks require researched planning before execution and still require independent behavioral review', t => {
@@ -70,9 +91,9 @@ test('new tasks require researched planning before execution and still require i
   assert.equal(f.graph().derived.T1.effective, 'ready_to_plan')
   assert.equal(f.graph().derived.T2.effective, 'waiting')
   f.rejected(/completed current planning/, 'start', 'T1', '--agent', 'executor', '--force')
-  f.rejected(/still waiting on: T1/, 'plan-task', 'T2', '--agent', 'planner-T2', '--force')
+  f.rejected(/still waiting on: T1/, 'plan-task', 'T2', '--agent', 'planner-T2', '--force', '--context', f.contextPath(f.discovery(), 'T2'))
   assert.match(f.ok('ready').output, /T1.*ready_to_plan/)
-  f.ok('plan-task', 'T1', '--agent', 'planner')
+  f.beginPlan('T1', 'planner')
   assert.equal(f.graph().derived.T1.effective, 'planning')
   assert.equal(f.state().tasks.T1.attempts.length, 0)
   assert.match(f.ok('status').output, /@planner/)
@@ -100,9 +121,78 @@ test('new tasks require researched planning before execution and still require i
   assert.equal(f.state().tasks.T1.attempts.length, 1)
 })
 
+test('discovery is completed in the principal conversation before a planner is dispatched', t => {
+  const f = fixture(t)
+  const baseline = f.state(), events = f.events()
+  f.rejected(/needs --context/, 'plan-task', 'T1', '--agent', 'planner')
+  for (const change of [
+    { questions: [] },
+    { questions: [{ question: 'What changes?', answer: '', channel: 'chat-fallback', round: 1 }] },
+    { questions: [{ question: 'What changes?', answer: 'Approved answer', channel: 'unknown', round: 1 }] },
+    { coverage: { problem: 'Only one area' } },
+    { closure: '' },
+  ]) {
+    f.rejected(/discovery/, 'plan-task', 'T1', '--agent', 'planner', '--context', f.contextPath({ ...f.discovery(), ...change }))
+    assert.deepEqual(f.state(), baseline)
+    assert.equal(f.events(), events)
+  }
+  const context = f.discovery()
+  context.questions.push({ question: 'Is there another consequential gray area?', answer: 'No.', channel: 'native', round: 2 })
+  f.beginPlan('T1', 'planner', context)
+  const task = f.state().tasks.T1
+  assert.equal(task.state, 'planning')
+  assert.equal(task.discovery.questions.length, 2)
+  assert.equal(task.discovery.questions[1].channel, 'native')
+  assert.equal(task.discovery.attempt, 1)
+  assert.equal(task.discovery.context, task.planningAttempts[0].context)
+  assert.match(task.discovery.digest, /^[a-f0-9]{64}$/)
+  assert.equal(task.discovery.digest, task.planningAttempts[0].discoveryDigest)
+  assert.match(f.events(), /"discoveryQuestions":2/)
+})
+
+test('planning is bound to canonical discovery and restarts only when its content changes', t => {
+  const f = fixture(t)
+  const discoveryA = f.discovery()
+  f.beginPlan('T1', 'planner-A', discoveryA)
+  const afterA = f.state(), eventsA = f.events()
+  const digestA = afterA.tasks.T1.discovery.digest
+
+  const sameA = structuredClone(discoveryA)
+  sameA.coverage = Object.fromEntries(Object.entries(sameA.coverage).reverse())
+  f.ok('plan-task', 'T1', '--agent', 'planner-that-must-not-start', '--context', f.contextPath(sameA))
+  assert.deepEqual(f.state(), afterA)
+  assert.equal(f.events(), eventsA)
+
+  const discoveryB = structuredClone(discoveryA)
+  discoveryB.questions[0].answer = 'Yes, with the clarified B decision.'
+  discoveryB.decisions[0].answer = 'Use clarified behavior B.'
+  discoveryB.closure = 'Decision B resolves the changed task-specific gray area.'
+  f.beginPlan('T1', 'planner-B', discoveryB)
+  const afterB = f.state(), task = afterB.tasks.T1
+  assert.equal(task.planner, 'planner-B')
+  assert.equal(task.planningAttempts.length, 2)
+  assert.equal(task.planningAttempts[0].result, 'superseded')
+  assert.ok(task.planningAttempts[0].endedAt)
+  assert.notEqual(task.discovery.digest, digestA)
+  assert.equal(task.planningAttempts[1].discoveryDigest, task.discovery.digest)
+
+  const damaged = structuredClone(afterB)
+  damaged.tasks.T1.discovery.questions[0].answer = 'Changed behind the planner'
+  f.save(damaged)
+  const beforeRefusal = f.events()
+  f.rejected(/stale discovery/, 'finish-planning', 'T1', '--plan', f.contextPath(f.artifact(), 'task-plan'))
+  assert.equal(f.events(), beforeRefusal)
+
+  f.save(afterB)
+  f.finish()
+  const planned = f.state().tasks.T1
+  assert.equal(planned.taskPlan.discoveryDigest, planned.discovery.digest)
+  assert.equal(f.graph().derived.T1.effective, 'ready')
+})
+
 test('incomplete research, missing check coverage and unanswered blocking questions are refused atomically', t => {
   const f = fixture(t)
-  f.ok('plan-task', 'T1', '--agent', 'planner')
+  f.beginPlan('T1', 'planner')
   const baseline = f.state(), events = f.events()
   const path = join(f.root, 'invalid.json')
   const cases = [
@@ -131,14 +221,14 @@ test('planners consume total capacity and cannot share an agent with execution o
   const f = fixture(t, tasks, { maxParallel: 2, maxExecutors: 1 })
   f.planTask('T1')
   f.ok('start', 'T1', '--agent', 'executor')
-  f.rejected(/already on T1/, 'plan-task', 'T2', '--agent', 'executor', '--force')
+  f.rejected(/already on T1/, 'plan-task', 'T2', '--agent', 'executor', '--force', '--context', f.contextPath(f.discovery(), 'T2'))
   f.ok('review', 'T1', '--agent', 'reviewer')
-  f.rejected(/already on T1/, 'plan-task', 'T2', '--agent', 'reviewer')
-  f.ok('plan-task', 'T2', '--agent', 'planner')
-  f.rejected(/agents busy/, 'plan-task', 'T3', '--agent', 'other', '--force')
+  f.rejected(/already on T1/, 'plan-task', 'T2', '--agent', 'reviewer', '--context', f.contextPath(f.discovery(), 'T2'))
+  f.beginPlan('T2', 'planner')
+  f.rejected(/agents busy/, 'plan-task', 'T3', '--agent', 'other', '--force', '--context', f.contextPath(f.discovery(), 'T3'))
   assert.match(f.ok('ready').output, /1 in planning.*0 agent slots/)
   f.ok('block', 'T1', '--reason', 'Release review slot')
-  f.rejected(/already on T2/, 'plan-task', 'T3', '--agent', 'planner', '--force')
+  f.rejected(/already on T2/, 'plan-task', 'T3', '--agent', 'planner', '--force', '--context', f.contextPath(f.discovery(), 'T3'))
   f.planTask('T3', 'third-planner')
   f.rejected(/already on T2/, 'start', 'T3', '--agent', 'planner', '--force')
   f.ok('start', 'T3', '--agent', 'third-executor')
@@ -148,14 +238,14 @@ test('planners consume total capacity and cannot share an agent with execution o
 
 test('planning pause restores the planner phase and excludes paused time from active rounds', t => {
   const f = fixture(t, [{ id: 'T1', title: 'First' }, { id: 'T2', title: 'Second' }], { maxParallel: 1 })
-  f.ok('plan-task', 'T1', '--agent', 'planner')
+  f.beginPlan('T1', 'planner')
   f.ok('block', 'T1', '--reason', 'Need a product decision')
   f.ok('block', 'T1', '--reason', 'Question clarified')
   assert.equal(f.state().tasks.T1.stateBeforeBlock, 'planning')
   assert.equal(f.state().tasks.T1.planningAttempts[0].result, 'blocked')
   assert.ok(f.state().tasks.T1.planningAttempts[0].endedAt)
   f.rejected(/paused active attempt/, 'unblock', 'T1', '--reviewer', 'reviewer', '--force')
-  f.ok('plan-task', 'T2', '--agent', 'second')
+  f.beginPlan('T2', 'second')
   const before = f.state()
   f.rejected(/agents busy/, 'unblock', 'T1')
   assert.deepEqual(f.state(), before)
@@ -190,7 +280,7 @@ test('task contract changes invalidate completed planning, including a later ret
 test('changed contracts while planning or paused have an explicit restart preserving research history', t => {
   for (const paused of [false, true]) {
     const f = fixture(t)
-    f.ok('plan-task', 'T1', '--agent', 'planner')
+    f.beginPlan('T1', 'planner')
     if (paused) f.ok('block', 'T1', '--reason', 'Approved clarification is pending')
     f.plan.tasks[0].validation = [{ ...check, timeoutMs: 900000 }]
     f.writePlan()
@@ -200,7 +290,7 @@ test('changed contracts while planning or paused have an explicit restart preser
     writeFileSync(path, JSON.stringify(f.artifact()))
     f.rejected(/planning is stale/, 'finish-planning', 'T1', '--plan', path, '--force')
     const before = f.state().tasks.T1
-    f.ok('plan-task', 'T1', '--agent', 'planner')
+    f.beginPlan('T1', 'planner')
     const restarted = f.state().tasks.T1
     assert.equal(restarted.planningAttempts.at(-2).result, 'superseded')
     assert.equal(restarted.planningAttempts.length, before.planningAttempts.length + 1)
@@ -219,7 +309,7 @@ test('delivered dependency changes invalidate planning; unrelated task progress 
   f.writePlan()
   f.ok('sync-plan', '--plan', f.planPath)
   f.ok('note', 'T0', '--text', 'Unrelated scheduling note')
-  f.ok('plan-task', 'T2', '--agent', 'other-planner')
+  f.beginPlan('T2', 'other-planner')
   assert.equal(f.graph().derived.T1.effective, 'ready')
   f.ok('skip', 'T0', '--reason', 'Different approved prerequisite outcome')
   assert.equal(f.graph().derived.T1.effective, 'ready_to_plan')
@@ -291,7 +381,7 @@ test('paused execution must replan changed scope before resume without replacing
     f.rejected(/scope.*planning/, 'unblock', 'T1', '--force')
     f.rejected(/scope.*planning/, 'unblock', 'T1', '--reviewer', 'new-reviewer', '--force')
     assert.deepEqual(f.state(), changed)
-    f.ok('plan-task', 'T1', '--agent', 'scope-planner')
+    f.beginPlan('T1', 'scope-planner')
     assert.equal(f.state().tasks.T1.state, 'planning')
     assert.equal(f.state().tasks.T1.planningAttempts.at(-1).attempt, 1)
     assert.deepEqual(f.state().tasks.T1.attempts, original.attempts)
@@ -330,7 +420,7 @@ test('changed global scope cannot bypass planning through active review or valid
   f.rejected(/scope needs current planning/, 'validate', 'T1', '--ok', '--evidence', 'Old research', '--cwd', f.project)
   f.rejected(/scope needs current planning/, 'done', 'T1', '--force')
   f.ok('block', 'T1', '--reason', 'Research the approved global scope')
-  f.ok('plan-task', 'T1', '--agent', 'scope-planner')
+  f.beginPlan('T1', 'scope-planner')
   f.finish('T1', { ...f.artifact(), scope: 'an input file cannot author engine metadata' })
   assert.notEqual(f.state().tasks.T1.taskPlan.scope, 'an input file cannot author engine metadata')
   f.ok('unblock', 'T1')
@@ -358,7 +448,7 @@ test('missing or damaged stored plans cannot dispatch and inspection tasks still
 test('legacy tasks retain their lifecycle and history while tasks added by sync-plan require planning', t => {
   const f = fixture(t)
   const legacy = f.state()
-  for (const field of ['planningRequired', 'planner', 'planningAttempts', 'planningHistory']) delete legacy.tasks.T1[field]
+  for (const field of ['discoveryRequired', 'planningRequired', 'planner', 'planningAttempts', 'planningHistory']) delete legacy.tasks.T1[field]
   f.save(legacy)
   assert.equal(f.graph().derived.T1.effective, 'ready')
   f.ok('start', 'T1', '--agent', 'legacy-executor')
@@ -367,10 +457,23 @@ test('legacy tasks retain their lifecycle and history while tasks added by sync-
   f.writePlan()
   f.ok('sync-plan', '--plan', f.planPath)
   assert.deepEqual(f.state().tasks.T1, active)
+  assert.equal(f.state().tasks.T2.discoveryRequired, true)
   assert.equal(f.state().tasks.T2.planningRequired, true)
+  f.rejected(/needs --context/, 'plan-task', 'T2', '--agent', 'planner')
   assert.equal(f.graph().derived.T2.effective, 'ready_to_plan')
   f.ok('fail', 'T1', '--reason', 'Legacy real failure')
   f.ok('retry', 'T1')
   f.ok('start', 'T1', '--agent', 'legacy-executor-v2')
   assert.equal(f.state().tasks.T1.attempts.length, 2)
+})
+
+test('1.2.0 planning tasks remain compatible without a retroactive discovery gate', t => {
+  const f = fixture(t)
+  const previous = f.state()
+  delete previous.tasks.T1.discoveryRequired
+  f.save(previous)
+  f.ok('plan-task', 'T1', '--agent', 'previous-planner')
+  assert.equal(f.state().tasks.T1.state, 'planning')
+  f.finish()
+  assert.equal(f.graph().derived.T1.effective, 'ready')
 })

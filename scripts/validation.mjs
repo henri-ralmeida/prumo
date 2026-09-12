@@ -11,6 +11,40 @@ const passed = (step, check) => expectedExitCodes(step).includes(check.exitCode)
 const failureMessage = (step, check, index, total) =>
   `validation check ${index + 1}/${total} (${step.kind ?? 'static'}) failed: ${check?.error ?? `exit ${check?.exitCode ?? 'not run'}`}; command: ${step.run} — functional failures cannot be replaced by lint`
 
+const DISCOVERY_AREAS = [
+  'problem', 'affected', 'outcome', 'currentBehavior', 'desiredBehavior',
+  'rules', 'exceptions', 'scope', 'acceptance',
+]
+const DISCOVERY_FIELDS = ['research', 'questions', 'coverage', 'decisions', 'deferred', 'closure']
+const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
+  ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value
+
+export function discoveryDigest(context) {
+  const persisted = Object.fromEntries(DISCOVERY_FIELDS.map(field => [field, context[field]]))
+  return createHash('sha256').update(JSON.stringify(canonical(persisted))).digest('hex')
+}
+
+// The principal conversation supplies this evidence before a planner is dispatched.
+export function assertDiscovery(context) {
+  insist(context && typeof context === 'object' && !Array.isArray(context), 'discovery context must be a JSON object')
+  insist(Array.isArray(context.research) && context.research.length > 0 &&
+    context.research.every(item => item && nonempty(item.source) && nonempty(item.findings)),
+  'discovery research needs nonempty source and findings for each entry')
+  insist(Array.isArray(context.questions) && context.questions.length > 0 &&
+    context.questions.every(item => item && nonempty(item.question) && nonempty(item.answer) &&
+      ['native', 'chat-fallback'].includes(item.channel) && Number.isSafeInteger(item.round) && item.round > 0),
+  'discovery needs at least one answered question with channel native or chat-fallback and a positive round')
+  insist(context.coverage && typeof context.coverage === 'object' && !Array.isArray(context.coverage) &&
+    DISCOVERY_AREAS.every(area => nonempty(context.coverage[area])),
+  'discovery coverage needs problem, affected, outcome, currentBehavior, desiredBehavior, rules, exceptions, scope and acceptance')
+  insist(Array.isArray(context.decisions) && context.decisions.every(item =>
+    item && nonempty(item.question) && nonempty(item.answer)),
+  'discovery decisions must contain resolved question and answer entries')
+  insist(Array.isArray(context.deferred) && context.deferred.every(nonempty),
+    'discovery deferred must be an array of nonempty strings')
+  insist(nonempty(context.closure), 'discovery closure must explain why no consequential gray area remains')
+}
+
 // The plan classifies checks; only the reviewer can judge their behavioral coverage.
 export function validationContract(task) {
   const mode = task.validationMode ?? 'functional'
@@ -115,7 +149,11 @@ export function planningContext(state, task, {
 export function hasCurrentTaskPlan(state, task) {
   if (!task.planningRequired) return true
   try { assertTaskPlan(task, task.taskPlan) } catch { return false }
-  return hasCurrentTaskScope(state, task, task.attempts.length + 1) &&
+  const discoveryCurrent = !task.discoveryRequired || (nonempty(task.discovery?.digest) &&
+    task.discovery.digest === discoveryDigest(task.discovery) &&
+    task.taskPlan.discoveryDigest === task.discovery.digest &&
+    task.discovery.context === task.taskPlan.context && task.discovery.attempt === task.taskPlan.attempt)
+  return discoveryCurrent && hasCurrentTaskScope(state, task, task.attempts.length + 1) &&
     task.taskPlan.context === planningContext(state, task) && task.taskPlan.attempt === task.attempts.length + 1
 }
 
@@ -124,6 +162,9 @@ export function hasCurrentTaskScope(state, task, attempt = task.attempts.length)
   if (!task.planningRequired) return true
   const plan = task.taskPlan
   return nonempty(plan?.planner) && nonempty(plan.completedAt) && plan.attempt === attempt &&
+    (!task.discoveryRequired || (nonempty(task.discovery?.digest) &&
+      task.discovery.digest === discoveryDigest(task.discovery) && plan.discoveryDigest === task.discovery.digest &&
+      task.discovery.context === plan.context && task.discovery.attempt === plan.attempt)) &&
     plan.scope === planningContext(state, task, { scopeOnly: true, attempt })
 }
 

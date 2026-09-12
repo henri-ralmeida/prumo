@@ -1,5 +1,19 @@
 # Changelog / Histórico
 
+## 1.2.1 — 2026-09-12
+
+### Added — Discuss before planning
+
+- Run an agnostic discovery protocol in the principal Codex, Claude Code or Kiro conversation before dispatching the per-task planner. Every new task asks at least one contextual question, closes consequential PO First gray areas and records the answers for downstream work.
+- Keep two planning levels explicit: global Plan/Spec mode defines the approved graph; each task then follows **discuss → plan → executor → reviewer** without requiring the whole execution to remain in Plan mode.
+- Require `plan-task --context <discovery.json>` for new 1.2.1 tasks. The engine validates and atomically persists current discovery before changing the task to planning; the planner consumes it instead of asking again.
+- Bind a canonical discovery digest to each planning round and taskPlan. Identical resubmission is a no-op; changed discovery supersedes the open round, and stale discovery cannot finish planning.
+
+### Preserved — Compatibility and honest evidence
+
+- Preserve 1.2.0 tasks and runs without retroactive discovery requirements. Tasks newly created by `init` or `sync-plan` receive `discoveryRequired: true`.
+- Show escaped discovery research, questions, channels, coverage, decisions, deferred ideas and closure in the dashboard. The engine verifies structure and order, not the semantic quality of the conversation or the host UI used.
+
 ## 1.2.0 — 2026-09-12
 
 ### Added — Per-task research and planning

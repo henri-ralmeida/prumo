@@ -37,22 +37,35 @@ Cada execução usa `.specs/graph/<run>/state.json` e `events.ndjson`. `CURRENT`
 
 `requireReview` pode ser definido por tarefa ou plano; o padrão exige revisão. Desabilitar revisão não elimina a comprovação funcional. `maxAttempts` por tarefa define o limite de tentativas antes de escalar; o padrão é três. `tags` é uma lista opcional de classificações.
 
-## Planejamento por tarefa
+## Descoberta e planejamento por tarefa
 
-O plano global continua exigindo aprovação e contrato válido no `init`. Depois que as dependências
-entregam, **cada tarefa nova recebe um subagente planejador dedicado**, antes do executor. Ele
-pesquisa código, artefatos, entregas das dependências e fontes relevantes no estado atual, aplica
-PO First e prepara os passos daquela tarefa. O modo Plan/Spec do ambiente não substitui essa etapa.
+Há dois níveis. O modo Plan/Spec usa todo o pedido para montar e aprovar o grafo global. Durante a
+execução, cada tarefa segue **discutir → planejar → executar → revisar**; a run não precisa permanecer
+no modo Plan. Depois que as dependências entregam, a conversa principal reaproveita o plano global e
+as entregas, pesquisa levemente a tarefa e sempre faz ao menos uma pergunta contextual.
 
-Pesquise antes de perguntar, reutilize decisões conhecidas e não imponha questionário obrigatório.
-Áreas cinzentas que mudam comportamento, escopo ou aceite voltam à conversa principal, usando
-ferramentas nativas de perguntas quando disponíveis. Registre respostas reais e decisões compartilhadas.
-Refinamento comum dentro do escopo não exige nova aprovação; mudanças materiais voltam ao usuário
-e ao plano global. Uma resposta necessária mantém a tarefa bloqueada até ser resolvida.
+Use a caixa nativa de perguntas do Codex, Claude Code ou Kiro quando disponível; caso contrário, use
+um bloco estruturado na conversa principal. Reaproveite respostas atuais e faça rodadas adaptativas até
+fechar as áreas cinzentas que mudam comportamento, escopo, aceite ou execução. Ideias fora do escopo
+vão para `deferred`. A conversa principal grava um JSON de descoberta com pesquisa, perguntas e
+respostas reais, canal/rodada, cobertura PO First, decisões e motivo de encerramento.
 
-`plan-task T1 --agent <planejador>` deve acompanhar o disparo real do subagente. Ele escreve somente
-o artefato designado, sem implementar nem editar estado. O orquestrador confere o resultado e registra
+`plan-task T1 --agent <planejador> --context <descoberta.json>` valida e persiste a descoberta
+atomicamente antes de entrar em `planning`; ausência de resposta mantém `ready_to_plan`. O comando
+acompanha o disparo real do subagente planejador. Ele consome a descoberta sem repetir perguntas,
+pesquisa em profundidade e escreve somente o artefato designado, sem implementar nem editar estado.
+Uma nova decisão material volta à descoberta principal e exige planejamento novo. O orquestrador confere o resultado e registra
 `finish-planning T1 --plan <plano-da-tarefa.json>`. Exemplo para um contrato com uma verificação:
+
+O JSON de descoberta exige `research` com `source`/`findings`; `questions` com ao menos um
+`question`/`answer`, `round` positivo e `channel` igual a `native` ou `chat-fallback`; `coverage`
+com `problem`, `affected`, `outcome`, `currentBehavior`, `desiredBehavior`, `rules`, `exceptions`,
+`scope` e `acceptance`; pares resolvidos em `decisions`; textos em `deferred`; e `closure` explicando
+por que não restou área cinzenta relevante. Uma síntese pode cobrir vários campos, sem virar questionário.
+O motor calcula um SHA-256 de JSON canônico somente desses campos persistidos e liga o digest à rodada.
+Reenviar conteúdo idêntico durante `planning` não altera o estado nem cria rodada; conteúdo diferente
+encerra a rodada aberta como `superseded` e abre outra ligada ao novo digest. `finish-planning` copia o
+digest para o taskPlan e recusa descoberta alterada ou desatualizada.
 
 ```json
 {
@@ -77,8 +90,9 @@ ou a identidade real do agente. O executor lê e reconfere o plano; o revisor in
 entrega contra o objetivo aprovado e os critérios vigentes, podendo contestar um plano defeituoso.
 Planejamento não elimina erros nem substitui comprovação funcional por `echo` ou inspeção indevida.
 
-Tarefas novas recebem `planningRequired: true`, inclusive as adicionadas a uma run antiga.
-Tarefas existentes sem esse marcador preservam o fluxo anterior e o histórico; uma atualização
+Tarefas novas na 1.2.1 recebem `discoveryRequired: true` e `planningRequired: true`, inclusive as
+adicionadas a uma run antiga. Tarefas existentes sem `discoveryRequired` preservam o fluxo 1.2.0
+e o histórico; uma atualização
 não reinicia trabalho ativo nem obriga tarefas concluídas a planejar novamente.
 
 `maxParallel` limita o total de planejadores, executores e revisores ativos; `maxExecutors` limita
@@ -123,7 +137,7 @@ Resolva `scripts/engine.mjs` a partir da skill instalada. Acrescente `--run <nom
 |---|---|
 | `init --plan <arquivo> --run <nome>` | Inicializa execução do plano aprovado |
 | `status`, `ready`, `graph`, `runs` | Consulta estado, trabalho pronto, JSON ou execuções |
-| `plan-task <tarefa> --agent <nome>` | Registra planejador e inicia pesquisa após dependências entregues |
+| `plan-task <tarefa> --agent <nome> --context <descoberta.json>` | Persiste descoberta e registra planejador após dependências entregues |
 | `finish-planning <tarefa> --plan <artefato.json>` | Confere e registra o plano específico; libera execução se não houver pausa preservada |
 | `start <tarefa> --agent <nome>` | Registra executor e inicia tentativa |
 | `review <tarefa> --agent <nome>` | Encaminha trabalho para revisão |

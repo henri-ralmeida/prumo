@@ -30,7 +30,7 @@
  *   node $ENGINE init --plan <plan.json> --run <name>
  *   node $ENGINE sync-plan --plan <plan.json> [--run <name>]
  *   node $ENGINE status|ready|graph [--run <name>]
- *   node $ENGINE plan-task <task> --agent <name>
+ *   node $ENGINE plan-task <task> --agent <name> --context <discovery.json>
  *   node $ENGINE finish-planning <task> --plan <task-plan.json>
  *   node $ENGINE start <task> --agent <name>   (max 3 executors)
  *   node $ENGINE review <task> --agent <name>  (hands it to a reviewer)
@@ -50,7 +50,7 @@ import {
 } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { writeAtomicState } from './atomic-state.mjs'
-import { runValidation, assertValidation, validationContract, validationDirectories, assertTaskPlan,
+import { runValidation, assertValidation, validationContract, validationDirectories, assertDiscovery, discoveryDigest, assertTaskPlan,
   planTaskFromState, planningContext, hasCurrentTaskPlan, hasCurrentTaskScope } from './validation.mjs'
 import { join, resolve } from 'node:path'
 
@@ -273,6 +273,7 @@ function taskFromPlan(t) {
     tags: t.tags ?? [],
     touches: t.touches ?? [],
     state: 'pending',
+    discoveryRequired: true,
     planningRequired: true,
     planner: null,
     planningAttempts: [],
@@ -285,13 +286,14 @@ function taskFromPlan(t) {
   }
 }
 
-function beginPlanning(state, task, agent, context = planningContext(state, task)) {
+function beginPlanning(state, task, agent, context = planningContext(state, task), digest = task.discovery?.digest) {
   task.planningRequired = true
   task.planner = agent
   task.planningAttempts ??= []
   task.planningHistory ??= []
   task.planningAttempts.push({ n: task.planningAttempts.length + 1, agent,
-    startedAt: new Date().toISOString(), context, attempt: task.attempts.length + (task.planningReturn ? 0 : 1) })
+    startedAt: new Date().toISOString(), context, attempt: task.attempts.length + (task.planningReturn ? 0 : 1),
+    ...(digest ? { discoveryDigest: digest } : {}) })
   task.state = 'planning'
 }
 
@@ -543,13 +545,30 @@ const commands = {
 
   'plan-task'() {
     const name = runName()
-    const id = args._[0] ?? die('plan-task <task> --agent <name>')
+    const id = args._[0] ?? die('plan-task <task> --agent <name> --context <discovery.json>')
     const agent = args.agent ?? die('plan-task needs --agent <name>')
     const state = loadState(name)
     const t = getTask(state, id)
     const pausedExecution = t.planningRequired && t.state === 'blocked' && ['running', 'reviewing'].includes(t.stateBeforeBlock)
     const stale = t.state === 'planning' && t.planningAttempts?.at(-1)?.context !== planningContext(state, t)
-    if (t.state !== 'pending' && !stale && !pausedExecution)
+    let discovery, digest
+    if (t.discoveryRequired) {
+      if (typeof args.context !== 'string' || !args.context.trim())
+        die('plan-task needs --context <discovery.json> before the planner is dispatched')
+      try {
+        discovery = JSON.parse(readFileSync(resolve(args.context), 'utf8'))
+        assertDiscovery(discovery)
+        digest = discoveryDigest(discovery)
+      } catch (error) { die(error.message) }
+    }
+    const roundDigest = t.planningAttempts?.at(-1)?.discoveryDigest
+    const storedDiscoveryCurrent = digest && digest === t.discovery?.digest && digest === discoveryDigest(t.discovery)
+    const changedDiscovery = t.state === 'planning' && digest && (!storedDiscoveryCurrent || digest !== roundDigest)
+    if (t.state === 'planning' && !stale && storedDiscoveryCurrent && digest === roundDigest) {
+      log(`[prumo] ${id} already in planning with the same discovery; no new round recorded`)
+      return
+    }
+    if (t.state !== 'pending' && !stale && !pausedExecution && !changedDiscovery)
       die(id + ' must be pending, have stale planning, or have paused execution before plan-task')
     if (pausedExecution) {
       const attempt = t.attempts.at(-1)
@@ -559,10 +578,17 @@ const commands = {
     try { validationContract(t) } catch (error) { die(error.message) }
     assertAvailable(state, t, 'planning', agent)
     if (pausedExecution) t.planningReturn = { stateBeforeBlock: t.stateBeforeBlock, blockReason: t.blockReason }
-    if (stale) closePlanning(t, 'superseded')
-    beginPlanning(state, t, agent)
+    if (stale || changedDiscovery) closePlanning(t, 'superseded')
+    if (discovery) {
+      const fields = ['research', 'questions', 'coverage', 'decisions', 'deferred', 'closure']
+      t.discovery = { ...Object.fromEntries(fields.map(field => [field, discovery[field]])),
+        recordedAt: new Date().toISOString(), context: planningContext(state, t),
+        attempt: t.attempts.length + (t.planningReturn ? 0 : 1), digest }
+    }
+    beginPlanning(state, t, agent, planningContext(state, t), digest)
     saveState(name, state)
-    emit(name, 'task_planning', id, { planner: agent, round: t.planningAttempts.length })
+    emit(name, 'task_planning', id, { planner: agent, round: t.planningAttempts.length,
+      ...(discovery ? { discoveryQuestions: discovery.questions.length } : {}) })
     log(`[prumo] ${id} in planning (planner ${agent}, round ${t.planningAttempts.length})`)
   },
 
@@ -576,6 +602,10 @@ const commands = {
     const round = t.planningAttempts?.at(-1)
     if (!round || round.endedAt || round.agent !== t.planner) die('planning needs an open round and its recorded planner')
     if (round.context !== planningContext(state, t)) die('task planning is stale — run plan-task again and research the current contract')
+    if (t.discoveryRequired && (!t.discovery?.digest || t.discovery.digest !== discoveryDigest(t.discovery) ||
+        round.discoveryDigest !== t.discovery.digest || t.discovery.context !== round.context ||
+        t.discovery.attempt !== round.attempt))
+      die('task planning used stale discovery — run plan-task with the current discovery context')
     if (t.deps.some(dep => !['done', 'skipped'].includes(state.tasks[dep]?.state))) die('planning dependencies are no longer complete')
     let plan
     try {
@@ -584,7 +614,8 @@ const commands = {
     } catch (error) { die(error.message) }
     const artifact = Object.fromEntries(['research', 'decisions', 'steps', 'verification', 'openQuestions'].map(field => [field, plan[field]]))
     t.taskPlan = { ...artifact, planner: t.planner, startedAt: round.startedAt, completedAt: new Date().toISOString(),
-      context: round.context, scope: planningContext(state, t, { scopeOnly: true }), attempt: round.attempt }
+      context: round.context, scope: planningContext(state, t, { scopeOnly: true }), attempt: round.attempt,
+      ...(round.discoveryDigest ? { discoveryDigest: round.discoveryDigest } : {}) }
     t.planningHistory.push(t.taskPlan)
     closePlanning(t, 'planned')
     t.state = t.planningReturn ? 'blocked' : 'pending'
