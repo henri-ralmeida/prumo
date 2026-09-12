@@ -74,7 +74,8 @@ test('dashboard renders separate planning queues, active planner hub and executi
     ui.render(state)
     const expected = lang === 'en' ? ['ready for planning', 'planning', 'ready for execution'] : ['pronto para planejamento', 'em planejamento', 'pronto para executar']
     for (const label of expected) {
-      assert.ok(ui.labels.some((node) => node.textContent === label), `Legend: ${label}`)
+      const legendLabel = label === 'planning' ? 'planning · planner' : label === 'em planejamento' ? 'planejamento · planejador' : label
+      assert.ok(ui.labels.some((node) => node.textContent === legendLabel), `Legend: ${legendLabel}`)
       assert.ok(ui.nodes.get('#counts').innerHTML.includes(`${label} <b>1</b>`), `Counter: ${label}`)
     }
     for (const [id, status] of Object.entries(states)) {
@@ -99,8 +100,10 @@ test('dashboard renders separate planning queues, active planner hub and executi
 test('legend follows the workflow and colored role counters and events show actual progress', () => {
   const legend = html.match(/<div class="legend">([\s\S]*?)<\/div>/)[1]
   const order = [...legend.matchAll(/data-i18n="([^"]+)"/g)].map(m => m[1])
-  assert.deepEqual(order.slice(0, 9), ['waiting', 'ready for planning', 'discuss · orchestrator', 'planning',
-    'ready for execution', 'running', 'in review', '✓ = validated, awaiting done', 'done'])
+  assert.deepEqual(order.slice(0, 9), ['waiting for dependencies', 'ready for planning', 'discussion · orchestrator', 'planning · planner',
+    'ready for execution', 'execution · executor', 'review · reviewer', '✓ = validated, awaiting done', 'done'])
+  assert.equal((legend.match(/class="role-dot"/g) ?? []).length, 4)
+  assert.ok(order.includes('skipped'))
   for (const lang of ['en', 'pt-BR']) {
     const ui = dashboard(lang)
     const events = [
@@ -113,6 +116,9 @@ test('legend follows the workflow and colored role counters and events show actu
     ui.render({ run: 'events', plan: {}, tasks: { T4: task('T4') }, derived: { T4: { effective: 'ready' } } }, events)
     const title = ui.nodes.get('#parTitle').innerHTML
     for (const color of ['planning', 'running', 'review']) assert.ok(title.includes(`color:var(--${color})`))
+    assert.equal((title.match(/<b>/g) ?? []).length, 3)
+    assert.doesNotMatch(title, / · /)
+    if (lang === 'pt-BR') assert.ok(ui.labels.some(node => node.textContent === 'discussão · orquestrador'))
     const log = ui.nodes.get('#events').innerHTML
     assert.match(log, /T4 \[1\/4\]/)
     assert.match(log, /T4 \[2\/4\]/)
