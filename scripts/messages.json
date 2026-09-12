@@ -329,6 +329,8 @@
   "Per task": "Por tarefa",
   "Task": "Tarefa",
   "Planning": "Planejamento",
+  "Actively planning": "Planejando",
+  "Reviewing": "Revisando",
   "Exec": "Execução",
   "Review": "Revisão",
   "build vs verify": "executar e verificar",
