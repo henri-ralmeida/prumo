@@ -86,6 +86,40 @@ function fixture(t, tasks = [{ id: 'T1', title: 'Delivery estimate' }], options 
     artifact, discovery, contextPath, beginPlan, finish, planTask }
 }
 
+test('event progress counts executor plan steps and actual reviewer checks per attempt', t => {
+  const f = fixture(t, [{ id: 'T4', title: 'Four steps', validation: [check, check, check, check] }])
+  f.beginPlan('T4')
+  f.finish('T4', { ...f.artifact('T4'), steps: ['Inspect', 'Implement', 'Verify', 'Report'] })
+  f.ok('start', 'T4', '--agent', 'executor')
+  const log = () => f.events().trim().split('\n').map(JSON.parse)
+  assert.equal(log().at(-1).current, 1)
+  assert.equal(log().at(-1).total, 4)
+  const baseline = f.state(), events = f.events()
+  f.rejected(/current executor/, 'progress', 'T4', '--step', '2', '--agent', 'someone-else')
+  f.rejected(/index/, 'progress', 'T4', '--step', '5', '--agent', 'executor')
+  assert.deepEqual(f.state(), baseline)
+  assert.equal(f.events(), events)
+  for (const step of [2, 3, 4]) f.ok('progress', 'T4', '--step', String(step), '--agent', 'executor')
+  const atFour = f.events()
+  f.ok('progress', 'T4', '--step', '4', '--agent', 'executor')
+  assert.equal(f.events(), atFour)
+  f.rejected(/backwards/, 'progress', 'T4', '--step', '1', '--agent', 'executor')
+  assert.deepEqual(log().filter(e => ['task_start', 'task_progress'].includes(e.type)).map(e => [e.current, e.total]),
+    [[1, 4], [2, 4], [3, 4], [4, 4]])
+  f.ok('review', 'T4', '--agent', 'reviewer')
+  f.ok('validate', 'T4', '--ok', '--evidence', 'All four delivery checks match', '--cwd', f.project)
+  const checks = log().filter(e => e.type === 'task_check')
+  assert.deepEqual(checks.filter(e => e.status === 'started').map(e => [e.current, e.total]), [[1, 4], [2, 4], [3, 4], [4, 4]])
+  assert.ok(checks.every(e => e.by === 'review' && e.attempt === 1 && e.token))
+  assert.equal(checks.filter(e => e.status === 'passed').length, 4)
+  f.ok('fail', 'T4', '--reason', 'Exercise a fresh attempt')
+  f.ok('retry', 'T4')
+  f.planTask('T4')
+  f.ok('start', 'T4', '--agent', 'executor')
+  assert.equal(log().at(-1).current, 1)
+  assert.equal(log().at(-1).attempt, 2)
+})
+
 test('new tasks require researched planning before execution and still require independent behavioral review', t => {
   const f = fixture(t, [{ id: 'T1', title: 'Delivery estimate' }, { id: 'T2', title: 'Dependent delivery', deps: ['T1'] }])
   assert.equal(f.graph().derived.T1.effective, 'ready_to_plan')

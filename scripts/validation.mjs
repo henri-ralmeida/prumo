@@ -233,7 +233,7 @@ export function validationDirectories(task, cwd) {
   })
 }
 
-export async function runValidation(task, cwd, previousReceipt = null) {
+export async function runValidation(task, cwd, previousReceipt = null, onCheck = () => {}) {
   const contract = validationContract(task)
   const checks = []
   const directories = validationDirectories(task, cwd)
@@ -248,6 +248,7 @@ export async function runValidation(task, cwd, previousReceipt = null) {
         previousReceipt.agent === task.validations?.at(-1)?.agent &&
         prior?.workspaceRevision === revision && passed(step, prior)) {
       checks.push({ ...prior, reusedAt: new Date().toISOString() })
+      onCheck({ current: index + 1, total: contract.steps.length, kind: step.kind ?? 'static', status: 'reused' })
       log(`[prumo] reused check ${index + 1}/${contract.steps.length} (static, unchanged workspace)`)
       continue
     }
@@ -260,6 +261,7 @@ export async function runValidation(task, cwd, previousReceipt = null) {
       env[name] = value
     }
     log(`[prumo] running check ${index + 1}/${contract.steps.length}; timeout ${timeoutMs === 0 ? 'disabled by plan' : timeoutMs + 'ms'}; expected exit ${expectedExitCodes(step).join(',')}`)
+    onCheck({ current: index + 1, total: contract.steps.length, kind: step.kind ?? 'static', status: 'started' })
     const result = await execute(step.run, {
       cwd: directories[index], shell, env,
       windowsHide: true,
@@ -272,6 +274,7 @@ export async function runValidation(task, cwd, previousReceipt = null) {
       workspaceRevision: revision,
     }
     checks.push(check)
+    onCheck({ current: index + 1, total: contract.steps.length, kind: check.kind, status: passed(step, check) ? 'passed' : 'failed' })
     log(`[prumo] check ${index + 1}/${contract.steps.length} (${check.kind}): exit ${check.exitCode}${check.error ? ` — ${check.error}` : ''}`)
     if (!passed(step, check)) break
   }

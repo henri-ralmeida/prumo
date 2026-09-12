@@ -96,6 +96,32 @@ test('dashboard renders separate planning queues, active planner hub and executi
   }
 })
 
+test('legend follows the workflow and colored role counters and events show actual progress', () => {
+  const legend = html.match(/<div class="legend">([\s\S]*?)<\/div>/)[1]
+  const order = [...legend.matchAll(/data-i18n="([^"]+)"/g)].map(m => m[1])
+  assert.deepEqual(order.slice(0, 9), ['waiting', 'ready for planning', 'discuss · orchestrator', 'planning',
+    'ready for execution', 'running', 'in review', '✓ = validated, awaiting done', 'done'])
+  for (const lang of ['en', 'pt-BR']) {
+    const ui = dashboard(lang)
+    const events = [
+      { type: 'task_start', task: 'T4', at: instant(1), current: 1, total: 4 },
+      { type: 'task_progress', task: 'T4', at: instant(2), current: 2, total: 4 },
+      { type: 'task_check', task: 'T4', at: instant(3), current: 1, total: 4, status: 'started', kind: 'functional', by: 'review' },
+      { type: 'task_check', task: 'T4', at: instant(4), current: 2, total: 4, status: 'failed', kind: 'functional', by: 'review' },
+      { type: 'task_start', task: 'OLD', at: instant(0) },
+    ]
+    ui.render({ run: 'events', plan: {}, tasks: { T4: task('T4') }, derived: { T4: { effective: 'ready' } } }, events)
+    const title = ui.nodes.get('#parTitle').innerHTML
+    for (const color of ['planning', 'running', 'review']) assert.ok(title.includes(`color:var(--${color})`))
+    const log = ui.nodes.get('#events').innerHTML
+    assert.match(log, /T4 \[1\/4\]/)
+    assert.match(log, /T4 \[2\/4\]/)
+    assert.doesNotMatch(log, /OLD \[/)
+    assert.ok(log.includes(lang === 'en' ? 'Working' : 'Executando'))
+    assert.ok(log.includes(lang === 'en' ? 'Review' : 'Revisão'))
+  }
+})
+
 test('discovery, planner identity and task plan render as escaped text, including answers and checks', () => {
   const hostile = '<img src=x onerror="alert(1)">&\'text'
   const recorded = { ...plan, planner: hostile,

@@ -50,7 +50,7 @@ test('update detects installed harnesses and custom paths, preserves preferences
   assert.equal(updated.status, 0, updated.stdout + updated.stderr)
   assert.match(updated.stdout, /Prumo updated successfully/)
   assert.match(updated.stdout, /Added/)
-  assert.match(updated.stdout, /- Run task discovery in the principal conversation before dispatching a planner/)
+  assert.match(updated.stdout, /- Select permitted question tools from the current harness session/)
   for (const marker of markers) {
     assert.equal(JSON.parse(read(marker)).version, version)
     assert.equal(read(join(dirname(marker), 'scripts', 'engine.mjs')), read(join(source, 'scripts', 'engine.mjs')))

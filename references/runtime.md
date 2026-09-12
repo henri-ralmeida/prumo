@@ -300,6 +300,19 @@ uses the host's native question UI when available or a structured text fallback 
 conversation. Follow-up rounds continue until behavior, scope, acceptance and execution have no
 consequential gray area; out-of-scope ideas are deferred.
 
+Question routing follows the tools available in the principal session, not the harness name. Codex may
+expose `request_user_input_async` outside Plan; `request_user_input` retains its own mode restrictions.
+Claude Code documents [AskUserQuestion](https://code.claude.com/docs/en/tools-reference), while
+[SDK integrations](https://code.claude.com/docs/en/agent-sdk/user-input) must surface user input and
+cannot assume that tool is available in subagents. Kiro's documented
+[built-in catalog](https://kiro.dev/docs/reference/built-in-tools/) does not establish an equivalent
+question-box tool; inspect actual tools before choosing native input. Its
+[/reply command](https://kiro.dev/docs/cli/chat/responding/) lets users answer chat questions point by
+point. Otherwise present What I understood, Gray areas, Suggestions and numbered Questions in the
+user's language. Preserve pending questions across fallback and wait for real answers; empty results,
+timeouts and suggested defaults never close discovery. These are orchestration instructions, not a
+new UI supplied by the engine.
+
 The principal conversation writes discovery before dispatching a planner. Example:
 
 ```json
@@ -401,6 +414,13 @@ whole point — an agent builds on what its deps produced.
 
 ## Driving a run
 
+Event fractions show the active executor step from `taskPlan.steps`, reported through `progress`,
+and the current validation check for review. Starting a planned attempt emits `[1/total]`; retries
+restart that index. Validation emits started, passed, failed and reused check events automatically.
+The fraction indicates position, not approval or completed checks. Legacy events without a known
+total show no fraction. The legend follows the lifecycle, with hollow discuss marking the
+orchestrator's conversation rather than a new engine state or separate agent.
+
 ```bash
 PRUMO_HOME="${PRUMO_HOME:-$HOME/.local/share/prumo}"
 PRUMO_ROOT="$PRUMO_HOME/my-workspace"
@@ -411,6 +431,7 @@ node .claude/skills/prumo/scripts/engine.mjs plan-task T1 --agent plan-server --
 # Planner consumes discovery, researches current context and writes this artifact.
 node .claude/skills/prumo/scripts/engine.mjs finish-planning T1 --plan <task-plan.json>
 node .claude/skills/prumo/scripts/engine.mjs start T1 --agent ag-server      # max 3 executors
+node .claude/skills/prumo/scripts/engine.mjs progress T1 --step 2 --agent ag-server  # actual executor report
 node .claude/skills/prumo/scripts/engine.mjs review T1 --agent rev-server    # hand to a fresh reviewer
 node .claude/skills/prumo/scripts/engine.mjs validate T1 --ok --evidence "reviewed the 3 behavior cases" --cwd <absolute-project>
 node .claude/skills/prumo/scripts/engine.mjs done T1               # refuses without a passing validation

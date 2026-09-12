@@ -33,6 +33,7 @@
  *   node $ENGINE plan-task <task> --agent <name> --context <discovery.json>
  *   node $ENGINE finish-planning <task> --plan <task-plan.json>
  *   node $ENGINE start <task> --agent <name>   (max 3 executors)
+ *   node $ENGINE progress <task> --step <1-based index> --agent <executor>
  *   node $ENGINE review <task> --agent <name>  (hands it to a reviewer)
  *   node $ENGINE validate <task> --ok|--failed --evidence "<text>" [--cwd <project>]
  *   node $ENGINE refresh-contract <task> --plan <approved-plan.json>
@@ -646,9 +647,30 @@ const commands = {
     t.state = 'running'
     t.agent = agent
     t.attempts.push({ n: t.attempts.length + 1, agent, startedAt: new Date().toISOString() })
+    const total = t.taskPlan?.steps?.length
+    if (total) t.attempts.at(-1).executionStep = 1
     saveState(name, state)
-    emit(name, 'task_start', id, { agent, attempt: t.attempts.length })
+    emit(name, 'task_start', id, { agent, attempt: t.attempts.length, ...(total ? { current: 1, total } : {}) })
     log(`[prumo] ${id} running (agent ${agent}, attempt ${t.attempts.length})`)
+  },
+
+  progress() {
+    const name = runName()
+    const id = args._[0] ?? die('progress <task> --step <index> --agent <executor>')
+    const state = loadState(name)
+    const t = getTask(state, id)
+    if (t.state !== 'running') die(`${id} is ${t.state}, not running`)
+    assertCurrentTaskScope(state, t)
+    if (!args.agent || args.agent !== t.agent) die('progress needs the current executor agent')
+    const current = Number(args.step), total = t.taskPlan?.steps?.length
+    if (!total || !Number.isSafeInteger(current) || current < 1 || current > total)
+      die('progress step must be an index in the current task plan')
+    const attempt = t.attempts.at(-1)
+    if (current < (attempt.executionStep ?? 1)) die('progress cannot move backwards within an attempt')
+    if (current === attempt.executionStep) return
+    attempt.executionStep = current
+    saveState(name, state)
+    emit(name, 'task_progress', id, { agent: t.agent, attempt: t.attempts.length, current, total })
   },
 
   /** Hand a finished task to a REVIEWER — a different agent, fresh context, that never
@@ -734,7 +756,18 @@ const commands = {
     let error = null
     if (requestedOk) {
       try {
-        result = await runValidation(snapshot, args.cwd, snapshot.validations.at(-2))
+        result = await runValidation(snapshot, args.cwd, snapshot.validations.at(-2), check => {
+          withLock(name, () => {
+            const current = getTask(loadState(name), id)
+            if (current.validations.at(-1)?.token !== token || current.state !== snapshot.state ||
+                current.attempts.length !== snapshot.attempts.length || current.agent !== snapshot.agent ||
+                current.reviewer !== snapshot.reviewer ||
+                (current.contractRevision ?? 0) !== (snapshot.contractRevision ?? 0) ||
+                (current.stateRevision ?? 0) !== (snapshot.stateRevision ?? 0)) return
+            emit(name, 'task_check', id, { ...check, token, attempt: snapshot.attempts.length,
+              by: snapshot.validations.at(-1).by })
+          })
+        })
         assertValidation(snapshot, { ...result, evidence: args.evidence })
       } catch (e) { error = e.message }
     }

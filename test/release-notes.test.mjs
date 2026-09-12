@@ -8,11 +8,10 @@ const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.u
 test('current release has concise English update highlights with descriptive subtitles', () => {
   const notes = releaseNotes(version)
   assert.deepEqual(notes.map(section => section.title), [
-    'Added — Discuss before planning',
-    'Added — Host-agnostic discovery',
-    'Preserved — Planning and legacy runs'
+    'Fixed — Native discovery questions',
+    'Added — Task progress visibility'
   ])
-  assert.ok(notes.flatMap(section => section.items).includes('Run task discovery in the principal conversation before dispatching a planner'))
+  assert.ok(notes.flatMap(section => section.items).includes('Select permitted question tools from the current harness session'))
   assert.ok(releaseNotes('1.2.0').flatMap(section => section.items).includes('A dedicated planner researches each new task before execution'))
   assert.ok(releaseNotes('1.1.2').flatMap(section => section.items).includes('Preserve terminal contracts during sync-plan and retry'))
   assert.deepEqual(releaseNotes(version, 'pt-BR'), notes)

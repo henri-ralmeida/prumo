@@ -50,6 +50,20 @@ fechar as áreas cinzentas que mudam comportamento, escopo, aceite ou execução
 vão para `deferred`. A conversa principal grava um JSON de descoberta com pesquisa, perguntas e
 respostas reais, canal/rodada, cobertura PO First, decisões e motivo de encerramento.
 
+A escolha depende das ferramentas expostas e permitidas na sessão principal. No Codex,
+`request_user_input_async` pode estar disponível fora do Plan; `request_user_input` mantém suas
+restrições de modo. O Claude Code documenta
+[`AskUserQuestion`](https://code.claude.com/docs/en/tools-reference); em
+[integrações SDK](https://code.claude.com/docs/en/agent-sdk/user-input), a aplicação precisa apresentar
+as perguntas, e a ferramenta não deve ser presumida em subagentes. O
+[catálogo do Kiro](https://kiro.dev/docs/reference/built-in-tools/) não confirma uma ferramenta
+equivalente de caixinha: confira as capacidades reais da sessão. O usuário do Kiro CLI pode usar
+[`/reply`](https://kiro.dev/docs/cli/chat/responding/) para responder ponto a ponto.
+Sem ferramenta nativa permitida, apresente **O que entendi**, **Campos cinzentos**, **Sugestões** e
+**Perguntas** numeradas no chat. Preserve perguntas pendentes ao trocar de canal. Retorno assíncrono,
+timeout, resposta vazia e sugestão pré-selecionada não são respostas: aguarde a resposta real antes
+de encerrar a descoberta. Essa seleção pertence à skill; o motor não cria uma interface nativa.
+
 `plan-task T1 --agent <planejador> --context <descoberta.json>` valida e persiste a descoberta
 atomicamente antes de entrar em `planning`; ausência de resposta mantém `ready_to_plan`. O comando
 acompanha o disparo real do subagente planejador. Ele consome a descoberta sem repetir perguntas,
@@ -140,6 +154,7 @@ Resolva `scripts/engine.mjs` a partir da skill instalada. Acrescente `--run <nom
 | `plan-task <tarefa> --agent <nome> --context <descoberta.json>` | Persiste descoberta e registra planejador após dependências entregues |
 | `finish-planning <tarefa> --plan <artefato.json>` | Confere e registra o plano específico; libera execução se não houver pausa preservada |
 | `start <tarefa> --agent <nome>` | Registra executor e inicia tentativa |
+| `progress <tarefa> --step <índice> --agent <executor>` | Registra o passo atual do plano durante a execução, começando em 1 |
 | `review <tarefa> --agent <nome>` | Encaminha trabalho para revisão |
 | `validate <tarefa> --ok --evidence <texto> --cwd <diretório>` | Executa o contrato; falha real impede aprovação |
 | `validate <tarefa> --failed --evidence <texto>` | Registra reprovação |
@@ -151,6 +166,18 @@ Resolva `scripts/engine.mjs` a partir da skill instalada. Acrescente `--run <nom
 | `unblock <tarefa> --reviewer <nome>` | Leva tentativa ativa pausada diretamente à revisão |
 | `skip <tarefa> --reason <texto>` | Pula por decisão explícita |
 | `note <tarefa> --text <texto>` | Acrescenta nota ao histórico |
+
+O histórico mostra `Executando T4 [2/4]` a partir dos passos de `taskPlan.steps`, conforme o executor
+informa o avanço ao orquestrador. O índice indica o passo atual, não uma aprovação; repetição é
+idempotente e uma tentativa nova reinicia em 1. Sem plano registrado, não se inventa o total.
+Na revisão, `Revisão T4 [2/4]` acompanha os checks do contrato automaticamente, com início, resultado
+e indicação de reutilização quando aplicável. Falhas interrompem os próximos checks.
+
+A legenda segue o fluxo: aguardando → pronto para planejamento → discuss do orquestrador →
+em planejamento → pronto para executar → em execução → em revisão → validado → concluído.
+Discuss é uma etapa da conversa principal, representada por um círculo vazado; não cria outro
+agente ou estado do motor. As ferramentas de perguntas são escolhidas pelas capacidades e restrições
+da sessão, incluindo perguntas nativas assíncronas quando disponíveis fora do modo Plan.
 | `refresh-contract <tarefa> --plan <arquivo-aprovado>` | Atualiza somente validação, modo e justificativa |
 | `sync-plan --plan <arquivo-aprovado>` | Acrescenta tarefas e reconcilia alterações permitidas |
 

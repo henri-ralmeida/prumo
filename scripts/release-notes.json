@@ -1,4 +1,10 @@
 {
+  "1.2.2": {
+    "en": [
+      { "title": "Fixed — Native discovery questions", "items": ["Select permitted question tools from the current harness session", "Use structured chat questions when native input is unavailable and wait for real answers"] },
+      { "title": "Added — Task progress visibility", "items": ["Order the legend by lifecycle and color all role counters", "Show executor step and review-check progress with explicit retry and cache-reuse events"] }
+    ]
+  },
   "1.2.1": {
     "en": [
       { "title": "Added — Discuss before planning", "items": ["Run task discovery in the principal conversation before dispatching a planner", "Require at least one answered question and resolved PO First coverage for every new task"] },
