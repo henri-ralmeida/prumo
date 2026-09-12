@@ -100,7 +100,7 @@ Não é necessário migrar os dados manualmente. Encerre sessões que estejam ca
 O backup informa o comando de reversão:
 
 ```sh
-bunx @henri-ralmeida/prumo@1.2.1 restore "<diretório-do-backup>"
+bunx @henri-ralmeida/prumo@1.2.2 restore "<diretório-do-backup>"
 ```
 
 A reversão recusa sobrescrever arquivos que você editou depois. Os planos continuam no estado atual: reverter uma instalação não deve apagar trabalho em andamento. Mantenha sua rotina de backup dos dados de negócio; o instalador não captura uma imagem consistente de todos os planos ativos.

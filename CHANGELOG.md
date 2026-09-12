@@ -1,5 +1,13 @@
 # Changelog / Histórico
 
+Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
+
+## 1.2.2 — 2026-09-12
+
+- Select discovery questions from the principal harness session's permitted native tools, including Codex asynchronous input and Claude Code AskUserQuestion, with structured conversational fallback for Kiro or other sessions without one. Require real answers before planning.
+- Order the dashboard legend by lifecycle and color planning, execution and review counters consistently.
+- Show executor step and validation-check fractions in event history, with attempt resets and explicit reused checks.
+
 ## 1.2.1 — 2026-09-12
 
 ### Added — Discuss before planning
@@ -80,6 +88,11 @@
 
 - Atualizações concluídas agora mostram destaques em inglês com subtítulos descritivos de `Fixed` e `Added` para a versão instalada.
 - O README agora inclui comandos diretos para seleção automática e cada ambiente compatível.
+
+## 1.1.0
+
+- Improve installation progress and harness detection, contract preflight, safe retry and resumable deterministic validation.
+- Add English update highlights and direct installation commands. The original 1.1.0 snapshot is preserved by its recovered tag; 1.1.1 carries the subsequent release adjustments.
 
 ## 1.0.10
 
@@ -210,6 +223,11 @@
 - Adiciona `prumo update`: busca o instalador publicado mais recente, detecta ambientes já instalados e caminhos personalizados registrados, preservando o idioma de cada instalação. Prévia, backups, conflitos independentes e reversão reutilizam a instalação. Ambientes que contêm somente graph-foreman permanecem intactos.
 - Verifica o comando público de atualização com registro npm temporário, instalações antigas, prévia e falha no download.
 - Esta é a primeira publicação no npm. A release inicial 1.0.0 do GitHub permanece no histórico; não houve pacote 1.0.1 publicado no npm.
+
+## 1.0.1
+
+- Correct the npm scope to `@henri-ralmeida/prumo` and align package metadata with the retrospective 1.0.1 release.
+- Recover the existing release commit so the tag and package version agree. This version was not previously published on npm.
 
 ## 1.0.0
 

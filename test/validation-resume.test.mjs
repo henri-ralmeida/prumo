@@ -31,9 +31,13 @@ test('only explicit static checks resume in an unchanged Git workspace', async t
       { kind: 'static', cacheable: true, env, run: 'node check.cjs static-two', expect: 'passes' },
     ],
   }
-  const first = { ...await runValidation(task, repo), by: 'review', agent: 'reviewer', attempt: 1, evidence: 'first review' }
+  const progress = []
+  const first = { ...await runValidation(task, repo, null, event => progress.push(event)), by: 'review', agent: 'reviewer', attempt: 1, evidence: 'first review' }
+  assert.deepEqual(progress.map(e => [e.current, e.status]), [[1, 'started'], [1, 'passed'], [2, 'started'], [2, 'failed']])
+  progress.length = 0
   assert.throws(() => assertValidation(task, first), /validation check 2\/3 \(functional\) failed: exit 7/)
-  const second = { ...await runValidation(task, repo, first), by: 'review', agent: 'reviewer', attempt: 1, evidence: 'second review' }
+  const second = { ...await runValidation(task, repo, first, event => progress.push(event)), by: 'review', agent: 'reviewer', attempt: 1, evidence: 'second review' }
+  assert.deepEqual(progress.map(e => [e.current, e.status]), [[1, 'reused'], [2, 'started'], [2, 'passed'], [3, 'started'], [3, 'passed']])
   assert.doesNotThrow(() => assertValidation(task, second))
   assert.equal(readFileSync(join(counters, 'static-one'), 'utf8'), 'x')
   assert.equal(readFileSync(join(counters, 'functional'), 'utf8'), 'xx')

@@ -152,9 +152,25 @@ task's dependencies deliver, run **discuss → plan → executor → reviewer**.
 Before dispatching the planner, the orchestrator runs an agnostic discovery protocol in the principal
 Codex, Claude Code or Kiro conversation. Load the global plan, settled decisions and dependency outputs;
 scout the task's current code and artifacts; identify specific PO First gray areas; then always ask at
-least one contextual question. Use the host's native question UI when available. Otherwise ask through
-a structured text block with **What I understood**, **Gray areas**, a recommendation and focused
-questions. Reuse current answers, ask adaptive follow-ups, and stop only when no uncertainty capable of
+least one contextual question. Select the question channel from tools actually exposed and allowed in
+the principal session, respecting their current schema and mode restrictions:
+
+- **Codex:** prefer `request_user_input_async` when available; use `request_user_input` only where its
+  mode rules permit. A Plan-only tool being unavailable does not rule out an asynchronous native tool.
+- **Claude Code:** use `AskUserQuestion` when exposed. Keep discovery in the principal conversation;
+  do not assume the tool is available to a subagent or a restricted SDK integration.
+- **Kiro or another harness:** use an exposed native clarification tool if available. Do not invent
+  a tool name or infer support from the product name or Plan mode alone.
+- **Fallback:** when no permitted native tool exists, or it explicitly reports unsupported operation,
+  ask in the same conversation using **What I understood**, **Gray areas**, **Suggestions** and focused
+  numbered **Questions**, translated to the user's language. In Kiro CLI, the user may optionally use
+  `/reply` to answer point by point; it is a user command, not an agent question tool.
+
+Preserve pending questions when changing channels; do not repeat an unsupported call or change host
+permissions to force it. Wait for actual answers before closing discovery or dispatching its planner.
+An asynchronous call returning, a timeout, an empty result or a preselected suggestion is not an answer.
+Continue independent research while waiting. Record only the channel that actually received each answer.
+Reuse current answers, ask adaptive follow-ups, and stop only when no uncertainty capable of
 changing behavior, scope, acceptance or execution remains. Put out-of-scope ideas in `deferred`.
 
 Write the resulting discovery JSON before creating a planner. It contains light research, answered
@@ -246,6 +262,13 @@ Your work must satisfy, clause by clause: <validation>
 Commit policy: <Project overrides>. Never touch .specs/graph/ — the orchestrator owns the state.
 Report back: what you changed, and what a reviewer needs to reproduce it.
 ```
+
+Report each execution step as it starts, using the 1-based index in the recorded `taskPlan.steps`.
+The orchestrator records actual executor reports with `progress <task> --step <index> --agent <executor>`.
+`start` records step 1; repeated progress is a no-op, and a new attempt starts over. These counters describe
+the current step, not verified completion; they never replace review. Legacy tasks without a task plan
+have no invented denominator. During validation the engine automatically emits each check's index/total,
+including its start, pass, failure or cache reuse. A retry reruns functional checks as usual.
 
 ### Capacity
 

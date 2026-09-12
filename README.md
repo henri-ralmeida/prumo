@@ -100,7 +100,7 @@ No manual data migration is required. Finish sessions that are actively loading 
 The backup includes a restore command:
 
 ```sh
-bunx @henri-ralmeida/prumo@1.2.1 restore "<backup-directory>"
+bunx @henri-ralmeida/prumo@1.2.2 restore "<backup-directory>"
 ```
 
 Restore refuses to overwrite files edited since installation. Plans keep their current state: reverting an installation must not erase ongoing work. Maintain your own business-data backups; the installer does not take a consistent snapshot of every live plan.
