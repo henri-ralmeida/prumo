@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Prumo</title>
+<title>prumo</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='4' cy='8' r='3' fill='%2334c268'/%3E%3Ccircle cx='12' cy='8' r='3' fill='%23fcb400'/%3E%3C/svg%3E" />
 <style>
@@ -112,7 +112,7 @@
   .lane { position: absolute; left: 0; right: 0; border-radius: 12px;
           background: rgba(255, 255, 255, .017); border: 1px solid rgba(255, 255, 255, .035); }
   .lane-h { position: absolute; top: 6px; left: 14px;
-            font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .07em;
+            font-size: 10px; color: var(--dim); text-transform: lowercase; letter-spacing: .07em;
             white-space: nowrap; }
   .lbtn { background: var(--card); color: var(--dim); border: 1px solid var(--line);
           border-radius: 999px; padding: 3px 11px; font: inherit; font-size: 11px;
@@ -225,10 +225,11 @@
 
   /* ---- right panel: run state + logs ONLY (task details live in the modal) */
   aside { border-left: 1px solid var(--line); background: var(--panel); padding: 12px 14px; overflow-y: auto; }
-  aside h3 { font-size: 11px; color: var(--dim); margin: 14px 0 6px; text-transform: uppercase; letter-spacing: .06em; }
+  aside h3 { font-size: 11px; color: var(--dim); margin: 14px 0 6px; text-transform: lowercase; letter-spacing: .06em; }
   aside h3:first-child { margin-top: 0; }
   .ev { padding: 4px 0; border-bottom: 1px solid var(--line); font-size: 11px; }
   .ev time { color: var(--dim); margin-right: 5px; }
+  [data-i18n], #events .ev b { text-transform: lowercase; }
   .ev .t-task_done b { color: var(--done); } .ev .t-task_fail b { color: var(--failed); }
   .ev .t-task_start b { color: var(--running); } .ev .t-task_validate b { color: var(--validated); }
   .ev .t-task_progress b { color: var(--running); }
@@ -268,8 +269,8 @@
   #pop .pin-hint { color: var(--dim); font-size: 9.5px; margin-top: 6px; }
   #pop h2 { font-size: 13px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding-right: 12px; }
   #pop h2 .st { font-size: 10px; padding: 2px 8px; border-radius: 999px; margin-left: 10px;
-                border: 1px solid; text-transform: uppercase; letter-spacing: .05em; }
-  #pop dt { color: var(--dim); font-size: 10px; text-transform: uppercase; margin-top: 12px; }
+                border: 1px solid; text-transform: lowercase; letter-spacing: .05em; }
+  #pop dt { color: var(--dim); font-size: 10px; text-transform: lowercase; margin-top: 12px; }
   #pop dd { margin: 3px 0 0; white-space: pre-wrap; font-size: 12px; }
   #pop .dep { display: inline-block; background: var(--card); border: 1px solid var(--line);
               border-radius: 6px; padding: 1px 8px; margin: 2px 4px 2px 0; cursor: pointer; font-size: 11px; }
@@ -285,16 +286,16 @@
   #results.open { display: block; }
   #results h2 { font-size: 13px; margin-bottom: 3px; }
   #results .note { color: var(--dim); font-size: 11px; margin-bottom: 18px; }
-  #results h3 { font-size: 11px; color: var(--dim); margin: 26px 0 10px; text-transform: uppercase; letter-spacing: .06em; }
+  #results h3 { font-size: 11px; color: var(--dim); margin: 26px 0 10px; text-transform: lowercase; letter-spacing: .06em; }
   .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); gap: 10px; }
   .tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
-  .tile .k { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+  .tile .k { color: var(--dim); font-size: 10px; text-transform: lowercase; letter-spacing: .05em; }
   .tile .v { font-size: 19px; font-weight: 600; margin-top: 3px; }
   .tile .s { color: var(--dim); font-size: 10.5px; margin-top: 2px; }
   .split { display: flex; height: 26px; border-radius: 6px; overflow: hidden; background: var(--line); }
   .split div { display: flex; align-items: center; justify-content: center; font-size: 10.5px; color: #0b0b0e; font-weight: 600; }
   .rtable { width: 100%; border-collapse: collapse; font-size: 11.5px; }
-  .rtable th { text-align: left; color: var(--dim); font-weight: 400; font-size: 10px; text-transform: uppercase;
+  .rtable th { text-align: left; color: var(--dim); font-weight: 400; font-size: 10px; text-transform: lowercase;
                letter-spacing: .05em; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
   .rtable td { padding: 5px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
   .rtable tr:hover td { background: var(--card); }
@@ -313,7 +314,7 @@
 </head>
 <body>
 <header>
-  <h1>Prumo</h1><select class="run" id="runName" aria-label="Select graph run" data-i18n-aria="Select graph run" onchange="selectRun(this.value)"></select>
+  <h1>prumo</h1><select class="run" id="runName" aria-label="Select graph run" data-i18n-aria="Select graph run" onchange="selectRun(this.value)"></select>
   <button class="lbtn" id="layoutBtn" onclick="toggleLayout()"><span data-i18n="layout: phase">layout: phase</span></button>
   <button class="lbtn" onclick="fitView()" title="fit to screen (0)" data-i18n-title="fit to screen (0)"><span data-i18n="fit">fit</span></button>
   <button class="lbtn" id="resBtn" onclick="toggleResults()" title="run metrics (r)" data-i18n-title="run metrics (r)"><span data-i18n="results">results</span></button>
@@ -360,7 +361,7 @@
   </aside>
 </main>
 <footer>
-  <span class="lbl">Prumo</span>
+  <span class="lbl">prumo</span>
   <div id="bar"><div class="seg-done"></div><div class="seg-plan"></div><div class="seg-run"></div><div class="seg-review"></div><div class="seg-fail"></div></div>
   <span class="n" id="doneCount"></span>
 </footer>
@@ -856,7 +857,7 @@ function render(s, events) {
      the var is restamped here every render, and changing animation-delay on a live
      element SHIFTS its phase: that reads as a jump every poll. */
   document.documentElement.style.setProperty('--epoch', `-${(performance.now() / 1000).toFixed(3)}s`)
-  document.title = `${s.run} - Prumo`
+  document.title = `${s.run} - prumo`
   const tasks = s.tasks
   const list = Object.values(tasks)
   const by = {}
