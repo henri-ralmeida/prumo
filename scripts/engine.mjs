@@ -12,7 +12,8 @@
  *   events.ndjson  — append-only history of every transition (feeds the dashboard log)
  *
  * Task lifecycle (enforced):
- *   pending ─start→ running ─review→ reviewing ─validate(ok)→ ─done→ done
+ *   pending ─plan-task→ planning ─finish-planning→ pending (ready) ─start→ running
+ *   running ─review→ reviewing ─validate(ok)→ ─done→ done
  *      │                │                  │└─validate(failed)→ stays reviewing
  *      │                │└─fail→ failed ─retry→ pending
  *      │                └─(done straight from running is refused when review is required)
@@ -22,12 +23,15 @@
  * AUTHOR ≠ VERIFIER: the executor writes, a REVIEWER agent bangs the gavel. `done` demands a
  * passing validation recorded during review, by an agent other than the one that did the work.
  *
- * "ready" is DERIVED, never stored: pending + every dep done/skipped.
+ * Readiness is DERIVED: satisfied deps → ready_to_plan; current task plan → ready.
+ * Legacy tasks without planningRequired retain their original lifecycle.
  *
  * Usage (ENGINE = path to this file, wherever the skill is installed):
  *   node $ENGINE init --plan <plan.json> --run <name>
  *   node $ENGINE sync-plan --plan <plan.json> [--run <name>]
  *   node $ENGINE status|ready|graph [--run <name>]
+ *   node $ENGINE plan-task <task> --agent <name>
+ *   node $ENGINE finish-planning <task> --plan <task-plan.json>
  *   node $ENGINE start <task> --agent <name>   (max 3 executors)
  *   node $ENGINE review <task> --agent <name>  (hands it to a reviewer)
  *   node $ENGINE validate <task> --ok|--failed --evidence "<text>" [--cwd <project>]
@@ -46,7 +50,8 @@ import {
 } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { writeAtomicState } from './atomic-state.mjs'
-import { runValidation, assertValidation, validationContract, validationDirectories } from './validation.mjs'
+import { runValidation, assertValidation, validationContract, validationDirectories, assertTaskPlan,
+  planTaskFromState, planningContext, hasCurrentTaskPlan, hasCurrentTaskScope } from './validation.mjs'
 import { join, resolve } from 'node:path'
 
 import { findRoot } from './storage.mjs'
@@ -268,6 +273,10 @@ function taskFromPlan(t) {
     tags: t.tags ?? [],
     touches: t.touches ?? [],
     state: 'pending',
+    planningRequired: true,
+    planner: null,
+    planningAttempts: [],
+    planningHistory: [],
     agent: null,
     reviewer: null,
     attempts: [],
@@ -276,20 +285,24 @@ function taskFromPlan(t) {
   }
 }
 
-function planTaskFromState(t) {
-  return {
-    id: t.id,
-    phase: t.phase,
-    title: t.title,
-    deps: t.deps,
-    validation: t.validation,
-    validationMode: t.validationMode,
-    inspectionReason: t.inspectionReason,
-    requireReview: t.requireReview,
-    maxAttempts: t.maxAttempts,
-    tags: t.tags,
-    touches: t.touches,
-  }
+function beginPlanning(state, task, agent, context = planningContext(state, task)) {
+  task.planningRequired = true
+  task.planner = agent
+  task.planningAttempts ??= []
+  task.planningHistory ??= []
+  task.planningAttempts.push({ n: task.planningAttempts.length + 1, agent,
+    startedAt: new Date().toISOString(), context, attempt: task.attempts.length + (task.planningReturn ? 0 : 1) })
+  task.state = 'planning'
+}
+
+function closePlanning(task, result) {
+  const round = task.planningAttempts?.at(-1)
+  if (round && !round.endedAt) Object.assign(round, { endedAt: new Date().toISOString(), result })
+}
+
+function assertCurrentTaskScope(state, task) {
+  if (!hasCurrentTaskScope(state, task))
+    die(task.id + ' execution scope needs current planning — keep work blocked, run plan-task and finish-planning, then unblock explicitly')
 }
 
 /** Derived view: effective state per task (ready is computed, never stored). */
@@ -303,7 +316,7 @@ export function derive(state) {
         const dep = state.tasks[d]
         return !dep || (dep.state !== 'done' && dep.state !== 'skipped')
       })
-      effective = blockedBy.length === 0 ? 'ready' : 'waiting'
+      effective = blockedBy.length ? 'waiting' : hasCurrentTaskPlan(state, t) ? 'ready' : 'ready_to_plan'
     }
     out[id] = { ...t, effective, blockedBy }
   }
@@ -315,10 +328,12 @@ function occupancy(state) {
   const all = Object.values(state.tasks)
   const executors = all.filter((t) => t.state === 'running')
   const reviewers = all.filter((t) => t.state === 'reviewing')
+  const planners = all.filter((t) => t.state === 'planning')
   return {
     executors,
     reviewers,
-    busy: [...executors, ...reviewers],
+    planners,
+    busy: [...executors, ...reviewers, ...planners],
     maxExec: state.plan.maxExecutors ?? DEFAULT_MAX_EXECUTORS,
     cap: state.plan.maxParallel ?? DEFAULT_MAX_PARALLEL,
   }
@@ -326,21 +341,23 @@ function occupancy(state) {
 
 /** An agent name may hold only one task at a time, whatever the role. */
 function agentBusy(state, agent) {
-  return occupancy(state).busy.find((t) => (t.state === 'reviewing' ? t.reviewer : t.agent) === agent)
+  return occupancy(state).busy.find((t) => (t.state === 'reviewing' ? t.reviewer : t.state === 'planning' ? t.planner : t.agent) === agent)
 }
 
 // Starting and resuming both acquire a slot; a paused task no longer owns one.
 function assertAvailable(state, task, role, agent) {
   if (typeof agent !== 'string' || !agent.trim()) die('active work needs a recorded agent')
   const blockedBy = task.deps.filter((id) => !['done', 'skipped'].includes(state.tasks[id]?.state))
-  if (blockedBy.length && !args.force) die(task.id + ' still waiting on: ' + blockedBy.join(', '))
+  if (blockedBy.length && (!args.force || role === 'planning' || task.planningRequired)) die(task.id + ' still waiting on: ' + blockedBy.join(', '))
   const occ = occupancy(state)
   if (role === 'running' && occ.executors.length >= occ.maxExec && !args.force)
     die(occ.executors.length + ' executors already running (max ' + occ.maxExec + ')')
-  if (occ.busy.length >= occ.cap && !args.force)
+  if (occ.busy.filter(t => t.id !== task.id).length >= occ.cap &&
+      (!args.force || role === 'planning' || task.planningRequired || occ.planners.length > 0))
     die(occ.busy.length + ' agents busy (cap ' + occ.cap + ')')
   const busy = agentBusy(state, agent)
-  if (busy && !args.force) die('agent "' + agent + '" is already on ' + busy.id + ' — one agent per task')
+  if (busy && busy.id !== task.id && (!args.force || role === 'planning' || task.planningRequired || busy.state === 'planning'))
+    die('agent "' + agent + '" is already on ' + busy.id + ' — one agent per task')
 }
 
 function progress(state) {
@@ -394,7 +411,7 @@ const commands = {
     const removed = Object.keys(state.tasks).filter((id) => !plan.tasks.some((t) => t.id === id))
     if (removed.length) die(`sync-plan is additive: plan removed ${removed.join(', ')}`)
 
-    const mutableStates = new Set(['pending', 'failed', 'blocked'])
+    const mutableStates = new Set(['pending', 'planning', 'failed', 'blocked'])
     const contractFields = TASK_CONTRACT_FIELDS
     const added = []
     const updated = []
@@ -416,6 +433,9 @@ const commands = {
         continue
       }
       for (const field of changed) current[field] = next[field]
+      if (current.planningRequired) current.planningRevision = (current.planningRevision ?? 0) + 1
+      if (current.planningRequired && changed.some(field => !['validation', 'validationMode', 'inspectionReason'].includes(field)))
+        current.scopeRevision = (current.scopeRevision ?? 0) + 1
       if (changed.some((field) => ['validation', 'validationMode', 'inspectionReason'].includes(field)))
         current.contractRevision = (current.contractRevision ?? 0) + 1
       updated.push(planTask.id)
@@ -432,6 +452,9 @@ const commands = {
       requireReview: plan.requireReview !== false,
       source,
     }
+    const planningChanged = ['name', 'description', 'requireReview'].some(field => state.plan[field] !== nextPlan[field])
+    if (state.plan.planningRevision || planningChanged)
+      nextPlan.planningRevision = (state.plan.planningRevision ?? 0) + (planningChanged ? 1 : 0)
     const planChanged = JSON.stringify(state.plan) !== JSON.stringify(nextPlan)
     if (!added.length && !updated.length && !planChanged) {
       if (preserved.length)
@@ -478,7 +501,8 @@ const commands = {
     log(`states: ${JSON.stringify(p.by)}`)
     const width = Math.max(...Object.values(d).map((t) => t.id.length))
     const row = (t) => {
-      const agent = t.state === 'reviewing' ? `  @${t.reviewer} (review)` : t.agent ? `  @${t.agent}` : ''
+      const agent = t.state === 'planning' ? `  @${t.planner} (${tr('planning')})` :
+        t.state === 'reviewing' ? `  @${t.reviewer} (review)` : t.agent ? `  @${t.agent}` : ''
       const attempts = t.attempts.length > 1 ? `  (attempt ${t.attempts.length})` : ''
       const wait = t.effective === 'waiting' ? `  ← ${t.blockedBy.join(',')}` : ''
       console.log(`  ${t.id.padEnd(width)}  ${tr(t.effective).padEnd(8)}${agent}${attempts}${wait}`)
@@ -501,19 +525,77 @@ const commands = {
     const state = loadState(runName())
     const d = derive(state)
     const occ = occupancy(state)
-    const list = Object.values(d).filter((t) => t.effective === 'ready')
-    for (const t of list) console.log(`${t.id}  ${t.title}`)
+    const list = Object.values(d).filter((t) => ['ready_to_plan', 'ready'].includes(t.effective))
+    for (const t of list) console.log(`${t.id}  ${t.title}  [${tr(t.effective)}]`)
     const slots = Math.max(0, Math.min(occ.maxExec - occ.executors.length, occ.cap - occ.busy.length))
     log(
       `\n[prumo] ${occ.executors.length}/${occ.maxExec} executors, ${occ.reviewers.length} in review ` +
         `(cap ${occ.cap}) — dispatch at most ${slots} now`,
     )
+    log(`[prumo] ${occ.planners.length} in planning — ${Math.max(0, occ.cap - occ.busy.length)} agent slots available for planning`)
     if (occ.reviewers.length) log(`[prumo] awaiting review: ${occ.reviewers.map((t) => `${t.id} @${t.reviewer}`).join(', ')}`)
   },
 
   graph() {
     const state = loadState(runName())
     console.log(JSON.stringify({ ...state, derived: derive(state), progress: progress(state) }, null, 2))
+  },
+
+  'plan-task'() {
+    const name = runName()
+    const id = args._[0] ?? die('plan-task <task> --agent <name>')
+    const agent = args.agent ?? die('plan-task needs --agent <name>')
+    const state = loadState(name)
+    const t = getTask(state, id)
+    const pausedExecution = t.planningRequired && t.state === 'blocked' && ['running', 'reviewing'].includes(t.stateBeforeBlock)
+    const stale = t.state === 'planning' && t.planningAttempts?.at(-1)?.context !== planningContext(state, t)
+    if (t.state !== 'pending' && !stale && !pausedExecution)
+      die(id + ' must be pending, have stale planning, or have paused execution before plan-task')
+    if (pausedExecution) {
+      const attempt = t.attempts.at(-1)
+      if (!attempt || attempt.endedAt || attempt.result || !t.agent || attempt.agent !== t.agent)
+        die('cannot replan without an open attempt and its original executor')
+    }
+    try { validationContract(t) } catch (error) { die(error.message) }
+    assertAvailable(state, t, 'planning', agent)
+    if (pausedExecution) t.planningReturn = { stateBeforeBlock: t.stateBeforeBlock, blockReason: t.blockReason }
+    if (stale) closePlanning(t, 'superseded')
+    beginPlanning(state, t, agent)
+    saveState(name, state)
+    emit(name, 'task_planning', id, { planner: agent, round: t.planningAttempts.length })
+    log(`[prumo] ${id} in planning (planner ${agent}, round ${t.planningAttempts.length})`)
+  },
+
+  'finish-planning'() {
+    const name = runName()
+    const id = args._[0] ?? die('finish-planning <task> --plan <task-plan.json>')
+    if (typeof args.plan !== 'string' || !args.plan.trim()) die('finish-planning needs --plan <task-plan.json>')
+    const state = loadState(name)
+    const t = getTask(state, id)
+    if (t.state !== 'planning') die(id + ' is not in planning')
+    const round = t.planningAttempts?.at(-1)
+    if (!round || round.endedAt || round.agent !== t.planner) die('planning needs an open round and its recorded planner')
+    if (round.context !== planningContext(state, t)) die('task planning is stale — run plan-task again and research the current contract')
+    if (t.deps.some(dep => !['done', 'skipped'].includes(state.tasks[dep]?.state))) die('planning dependencies are no longer complete')
+    let plan
+    try {
+      plan = JSON.parse(readFileSync(resolve(args.plan), 'utf8'))
+      assertTaskPlan(t, plan)
+    } catch (error) { die(error.message) }
+    const artifact = Object.fromEntries(['research', 'decisions', 'steps', 'verification', 'openQuestions'].map(field => [field, plan[field]]))
+    t.taskPlan = { ...artifact, planner: t.planner, startedAt: round.startedAt, completedAt: new Date().toISOString(),
+      context: round.context, scope: planningContext(state, t, { scopeOnly: true }), attempt: round.attempt }
+    t.planningHistory.push(t.taskPlan)
+    closePlanning(t, 'planned')
+    t.state = t.planningReturn ? 'blocked' : 'pending'
+    if (t.planningReturn) {
+      Object.assign(t, t.planningReturn)
+      delete t.planningReturn
+    }
+    saveState(name, state)
+    emit(name, 'task_planned', id, { planner: t.planner, round: t.planningAttempts.length, state: t.state })
+    if (t.state === 'blocked') log(`[prumo] ${id} task plan recorded; still blocked — unblock explicitly to resume the current attempt`)
+    else log(`[prumo] ${id} ready to execute (task plan recorded by ${t.planner})`)
   },
 
   start() {
@@ -525,6 +607,7 @@ const commands = {
     const state = loadState(name)
     const t = getTask(state, id)
     if (t.state !== 'pending') die(`${id} is ${t.state}, not pending`)
+    if (!hasCurrentTaskPlan(state, t)) die(id + ' needs completed current planning — run plan-task and finish-planning before start')
     try { validationContract(t) } catch (error) {
       die(`${id} has an invalid legacy validation contract: ${error.message} — correct the approved plan and run sync-plan before start`)
     }
@@ -546,6 +629,7 @@ const commands = {
     const state = loadState(name)
     const t = getTask(state, id)
     if (t.state !== 'running') die(`${id} is ${t.state}, not running`)
+    assertCurrentTaskScope(state, t)
     if (reviewer === t.agent && !args.force)
       die(`"${reviewer}" wrote ${id} — a reviewer must be a different agent (or --force)`)
     /* No cap check here on purpose: the task ALREADY holds a slot as `running`, so moving
@@ -553,7 +637,8 @@ const commands = {
        blocked by capacity — a finished task can always be judged immediately, which is the
        whole reason executors are capped below the total. */
     const busy = agentBusy(state, reviewer)
-    if (busy && !args.force) die(`agent "${reviewer}" is already on ${busy.id} — one agent per task (or --force)`)
+    if (busy && (!args.force || t.planningRequired || busy.state === 'planning'))
+      die(`agent "${reviewer}" is already on ${busy.id} — one agent per task`)
     t.state = 'reviewing'
     t.reviewer = reviewer
     t.attempts.at(-1).reviewer = reviewer
@@ -597,6 +682,7 @@ const commands = {
       const state = loadState(name)
       const t = getTask(state, id)
       if (t.state !== 'running' && t.state !== 'reviewing') die(id + ' is not running or reviewing')
+      if (requestedOk) assertCurrentTaskScope(state, t)
       const by = t.state === 'reviewing' ? 'review' : 'executor'
       if (requestedOk && (t.requireReview ?? state.plan.requireReview) !== false &&
           (by !== 'review' || !t.reviewer || t.reviewer === t.agent))
@@ -606,7 +692,8 @@ const commands = {
       }
       // Invalidate any previous pass before running commands, including on interruption.
       t.validations.push({ ok: false, by, agent: by === 'review' ? t.reviewer : t.agent,
-        evidence: args.evidence, at: new Date().toISOString(), attempt: t.attempts.length, token })
+        evidence: args.evidence, at: new Date().toISOString(), attempt: t.attempts.length, token,
+        ...(t.planningRequired ? { planningScope: t.taskPlan.scope } : {}) })
       saveState(name, state)
       emit(name, 'task_validation_started', id, { token, attempt: t.attempts.length })
       return t
@@ -646,9 +733,12 @@ const commands = {
     const t = getTask(state, id)
     if (t.state !== 'running' && t.state !== 'reviewing')
       die(`${id} is ${t.state}, not running or reviewing`)
+    assertCurrentTaskScope(state, t)
     const last = t.validations.at(-1)
     if (!last || !last.ok || last.attempt !== t.attempts.length)
       die(`${id} has no passing validation for the current attempt — validate first`)
+    if (t.planningRequired && last.planningScope !== t.taskPlan.scope)
+      die('execution scope changed after validation — validate the current scope again')
     /* The gavel belongs to the reviewer. A validation the executor recorded about its own
        work is a self-report, and the whole point of the role split is that it does not count. */
     if ((t.requireReview ?? state.plan.requireReview) !== false && last.by !== 'review')
@@ -662,7 +752,7 @@ const commands = {
     saveState(name, state)
     emit(name, 'task_done', id, { agent: t.agent })
     const unlocked = Object.values(derive(state)).filter(
-      (o) => o.effective === 'ready' && o.deps.includes(id),
+      (o) => ['ready_to_plan', 'ready'].includes(o.effective) && o.deps.includes(id),
     )
     log(`[prumo] ${id} done${unlocked.length ? ` — unlocked: ${unlocked.map((u) => u.id).join(', ')}` : ''}`)
   },
@@ -716,6 +806,7 @@ const commands = {
     const t = getTask(state, id)
     if (['done', 'skipped'].includes(t.state)) die('completed tasks cannot be paused')
     const alreadyBlocked = t.state === 'blocked'
+    if (t.state === 'planning') closePlanning(t, 'blocked')
     if (!alreadyBlocked) t.stateBeforeBlock = t.state
     t.stateRevision = (t.stateRevision ?? 0) + 1
     t.state = 'blocked'
@@ -733,17 +824,25 @@ const commands = {
     if (t.state !== 'blocked') die(id + ' is ' + t.state + ', not blocked')
     // Legacy unstarted tasks can return to pending; never guess the phase of an existing attempt.
     const previous = t.stateBeforeBlock ?? (t.attempts.length === 0 ? 'pending' : null)
-    if (!['pending', 'running', 'reviewing', 'failed'].includes(previous))
+    if (!['pending', 'planning', 'running', 'reviewing', 'failed'].includes(previous))
       die('cannot restore stateBeforeBlock; inspect the recorded history before repairing this task')
     const handoff = args.reviewer !== undefined
     if (handoff && !['running', 'reviewing'].includes(previous))
       die('direct review requires a paused active attempt; pending/failed tasks cannot bypass start/retry')
     const target = handoff ? 'reviewing' : previous
     const reviewer = handoff ? args.reviewer : t.reviewer
+    if (target === 'planning') {
+      const round = t.planningAttempts?.at(-1)
+      if (!round || round.result !== 'blocked' || round.agent !== t.planner)
+        die('cannot resume planning without its paused round and original planner')
+      assertAvailable(state, t, target, t.planner)
+      beginPlanning(state, t, t.planner, round.context)
+    }
     if (target === 'running' || target === 'reviewing') {
       const attempt = t.attempts.at(-1)
       if (!attempt || attempt.endedAt || attempt.result || !t.agent || attempt.agent !== t.agent)
         die('cannot resume without an open attempt and its original executor')
+      assertCurrentTaskScope(state, t)
       if (target === 'reviewing' && reviewer === t.agent)
         die('passing validation requires an independent reviewer')
       assertAvailable(state, t, target, target === 'reviewing' ? reviewer : t.agent)
@@ -757,7 +856,7 @@ const commands = {
     delete t.blockReason
     delete t.stateBeforeBlock
     saveState(name, state)
-    emit(name, 'task_unblock', id, { state: target, agent: target === 'reviewing' ? t.reviewer : t.agent, attempt: t.attempts.length })
+    emit(name, 'task_unblock', id, { state: target, agent: target === 'reviewing' ? t.reviewer : target === 'planning' ? t.planner : t.agent, attempt: t.attempts.length })
     log('[prumo] ' + id + ' unblocked to ' + target + '; attempt ' + t.attempts.length + ' preserved; no agent dispatched')
   },
 
@@ -767,6 +866,7 @@ const commands = {
     const state = loadState(name)
     const t = getTask(state, id)
     if (t.state === 'done') die(`${id} already done`)
+    if (t.state === 'planning') closePlanning(t, 'skipped')
     t.state = 'skipped'
     t.skipReason = args.reason ?? ''
     saveState(name, state)

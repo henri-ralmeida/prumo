@@ -2,7 +2,7 @@
 
 [English](runtime.md) · [Instalação](../README.pt-BR.md)
 
-O motor é uma CLI Node.js, não um serviço que chama modelos. O ambiente de IA dispara agentes; o motor registra trabalho, dependências, revisão e evidências. O dashboard observa os mesmos arquivos. Com `--sync-plan`, ele delega a reconciliação ao motor.
+O motor é uma CLI Node.js, não um serviço que chama modelos. O ambiente de IA dispara planejadores, executores e revisores; o motor registra planejamento, trabalho, dependências e evidências. O dashboard observa os mesmos arquivos. Com `--sync-plan`, ele delega a reconciliação ao motor.
 
 ## Armazenamento
 
@@ -36,6 +36,55 @@ Cada execução usa `.specs/graph/<run>/state.json` e `events.ndjson`. `CURRENT`
 `deps` define a ordem. Dependências concluídas ou explicitamente puladas liberam a tarefa. Ciclos, IDs duplicados e dependências desconhecidas são recusados. `touches` detecta gravações sobrepostas entre tarefas paralelas; `--allow-overlap` é uma exceção explícita de agendamento.
 
 `requireReview` pode ser definido por tarefa ou plano; o padrão exige revisão. Desabilitar revisão não elimina a comprovação funcional. `maxAttempts` por tarefa define o limite de tentativas antes de escalar; o padrão é três. `tags` é uma lista opcional de classificações.
+
+## Planejamento por tarefa
+
+O plano global continua exigindo aprovação e contrato válido no `init`. Depois que as dependências
+entregam, **cada tarefa nova recebe um subagente planejador dedicado**, antes do executor. Ele
+pesquisa código, artefatos, entregas das dependências e fontes relevantes no estado atual, aplica
+PO First e prepara os passos daquela tarefa. O modo Plan/Spec do ambiente não substitui essa etapa.
+
+Pesquise antes de perguntar, reutilize decisões conhecidas e não imponha questionário obrigatório.
+Áreas cinzentas que mudam comportamento, escopo ou aceite voltam à conversa principal, usando
+ferramentas nativas de perguntas quando disponíveis. Registre respostas reais e decisões compartilhadas.
+Refinamento comum dentro do escopo não exige nova aprovação; mudanças materiais voltam ao usuário
+e ao plano global. Uma resposta necessária mantém a tarefa bloqueada até ser resolvida.
+
+`plan-task T1 --agent <planejador>` deve acompanhar o disparo real do subagente. Ele escreve somente
+o artefato designado, sem implementar nem editar estado. O orquestrador confere o resultado e registra
+`finish-planning T1 --plan <plano-da-tarefa.json>`. Exemplo para um contrato com uma verificação:
+
+```json
+{
+  "research": [{ "source": "src/importacao.mjs", "findings": "O importador atual valida as linhas antes de gravar; reutilizar essa validação." }],
+  "decisions": [{ "question": "Como tratar uma linha inválida?", "answer": "O contrato aprovado exige rejeição sem gravação parcial." }],
+  "steps": ["Ampliar a validação existente.", "Adicionar o caso de linha inválida à verificação funcional existente."],
+  "verification": [{ "criterion": "Linha inválida produz o erro aprovado e preserva os registros existentes.", "check": 1 }],
+  "openQuestions": []
+}
+```
+
+`research` exige fonte e achados; `steps`, passos de execução; `verification`, critérios observáveis
+associados a **todos** os passos do contrato pelo índice numérico a partir de 1. Use `"inspection"`
+somente quando o contrato aprovado for inspeção em texto. Esses três arrays não podem estar vazios.
+`decisions` contém pares `question`/`answer` resolvidos e pode ser vazio. `openQuestions` contém
+`question`, `blocking` booleano e `answer` opcional; também pode ser vazio. Pergunta bloqueante
+sem resposta impede concluir planejamento; não invente resposta nem omita seu efeito para liberar execução.
+
+O motor gera metadados de planejador, contexto, tentativa e tempo, salva `taskPlan` e preserva o
+histórico dos planejamentos. Ele verifica estrutura e atualidade registrada, não a verdade da pesquisa
+ou a identidade real do agente. O executor lê e reconfere o plano; o revisor independente avalia a
+entrega contra o objetivo aprovado e os critérios vigentes, podendo contestar um plano defeituoso.
+Planejamento não elimina erros nem substitui comprovação funcional por `echo` ou inspeção indevida.
+
+Tarefas novas recebem `planningRequired: true`, inclusive as adicionadas a uma run antiga.
+Tarefas existentes sem esse marcador preservam o fluxo anterior e o histórico; uma atualização
+não reinicia trabalho ativo nem obriga tarefas concluídas a planejar novamente.
+
+`maxParallel` limita o total de planejadores, executores e revisores ativos; `maxExecutors` limita
+execução. Planejar não consome tentativa de execução. Cada agente pode ocupar uma tarefa ativa.
+No fluxo novo, `--force` não ignora planejamento, dependências, capacidade total ou agente ocupado;
+a exceção legada para a cota de executores permanece.
 
 ## Contrato de validação
 
@@ -74,13 +123,15 @@ Resolva `scripts/engine.mjs` a partir da skill instalada. Acrescente `--run <nom
 |---|---|
 | `init --plan <arquivo> --run <nome>` | Inicializa execução do plano aprovado |
 | `status`, `ready`, `graph`, `runs` | Consulta estado, trabalho pronto, JSON ou execuções |
+| `plan-task <tarefa> --agent <nome>` | Registra planejador e inicia pesquisa após dependências entregues |
+| `finish-planning <tarefa> --plan <artefato.json>` | Confere e registra o plano específico; libera execução se não houver pausa preservada |
 | `start <tarefa> --agent <nome>` | Registra executor e inicia tentativa |
 | `review <tarefa> --agent <nome>` | Encaminha trabalho para revisão |
 | `validate <tarefa> --ok --evidence <texto> --cwd <diretório>` | Executa o contrato; falha real impede aprovação |
 | `validate <tarefa> --failed --evidence <texto>` | Registra reprovação |
 | `done <tarefa>` | Conclui com evidência válida da tentativa e revisor atuais |
 | `fail <tarefa> --reason <texto>` | Registra falha real da tentativa |
-| `retry <tarefa>` | Volta de failed para pending; start começa nova tentativa |
+| `retry <tarefa>` | Volta de failed para pending; tarefas novas precisam planejar novamente antes de start |
 | `block <tarefa> --reason <texto>` | Pausa preservando a fase anterior |
 | `unblock <tarefa>` | Restaura a fase anterior, sem nova tentativa |
 | `unblock <tarefa> --reviewer <nome>` | Leva tentativa ativa pausada diretamente à revisão |
@@ -99,6 +150,17 @@ Use `refresh-contract` para mudar somente o contrato aprovado de uma tarefa ativ
 
 Trabalho entregue pode seguir à revisão, que pode completar verificações faltantes. Não use fail/retry **somente** para atualizar contrato nem registre erro de orquestração como falha do executor. Um bloqueio solicitado permanece até uma decisão explícita de desbloqueio.
 
+Nas tarefas que exigem planejamento, mudanças na tarefa, dependências ou decisões globais podem invalidar a pesquisa; `retry` também
+exige pesquisa atual, preservando planos anteriores. Se o escopo de execução mudar durante running
+ou reviewing, bloqueie, sincronize a mudança aprovada e dispare `plan-task` na tarefa bloqueada.
+`finish-planning` devolve a tarefa a **blocked**, mantendo fase anterior, motivo e tentativa aberta;
+`unblock` explícito retoma a mesma tentativa. Não invente fail/retry para replanejar. Recibos do escopo
+anterior não aprovam o novo. Uma mudança somente de validação continua usando `refresh-contract`
+e nova verificação na mesma tentativa.
+
+Bloquear durante planejamento preserva essa fase; desbloquear retoma a pesquisa, respeitando
+dependências, capacidade e disponibilidade do agente. Confira estado e agente reais após interrupções.
+
 ### Reprovação real com alteração aprovada do contrato
 
 Corrigir um defeito dentro do escopo aprovado já está autorizado. Uma orientação explícita do usuário pode aprovar um critério novo; peça decisão apenas se o novo escopo continuar indefinido. Solicitação nova não transforma retroativamente uma entrega correta em falha.
@@ -108,11 +170,11 @@ Quando a entrega foi realmente reprovada e o contrato aprovado também mudou:
 1. Preserve a evidência e registre `fail <tarefa> --reason <critério-real-não-atendido>`.
 2. Edite o plano aprovado, substituindo critérios obsoletos. Use o editor existente, backup único e confira o diff e possíveis alterações concorrentes; não é obrigatório criar um script de adaptação.
 3. Rode `sync-plan --plan <arquivo-aprovado>` enquanto a tarefa está `failed`. Confira em `graph` o contrato, as dependências e os caminhos de escrita persistidos.
-4. Rode `retry <tarefa>`, depois `start <tarefa> --agent <executor>` junto com o disparo real do agente no ambiente.
+4. Rode `retry <tarefa>`. Para tarefas que exigem planejamento, dispare `plan-task`, pesquise e registre `finish-planning`; depois use `start <tarefa> --agent <executor>` com o disparo real do executor.
 
 Acrescente `--run <nome>` em cada chamada. `retry` não recarrega o plano; `refresh-contract` só muda validação e não registra reprovação. Se apenas faltam atualizar verificações da entrega correta, use refresh e revisão na mesma tentativa. Novos requisitos após conclusão exigem acompanhamento explícito.
 
-Retome da fase persistida, sem repetir a sequência inteira. Se `start` ou `review` foi registrado, mas o agente não foi disparado, complete o disparo na mesma tentativa quando autorizado. Confirme o agente real. Se o disparo está indisponível ou o usuário pausou, registre bloqueio pelo motivo de orquestração. Um nome no estado não prova execução. Corrija relatos com notas e preserve tentativas anteriores.
+Retome da fase persistida, sem repetir a sequência inteira. Se `plan-task`, `start` ou `review` foi registrado, mas o agente não foi disparado, complete o disparo na mesma rodada/tentativa quando autorizado. Confirme o agente real. Se o disparo está indisponível ou o usuário pausou, registre bloqueio pelo motivo de orquestração. Um nome no estado não prova execução. Corrija relatos com notas e preserve tentativas anteriores.
 
 ## Dashboard
 
@@ -123,5 +185,23 @@ node <skill>/scripts/serve.mjs --sync-plan --lang pt-BR
 O endereço padrão é `http://localhost:4949`, restrito à máquina. `--port` escolhe outra porta e `--run` fixa uma execução. O seletor mostra workspaces centrais e o workspace legado selecionado. Porta ocupada não provoca encerramento de outro servidor.
 
 O painel apresenta estados, dependências, tentativas, evidências, eventos e tempos derivados. O idioma segue a preferência da instalação ou a escolha explícita de execução; não há seletor no navegador. Textos do usuário são escapados e não traduzidos. Os números não provam cobertura de testes, causas de defeitos ou regras de negócio.
+
+| Estado efetivo | Significado | Cor |
+|---|---|---|
+| `waiting` | Aguardando dependências | Cinza |
+| `ready_to_plan` | Pronto para planejamento | Azul |
+| `planning` | Em planejamento | Rosa |
+| `ready` | Pronto para executar; em tarefa legada, prontidão original | Verde-azulado |
+| `running` | Em execução | Âmbar |
+| `reviewing` | Em revisão | Ciano |
+| `done` | Concluído | Verde |
+| `failed` | Falhou | Vermelho |
+| `blocked` | Bloqueado | Roxo |
+| `skipped` | Pulado por decisão explícita | Cinza |
+
+`pending` é persistido; as prontidões são calculadas pelas dependências e pelo plano atual.
+O planejador aparece junto do orquestrador e do revisor, com conexões às tarefas em planejamento.
+Os detalhes mostram pesquisa, decisões, passos, verificações e perguntas. Resultados separam tempo
+de planejamento, execução e revisão; pausas ficam fora do tempo ativo de planejamento.
 
 Encerrar o dashboard não cancela trabalho. Instalar não reinicia dashboard ou agentes. Um processo já aberto passa a usar o código de servidor atualizado quando for reiniciado.

@@ -2,7 +2,7 @@
 
 [English](README.md) · **Português (Brasil)**
 
-Prumo reúne o motor do [graph-foreman](https://github.com/JrSantiaggo/graph-foreman) com PO First: execução de planos aprovados, tarefas ordenadas por dependências, revisão independente, evidências de validação e um dashboard local. O mesmo fluxo atende software, dados, automação, migrações e outras demandas.
+Prumo reúne o motor do [graph-foreman](https://github.com/JrSantiaggo/graph-foreman) com PO First: planos aprovados, pesquisa e planejamento por tarefa, execução ordenada por dependências, revisão independente, evidências de validação e um dashboard local. O mesmo fluxo atende software, dados, automação, migrações e outras demandas.
 
 O plano define o resultado esperado; o motor controla estados e registros. O ambiente de IA executa o trabalho e dispara seus agentes.
 
@@ -100,7 +100,7 @@ Não é necessário migrar os dados manualmente. Encerre sessões que estejam ca
 O backup informa o comando de reversão:
 
 ```sh
-bunx @henri-ralmeida/prumo@1.1.2 restore "<diretório-do-backup>"
+bunx @henri-ralmeida/prumo@1.2.0 restore "<diretório-do-backup>"
 ```
 
 A reversão recusa sobrescrever arquivos que você editou depois. Os planos continuam no estado atual: reverter uma instalação não deve apagar trabalho em andamento. Mantenha sua rotina de backup dos dados de negócio; o instalador não captura uma imagem consistente de todos os planos ativos.
@@ -109,7 +109,19 @@ Um dashboard já aberto pode carregar a nova interface no próximo acesso. Seu p
 
 ## Executar um plano
 
-Apresente e aprove o plano no ambiente de IA. Invoque `/prumo <plano-ou-execução>` ou `$prumo` no Codex. O motor registra despachos; quem cria agentes é o ambiente. Sem suporte a executores e revisores independentes, o fluxo deve informar a limitação.
+Apresente e aprove o plano global no ambiente de IA. Invoque `/prumo <plano-ou-execução>` ou `$prumo` no Codex. O motor registra despachos; quem cria agentes é o ambiente. Sem suporte a planejadores dedicados, executores ou revisores independentes, o fluxo deve informar a limitação.
+
+Na **1.2.0**, cada tarefa nova segue **pronto para planejamento → em planejamento → pronto para executar → execução → revisão independente**. Depois das entregas das dependências, um planejador dedicado pesquisa o código/artefatos atuais e essas entregas, aplica PO First, resolve perguntas relevantes pela conversa principal e registra o plano de execução daquela tarefa. O modo Plan/Spec nativo continua responsável pelo escopo e aprovação globais.
+
+| Estado no dashboard | Cor | Significado |
+|---|---|---|
+| Pronto para planejamento (`ready_to_plan`) | Azul | Dependências entregues; a pesquisa pode começar |
+| Em planejamento (`planning`) | Rosa | Um planejador dedicado pesquisa e prepara a tarefa |
+| Pronto para executar (`ready`) | Verde-azulado | Pesquisa atual, decisões, passos e verificações estão registrados |
+
+A pesquisa vem antes das perguntas; respostas conhecidas são reaproveitadas. Refinamento comum não exige nova aprovação; mudanças materiais voltam ao usuário/plano global. O executor reconfere o plano e um revisor independente pode contestar lacunas frente ao objetivo aprovado. O motor confere estrutura e atualidade dos registros; não comprova qualidade da pesquisa nem impede todo erro de modelo.
+
+Tarefas existentes preservam fluxo e histórico. Tarefas adicionadas a uma run antiga exigem planejamento. Retry exige pesquisa atual; mudanças aprovadas de escopo durante execução pausada podem ser replanejadas e retomadas explicitamente na mesma tentativa. Consulte [planejamento por tarefa](references/runtime.pt-BR.md#planejamento-por-tarefa) e [planos em andamento](references/runtime.pt-BR.md#planos-em-andamento).
 
 Para novos planos, selecione um workspace central. No PowerShell:
 
@@ -148,7 +160,7 @@ Documentação e outras tarefas sem efeito de execução podem usar `validationM
 
 Atualizar um contrato aprovado não exige inventar falha ou nova tentativa. `refresh-contract` preserva trabalho e estado, inclusive bloqueios, e invalida recibos antigos. Desbloquear e retomar são decisões separadas; instalar não faz nenhuma delas.
 
-Mantenha contexto e requisitos substituídos nos documentos aprovados e no histórico, critérios vigentes em `expect` e provas reais em `run`. Cada critério funcional precisa de evidência relevante; um rótulo funcional não comprova a tarefa inteira. Após reprovação real **com** mudança aprovada do contrato: registre a falha, edite o plano, rode `sync-plan` enquanto está failed, confira a definição persistida e siga com `retry` e `start` junto do disparo real do agente. Consulte [reprovação e alteração de contrato](references/runtime.pt-BR.md#reprovação-real-com-alteração-aprovada-do-contrato). Após interrupções, retome da fase registrada; não invente tentativas por um disparo que não aconteceu.
+Mantenha contexto e requisitos substituídos nos documentos aprovados e no histórico, critérios vigentes em `expect` e provas reais em `run`. Cada critério funcional precisa de evidência relevante; um rótulo funcional não comprova a tarefa inteira. Após reprovação real **com** mudança aprovada do contrato: registre a falha, edite o plano, rode `sync-plan` enquanto está failed, confira a definição persistida e siga com `retry`, planejamento exigido e `start` junto dos disparos reais dos agentes. Consulte [reprovação e alteração de contrato](references/runtime.pt-BR.md#reprovação-real-com-alteração-aprovada-do-contrato). Após interrupções, retome da fase registrada; não invente tentativas por um disparo que não aconteceu.
 
 ## Idiomas e compatibilidade
 

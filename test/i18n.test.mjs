@@ -17,6 +17,7 @@ test('language selection and interpolation preserve data and placeholders', () =
   assert.equal(en('Changes / {0}', 'x'), 'Changes / x')
   assert.equal(pt('[prumo] ERROR: unknown task "T1"'), '[prumo] ERRO: tarefa desconhecida "T1"')
   assert.equal(pt(JSON.stringify({ state: 'done', title: 'Review' })), '{"state":"done","title":"Review"}')
+  assert.deepEqual(['ready_to_plan', 'planning', 'ready'].map(pt), ['pronto para planejamento', 'em planejamento', 'pronto para executar'])
   for (const [key, value] of Object.entries(messages)) {
     const slots = text => [...new Set(text.match(/\{\d+\}/g) ?? [])].sort()
     assert.deepEqual(slots(key), slots(value), key)
