@@ -16,6 +16,14 @@ const plan = {
   steps: ['Update shared function', 'Run functional check'],
   verification: [{ criterion: 'Required behavior', check: 1 }], openQuestions: [],
 }
+const discovery = {
+  recordedAt: instant(0), closure: 'No consequential gray area remains.',
+  research: [{ source: 'src/task.mjs', findings: 'Current task context inspected' }],
+  questions: [{ question: 'Keep current behavior?', answer: 'Yes', channel: 'chat-fallback', round: 1 }],
+  coverage: { problem: 'Problem', affected: 'People', outcome: 'Outcome', currentBehavior: 'Current',
+    desiredBehavior: 'Desired', rules: 'Rules', exceptions: 'Exceptions', scope: 'Scope', acceptance: 'Acceptance' },
+  decisions: [{ question: 'Keep behavior?', answer: 'Yes' }], deferred: ['Future idea'],
+}
 
 function dashboard(lang = 'en') {
   const nodes = new Map()
@@ -88,20 +96,26 @@ test('dashboard renders separate planning queues, active planner hub and executi
   }
 })
 
-test('planner identity and researched task plan render as escaped text, including answers and checks', () => {
+test('discovery, planner identity and task plan render as escaped text, including answers and checks', () => {
   const hostile = '<img src=x onerror="alert(1)">&\'text'
   const recorded = { ...plan, planner: hostile,
     research: [{ source: hostile, findings: hostile }], decisions: [{ question: hostile, answer: hostile }],
     steps: [hostile], verification: [{ criterion: hostile, check: 1 }],
     openQuestions: [{ question: hostile, blocking: true, answer: hostile }, { question: 'Follow up', blocking: false }],
   }
+  const hostileDiscovery = { ...discovery, closure: hostile,
+    research: [{ source: hostile, findings: hostile }],
+    questions: [{ question: hostile, answer: hostile, channel: 'chat-fallback', round: 1 }],
+    coverage: Object.fromEntries(Object.keys(discovery.coverage).map(key => [key, hostile])),
+    decisions: [{ question: hostile, answer: hostile }], deferred: [hostile] }
   const ui = dashboard('pt-BR')
-  ui.render({ run: 'safe-plan', plan: {}, tasks: { T: task('T', 'pending', { planner: hostile, taskPlan: recorded }) }, derived: { T: { effective: 'ready' } } })
+  ui.render({ run: 'safe-plan', plan: {}, tasks: { T: task('T', 'pending', { discovery: hostileDiscovery, planner: hostile, taskPlan: recorded }) }, derived: { T: { effective: 'ready' } } })
   ui.run("fillPop('T')")
   const body = ui.nodes.get('#popBody').innerHTML
   assert.doesNotMatch(body, /<img|onerror="/)
   assert.match(body, /&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt;&amp;&#39;text/)
-  for (const text of ['Planejador', 'Plano registrado da tarefa', 'Pesquisa', 'Decisões', 'Passos de execução', 'Verificação', 'Perguntas', 'verificação 1', 'não bloqueante']) assert.ok(body.includes(text), text)
+  for (const text of ['Descoberta da tarefa', 'Pesquisa da descoberta', 'Discussão', 'Cobertura PO First', 'Decisões da descoberta', 'Ideias adiadas',
+    'Planejador', 'Plano registrado da tarefa', 'Pesquisa', 'Decisões', 'Passos de execução', 'Verificação', 'Perguntas', 'verificação 1', 'não bloqueante']) assert.ok(body.includes(text), text)
 })
 
 test('results count planning intervals and exclude human blocks and planning from execution queue time', () => {

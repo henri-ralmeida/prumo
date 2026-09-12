@@ -36,11 +36,19 @@ test('dashboard selects legacy and central data without writes or translation of
   const artifact = join(home, 'task-plan.json')
   writeFileSync(artifact, JSON.stringify({ research: [{ source, findings: 'Fixture states confirmed' }],
     decisions: [], steps: ['Inspect fixture states'], verification: [{ criterion: 'States are visible', check: 'inspection' }], openQuestions: [] }))
+  const discovery = join(home, 'discovery.json')
+  writeFileSync(discovery, JSON.stringify({
+    research: [{ source, findings: 'Fixture task context inspected' }],
+    questions: [{ question: 'Show these fixture states?', answer: 'Yes.', channel: 'chat-fallback', round: 1 }],
+    coverage: { problem: 'Show states', affected: 'Dashboard viewer', outcome: 'Visible states', currentBehavior: 'Fixture exists',
+      desiredBehavior: 'Fixture remains visible', rules: 'Inspection only', exceptions: 'None', scope: 'Server fixture', acceptance: 'States render' },
+    decisions: [], deferred: [], closure: 'The fixture behavior is fully specified.',
+  }))
   const command = (...args) => execFileSync(process.execPath, [engine, ...args], { cwd: root, env: environment, windowsHide: true, encoding: 'utf8' })
   command('init', '--plan', source, '--run', 'planning-demo')
-  command('plan-task', 'EXEC', '--agent', 'planner')
+  command('plan-task', 'EXEC', '--agent', 'planner', '--context', discovery)
   command('finish-planning', 'EXEC', '--plan', artifact)
-  command('plan-task', 'ACTIVE', '--agent', 'planner-active')
+  command('plan-task', 'ACTIVE', '--agent', 'planner-active', '--context', discovery)
   writeFileSync(join(root, '.specs', 'graph', 'CURRENT'), 'demo')
   for (const name of ['state.json', 'events.ndjson']) {
     const file = join(root, '.specs', 'graph', 'planning-demo', name)

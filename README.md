@@ -100,7 +100,7 @@ No manual data migration is required. Finish sessions that are actively loading 
 The backup includes a restore command:
 
 ```sh
-bunx @henri-ralmeida/prumo@1.2.0 restore "<backup-directory>"
+bunx @henri-ralmeida/prumo@1.2.1 restore "<backup-directory>"
 ```
 
 Restore refuses to overwrite files edited since installation. Plans keep their current state: reverting an installation must not erase ongoing work. Maintain your own business-data backups; the installer does not take a consistent snapshot of every live plan.
@@ -111,15 +111,15 @@ An open dashboard can load the updated interface on its next request. Its proces
 
 Present and approve the global plan in your AI harness. Invoke `/prumo <plan-or-run>` or `$prumo` in Codex. The engine records dispatches; the harness creates agents. If dedicated planners, executors or independent reviewers are unavailable, the workflow must report that limitation.
 
-In **1.2.0**, each new task follows **ready to plan → in planning → ready to execute → execution → independent review**. A dedicated planner starts after dependencies deliver, researches the current code/artifacts and their outputs, applies PO First, resolves consequential questions through the principal conversation and records a task-specific execution plan. Native global Plan/Spec mode remains the layer for overall scope and approval.
+In **1.2.1**, planning has two levels. Global Plan/Spec mode uses the full request to define and approve the graph. During execution, each new task follows **discuss → plan → executor → reviewer**: after dependencies deliver, the principal conversation reuses the global plan and their outputs, scouts the current task, asks at least one contextual question and closes its consequential PO First gray areas. Only then does it dispatch a dedicated planner to research in depth and record the task-specific execution plan. The rest of the run does not need to remain in global Plan/Spec mode.
 
 | Dashboard state | Color | What it means |
 |---|---|---|
-| Ready to plan (`ready_to_plan`) | Blue | Dependencies delivered; research can start |
-| In planning (`planning`) | Pink | A dedicated planner is researching and preparing the task |
+| Ready to plan (`ready_to_plan`) | Blue | Dependencies delivered; task discussion must close before planner dispatch |
+| In planning (`planning`) | Pink | Discovery is recorded; a dedicated planner is researching and preparing the task |
 | Ready to execute (`ready`) | Teal | Current research, decisions, steps and verification mapping are recorded |
 
-Research comes before questions; settled answers are reused. Ordinary refinement needs no new approval, while material changes return to the user/global plan. The executor rechecks the recorded plan and a fresh reviewer can challenge its gaps against the approved objective. The engine checks structural records and freshness; it cannot certify research quality or prevent every model error.
+Discovery uses the host's native question UI when available and a structured principal-chat fallback otherwise. It records light research, real answers, PO First coverage, decisions, deferred ideas and why no consequential gray area remains. `plan-task --context <discovery.json>` persists that evidence before planning starts; the planner consumes it without repeating the discussion. Material scope changes return to the user/global plan. The engine checks structure and freshness; it cannot certify research quality, the UI used or real model dispatch.
 
 Existing tasks retain their lifecycle and history. Tasks added to an old run require planning. Retry requires fresh planning; approved scope changes during paused execution can be replanned and explicitly resumed in the same attempt. See the [task-plan artifact and recovery rules](references/runtime.md#task-plan-artifact).
 

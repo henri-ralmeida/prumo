@@ -239,7 +239,13 @@ test('overlay migrates the legacy skill, preserves run data and supports complet
     decisions: [], steps: ['Inspect the document against its approved scope.'],
     verification: [{ criterion: 'Document matches the approved scope.', check: 'inspection' }], openQuestions: [],
   })
-  for (const args of [['init', '--plan', planPath, '--run', 'legacy'], ['plan-task', 'T1', '--agent', 'planner'],
+  const discovery = join(root, 'discovery.json')
+  put(discovery, { research: [{ source: 'approved.json', findings: 'The documentation scope was inspected.' }],
+    questions: [{ question: 'Preserve this documentation scope?', answer: 'Yes.', channel: 'chat-fallback', round: 1 }],
+    coverage: { problem: 'Document scope', affected: 'Readers', outcome: 'Accurate document', currentBehavior: 'Scope exists',
+      desiredBehavior: 'Preserve it', rules: 'Inspection only', exceptions: 'None', scope: 'Documentation', acceptance: 'Inspection passes' },
+    decisions: [], deferred: [], closure: 'The documentation task is fully specified.' })
+  for (const args of [['init', '--plan', planPath, '--run', 'legacy'], ['plan-task', 'T1', '--agent', 'planner', '--context', discovery],
     ['finish-planning', 'T1', '--plan', taskPlan], ['start', 'T1', '--agent', 'original'], ['block', 'T1', '--reason', 'User pause']]) {
     const result = spawnSync(process.execPath, [join(source, 'scripts', 'engine.mjs'), ...args], { env, encoding: 'utf8' })
     assert.equal(result.status, 0, result.stderr)
@@ -411,7 +417,13 @@ test('an in-flight validation finishes across overlay without a new attempt or s
     decisions: [], steps: ['Preserve the running verification while overlaying the installed skill.'],
     verification: [{ criterion: 'The verification completes across installation in the same attempt.', check: 1 }], openQuestions: [],
   })
-  for (const args of [['init', '--plan', plan, '--run', 'active'], ['plan-task', 'T1', '--agent', 'planner'],
+  const discovery = join(root, 'discovery.json')
+  put(discovery, { research: [{ source: 'verify.cjs', findings: 'The active validation flow was inspected.' }],
+    questions: [{ question: 'Preserve the in-flight validation?', answer: 'Yes.', channel: 'chat-fallback', round: 1 }],
+    coverage: { problem: 'Overlay during validation', affected: 'Active run', outcome: 'No lost attempt', currentBehavior: 'Validation is active',
+      desiredBehavior: 'Complete same attempt', rules: 'Preserve state', exceptions: 'None', scope: 'Overlay', acceptance: 'Validation completes' },
+    decisions: [], deferred: [], closure: 'The in-flight behavior is fully specified.' })
+  for (const args of [['init', '--plan', plan, '--run', 'active'], ['plan-task', 'T1', '--agent', 'planner', '--context', discovery],
     ['finish-planning', 'T1', '--plan', taskPlan], ['start', 'T1', '--agent', 'executor'], ['review', 'T1', '--agent', 'reviewer']]) {
     const result = cli(args)
     assert.equal(result.status, 0, result.stdout + result.stderr)

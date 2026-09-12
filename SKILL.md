@@ -128,14 +128,14 @@ also share the real ceiling — the machine and the API limits — without knowi
 
 ## 3. The loop
 
-**Planners research. Executors deliver. A fresh REVIEWER judges.** These are separate assignments: `review`
+**The principal conversation discusses. Planners research. Executors deliver. A fresh REVIEWER judges.** These are separate assignments: `review`
 refuses a reviewer that authored the task, and `done` refuses a validation the executor
 recorded. That is the contract, and everything below serves it.
 Use a different native agent for each role on a task; recording another label is not a substitute.
 
 ```bash
 node $ENGINE ready                              # separate planning/execution readiness and capacity
-node $ENGINE plan-task T4 --agent plan-scenes    # pair with a real dedicated planner dispatch
+node $ENGINE plan-task T4 --agent plan-scenes --context <discovery.json>  # after discuss; pair with planner dispatch
 node $ENGINE finish-planning T4 --plan <task-plan.json>  # after research and consequential answers
 node $ENGINE start T4 --agent ag-scenes         # dispatch up to the cap, in the SAME message
 node $ENGINE review T4 --agent rev-scenes       # executor finished → hand to a fresh reviewer
@@ -143,28 +143,60 @@ node $ENGINE validate T4 --ok --evidence "..." --cwd <absolute-project>  # the R
 node $ENGINE done T4
 ```
 
+### Two planning levels
+
+Global Plan/Spec mode uses the full request to define and approve the graph and its task contracts. It
+does not replace the task-level loop and execution does not need to remain in that mode. After each
+task's dependencies deliver, run **discuss → plan → executor → reviewer**.
+
+Before dispatching the planner, the orchestrator runs an agnostic discovery protocol in the principal
+Codex, Claude Code or Kiro conversation. Load the global plan, settled decisions and dependency outputs;
+scout the task's current code and artifacts; identify specific PO First gray areas; then always ask at
+least one contextual question. Use the host's native question UI when available. Otherwise ask through
+a structured text block with **What I understood**, **Gray areas**, a recommendation and focused
+questions. Reuse current answers, ask adaptive follow-ups, and stop only when no uncertainty capable of
+changing behavior, scope, acceptance or execution remains. Put out-of-scope ideas in `deferred`.
+
+Write the resulting discovery JSON before creating a planner. It contains light research, answered
+questions with their real `native` or `chat-fallback` channel and round, concise PO First coverage,
+resolved decisions, deferred ideas and the closure reason. Then pair the real planner dispatch with:
+
+```bash
+node $ENGINE plan-task T4 --agent <planner> --context <discovery.json>
+```
+
+The engine validates and atomically persists discovery before changing the task to `planning`. A missing
+answer or coverage keeps it `ready_to_plan`. The engine proves record shape and order, not conversation
+quality, the visual component used or agent identity. Tasks from 1.2.0 without `discoveryRequired` remain
+compatible; new tasks created by `init` or `sync-plan` require discovery.
+
+The engine hashes the validated discovery fields with canonical JSON and binds that digest to the planning
+round and final taskPlan. Repeating `plan-task --context` with identical content while planning is a no-op;
+a changed discovery supersedes the open round and starts a new planner round bound to the new digest.
+`finish-planning` refuses a round whose discovery no longer matches the persisted context.
+
 ### Per-task research and planning
 
-Every new task gets a dedicated native planner subagent **after its dependencies deliver and
-before its executor starts**. This is separate from authoring the approved global plan.
+Every new task gets a dedicated native planner subagent **after discovery closes and before its executor
+starts**. This is separate from authoring the approved global plan.
 Research the current code, artifacts, dependency outputs, project rules and relevant source
 documentation first; reuse useful prior research, but verify that it still applies. Read-only
 inspection and safe research checks are allowed. The planner writes only its designated task-plan
 artifact; it does not implement the task or edit graph state.
 
-Apply PO First to establish the expected behavior, rules, exceptions and observable acceptance.
-Do not repeat answered questions or impose a questionnaire. Consolidate unresolved consequential
-questions through the principal conversation, using native question tools when available under
-the host's rules. Record actual answers and shared decisions in the artifact and approved context.
-Block when an answer is required; never invent it or label it nonblocking to pass the gate.
+Consume the persisted discovery and do not repeat its questions. Apply PO First to research the selected
+implementation approach, impacts and verification in depth. If research reveals a new consequential
+decision, return it to the orchestrator: update discovery through the principal conversation and dispatch
+fresh planning. Never invent an answer or label a material gap nonblocking to pass the gate.
 Ordinary refinement within approved scope needs no new task approval. Material changes to
 scope, behavior, acceptance or shared decisions return to the user and global plan workflow.
 
 ```text
 You are the PLANNER for <T4>: <title>. Research and prepare this task; do not implement it.
 Read project rules, approved objective/constraints, current task contract and dependency outputs: <references>.
+Read the persisted discovery and its locked decisions: <task.discovery from state.json>.
 Inspect the current implementation/artifacts and relevant sources; identify existing solutions and impacts.
-Apply PO First. Bring unresolved consequential questions to the orchestrator for the principal conversation.
+Apply PO First. Do not repeat discovery questions; return newly found consequential gaps to the orchestrator.
 Preserve known decisions; propose any material contract change for the authorized global-plan workflow.
 Write ONLY <absolute task-plan.json>: research sources/findings, resolved decisions, execution steps,
 criterion-to-check verification mapping, and open questions. Schema: references/runtime.md#task-plan-artifact.
@@ -181,7 +213,7 @@ These roles reduce opportunities for error; none guarantees that models cannot m
 
 ### Dispatch — recording a role does not create an agent
 
-**Every `plan-task` and `start` is paired with a native subagent call in the SAME message**.
+**Every `plan-task --context` and `start` is paired with a native subagent call in the SAME message**.
 Dispatch ready planning tasks within total capacity and ready execution tasks within both caps — parallelism is
 the point of the graph, and tasks that share no dep share no file. The engine only ever sees
 the `--agent` string, so an orchestrator that runs `start` and then writes the code itself
@@ -358,8 +390,8 @@ node $ENGINE fail T4 --reason "review: <actual unmet criterion>" --run <run-name
 node $ENGINE sync-plan --plan <approved-plan.json> --run <run-name>
 node $ENGINE graph --run <run-name>  # inspect T4's persisted definition before retry
 node $ENGINE retry T4 --run <run-name>
-node $ENGINE plan-task T4 --agent <planner> --run <run-name>  # pair with actual dispatch
-# Research current context and resolve consequential questions before recording the artifact.
+node $ENGINE plan-task T4 --agent <planner> --context <discovery.json> --run <run-name>  # after discuss; pair with dispatch
+# Planner consumes discovery, researches current context and records the artifact without repeating questions.
 node $ENGINE finish-planning T4 --plan <task-plan.json> --run <run-name>
 node $ENGINE start T4 --agent <executor> --run <run-name>  # pair with actual dispatch
 ```

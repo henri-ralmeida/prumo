@@ -1,4 +1,11 @@
 {
+  "1.2.1": {
+    "en": [
+      { "title": "Added — Discuss before planning", "items": ["Run task discovery in the principal conversation before dispatching a planner", "Require at least one answered question and resolved PO First coverage for every new task"] },
+      { "title": "Added — Host-agnostic discovery", "items": ["Use native questions when available and a structured chat fallback otherwise", "Persist and bind discovery context to planning without requiring global Plan mode"] },
+      { "title": "Preserved — Planning and legacy runs", "items": ["Keep discuss, planning, execution and review as separate responsibilities", "Keep existing 1.2.0 tasks and state compatible"] }
+    ]
+  },
   "1.2.0": {
     "en": [
       { "title": "Added — Per-task research and planning", "items": ["A dedicated planner researches each new task before execution", "Record sources, decisions, execution steps and criterion-to-check mappings"] },

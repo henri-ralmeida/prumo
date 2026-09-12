@@ -100,7 +100,7 @@ Não é necessário migrar os dados manualmente. Encerre sessões que estejam ca
 O backup informa o comando de reversão:
 
 ```sh
-bunx @henri-ralmeida/prumo@1.2.0 restore "<diretório-do-backup>"
+bunx @henri-ralmeida/prumo@1.2.1 restore "<diretório-do-backup>"
 ```
 
 A reversão recusa sobrescrever arquivos que você editou depois. Os planos continuam no estado atual: reverter uma instalação não deve apagar trabalho em andamento. Mantenha sua rotina de backup dos dados de negócio; o instalador não captura uma imagem consistente de todos os planos ativos.
@@ -111,15 +111,15 @@ Um dashboard já aberto pode carregar a nova interface no próximo acesso. Seu p
 
 Apresente e aprove o plano global no ambiente de IA. Invoque `/prumo <plano-ou-execução>` ou `$prumo` no Codex. O motor registra despachos; quem cria agentes é o ambiente. Sem suporte a planejadores dedicados, executores ou revisores independentes, o fluxo deve informar a limitação.
 
-Na **1.2.0**, cada tarefa nova segue **pronto para planejamento → em planejamento → pronto para executar → execução → revisão independente**. Depois das entregas das dependências, um planejador dedicado pesquisa o código/artefatos atuais e essas entregas, aplica PO First, resolve perguntas relevantes pela conversa principal e registra o plano de execução daquela tarefa. O modo Plan/Spec nativo continua responsável pelo escopo e aprovação globais.
+Na **1.2.1**, há dois níveis de planejamento. O modo Plan/Spec global usa todo o pedido para definir e aprovar o grafo. Durante a execução, cada tarefa nova segue **discutir → planejar → executar → revisar**: depois das dependências, a conversa principal reaproveita o plano global e as entregas, faz uma pesquisa leve, pergunta ao menos uma questão contextual e fecha as áreas cinzentas relevantes de PO First. Só então dispara um planejador dedicado para pesquisar em profundidade e registrar o plano específico da tarefa. O restante da execução não precisa permanecer no modo Plan/Spec global.
 
 | Estado no dashboard | Cor | Significado |
 |---|---|---|
-| Pronto para planejamento (`ready_to_plan`) | Azul | Dependências entregues; a pesquisa pode começar |
-| Em planejamento (`planning`) | Rosa | Um planejador dedicado pesquisa e prepara a tarefa |
+| Pronto para planejamento (`ready_to_plan`) | Azul | Dependências entregues; a discussão da tarefa precisa fechar antes do planejador |
+| Em planejamento (`planning`) | Rosa | Descoberta registrada; um planejador dedicado pesquisa e prepara a tarefa |
 | Pronto para executar (`ready`) | Verde-azulado | Pesquisa atual, decisões, passos e verificações estão registrados |
 
-A pesquisa vem antes das perguntas; respostas conhecidas são reaproveitadas. Refinamento comum não exige nova aprovação; mudanças materiais voltam ao usuário/plano global. O executor reconfere o plano e um revisor independente pode contestar lacunas frente ao objetivo aprovado. O motor confere estrutura e atualidade dos registros; não comprova qualidade da pesquisa nem impede todo erro de modelo.
+A descoberta usa a caixa nativa de perguntas do ambiente quando disponível e um bloco estruturado na conversa principal quando não estiver. Ela registra pesquisa leve, respostas reais, cobertura PO First, decisões, ideias adiadas e o motivo de não restar área cinzenta relevante. `plan-task --context <descoberta.json>` persiste essa evidência antes de iniciar o planejamento; o planejador a consome sem repetir a discussão. Mudanças materiais de escopo voltam ao usuário/plano global. O motor confere estrutura e atualidade; não comprova a qualidade semântica, a interface usada nem o despacho real do modelo.
 
 Tarefas existentes preservam fluxo e histórico. Tarefas adicionadas a uma run antiga exigem planejamento. Retry exige pesquisa atual; mudanças aprovadas de escopo durante execução pausada podem ser replanejadas e retomadas explicitamente na mesma tentativa. Consulte [planejamento por tarefa](references/runtime.pt-BR.md#planejamento-por-tarefa) e [planos em andamento](references/runtime.pt-BR.md#planos-em-andamento).
 
