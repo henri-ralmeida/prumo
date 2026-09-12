@@ -2,7 +2,7 @@
 
 **English** · [Português (Brasil)](README.pt-BR.md)
 
-Prumo combines the [graph-foreman](https://github.com/JrSantiaggo/graph-foreman) engine with PO First: approved plans, dependency-aware tasks, independent review, validation evidence and a local dashboard. The same workflow supports software, data, automation, migrations and other domains.
+Prumo combines the [graph-foreman](https://github.com/JrSantiaggo/graph-foreman) engine with PO First: approved plans, research and planning for each task, dependency-aware execution, independent review, validation evidence and a local dashboard. The same workflow supports software, data, automation, migrations and other domains.
 
 The plan defines the expected outcome; the engine enforces transitions and records evidence. Your AI harness performs the work and dispatches its agents.
 
@@ -100,7 +100,7 @@ No manual data migration is required. Finish sessions that are actively loading 
 The backup includes a restore command:
 
 ```sh
-bunx @henri-ralmeida/prumo@1.1.2 restore "<backup-directory>"
+bunx @henri-ralmeida/prumo@1.2.0 restore "<backup-directory>"
 ```
 
 Restore refuses to overwrite files edited since installation. Plans keep their current state: reverting an installation must not erase ongoing work. Maintain your own business-data backups; the installer does not take a consistent snapshot of every live plan.
@@ -109,7 +109,19 @@ An open dashboard can load the updated interface on its next request. Its proces
 
 ## Run an approved plan
 
-Present and approve the plan in your AI harness. Invoke `/prumo <plan-or-run>` or `$prumo` in Codex. The engine records dispatches; the harness creates agents. If independent executors and reviewers are unavailable, the workflow must report that limitation.
+Present and approve the global plan in your AI harness. Invoke `/prumo <plan-or-run>` or `$prumo` in Codex. The engine records dispatches; the harness creates agents. If dedicated planners, executors or independent reviewers are unavailable, the workflow must report that limitation.
+
+In **1.2.0**, each new task follows **ready to plan → in planning → ready to execute → execution → independent review**. A dedicated planner starts after dependencies deliver, researches the current code/artifacts and their outputs, applies PO First, resolves consequential questions through the principal conversation and records a task-specific execution plan. Native global Plan/Spec mode remains the layer for overall scope and approval.
+
+| Dashboard state | Color | What it means |
+|---|---|---|
+| Ready to plan (`ready_to_plan`) | Blue | Dependencies delivered; research can start |
+| In planning (`planning`) | Pink | A dedicated planner is researching and preparing the task |
+| Ready to execute (`ready`) | Teal | Current research, decisions, steps and verification mapping are recorded |
+
+Research comes before questions; settled answers are reused. Ordinary refinement needs no new approval, while material changes return to the user/global plan. The executor rechecks the recorded plan and a fresh reviewer can challenge its gaps against the approved objective. The engine checks structural records and freshness; it cannot certify research quality or prevent every model error.
+
+Existing tasks retain their lifecycle and history. Tasks added to an old run require planning. Retry requires fresh planning; approved scope changes during paused execution can be replanned and explicitly resumed in the same attempt. See the [task-plan artifact and recovery rules](references/runtime.md#task-plan-artifact).
 
 For new work, select a central workspace. On macOS/Linux:
 
@@ -148,7 +160,7 @@ Documentation and other tasks without runtime impact can use `validationMode: "i
 
 An approved contract update does not require inventing a failure or another attempt. `refresh-contract` preserves work and state, including blocks, while invalidating old receipts. Unblocking and resuming are separate decisions; installation does neither.
 
-Keep background and superseded requirements in approved context/history, current criteria in `expect`, and real checks in `run`. Every functional criterion needs relevant evidence; one functional label does not prove the entire task. After a real rejection **and** an approved contract change, record the failure, edit the plan, `sync-plan` while failed, inspect the persisted definition, then `retry` and `start` with the actual agent dispatch. See [rejection and contract changes](references/runtime.md#rejection-with-an-approved-contract-change). Resume from the recorded phase after interruptions; do not manufacture attempts for a dispatch that never happened.
+Keep background and superseded requirements in approved context/history, current criteria in `expect`, and real checks in `run`. Every functional criterion needs relevant evidence; one functional label does not prove the entire task. After a real rejection **and** an approved contract change, record the failure, edit the plan, `sync-plan` while failed, inspect the persisted definition, then `retry`, required task planning and `start` with actual agent dispatches. See [rejection and contract changes](references/runtime.md#rejection-with-an-approved-contract-change). Resume from the recorded phase after interruptions; do not manufacture attempts for a dispatch that never happened.
 
 ## Languages and compatibility
 

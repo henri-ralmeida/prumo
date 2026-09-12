@@ -9,20 +9,25 @@
   :root {
     --bg: #0b0b0e; --panel: #141419; --card: #1b1b22; --card-hi: #22222b; --line: #2b2b35;
     --text: #e8e8ee; --dim: #85859a; --accent: #fcb400;
-    --ready: #3b82f6; --running: #fcb400; --done: #34c268; --failed: #ef4444;
+    --ready-plan: #3b82f6; --planning: #f472b6; --ready: #2dd4bf; --validated: #3b82f6;
+    --running: #fcb400; --done: #34c268; --failed: #ef4444;
     --waiting: #4c4c58; --blocked: #a855f7; --skipped: #3a3a44; --review: #22d3ee;
   }
   * { box-sizing: border-box; margin: 0; }
-  body { background: var(--bg); color: var(--text); font: 13px/1.45 ui-monospace, "Cascadia Code", Menlo, monospace; overflow: hidden; }
-  header { display: flex; align-items: center; padding: 10px 18px; border-bottom: 1px solid var(--line); height: 46px; }
+  body { background: var(--bg); color: var(--text); font: 13px/1.45 ui-monospace, "Cascadia Code", Menlo, monospace;
+         overflow: hidden; height: 100vh; display: grid; grid-template: auto minmax(0, 1fr) 44px / minmax(0, 1fr); }
+  header { grid-area: 1 / 1; display: flex; flex-wrap: wrap; align-items: center; row-gap: 8px;
+           padding: 10px 18px; border-bottom: 1px solid var(--line); min-height: 46px; }
   header h1 { font-size: 14px; font-weight: 600; margin-right: 14px; }
-  header .run { color: var(--dim); color-scheme: dark; margin-right: auto; max-width: 360px; background: transparent;
+  header .run { color: var(--dim); color-scheme: dark; margin-right: auto; max-width: 360px; background: var(--panel);
                 border: 1px solid transparent; border-radius: 5px; padding: 3px 22px 3px 6px;
                 font: inherit; font-size: 12px; cursor: pointer; }
   header .run:hover, header .run:focus { color: var(--text); border-color: var(--line); outline: none; }
-  .counts span { margin-left: 12px; color: var(--dim); font-size: 12px; }
+  header .run option { color: var(--text); background: var(--panel); }
+  .counts { display: flex; flex-basis: 100%; flex-wrap: wrap; gap: 4px 16px; }
+  .counts span { color: var(--dim); font-size: 12px; white-space: nowrap; }
   .counts b { color: var(--text); }
-  main { display: grid; grid-template-columns: 1fr 330px; height: calc(100vh - 46px - 44px); }
+  main { grid-area: 2 / 1; display: grid; grid-template-columns: minmax(0, 1fr) 330px; min-height: 0; }
   #viewport { overflow: hidden; position: relative; cursor: grab; touch-action: none;
               background-image: radial-gradient(circle, #1a1a21 1px, transparent 1px);
               background-size: 26px 26px; }
@@ -65,7 +70,7 @@
 
   /* ---- orchestrator hub: the DAG still reads left-to-right (causality), but the
      orchestrator gets a real presence, radiating a live line to each task it is running */
-  #orchNode { position: absolute; width: 150px; height: 62px; border-radius: 14px;
+  #orchNode { position: absolute; width: 168px; height: 60px; border-radius: 14px;
               background: linear-gradient(180deg, #1e1e26, #16161c); border: 1px solid var(--line);
               padding: 9px 12px; }
   #orchNode.live { border-color: color-mix(in srgb, var(--done) 45%, var(--line));
@@ -82,19 +87,25 @@
   svg#edges path.e-review { stroke: var(--review); stroke-width: 1.5; opacity: .9;
                             stroke-dasharray: 3 6; stroke-linecap: round;
                             animation: flow9 .7s linear infinite; marker-end: url(#m-review); }
-  #revNode { position: absolute; width: 168px; height: 60px; border-radius: 14px;
+  svg#edges path.e-planning { stroke: var(--planning); stroke-width: 1.5; opacity: .9;
+                              stroke-dasharray: 3 6; stroke-linecap: round;
+                              animation: flow9 .7s linear infinite; marker-end: url(#m-planning); }
+  #revNode, #planNode { position: absolute; width: 168px; height: 60px; border-radius: 14px;
              background: linear-gradient(180deg, #16161c, #1e1e26); border: 1px solid var(--line);
              padding: 9px 12px; }
   #revNode.live { border-color: color-mix(in srgb, var(--review) 50%, var(--line));
                   box-shadow: 0 0 22px rgba(34, 211, 238, .14); }
-  #revNode .oh { font-size: 11px; font-weight: 700; letter-spacing: .04em; }
-  #revNode .os { font-size: 9.5px; color: var(--dim); display: block; margin-top: 3px;
+  #planNode.live { border-color: color-mix(in srgb, var(--planning) 50%, var(--line));
+                   box-shadow: 0 0 22px rgba(244, 114, 182, .14); }
+  #revNode .oh, #planNode .oh { font-size: 11px; font-weight: 700; letter-spacing: .04em; }
+  #revNode .os, #planNode .os { font-size: 9.5px; color: var(--dim); display: block; margin-top: 3px;
                  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #revNode .obeat { position: absolute; right: 11px; top: 11px; width: 7px; height: 7px;
+  #revNode .obeat, #planNode .obeat { position: absolute; right: 11px; top: 11px; width: 7px; height: 7px;
                     border-radius: 50%; background: var(--waiting); }
   #revNode.live .obeat { background: var(--review); animation: beat 1.1s ease-in-out infinite; }
-  #canvas[data-lod="far"] #revNode .os { font-size: 15px; }
-  #canvas[data-lod="far"] #revNode .oh { font-size: 18px; }
+  #planNode.live .obeat { background: var(--planning); animation: beat 1.1s ease-in-out infinite; }
+  #canvas[data-lod="far"] :is(#revNode, #planNode) .os { font-size: 15px; }
+  #canvas[data-lod="far"] :is(#revNode, #planNode) .oh { font-size: 18px; }
 
   /* ---- phase swimlanes */
   #lanes { position: absolute; inset: 0; pointer-events: none; }
@@ -134,7 +145,13 @@
      typing dots; a repeating box-shadow pulse makes the card text shimmer (dev, 2026-08-25). */
   .node[data-st="running"] { border-color: var(--running); box-shadow: 0 0 10px 0 rgba(252, 180, 0, .22); }
   .node[data-st="running"] .dot { background: var(--running); }
-  .node[data-st="ready"] .dot   { background: var(--ready); box-shadow: 0 0 6px 1px rgba(59, 130, 246, .45); }
+  .node[data-st="ready_to_plan"] .dot { background: var(--ready-plan); }
+  .node[data-st="ready_to_plan"] { border-color: color-mix(in srgb, var(--ready-plan) 55%, var(--line)); }
+  .node[data-st="planning"] { border-color: var(--planning); box-shadow: 0 0 10px 0 rgba(244, 114, 182, .22); }
+  .node[data-st="planning"] .dot { background: var(--planning); }
+  .node[data-st="planning"] :is(.ag, .elapsed) { color: var(--planning); }
+  .node[data-st="planning"] .work i { background: var(--planning); }
+  .node[data-st="ready"] .dot   { background: var(--ready); box-shadow: 0 0 6px 1px rgba(45, 212, 191, .45); }
   .node[data-st="ready"]   { border-color: color-mix(in srgb, var(--ready) 55%, var(--line)); }
   .node[data-st="failed"]  { border-color: var(--failed); }
   .node[data-st="failed"] .dot  { background: var(--failed); color: #fff; }
@@ -166,10 +183,10 @@
   /* ---- validator sub-state on a running node: current attempt validated → calm blue,
      awaiting the orchestrator's `done`; validation failed → agent reworking */
   .vbadge { font-size: 9.5px; margin-left: 4px; }
-  .vbadge.ok { color: var(--ready); }
+  .vbadge.ok { color: var(--validated); }
   .vbadge.bad { color: var(--failed); }
-  .node[data-sub="validated"] { border-color: var(--ready); animation: none; }
-  .node[data-sub="validated"] .dot { background: var(--ready); }
+  .node[data-sub="validated"] { border-color: var(--validated); animation: none; }
+  .node[data-sub="validated"] .dot { background: var(--validated); }
   .node[data-sub="validated"] .dot::before, .node[data-sub="validated"] .dot::after { display: none; }
 
   /* ---- one-shot flashes when an event lands on a node (start/validate/done/fail) */
@@ -178,7 +195,7 @@
   .node.flash-done  { animation: fdone 1.1s ease-out; }
   .node.flash-bad   { animation: fbad 1.1s ease-out; }
   @keyframes fstart { 0% { box-shadow: 0 0 0 3px rgba(252, 180, 0, .7), 0 0 26px var(--running); } }
-  @keyframes fval   { 0% { box-shadow: 0 0 0 3px rgba(59, 130, 246, .7), 0 0 26px var(--ready); } }
+  @keyframes fval   { 0% { box-shadow: 0 0 0 3px rgba(59, 130, 246, .7), 0 0 26px var(--validated); } }
   @keyframes fdone  { 0% { box-shadow: 0 0 0 3px rgba(52, 194, 104, .7), 0 0 26px var(--done); } }
   @keyframes fbad   { 0% { box-shadow: 0 0 0 3px rgba(239, 68, 68, .7), 0 0 26px var(--failed); } }
 
@@ -191,11 +208,13 @@
   @keyframes beat { 50% { transform: scale(1.7); opacity: .5; } }
   .orch b { color: var(--text); margin: 0 4px; font-weight: 600; }
 
-  footer { height: 44px; display: flex; align-items: center; padding: 0 18px;
+  footer { grid-area: 3 / 1; height: 44px; display: flex; align-items: center; padding: 0 18px;
            border-top: 1px solid var(--line); }
   footer .lbl { color: var(--done); margin-right: 14px; font-size: 12px; }
   #bar { flex: 1; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; display: flex; }
   #bar .seg-done { background: var(--done); transition: width .4s; }
+  #bar .seg-plan { background: var(--planning); transition: width .4s; }
+  #bar .seg-review { background: var(--review); transition: width .4s; }
   #bar .seg-run  { background: var(--running); transition: width .4s; opacity: .8;
                    background-image: linear-gradient(90deg, transparent 0 40%, rgba(255,255,255,.25) 50%, transparent 60% 100%);
                    background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
@@ -211,7 +230,8 @@
   .ev { padding: 4px 0; border-bottom: 1px solid var(--line); font-size: 11px; }
   .ev time { color: var(--dim); margin-right: 5px; }
   .ev .t-task_done b { color: var(--done); } .ev .t-task_fail b { color: var(--failed); }
-  .ev .t-task_start b { color: var(--running); } .ev .t-task_validate b { color: var(--ready); }
+  .ev .t-task_start b { color: var(--running); } .ev .t-task_validate b { color: var(--validated); }
+  .ev .t-task_planning b { color: var(--planning); } .ev .t-task_planned b { color: var(--ready); }
   .par > span:not(.empty) { display: inline-block; background: var(--card); border: 1px solid var(--running);
               border-radius: 6px; padding: 2px 8px; margin: 0 5px 5px 0; font-size: 11px; cursor: pointer; }
   .par .sp { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px;
@@ -219,8 +239,11 @@
              animation: spin .9s linear infinite; }
   .par span.rev { border-color: var(--review); }
   .par .sp.rev { border-top-color: var(--review); }
-  .legend span { display: inline-flex; align-items: center; margin: 0 10px 6px 0; color: var(--dim); font-size: 11px; }
-  .legend i { width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; }
+  .par span.plan { border-color: var(--planning); }
+  .par .sp.plan { border-top-color: var(--planning); }
+  .legend { display: grid; gap: 6px; }
+  .legend > span { display: flex; align-items: center; color: var(--dim); font-size: 11px; }
+  .legend i { flex-shrink: 0; width: 10px; height: 10px; border-radius: 50%; margin-right: 7px; }
   .legend i.l-edge { width: 16px; height: 0; border-radius: 0; border-top: 2px dashed var(--running); }
   .empty { color: var(--dim); font-size: 11px; }
 
@@ -235,7 +258,7 @@
   #pop .close { position: absolute; top: 10px; right: 12px; cursor: pointer; color: var(--dim); font-size: 13px; }
   #pop .close:hover { color: var(--text); }
   #pop .pin-hint { color: var(--dim); font-size: 9.5px; margin-top: 6px; }
-  #pop h2 { font-size: 13px; display: flex; align-items: center; }
+  #pop h2 { font-size: 13px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding-right: 12px; }
   #pop h2 .st { font-size: 10px; padding: 2px 8px; border-radius: 999px; margin-left: 10px;
                 border: 1px solid; text-transform: uppercase; letter-spacing: .05em; }
   #pop dt { color: var(--dim); font-size: 10px; text-transform: uppercase; margin-top: 12px; }
@@ -249,7 +272,7 @@
 
   /* ---- results: the run measuring ITSELF. Everything here is derived from the same
      state.json + events the graph renders — no new collection, no engine involvement. */
-  #results { position: fixed; inset: 46px 0 0; background: var(--bg); z-index: 15;
+  #results { grid-area: 2 / 1 / 4 / 2; position: relative; min-height: 0; background: var(--bg); z-index: 15;
              overflow-y: auto; padding: 22px 26px 40px; display: none; }
   #results.open { display: block; }
   #results h2 { font-size: 13px; margin-bottom: 3px; }
@@ -294,6 +317,7 @@
   <div id="viewport"><div id="canvas">
     <div id="lanes"></div>
     <div id="orchNode"><span class="obeat"></span><span class="oh"><span data-i18n="orchestrator">orchestrator</span></span><span class="os" id="orchSub"><span data-i18n="idle">idle</span></span></div>
+    <div id="planNode"><span class="obeat"></span><span class="oh"><span data-i18n="planner">planner</span></span><span class="os" id="planSub"><span data-i18n="idle">idle</span></span></div>
     <div id="revNode"><span class="obeat"></span><span class="oh"><span data-i18n="reviewer">reviewer</span></span><span class="os" id="revSub"><span data-i18n="idle">idle</span></span></div>
     <svg id="edges">
       <defs id="edgeDefs"></defs>
@@ -307,13 +331,15 @@
       <span><i style="background:var(--done)"></i><span data-i18n="done">done</span></span>
       <span><i style="background:var(--running)"></i><span data-i18n="running">running</span></span>
       <span><i style="background:var(--review)"></i><span data-i18n="in review">in review</span></span>
-      <span><i style="background:var(--ready)"></i><span data-i18n="ready">ready</span></span>
+      <span><i style="background:var(--ready-plan)"></i><span data-i18n="ready for planning">ready for planning</span></span>
+      <span><i style="background:var(--planning)"></i><span data-i18n="planning">planning</span></span>
+      <span><i style="background:var(--ready)"></i><span data-i18n="ready for execution">ready for execution</span></span>
       <span><i style="background:var(--waiting)"></i><span data-i18n="waiting">waiting</span></span>
       <span><i style="background:var(--failed)"></i><span data-i18n="failed">failed</span></span>
       <span><i style="background:var(--blocked)"></i><span data-i18n="blocked">blocked</span></span>
       <span><i class="l-edge"></i><span data-i18n="unlocks next">unlocks next</span></span>
       <span><i style="background:var(--blocked)"></i><span data-i18n="dep crosses back a phase">dep crosses back a phase</span></span>
-      <span><i style="background:var(--ready)"></i><span data-i18n="✓ = validated, awaiting done">✓ = validated, awaiting done</span></span>
+      <span><i style="background:var(--validated)"></i><span data-i18n="✓ = validated, awaiting done">✓ = validated, awaiting done</span></span>
     </div>
     <h3 id="parTitle"><span data-i18n="Running in parallel">Running in parallel</span></h3>
     <div class="par" id="parallel"><span class="empty"><span data-i18n="nothing running">nothing running</span></span></div>
@@ -325,14 +351,14 @@
 </main>
 <footer>
   <span class="lbl">Prumo</span>
-  <div id="bar"><div class="seg-done"></div><div class="seg-run"></div><div class="seg-fail"></div></div>
+  <div id="bar"><div class="seg-done"></div><div class="seg-plan"></div><div class="seg-run"></div><div class="seg-review"></div><div class="seg-fail"></div></div>
   <span class="n" id="doneCount"></span>
 </footer>
 <div id="results"></div>
 <div id="pop"><span class="close" onclick="closePop()">✕</span><div id="popBody"></div></div>
 <script>
 /*PRUMO_I18N_START*/
-const PRUMO_MESSAGES = {"Install opens a selection of detected environments; --all selects all without prompting":"Install abre a seleção dos ambientes detectados; --all seleciona todos diretamente","Interactive selection needs a terminal; use --all or choose a harness flag":"A seleção interativa precisa de um terminal; use --all ou escolha um ambiente por opção","Installation selection cancelled":"Seleção de instalação cancelada","Choose environments to install:":"Escolha os ambientes para instalar:","Arrows: move | Space: select | A: all/none | Enter: install | Esc: cancel":"Setas: mover | Espaço: marcar | A: todos/nenhum | Enter: instalar | Esc: sair","Use --all only with install and without a harness flag":"Use --all somente com install e sem selecionar um ambiente por opção","Detected environments: {0}":"Ambientes detectados: {0}","No supported environments detected; choose --claude, --kiro or --codex explicitly":"Nenhum ambiente compatível detectado; escolha --claude, --kiro ou --codex explicitamente","Choose exactly one of --claude, --kiro or --codex":"Escolha exatamente um: --claude, --kiro ou --codex","Language must be en or pt-BR":"O idioma deve ser en ou pt-BR","Prumo requires Node.js 22 or newer":"Prumo requer Node.js 22 ou superior","Changes / {0}":"Alterações / {0}","write":"gravar","remove":"remover","unchanged":"sem alterações","installed":"instalado","configured":"configurado","preview":"prévia","conflict":"conflito","pending activation":"ativação pendente","yes":"sim","no":"não","Existing data stays in place: {0}":"Os dados existentes permanecem no lugar: {0}","Backup: {0}":"Backup: {0}","Dry run: no files changed":"Prévia: nenhum arquivo alterado","Open a new session to load Prumo and PO First":"Abra uma nova sessão para carregar Prumo e PO First","Would update global Prumo CLI to {0}":"Atualizaria a CLI global do Prumo para {0}","Updating global Prumo CLI to {0}":"Atualizando a CLI global do Prumo para {0}","Global Prumo CLI updated to {0}":"CLI global do Prumo atualizada para {0}","Global Prumo CLI update failed":"Falha ao atualizar a CLI global do Prumo","Would install global Prumo CLI {0}":"Instalaria a CLI global do Prumo {0}","Installing global Prumo CLI {0}":"Instalando a CLI global do Prumo {0}","Global Prumo CLI installed: prumo -v reports {0}":"CLI global do Prumo instalada: prumo -v mostra {0}","Global Prumo CLI installation failed":"Falha ao instalar a CLI global do Prumo","Preparing Prumo installation":"Preparando instalação do Prumo","Installing Prumo CLI":"Instalando CLI do Prumo","Installing {0}":"Instalando {0}","Prumo installed successfully":"Prumo instalado com sucesso","Preparing Prumo update":"Preparando atualização do Prumo","Updating Prumo CLI":"Atualizando CLI do Prumo","Updating {0}":"Atualizando {0}","Prumo updated successfully":"Prumo atualizado com sucesso","Prumo v{0} is already installed in {1}":"Prumo v{0} já está instalado em {1}","Restored {0} files; run data was not changed":"Restaurados {0} arquivos; os dados das execuções não foram alterados","Unknown command: {0}":"Comando desconhecido: {0}","Restore needs a backup directory":"A restauração requer um diretório de backup","Linked path requires an explicit installation at its real location: {0}":"O caminho vinculado exige instalação explícita no local real: {0}","Linked file cannot be replaced automatically: {0}":"O arquivo vinculado não pode ser substituído automaticamente: {0}","Malformed PO First block; repair its markers before installing":"Bloco PO First inválido; corrija os marcadores antes de instalar","Expected a settings object: {0}":"Esperado um objeto de configurações: {0}","Expected a resources array: {0}":"Esperada uma lista resources: {0}","Local outputStyle overrides PO First: {0}":"O outputStyle local substitui PO First: {0}","Unreadable local settings: {0}":"Configurações locais ilegíveis: {0}","Skill explicitly disabled; activation needs a settings change: {0}":"Skill desabilitada explicitamente; a ativação requer ajuste na configuração: {0}","Verify default resource inheritance for this Markdown agent: {0}":"Verifique a herança dos recursos padrão deste agente Markdown: {0}","File changed after installation; manual recovery required: {0}":"O arquivo mudou após a instalação; recuperação manual necessária: {0}","File changed during installation: {0}":"O arquivo mudou durante a instalação: {0}","Integrity check failed: {0}":"Falha na verificação de integridade: {0}","Choose a Prumo backup inside your home directory":"Escolha um backup Prumo dentro do seu diretório de usuário","Invalid Prumo backup":"Backup Prumo inválido","Backup target is outside the configured locations: {0}":"O destino do backup está fora dos locais configurados: {0}","File changed since this backup; restore manually: {0}":"O arquivo mudou desde este backup; restaure manualmente: {0}","Invalid backup file path":"Caminho de arquivo do backup inválido","Backup integrity check failed: {0}":"Falha de integridade no backup: {0}","PRUMO_ROOT points to \"{0}\", which does not exist":"PRUMO_ROOT aponta para \"{0}\", que não existe","PRUMO_ROOT must be a central workspace inside \"{0}\" or an existing legacy workspace":"PRUMO_ROOT deve ser um workspace central dentro de \"{0}\" ou um workspace legado existente","Select a workspace inside \"{0}\" with PRUMO_ROOT, or enter an existing legacy workspace":"Selecione um workspace dentro de \"{0}\" com PRUMO_ROOT ou entre em um workspace legado existente","no run selected — pass --run <name> or init one":"nenhuma execução selecionada — informe --run <name> ou inicialize uma","invalid run name \"{0}\" — letters, digits, \".\", \"_\" and \"-\" only (no leading dot, no path separators)":"nome de execução inválido \"{0}\" — use letras, números, \".\", \"_\" e \"-\" (sem ponto inicial ou separadores de caminho)","run \"{0}\" has no state.json":"a execução \"{0}\" não tem state.json","run \"{0}\" is locked by another command (waited {1}ms) — retry":"a execução \"{0}\" está bloqueada por outro comando (espera de {1}ms) — tente novamente","unknown task \"{0}\"":"tarefa desconhecida \"{0}\"","plan has no tasks":"o plano não contém tarefas","every task needs id and title":"toda tarefa precisa de id e title","duplicate task id {0}":"id de tarefa duplicado: {0}","task {0} depends on unknown task {1}":"a tarefa {0} depende da tarefa desconhecida {1}","plan has a dependency cycle: {0}":"o plano contém um ciclo de dependências: {0}","{0} and {1} can run in parallel but both touch \"{2}\" — add a dep between them (or --allow-overlap)":"{0} e {1} podem executar em paralelo, mas alteram \"{2}\" — adicione uma dependência entre elas (ou --allow-overlap)","active work needs a recorded agent":"trabalho ativo exige um agente registrado","{0} still waiting on: {1}":"{0} ainda depende de: {1}","{0} executors already running (max {1})":"{0} executores já estão em execução (máximo {1})","{0} agents busy (cap {1})":"{0} agentes ocupados (limite {1})","agent \"{0}\" is already on {1} — one agent per task":"o agente \"{0}\" já está em {1} — um agente por tarefa","agent \"{0}\" is already on {1} — one agent per task (or --force)":"o agente \"{0}\" já está em {1} — um agente por tarefa (ou --force)","init needs --plan <plan.json>":"init requer --plan <plan.json>","init needs --run <name>":"init requer --run <name>","run \"{0}\" already exists (use --force to overwrite)":"a execução \"{0}\" já existe (use --force para sobrescrever)","run \"{0}\" initialised: {1} tasks, {2} executors + 1 review slot (cap {3}){4}":"execução \"{0}\" inicializada: {1} tarefas, {2} executores + 1 vaga de revisão (limite {3}){4}","sync-plan needs --plan <plan.json> once":"sync-plan requer --plan <plan.json> na primeira chamada","sync-plan is additive: plan removed {0}":"sync-plan é aditivo: o plano removeu {0}","no state changes; plan differs for preserved tasks: {0}. Use refresh-contract for an approved validation change; do not fail/retry completed work to refresh a contract.":"nenhum estado alterado; o plano difere nas tarefas preservadas: {0}. Use refresh-contract para uma alteração aprovada na validação; não use fail/retry em trabalho entregue para atualizar o contrato.","run \"{0}\" already matches plan ({1} tasks)":"a execução \"{0}\" já corresponde ao plano ({1} tarefas)","run \"{0}\" synced: +{1}, updated {2}, preserved {3}, total {4}":"execução \"{0}\" sincronizada: +{1}, atualizadas {2}, preservadas {3}, total {4}","(no runs)":"(nenhuma execução)","{0}  {1}/{2} done  (updated {3})":"{0}  {1}/{2} concluídas  (atualização {3})","run: {0}  plan: {1}  {2}/{3} done":"execução: {0}  plano: {1}  {2}/{3} concluídas","states: {0}":"estados: {0}","\n(no phase)":"\n(sem fase)","\n[prumo] {0}/{1} executors, {2} in review (cap {3}) — dispatch at most {4} now":"\n[prumo] {0}/{1} executores, {2} em revisão (limite {3}) — dispare no máximo {4} agora","awaiting review: {0}":"aguardando revisão: {0}","start needs --agent <name>":"start requer --agent <name>","review needs --agent <name>":"review requer --agent <name>","{0} is {1}, not pending":"{0} está em {1}, e não em pending","{0} is {1}, not running":"{0} está em {1}, e não em running","{0} is {1}, not failed":"{0} está em {1}, e não em failed","approved plan no longer contains {0} — inspect it before retry":"o plano aprovado não contém mais {0} — confira-o antes de tentar novamente","{0} contract differs from the approved plan ({1}) — run sync-plan and inspect the persisted contract before retry":"o contrato de {0} difere do plano aprovado ({1}) — execute sync-plan e confira o contrato persistido antes de tentar novamente","{0} is {1}, not blocked":"{0} está em {1}, e não em blocked","{0} is {1}, not running or reviewing":"{0} está em {1}, e não em running ou reviewing","{0} is not running or reviewing":"{0} não está em running ou reviewing","{0} running (agent {1}, attempt {2})":"{0} em execução (agente {1}, tentativa {2})","\"{0}\" wrote {1} — a reviewer must be a different agent (or --force)":"\"{0}\" implementou {1} — o revisor deve ser outro agente (ou --force)","{0} in review (reviewer {1})":"{0} em revisão (revisor {1})","completed task contracts are immutable; create an explicit follow-up task":"contratos de tarefas concluídas são imutáveis; crie uma tarefa posterior explícita","refresh-contract needs --plan <approved-plan.json>":"refresh-contract requer --plan <approved-plan.json>","approved plan must contain exactly one task {0}":"o plano aprovado deve conter exatamente uma tarefa {0}","{0} validation contract already matches; state and attempt unchanged":"o contrato de validação de {0} já corresponde; estado e tentativa preservados","{0} contract refreshed; state {1}, attempt {2} preserved; previous validation receipts are stale":"contrato de {0} atualizado; estado {1} e tentativa {2} preservados; recibos anteriores de validação estão desatualizados","pass --ok or --failed":"informe --ok ou --failed","validation evidence must not be empty":"a evidência de validação não pode estar vazia","passing validation requires an independent reviewer":"a aprovação da validação exige um revisor independente","passing validation requires the current independent reviewer":"a aprovação da validação exige o revisor independente atual","task changed during validation; result discarded — validate the current attempt again":"a tarefa mudou durante a validação; resultado descartado — valide novamente a tentativa atual","{0} validation recorded by {1}: {2}":"validação de {0} registrada por {1}: {2}","{0} has no passing validation for the current attempt — validate first":"{0} não tem validação aprovada na tentativa atual — valide primeiro","{0} was validated by the {1}, not a reviewer — run `review {2} --agent <name>` first":"{0} foi validada por {1}, e não por um revisor — execute `review {2} --agent <name>` primeiro","{0} done — unlocked: {1}":"{0} concluída — liberadas: {1}","{0} done":"{0} concluída","{0} failed (attempt {1}): {2}":"{0} falhou (tentativa {1}): {2}","{0} already has {1} attempts (cap {2}) — escalate instead, or --force":"{0} já tem {1} tentativas (limite {2}) — escale a decisão ou use --force","{0} back to pending (attempt {1} when started)":"{0} voltou a pending (tentativa {1} ao iniciar)","completed tasks cannot be paused":"tarefas concluídas não podem ser pausadas","{0} blocked: {1}":"{0} bloqueada: {1}","cannot restore stateBeforeBlock; inspect the recorded history before repairing this task":"não foi possível restaurar stateBeforeBlock; confira o histórico registrado antes de reparar esta tarefa","direct review requires a paused active attempt; pending/failed tasks cannot bypass start/retry":"revisão direta exige uma tentativa ativa pausada; tarefas pending/failed não podem pular start/retry","cannot resume without an open attempt and its original executor":"não é possível retomar sem uma tentativa aberta e seu executor original","{0} unblocked to {1}; attempt {2} preserved; no agent dispatched":"{0} desbloqueada para {1}; tentativa {2} preservada; nenhum agente disparado","{0} already done":"{0} já está concluída","{0} skipped: {1}":"{0} pulada: {1}","usage: engine.mjs <{0}> — see file header for details":"uso: engine.mjs <{0}> — consulte o cabeçalho do arquivo","validationMode must be functional or inspection":"validationMode deve ser functional ou inspection","inspection requires inspectionReason explaining why runtime behavior is unaffected":"inspection exige inspectionReason explicando por que o comportamento de execução não foi afetado","validation contract must not be empty":"o contrato de validação não pode estar vazio","each validation step needs nonempty run and expect":"cada passo de validação exige run e expect preenchidos","step kind must be static or functional":"kind do passo deve ser static ou functional","cacheable must be true or false":"cacheable deve ser true ou false","only static validation steps can be cacheable":"somente passos de validação static podem usar cacheable","expectedExitCodes must be a nonempty array of integer process exit codes from 0 to 255":"expectedExitCodes deve ser uma lista não vazia de códigos de saída inteiros entre 0 e 255","env must map environment variable names to string values":"env deve mapear nomes de variáveis de ambiente para valores de texto","shell must be an executable name or path":"shell deve ser o nome ou caminho de um executável","timeoutMs must be an integer from 0 to 2147483647; 0 explicitly disables the deadline":"timeoutMs deve ser um inteiro de 0 a 2147483647; 0 desabilita explicitamente o prazo","Unix environment assignment does not run in cmd.exe; move NAME=value into step.env or declare step.shell explicitly":"atribuição de ambiente Unix não executa em cmd.exe; mova NAME=value para step.env ou declare step.shell explicitamente","functional task requires an executable functional check; lint, build, typecheck or prose alone cannot approve it":"tarefa funcional exige verificação funcional executável; lint, build, typecheck ou texto isolados não podem aprová-la","executable validation needs an absolute --cwd or step.cwd":"validação executável exige --cwd ou step.cwd absoluto","validation cwd is not a directory: {0}":"cwd da validação não é um diretório: {0}","running check {0}/{1}; timeout {2}; expected exit {3}":"executando verificação {0}/{1}; prazo {2}; saída esperada {3}","check {0}/{1} ({2}): exit {3}":"verificação {0}/{1} ({2}): saída {3}","reused check {0}/{1} (static, unchanged workspace)":"verificação {0}/{1} reutilizada (static, árvore de trabalho inalterada)","validation lacks an execution receipt for this contract — validate again":"a validação não tem recibo de execução deste contrato — valide novamente","contract was refreshed after validation — validate the current contract again":"o contrato mudou após a validação — valide novamente o contrato atual","validation receipt has no checks":"o recibo de validação não contém verificações","not all validation commands completed":"nem todos os comandos de validação foram concluídos","validation check {0}/{1} ({2}) failed: {3}; command: {4} — functional failures cannot be replaced by lint":"a verificação {0}/{1} ({2}) falhou: {3}; comando: {4} — falhas funcionais não podem ser substituídas por lint","auto-sync failed: {0}":"falha na sincronização automática: {0}","dashboard on http://localhost:{0} (run: {1}, auto-sync: {2})":"dashboard em http://localhost:{0} (execução: {1}, sincronização automática: {2})","port {0} is already in use — an earlier dashboard is likely still serving http://localhost:{1} (it follows CURRENT). To run a SECOND one: --port <other>{2}":"a porta {0} já está em uso — um dashboard anterior pode estar atendendo em http://localhost:{1} (acompanha CURRENT). Para abrir outro: --port <other>{2}","no run":"nenhuma execução","run \"{0}\" not found":"execução \"{0}\" não encontrada","not found":"não encontrado","Language":"Idioma","Select graph run":"Selecionar execução","layout: phase":"layout: fase","layout: depth":"layout: profundidade","fit to screen (0)":"ajustar à tela (0)","run metrics (r)":"métricas da execução (r)","fit":"ajustar","results":"resultados","orchestrator":"orquestrador","reviewer":"revisor","idle":"inativo","Legend":"Legenda","done":"concluído","running":"em execução","in review":"em revisão","reviewing":"em revisão","ready":"pronto","waiting":"aguardando","failed":"falhou","blocked":"bloqueado","pending":"pendente","skipped":"pulado","unlocks next":"libera a próxima tarefa","dep crosses back a phase":"dependência retorna a uma fase","✓ = validated, awaiting done":"✓ = validado, aguardando conclusão","Running in parallel":"Executando em paralelo","nothing running":"nenhuma tarefa em execução","Failures & retries":"Falhas e novas tentativas","none":"nenhum","Event log":"Histórico de eventos","✋ waiting on you":"✋ aguardando sua decisão","✗ rejected":"✗ reprovado","✓ validated":"✓ validado","✗ rework":"✗ retrabalho","dispatching {0}/{1}":"coordenando {0}/{1}","judging {0}":"revisando {0}","complete":"concluído","orch":"orquestrador","orchestrator idle":"orquestrador inativo","Working":"Executando","review":"revisão","attempt(s)":"tentativa(s)","Phase":"Fase","Depends on":"Depende de","Unlocks":"Libera","Validation contract":"Contrato de validação","Blocked":"Bloqueado","Skipped":"Pulado","Attempts":"Tentativas","Validations":"Validações","Notes":"Notas","FAILED":"REPROVADO","click the task to pin · moves away, closes":"clique na tarefa para fixar · afastar o cursor fecha","← graph":"← grafo","← back to the graph":"← voltar ao grafo","Wall clock":"Tempo decorrido","Agent time":"Tempo dos agentes","Parallel gain":"Ganho com paralelismo","Critical path":"Caminho crítico","Review share":"Parcela de revisão","Retries":"Novas tentativas","so far":"até agora","init → last task":"início → última tarefa","sum of recorded agent intervals":"soma dos intervalos registrados dos agentes","{0} executors + review headroom":"{0} executores + capacidade de revisão","{0}% of wall clock":"{0}% do tempo decorrido","{0} verdicts · {1} rejected":"{0} pareceres · {1} reprovados","blocked {0}":"bloqueado por {0}","no human blocks":"sem bloqueios humanos","Agent time: building vs verifying":"Tempo dos agentes: executar e verificar","exec {0}":"execução {0}","review {0}":"revisão {0}","Per task":"Por tarefa","Task":"Tarefa","Exec":"Execução","Review":"Revisão","build vs verify":"executar e verificar","Queued":"Na fila","Att.":"Tent.","Verdicts":"Pareceres","gate only":"somente validação","What the numbers support":"O que os números mostram","Not enough finished work to say anything yet.":"Ainda não há trabalho concluído suficiente para analisar.","The dependency chain limits parallel progress.":"A cadeia de dependências limita o progresso paralelo.","Critical path: {0}; elapsed: {1}; share: {2}%. Chain: {3}.":"Caminho crítico: {0}; tempo decorrido: {1}; parcela: {2}%. Cadeia: {3}.","Inspect time outside the critical path.":"Confira o tempo fora do caminho crítico.","Elapsed: {0}; critical path: {1}; difference: {2}. Check queues, blocks and retries before changing capacity.":"Tempo decorrido: {0}; caminho crítico: {1}; diferença: {2}. Confira filas, bloqueios e tentativas antes de mudar a capacidade.","Review durations are similar.":"Os tempos de revisão são semelhantes.","Review durations vary across tasks.":"Os tempos de revisão variam entre as tarefas.","Mean review: {0}; variation: {1}%. Timing alone does not establish coverage or a cause.":"Revisão média: {0}; variação: {1}%. O tempo, isoladamente, não comprova cobertura ou causa.","Review outcomes":"Resultados das revisões","{0} rejections in {1} verdicts. Review used {2}% of agent time. Inspect the evidence before changing the review policy.":"{0} reprovações em {1} pareceres. A revisão usou {2}% do tempo dos agentes. Confira as evidências antes de mudar a política de revisão.","Derived from attempt timestamps and events. Tokens belong to the harness and are not measured by this engine.":"Derivado dos horários das tentativas e eventos. Tokens pertencem ao ambiente de agentes e não são medidos por este motor.","Run still active; figures may change.":"Execução ainda ativa; os números podem mudar.","start":"início","validate":"validação","fail":"falha","retry":"nova tentativa","block":"bloqueio","unblock":"desbloqueio","skip":"pular","note":"nota","init":"inicialização","plan_sync":"sincronização do plano","contract_refresh":"atualização do contrato","contract_refreshed":"contrato atualizado","validation_started":"validação iniciada","block_updated":"bloqueio atualizado","No Prumo installations found; install an environment first":"Nenhuma instalação do Prumo encontrada; instale um ambiente primeiro","Invalid Prumo installation registry; existing installations were not changed":"Registro de instalações do Prumo inválido; as instalações existentes não foram alteradas","Invalid Prumo update request":"Solicitação de atualização do Prumo inválida","Prumo update was interrupted":"A atualização do Prumo foi interrompida","Update automatically selects installed environments; do not select a harness":"A atualização seleciona automaticamente os ambientes instalados; não selecione um ambiente","Updating {0} with Prumo {1}":"Atualizando {0} com Prumo {1}"}
+const PRUMO_MESSAGES = {"Install opens a selection of detected environments; --all selects all without prompting":"Install abre a seleção dos ambientes detectados; --all seleciona todos diretamente","Interactive selection needs a terminal; use --all or choose a harness flag":"A seleção interativa precisa de um terminal; use --all ou escolha um ambiente por opção","Installation selection cancelled":"Seleção de instalação cancelada","Choose environments to install:":"Escolha os ambientes para instalar:","Arrows: move | Space: select | A: all/none | Enter: install | Esc: cancel":"Setas: mover | Espaço: marcar | A: todos/nenhum | Enter: instalar | Esc: sair","Use --all only with install and without a harness flag":"Use --all somente com install e sem selecionar um ambiente por opção","Detected environments: {0}":"Ambientes detectados: {0}","No supported environments detected; choose --claude, --kiro or --codex explicitly":"Nenhum ambiente compatível detectado; escolha --claude, --kiro ou --codex explicitamente","Choose exactly one of --claude, --kiro or --codex":"Escolha exatamente um: --claude, --kiro ou --codex","Language must be en or pt-BR":"O idioma deve ser en ou pt-BR","Prumo requires Node.js 22 or newer":"Prumo requer Node.js 22 ou superior","Changes / {0}":"Alterações / {0}","write":"gravar","remove":"remover","unchanged":"sem alterações","installed":"instalado","configured":"configurado","preview":"prévia","conflict":"conflito","pending activation":"ativação pendente","yes":"sim","no":"não","Existing data stays in place: {0}":"Os dados existentes permanecem no lugar: {0}","Backup: {0}":"Backup: {0}","Dry run: no files changed":"Prévia: nenhum arquivo alterado","Open a new session to load Prumo and PO First":"Abra uma nova sessão para carregar Prumo e PO First","Would update global Prumo CLI to {0}":"Atualizaria a CLI global do Prumo para {0}","Updating global Prumo CLI to {0}":"Atualizando a CLI global do Prumo para {0}","Global Prumo CLI updated to {0}":"CLI global do Prumo atualizada para {0}","Global Prumo CLI update failed":"Falha ao atualizar a CLI global do Prumo","Would install global Prumo CLI {0}":"Instalaria a CLI global do Prumo {0}","Installing global Prumo CLI {0}":"Instalando a CLI global do Prumo {0}","Global Prumo CLI installed: prumo -v reports {0}":"CLI global do Prumo instalada: prumo -v mostra {0}","Global Prumo CLI installation failed":"Falha ao instalar a CLI global do Prumo","Preparing Prumo installation":"Preparando instalação do Prumo","Installing Prumo CLI":"Instalando CLI do Prumo","Installing {0}":"Instalando {0}","Prumo installed successfully":"Prumo instalado com sucesso","Preparing Prumo update":"Preparando atualização do Prumo","Updating Prumo CLI":"Atualizando CLI do Prumo","Updating {0}":"Atualizando {0}","Prumo updated successfully":"Prumo atualizado com sucesso","Prumo v{0} is already installed in {1}":"Prumo v{0} já está instalado em {1}","Restored {0} files; run data was not changed":"Restaurados {0} arquivos; os dados das execuções não foram alterados","Unknown command: {0}":"Comando desconhecido: {0}","Restore needs a backup directory":"A restauração requer um diretório de backup","Linked path requires an explicit installation at its real location: {0}":"O caminho vinculado exige instalação explícita no local real: {0}","Linked file cannot be replaced automatically: {0}":"O arquivo vinculado não pode ser substituído automaticamente: {0}","Malformed PO First block; repair its markers before installing":"Bloco PO First inválido; corrija os marcadores antes de instalar","Expected a settings object: {0}":"Esperado um objeto de configurações: {0}","Expected a resources array: {0}":"Esperada uma lista resources: {0}","Local outputStyle overrides PO First: {0}":"O outputStyle local substitui PO First: {0}","Unreadable local settings: {0}":"Configurações locais ilegíveis: {0}","Skill explicitly disabled; activation needs a settings change: {0}":"Skill desabilitada explicitamente; a ativação requer ajuste na configuração: {0}","Verify default resource inheritance for this Markdown agent: {0}":"Verifique a herança dos recursos padrão deste agente Markdown: {0}","File changed after installation; manual recovery required: {0}":"O arquivo mudou após a instalação; recuperação manual necessária: {0}","File changed during installation: {0}":"O arquivo mudou durante a instalação: {0}","Integrity check failed: {0}":"Falha na verificação de integridade: {0}","Choose a Prumo backup inside your home directory":"Escolha um backup Prumo dentro do seu diretório de usuário","Invalid Prumo backup":"Backup Prumo inválido","Backup target is outside the configured locations: {0}":"O destino do backup está fora dos locais configurados: {0}","File changed since this backup; restore manually: {0}":"O arquivo mudou desde este backup; restaure manualmente: {0}","Invalid backup file path":"Caminho de arquivo do backup inválido","Backup integrity check failed: {0}":"Falha de integridade no backup: {0}","PRUMO_ROOT points to \"{0}\", which does not exist":"PRUMO_ROOT aponta para \"{0}\", que não existe","PRUMO_ROOT must be a central workspace inside \"{0}\" or an existing legacy workspace":"PRUMO_ROOT deve ser um workspace central dentro de \"{0}\" ou um workspace legado existente","Select a workspace inside \"{0}\" with PRUMO_ROOT, or enter an existing legacy workspace":"Selecione um workspace dentro de \"{0}\" com PRUMO_ROOT ou entre em um workspace legado existente","no run selected — pass --run <name> or init one":"nenhuma execução selecionada — informe --run <name> ou inicialize uma","invalid run name \"{0}\" — letters, digits, \".\", \"_\" and \"-\" only (no leading dot, no path separators)":"nome de execução inválido \"{0}\" — use letras, números, \".\", \"_\" e \"-\" (sem ponto inicial ou separadores de caminho)","run \"{0}\" has no state.json":"a execução \"{0}\" não tem state.json","run \"{0}\" is locked by another command (waited {1}ms) — retry":"a execução \"{0}\" está bloqueada por outro comando (espera de {1}ms) — tente novamente","unknown task \"{0}\"":"tarefa desconhecida \"{0}\"","plan has no tasks":"o plano não contém tarefas","every task needs id and title":"toda tarefa precisa de id e title","duplicate task id {0}":"id de tarefa duplicado: {0}","task {0} depends on unknown task {1}":"a tarefa {0} depende da tarefa desconhecida {1}","plan has a dependency cycle: {0}":"o plano contém um ciclo de dependências: {0}","{0} and {1} can run in parallel but both touch \"{2}\" — add a dep between them (or --allow-overlap)":"{0} e {1} podem executar em paralelo, mas alteram \"{2}\" — adicione uma dependência entre elas (ou --allow-overlap)","active work needs a recorded agent":"trabalho ativo exige um agente registrado","plan-task <task> --agent <name>":"plan-task <tarefa> --agent <nome>","plan-task needs --agent <name>":"plan-task exige --agent <nome>","{0} must be pending, have stale planning, or have paused execution before plan-task":"{0} deve estar pendente, ter planejamento desatualizado ou execução pausada antes de plan-task","{0} execution scope needs current planning — keep work blocked, run plan-task and finish-planning, then unblock explicitly":"o escopo de execução de {0} exige planejamento atualizado — mantenha o trabalho bloqueado, execute plan-task e finish-planning e depois desbloqueie explicitamente","cannot replan without an open attempt and its original executor":"não é possível replanejar sem uma tentativa aberta e seu executor original","execution scope changed after validation — validate the current scope again":"o escopo de execução mudou após a validação — valide o escopo atual novamente","{0} task plan recorded; still blocked — unblock explicitly to resume the current attempt":"plano da tarefa {0} registrado; ainda bloqueada — desbloqueie explicitamente para retomar a tentativa atual","{0} in planning (planner {1}, round {2})":"{0} em planejamento (planejador {1}, rodada {2})","{0} in planning — {1} agent slots available for planning":"{0} em planejamento — {1} vagas de agentes disponíveis para planejar","finish-planning <task> --plan <task-plan.json>":"finish-planning <tarefa> --plan <plano-da-tarefa.json>","finish-planning needs --plan <task-plan.json>":"finish-planning exige --plan <plano-da-tarefa.json>","{0} is not in planning":"{0} não está em planejamento","planning needs an open round and its recorded planner":"o planejamento exige uma rodada aberta e seu planejador registrado","task planning is stale — run plan-task again and research the current contract":"o planejamento da tarefa está desatualizado — execute plan-task novamente e pesquise o contrato atual","planning dependencies are no longer complete":"as dependências do planejamento não estão mais concluídas","{0} ready to execute (task plan recorded by {1})":"{0} pronto para executar (plano da tarefa registrado por {1})","{0} needs completed current planning — run plan-task and finish-planning before start":"{0} exige um planejamento atual concluído — execute plan-task e finish-planning antes de start","cannot resume planning without its paused round and original planner":"não é possível retomar o planejamento sem sua rodada pausada e o planejador original","task plan must be a JSON object":"o plano da tarefa deve ser um objeto JSON","task plan research needs nonempty source and findings for each entry":"a pesquisa do plano da tarefa exige source e findings preenchidos em cada item","task plan decisions must contain resolved question and answer entries; use [] when none are needed":"as decisões do plano da tarefa devem conter question e answer resolvidos; use [] quando não forem necessárias","task plan needs nonempty execution steps":"o plano da tarefa exige passos de execução preenchidos","task plan verification must map observable criteria to every validation check (1-based index, or \"inspection\")":"a verificação do plano da tarefa deve associar critérios observáveis a cada verificação de validação (índice iniciado em 1 ou \"inspection\")","task plan openQuestions must contain question, blocking boolean and optional nonempty answer":"openQuestions do plano da tarefa deve conter question, blocking booleano e answer opcional preenchido","task plan has unanswered blocking questions; resolve them with the user before execution":"o plano da tarefa tem perguntas bloqueantes sem resposta; resolva-as com o usuário antes da execução","{0} still waiting on: {1}":"{0} ainda depende de: {1}","{0} executors already running (max {1})":"{0} executores já estão em execução (máximo {1})","{0} agents busy (cap {1})":"{0} agentes ocupados (limite {1})","agent \"{0}\" is already on {1} — one agent per task":"o agente \"{0}\" já está em {1} — um agente por tarefa","agent \"{0}\" is already on {1} — one agent per task (or --force)":"o agente \"{0}\" já está em {1} — um agente por tarefa (ou --force)","init needs --plan <plan.json>":"init requer --plan <plan.json>","init needs --run <name>":"init requer --run <name>","run \"{0}\" already exists (use --force to overwrite)":"a execução \"{0}\" já existe (use --force para sobrescrever)","run \"{0}\" initialised: {1} tasks, {2} executors + 1 review slot (cap {3}){4}":"execução \"{0}\" inicializada: {1} tarefas, {2} executores + 1 vaga de revisão (limite {3}){4}","sync-plan needs --plan <plan.json> once":"sync-plan requer --plan <plan.json> na primeira chamada","sync-plan is additive: plan removed {0}":"sync-plan é aditivo: o plano removeu {0}","no state changes; plan differs for preserved tasks: {0}. Use refresh-contract for an approved validation change; do not fail/retry completed work to refresh a contract.":"nenhum estado alterado; o plano difere nas tarefas preservadas: {0}. Use refresh-contract para uma alteração aprovada na validação; não use fail/retry em trabalho entregue para atualizar o contrato.","run \"{0}\" already matches plan ({1} tasks)":"a execução \"{0}\" já corresponde ao plano ({1} tarefas)","run \"{0}\" synced: +{1}, updated {2}, preserved {3}, total {4}":"execução \"{0}\" sincronizada: +{1}, atualizadas {2}, preservadas {3}, total {4}","(no runs)":"(nenhuma execução)","{0}  {1}/{2} done  (updated {3})":"{0}  {1}/{2} concluídas  (atualização {3})","run: {0}  plan: {1}  {2}/{3} done":"execução: {0}  plano: {1}  {2}/{3} concluídas","states: {0}":"estados: {0}","\n(no phase)":"\n(sem fase)","\n[prumo] {0}/{1} executors, {2} in review (cap {3}) — dispatch at most {4} now":"\n[prumo] {0}/{1} executores, {2} em revisão (limite {3}) — dispare no máximo {4} agora","awaiting review: {0}":"aguardando revisão: {0}","start needs --agent <name>":"start requer --agent <name>","review needs --agent <name>":"review requer --agent <name>","{0} is {1}, not pending":"{0} está em {1}, e não em pending","{0} is {1}, not running":"{0} está em {1}, e não em running","{0} is {1}, not failed":"{0} está em {1}, e não em failed","approved plan no longer contains {0} — inspect it before retry":"o plano aprovado não contém mais {0} — confira-o antes de tentar novamente","{0} contract differs from the approved plan ({1}) — run sync-plan and inspect the persisted contract before retry":"o contrato de {0} difere do plano aprovado ({1}) — execute sync-plan e confira o contrato persistido antes de tentar novamente","{0} is {1}, not blocked":"{0} está em {1}, e não em blocked","{0} is {1}, not running or reviewing":"{0} está em {1}, e não em running ou reviewing","{0} is not running or reviewing":"{0} não está em running ou reviewing","{0} running (agent {1}, attempt {2})":"{0} em execução (agente {1}, tentativa {2})","\"{0}\" wrote {1} — a reviewer must be a different agent (or --force)":"\"{0}\" implementou {1} — o revisor deve ser outro agente (ou --force)","{0} in review (reviewer {1})":"{0} em revisão (revisor {1})","completed task contracts are immutable; create an explicit follow-up task":"contratos de tarefas concluídas são imutáveis; crie uma tarefa posterior explícita","refresh-contract needs --plan <approved-plan.json>":"refresh-contract requer --plan <approved-plan.json>","approved plan must contain exactly one task {0}":"o plano aprovado deve conter exatamente uma tarefa {0}","{0} validation contract already matches; state and attempt unchanged":"o contrato de validação de {0} já corresponde; estado e tentativa preservados","{0} contract refreshed; state {1}, attempt {2} preserved; previous validation receipts are stale":"contrato de {0} atualizado; estado {1} e tentativa {2} preservados; recibos anteriores de validação estão desatualizados","pass --ok or --failed":"informe --ok ou --failed","validation evidence must not be empty":"a evidência de validação não pode estar vazia","passing validation requires an independent reviewer":"a aprovação da validação exige um revisor independente","passing validation requires the current independent reviewer":"a aprovação da validação exige o revisor independente atual","task changed during validation; result discarded — validate the current attempt again":"a tarefa mudou durante a validação; resultado descartado — valide novamente a tentativa atual","{0} validation recorded by {1}: {2}":"validação de {0} registrada por {1}: {2}","{0} has no passing validation for the current attempt — validate first":"{0} não tem validação aprovada na tentativa atual — valide primeiro","{0} was validated by the {1}, not a reviewer — run `review {2} --agent <name>` first":"{0} foi validada por {1}, e não por um revisor — execute `review {2} --agent <name>` primeiro","{0} done — unlocked: {1}":"{0} concluída — liberadas: {1}","{0} done":"{0} concluída","{0} failed (attempt {1}): {2}":"{0} falhou (tentativa {1}): {2}","{0} already has {1} attempts (cap {2}) — escalate instead, or --force":"{0} já tem {1} tentativas (limite {2}) — escale a decisão ou use --force","{0} back to pending (attempt {1} when started)":"{0} voltou a pending (tentativa {1} ao iniciar)","completed tasks cannot be paused":"tarefas concluídas não podem ser pausadas","{0} blocked: {1}":"{0} bloqueada: {1}","cannot restore stateBeforeBlock; inspect the recorded history before repairing this task":"não foi possível restaurar stateBeforeBlock; confira o histórico registrado antes de reparar esta tarefa","direct review requires a paused active attempt; pending/failed tasks cannot bypass start/retry":"revisão direta exige uma tentativa ativa pausada; tarefas pending/failed não podem pular start/retry","cannot resume without an open attempt and its original executor":"não é possível retomar sem uma tentativa aberta e seu executor original","{0} unblocked to {1}; attempt {2} preserved; no agent dispatched":"{0} desbloqueada para {1}; tentativa {2} preservada; nenhum agente disparado","{0} already done":"{0} já está concluída","{0} skipped: {1}":"{0} pulada: {1}","usage: engine.mjs <{0}> — see file header for details":"uso: engine.mjs <{0}> — consulte o cabeçalho do arquivo","validationMode must be functional or inspection":"validationMode deve ser functional ou inspection","inspection requires inspectionReason explaining why runtime behavior is unaffected":"inspection exige inspectionReason explicando por que o comportamento de execução não foi afetado","validation contract must not be empty":"o contrato de validação não pode estar vazio","each validation step needs nonempty run and expect":"cada passo de validação exige run e expect preenchidos","step kind must be static or functional":"kind do passo deve ser static ou functional","cacheable must be true or false":"cacheable deve ser true ou false","only static validation steps can be cacheable":"somente passos de validação static podem usar cacheable","expectedExitCodes must be a nonempty array of integer process exit codes from 0 to 255":"expectedExitCodes deve ser uma lista não vazia de códigos de saída inteiros entre 0 e 255","env must map environment variable names to string values":"env deve mapear nomes de variáveis de ambiente para valores de texto","shell must be an executable name or path":"shell deve ser o nome ou caminho de um executável","timeoutMs must be an integer from 0 to 2147483647; 0 explicitly disables the deadline":"timeoutMs deve ser um inteiro de 0 a 2147483647; 0 desabilita explicitamente o prazo","Unix environment assignment does not run in cmd.exe; move NAME=value into step.env or declare step.shell explicitly":"atribuição de ambiente Unix não executa em cmd.exe; mova NAME=value para step.env ou declare step.shell explicitamente","functional task requires an executable functional check; lint, build, typecheck or prose alone cannot approve it":"tarefa funcional exige verificação funcional executável; lint, build, typecheck ou texto isolados não podem aprová-la","executable validation needs an absolute --cwd or step.cwd":"validação executável exige --cwd ou step.cwd absoluto","validation cwd is not a directory: {0}":"cwd da validação não é um diretório: {0}","running check {0}/{1}; timeout {2}; expected exit {3}":"executando verificação {0}/{1}; prazo {2}; saída esperada {3}","check {0}/{1} ({2}): exit {3}":"verificação {0}/{1} ({2}): saída {3}","reused check {0}/{1} (static, unchanged workspace)":"verificação {0}/{1} reutilizada (static, árvore de trabalho inalterada)","validation lacks an execution receipt for this contract — validate again":"a validação não tem recibo de execução deste contrato — valide novamente","contract was refreshed after validation — validate the current contract again":"o contrato mudou após a validação — valide novamente o contrato atual","validation receipt has no checks":"o recibo de validação não contém verificações","not all validation commands completed":"nem todos os comandos de validação foram concluídos","validation check {0}/{1} ({2}) failed: {3}; command: {4} — functional failures cannot be replaced by lint":"a verificação {0}/{1} ({2}) falhou: {3}; comando: {4} — falhas funcionais não podem ser substituídas por lint","auto-sync failed: {0}":"falha na sincronização automática: {0}","dashboard on http://localhost:{0} (run: {1}, auto-sync: {2})":"dashboard em http://localhost:{0} (execução: {1}, sincronização automática: {2})","port {0} is already in use — an earlier dashboard is likely still serving http://localhost:{1} (it follows CURRENT). To run a SECOND one: --port <other>{2}":"a porta {0} já está em uso — um dashboard anterior pode estar atendendo em http://localhost:{1} (acompanha CURRENT). Para abrir outro: --port <other>{2}","no run":"nenhuma execução","run \"{0}\" not found":"execução \"{0}\" não encontrada","not found":"não encontrado","Language":"Idioma","Select graph run":"Selecionar execução","layout: phase":"layout: fase","layout: depth":"layout: profundidade","fit to screen (0)":"ajustar à tela (0)","run metrics (r)":"métricas da execução (r)","fit":"ajustar","results":"resultados","orchestrator":"orquestrador","reviewer":"revisor","planner":"planejador","idle":"inativo","Legend":"Legenda","done":"concluído","running":"em execução","in review":"em revisão","reviewing":"em revisão","ready":"pronto para executar","ready_to_plan":"pronto para planejamento","ready for planning":"pronto para planejamento","planning":"em planejamento","ready for execution":"pronto para executar","waiting":"aguardando","failed":"falhou","blocked":"bloqueado","pending":"pendente","skipped":"pulado","unlocks next":"libera a próxima tarefa","dep crosses back a phase":"dependência retorna a uma fase","✓ = validated, awaiting done":"✓ = validado, aguardando conclusão","Running in parallel":"Executando em paralelo","nothing running":"nenhuma tarefa em execução","Failures & retries":"Falhas e novas tentativas","none":"nenhum","Event log":"Histórico de eventos","✋ waiting on you":"✋ aguardando sua decisão","✗ rejected":"✗ reprovado","✓ validated":"✓ validado","✗ rework":"✗ retrabalho","dispatching {0}/{1}":"coordenando {0}/{1}","judging {0}":"revisando {0}","planning {0}: {1}":"planejando {0}: {1}","complete":"concluído","orch":"orquestrador","orchestrator idle":"orquestrador inativo","Working":"Executando","review":"revisão","attempt(s)":"tentativa(s)","Phase":"Fase","Depends on":"Depende de","Unlocks":"Libera","Validation contract":"Contrato de validação","Planner":"Planejador","Recorded task plan":"Plano registrado da tarefa","Research":"Pesquisa","Decisions":"Decisões","Execution steps":"Passos de execução","Verification":"Verificação","Questions":"Perguntas","check {0}":"verificação {0}","blocking":"bloqueante","non-blocking":"não bloqueante","Planning attempts":"Tentativas de planejamento","Blocked":"Bloqueado","Skipped":"Pulado","Attempts":"Tentativas","Validations":"Validações","Notes":"Notas","FAILED":"REPROVADO","click the task to pin · moves away, closes":"clique na tarefa para fixar · afastar o cursor fecha","← graph":"← grafo","← back to the graph":"← voltar ao grafo","Wall clock":"Tempo decorrido","Agent time":"Tempo dos agentes","Parallel gain":"Ganho com paralelismo","Critical path":"Caminho crítico","Review share":"Parcela de revisão","Planning share":"Parcela de planejamento","Retries":"Novas tentativas","so far":"até agora","init → last task":"início → última tarefa","sum of recorded agent intervals":"soma dos intervalos registrados dos agentes","{0} executors + review headroom":"{0} executores + capacidade de revisão","{0} total agent slots":"{0} vagas de agentes no total","{0}% of wall clock":"{0}% do tempo decorrido","{0} verdicts · {1} rejected":"{0} pareceres · {1} reprovados","blocked {0}":"bloqueado por {0}","no human blocks":"sem bloqueios humanos","Agent time: building vs verifying":"Tempo dos agentes: executar e verificar","Agent time: planning, building and verifying":"Tempo dos agentes: planejar, executar e verificar","planning {0}":"planejamento {0}","exec {0}":"execução {0}","review {0}":"revisão {0}","Per task":"Por tarefa","Task":"Tarefa","Planning":"Planejamento","Exec":"Execução","Review":"Revisão","build vs verify":"executar e verificar","plan / execute / review":"planejar / executar / revisar","Queued":"Na fila","Att.":"Tent.","Verdicts":"Pareceres","gate only":"somente validação","What the numbers support":"O que os números mostram","Not enough finished work to say anything yet.":"Ainda não há trabalho concluído suficiente para analisar.","The dependency chain limits parallel progress.":"A cadeia de dependências limita o progresso paralelo.","Critical path: {0}; elapsed: {1}; share: {2}%. Chain: {3}.":"Caminho crítico: {0}; tempo decorrido: {1}; parcela: {2}%. Cadeia: {3}.","Inspect time outside the critical path.":"Confira o tempo fora do caminho crítico.","Elapsed: {0}; critical path: {1}; difference: {2}. Check queues, blocks and retries before changing capacity.":"Tempo decorrido: {0}; caminho crítico: {1}; diferença: {2}. Confira filas, bloqueios e tentativas antes de mudar a capacidade.","Review durations are similar.":"Os tempos de revisão são semelhantes.","Review durations vary across tasks.":"Os tempos de revisão variam entre as tarefas.","Mean review: {0}; variation: {1}%. Timing alone does not establish coverage or a cause.":"Revisão média: {0}; variação: {1}%. O tempo, isoladamente, não comprova cobertura ou causa.","Review outcomes":"Resultados das revisões","{0} rejections in {1} verdicts. Review used {2}% of agent time. Inspect the evidence before changing the review policy.":"{0} reprovações em {1} pareceres. A revisão usou {2}% do tempo dos agentes. Confira as evidências antes de mudar a política de revisão.","Derived from attempt timestamps and events. Tokens belong to the harness and are not measured by this engine.":"Derivado dos horários das tentativas e eventos. Tokens pertencem ao ambiente de agentes e não são medidos por este motor.","Run still active; figures may change.":"Execução ainda ativa; os números podem mudar.","start":"início","planned":"planejado","superseded":"substituído","validate":"validação","fail":"falha","retry":"nova tentativa","block":"bloqueio","unblock":"desbloqueio","skip":"pular","note":"nota","init":"inicialização","plan_sync":"sincronização do plano","contract_refresh":"atualização do contrato","contract_refreshed":"contrato atualizado","validation_started":"validação iniciada","block_updated":"bloqueio atualizado","No Prumo installations found; install an environment first":"Nenhuma instalação do Prumo encontrada; instale um ambiente primeiro","Invalid Prumo installation registry; existing installations were not changed":"Registro de instalações do Prumo inválido; as instalações existentes não foram alteradas","Invalid Prumo update request":"Solicitação de atualização do Prumo inválida","Prumo update was interrupted":"A atualização do Prumo foi interrompida","Update automatically selects installed environments; do not select a harness":"A atualização seleciona automaticamente os ambientes instalados; não selecione um ambiente","Updating {0} with Prumo {1}":"Atualizando {0} com Prumo {1}"}
 function createTranslator(dictionary, lang) {
   const templates = Object.entries(dictionary).filter(([key]) => /\{\d+\}/.test(key)).map(([key, translated]) => {
     const slots = []
@@ -470,8 +496,9 @@ function toggleLayout() {
   try { localStorage.setItem('graphLayout', LAYOUT) } catch { /* private mode */ }
   if (STATE) { render(STATE, EVENTS); fitView() }
 }
-const DOT = { done: '✓', running: '▸', reviewing: '⌕', ready: '·', waiting: '·', failed: '✕', blocked: '⛔', skipped: '–', pending: '·' }
-const ST_COLOR = { done: 'var(--done)', running: 'var(--running)', reviewing: 'var(--review)', ready: 'var(--ready)', waiting: 'var(--waiting)', failed: 'var(--failed)', blocked: 'var(--blocked)', skipped: 'var(--skipped)' }
+const DOT = { done: '✓', planning: '✎', running: '▸', reviewing: '⌕', ready_to_plan: '·', ready: '·', waiting: '·', failed: '✕', blocked: '⛔', skipped: '–', pending: '·' }
+const ST_COLOR = { done: 'var(--done)', planning: 'var(--planning)', running: 'var(--running)', reviewing: 'var(--review)', ready_to_plan: 'var(--ready-plan)', ready: 'var(--ready)', waiting: 'var(--waiting)', failed: 'var(--failed)', blocked: 'var(--blocked)', skipped: 'var(--skipped)' }
+const statusLabel = (state) => tr(({ ready_to_plan: 'ready for planning', ready: 'ready for execution' })[state] ?? state)
 
 async function tick(generation = TICK_GENERATION) {
   try {
@@ -492,7 +519,7 @@ async function tick(generation = TICK_GENERATION) {
   } // schedule after completion; never pile up slow or superseded requests
 }
 
-function eff(id) { return STATE.derived[id]?.effective ?? STATE.tasks[id].state }
+function eff(id) { return STATE.derived?.[id]?.effective ?? STATE.tasks[id].state }
 
 /** Transitive ancestors + descendants of a node — what "related to what" means here. */
 function lineage(id) {
@@ -597,7 +624,7 @@ function layout(tasks, mode) {
   for (const t of Object.values(tasks))
     pos[t.id] = { x: x[t.id], y: y0 + rowOf(t) * LANE_H + LANE_PAD }
   const maxRow = Math.max(...Object.values(tasks).map(rowOf))
-  const w = Math.max(...Object.values(x)) + NODE_W + PAD
+  const w = Math.max(Math.max(...Object.values(x)) + NODE_W + PAD, 3 * ORCH_W + 2 * 26 + 2 * PAD)
   const h = y0 + (maxRow + 1) * LANE_H + PAD
   return { pos, w, h, usePhase, lanes: usePhase ? phases : [], laneY0: y0 }
 }
@@ -634,37 +661,55 @@ function analyse(s, events) {
   const at = (x) => (x ? Date.parse(x) : null)
   const runStart = at(s.createdAt) ?? now
   const tasks = Object.values(s.tasks)
-  const live = (t) => t.state === 'running' || t.state === 'reviewing'
+  const live = (t) => ['planning', 'running', 'reviewing', 'blocked'].includes(t.state)
 
-  /* Blocked is the only span with no home in state.json — it lives as a pair of events.
-     An unclosed block is still running, so it is measured up to now. */
+  /* An execution remains paused while its planner researches a changed scope.
+     Keep the pause intervals; aggregate totals cannot remove overlapping planning. */
   const blocked = {}
   const openedAt = {}
   for (const e of events) {
-    if (e.type === 'task_block') openedAt[e.task] = at(e.at)
-    else if (e.type === 'task_unblock' && openedAt[e.task] != null) {
-      blocked[e.task] = (blocked[e.task] ?? 0) + (at(e.at) - openedAt[e.task])
+    if (e.type === 'task_block' || (e.type === 'task_planned' && e.state === 'blocked')) openedAt[e.task] ??= at(e.at)
+    else if (['task_unblock', 'task_skip', 'task_fail', 'task_done'].includes(e.type) && openedAt[e.task] != null) {
+      (blocked[e.task] ??= []).push([openedAt[e.task], at(e.at)])
       delete openedAt[e.task]
     }
   }
-  for (const [id, t0] of Object.entries(openedAt)) blocked[id] = (blocked[id] ?? 0) + (now - t0)
+  for (const [id, t0] of Object.entries(openedAt)) (blocked[id] ??= []).push([t0, now])
+  const outside = (start, end, intervals) => {
+    let duration = Math.max(0, end - start), cursor = start
+    for (const [from, to] of intervals) {
+      const until = Math.min(end, to)
+      duration -= Math.max(0, until - Math.max(cursor, from))
+      cursor = Math.max(cursor, until)
+    }
+    return duration
+  }
 
   /* Spread is measured over INDIVIDUAL reviews, not per-task totals: a task reviewed twice
      honestly cost twice, and counting it as one slow review would fake the very variance
      that distinguishes "the gate is a fixed toll" from "review scales with the task". */
   const reviewEach = []
   const per = tasks.map((t) => {
-    let exec = 0, review = 0
+    let exec = 0, review = 0, planning = 0
+    const planningIntervals = []
+    for (const a of t.planningAttempts ?? []) {
+      const st = at(a.startedAt)
+      const en = at(a.endedAt) ?? (t.state === 'planning' ? now : null)
+      if (st != null && en != null) { planning += Math.max(0, en - st); planningIntervals.push([st, en]) }
+    }
+    planningIntervals.sort((a, b) => a[0] - b[0])
+    const pauses = [...(blocked[t.id] ?? []), ...planningIntervals].sort((a, b) => a[0] - b[0])
     for (const a of t.attempts) {
       const st = at(a.startedAt)
       if (st == null) continue
       const rv = at(a.reviewStartedAt)
       const en = at(a.endedAt) ?? (live(t) ? now : null)
       const execEnd = rv ?? en
-      if (execEnd != null) exec += Math.max(0, execEnd - st)
+      if (execEnd != null) exec += outside(st, execEnd, pauses)
       if (rv != null && en != null) {
-        review += Math.max(0, en - rv)
-        reviewEach.push(Math.max(0, en - rv))
+        const duration = outside(rv, en, pauses)
+        review += duration
+        reviewEach.push(duration)
       }
     }
     /* A task became READY when its last dep finished — the engine stores no readyAt, but
@@ -674,27 +719,31 @@ function analyse(s, events) {
       const dep = s.tasks[d]
       return dep && dep.state === 'done' ? at(dep.attempts.at(-1)?.endedAt) : null
     })
-    const readyAt = t.deps.length === 0 ? runStart : depEnds.some((x) => x == null) ? null : Math.max(...depEnds)
+    const depsReadyAt = t.deps.length === 0 ? runStart : depEnds.some((x) => x == null) ? null : Math.max(...depEnds)
     const firstStart = at(t.attempts[0]?.startedAt)
+    const firstPlan = [...(t.planningHistory ?? []), t.taskPlan].filter((p) => p?.completedAt && at(p.completedAt) <= firstStart)
+      .sort((a, b) => at(a.completedAt) - at(b.completedAt)).at(-1)
+    const readyAt = t.planningRequired ? at(firstPlan?.completedAt) : depsReadyAt
     const queue = readyAt != null && firstStart != null ? Math.max(0, firstStart - readyAt) : null
     const verdicts = t.validations.filter((v) => v.by === 'review')
     return {
-      id: t.id, title: t.title, state: t.state, exec, review, queue,
-      blocked: blocked[t.id] ?? 0,
+      id: t.id, title: t.title, state: t.state, planning, exec, review, queue,
+      blocked: (blocked[t.id] ?? []).reduce((total, [from, to]) => total + outside(from, to, planningIntervals), 0),
       attempts: t.attempts.length,
       rejected: verdicts.filter((v) => !v.ok).length,
       approved: verdicts.filter((v) => v.ok).length,
       reviewed: verdicts.length > 0,
       skipsReview: (t.requireReview ?? s.plan.requireReview) === false,
-      agentTime: exec + review,
+      agentTime: planning + exec + review,
     }
   })
 
   const sum = (f) => per.reduce((n, p) => n + f(p), 0)
   const execTotal = sum((p) => p.exec)
   const reviewTotal = sum((p) => p.review)
-  const agentTotal = execTotal + reviewTotal
-  const lastEnd = Math.max(runStart, ...tasks.flatMap((t) => t.attempts.map((a) => at(a.endedAt) ?? 0)))
+  const planningTotal = sum((p) => p.planning)
+  const agentTotal = planningTotal + execTotal + reviewTotal
+  const lastEnd = Math.max(runStart, ...tasks.flatMap((t) => [...(t.planningAttempts ?? []), ...t.attempts].map((a) => at(a.endedAt) ?? 0)))
   const anyLive = tasks.some(live)
   const wall = (anyLive ? now : lastEnd) - runStart
 
@@ -726,7 +775,7 @@ function analyse(s, events) {
   const taskReviewMid = taskReviews.length ? taskReviews[Math.floor((taskReviews.length - 1) / 2)] : 0
 
   return {
-    per, execTotal, reviewTotal, agentTotal, wall,
+    per, planningTotal, execTotal, reviewTotal, agentTotal, wall,
     speedup: wall > 0 ? agentTotal / wall : 0,
     maxExec: s.plan.maxExecutors ?? 3,
     cap: s.plan.maxParallel ?? 4,
@@ -763,6 +812,18 @@ function fmtContract(v) {
   return steps.map((c) => c.run ? `<code>${esc(c.run)}</code>${c.expect ? ` → ${esc(c.expect)}` : ''}` : esc(JSON.stringify(c))).join('<br>')
 }
 
+function fmtTaskPlan(plan) {
+  if (!plan) return ''
+  const section = (title, items) => items?.length
+    ? `<dt>${esc(tr(title))}</dt><dd>${items.join('<br>')}</dd>` : ''
+  return `<dt>${esc(tr('Recorded task plan'))}</dt><dd>${esc(plan.planner)} · ${fmtTime(plan.completedAt)}</dd>`
+    + section('Research', plan.research?.map((r) => `<b>${esc(r.source)}</b> — ${esc(r.findings)}`))
+    + section('Decisions', plan.decisions?.map((d) => `${esc(d.question)} → ${esc(d.answer)}`))
+    + section('Execution steps', plan.steps?.map((step, i) => `${i + 1}. ${esc(step)}`))
+    + section('Verification', plan.verification?.map((v) => `${esc(v.criterion)} → ${esc(tr('check {0}', v.check))}`))
+    + section('Questions', plan.openQuestions?.map((q) => `${esc(q.question)}${q.answer ? ` → ${esc(q.answer)}` : ` (${esc(tr(q.blocking ? 'blocking' : 'non-blocking'))})`}`))
+}
+
 function render(s, events) {
   /* Anchor CSS animation phase to the page clock for elements RECREATED each render
      (orbit ring, typing dots, sidebar heartbeat): they start mid-cycle instead of at
@@ -775,10 +836,10 @@ function render(s, events) {
   const list = Object.values(tasks)
   const by = {}
   for (const t of list) by[eff(t.id)] = (by[eff(t.id)] ?? 0) + 1
-  $('#counts').innerHTML = ['running', 'reviewing', 'ready', 'waiting', 'blocked', 'failed', 'done', 'skipped']
+  $('#counts').innerHTML = ['ready_to_plan', 'planning', 'ready', 'running', 'reviewing', 'waiting', 'blocked', 'failed', 'done', 'skipped']
     .filter((k) => by[k]).map((k) => k === 'blocked'
       ? `<span class="ask"><span data-i18n="✋ waiting on you">✋ waiting on you</span> <b>${by[k]}</b></span>`
-      : `<span>${esc(tr(k))} <b>${by[k]}</b></span>`).join('')
+      : `<span style="color:${ST_COLOR[k]}">${esc(statusLabel(k))} <b>${by[k]}</b></span>`).join('')
 
   const { pos, w, h, usePhase, lanes, laneY0 } = layout(tasks, LAYOUT)
   const canvas = $('#canvas')
@@ -799,7 +860,9 @@ function render(s, events) {
     const p = pos[t.id]
     const sub2 = subState(t)
     const working = '<span class="work"><i></i><i></i><i></i></span>'
-    const sub = e === 'reviewing'
+    const sub = e === 'planning'
+      ? `<span class="ag">✎ @${esc(t.planner)}</span>${working}`
+      : e === 'reviewing'
       ? `<span class="ag">⌕ @${esc(t.reviewer)}</span>${sub2 === 'valfail' ? ' <span class="vbadge bad"><span data-i18n="✗ rejected">✗ rejected</span></span>' : working}`
       : e === 'running' && t.agent
       ? `<span class="ag">@${esc(t.agent)}</span>${sub2 === 'validated' ? ' <span class="vbadge ok"><span data-i18n="✓ validated">✓ validated</span></span>'
@@ -810,9 +873,9 @@ function render(s, events) {
       : esc(t.title)
     const retry = t.attempts.length > 1 ? ` ↻${t.attempts.length}` : ''
     const run = t.attempts.at(-1)
-    const clock = e === 'reviewing' ? run?.reviewStartedAt : e === 'running' ? run?.startedAt : null
+    const clock = e === 'planning' ? t.planningAttempts?.at(-1)?.startedAt : e === 'reviewing' ? run?.reviewStartedAt : e === 'running' ? run?.startedAt : null
     const elapsed = clock ? `<span class="elapsed">${fmtElapsed(clock)}</span>` : ''
-    return `<div class="node" data-st="${e}" data-sub="${sub2}" data-id="${esc(t.id)}" style="left:${p.x}px;top:${p.y}px" onclick="openTask('${jsq(t.id)}')">
+    return `<div class="node" data-st="${esc(e)}" data-sub="${sub2}" data-id="${esc(t.id)}" title="${esc(statusLabel(e))} · ${esc(t.title)}" aria-label="${esc(t.id)}: ${esc(statusLabel(e))}" style="left:${p.x}px;top:${p.y}px" onclick="openTask('${jsq(t.id)}')">
       ${elapsed}<span class="dot">${sub2 === 'validated' ? '✓' : DOT[e] ?? ''}</span>
       <span class="id">${esc(t.id)}<small style="color:var(--dim);font-weight:400"> ${esc(t.phase ?? '')}${retry}</small></span>
       <span class="sub">${sub}</span></div>`
@@ -823,8 +886,8 @@ function render(s, events) {
   // target, red = source failed, gray = idle. One path per edge so focus can light them.
   const svg = $('#edges')
   svg.setAttribute('width', w); svg.setAttribute('height', h)
-  if (!$('#edgeDefs').innerHTML) $('#edgeDefs').innerHTML = ['done', 'hot', 'next', 'failed', 'idle', 'back', 'dispatch', 'review'].map((k) => {
-    const c = { done: 'var(--done)', hot: 'var(--running)', next: 'var(--running)', failed: 'var(--failed)', idle: 'var(--line)', back: 'var(--blocked)', dispatch: 'var(--accent)', review: 'var(--review)' }[k]
+  if (!$('#edgeDefs').innerHTML) $('#edgeDefs').innerHTML = ['done', 'hot', 'next', 'failed', 'idle', 'back', 'dispatch', 'review', 'planning'].map((k) => {
+    const c = { done: 'var(--done)', hot: 'var(--running)', next: 'var(--running)', failed: 'var(--failed)', idle: 'var(--line)', back: 'var(--blocked)', dispatch: 'var(--accent)', review: 'var(--review)', planning: 'var(--planning)' }[k]
     return `<marker id="m-${k}" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto">
       <path d="M 0 1 L 7 4 L 0 7" fill="none" stroke="${c}" stroke-width="1.6" stroke-linejoin="round"/></marker>`
   }).join('')
@@ -867,14 +930,16 @@ function render(s, events) {
   // it is running — dispatch reads as descent, which is the direction of the whole graph
   const runningNow = list.filter((t) => eff(t.id) === 'running')
   const inReview = list.filter((t) => eff(t.id) === 'reviewing')
+  const planningNow = list.filter((t) => eff(t.id) === 'planning')
+  const busy = runningNow.length + inReview.length + planningNow.length
   const cx = w / 2, HUB_GAP = 26
-  const ox = cx - ORCH_W - HUB_GAP / 2, oy = PAD
+  const ox = cx - ORCH_W / 2, oy = PAD
   const on = $('#orchNode')
   on.style.left = `${ox}px`
   on.style.top = `${oy}px`
-  on.classList.toggle('live', runningNow.length > 0)
-  $('#orchSub').textContent = tr(runningNow.length
-    ? `dispatching ${runningNow.length}/${s.plan.maxParallel ?? 4}`
+  on.classList.toggle('live', busy > 0)
+  $('#orchSub').textContent = tr(busy
+    ? `dispatching ${busy}/${s.plan.maxParallel ?? 4}`
     : 'idle')
   const ocx = ox + ORCH_W / 2, ocy = oy + ORCH_H
   for (const t of runningNow) {
@@ -888,7 +953,21 @@ function render(s, events) {
   // DOWN and climbs back UP to be judged before it may proceed. Keeping the hubs off the
   // vertical axis matters — down that axis means PHASE ORDER, and a hub parked at the
   // bottom reads as "after every phase", which is not when review happens.
-  const rx = cx + HUB_GAP / 2, ry = PAD
+  const px = ox - ORCH_W - HUB_GAP
+  const pn = $('#planNode')
+  pn.style.left = `${px}px`
+  pn.style.top = `${PAD}px`
+  pn.classList.toggle('live', planningNow.length > 0)
+  $('#planSub').textContent = planningNow.length
+    ? tr('planning {0}: {1}', planningNow.length, planningNow.map((t) => t.id).join(', ')) : tr('idle')
+  for (const t of planningNow) {
+    const b = pos[t.id]
+    const x1 = px + ORCH_W / 2, y1 = PAD + ORCH_H
+    const x2 = b.x + NODE_W / 2, y2 = b.y - 4
+    const bend = Math.max(30, (y2 - y1) * 0.45)
+    edgesHtml += `<path class="e-planning" data-from="__plan" data-to="${esc(t.id)}" d="M ${x1} ${y1} C ${x1} ${y1 + bend}, ${x2} ${y2 - bend}, ${x2} ${y2}"/>`
+  }
+  const rx = ox + ORCH_W + HUB_GAP, ry = PAD
   const rn = $('#revNode')
   rn.style.left = `${rx}px`
   rn.style.top = `${ry}px`
@@ -919,7 +998,9 @@ function render(s, events) {
   const done = by.done ?? 0
   const scale = total ? 100 / total : 0
   $('#bar .seg-done').style.width = `${scale * done}%`
+  $('#bar .seg-plan').style.width = `${scale * (by.planning ?? 0)}%`
   $('#bar .seg-run').style.width = `${scale * (by.running ?? 0)}%`
+  $('#bar .seg-review').style.width = `${scale * (by.reviewing ?? 0)}%`
   $('#bar .seg-fail').style.width = `${scale * (by.failed ?? 0)}%`
   $('#doneCount').innerHTML = `<b>${Math.round(scale * done)}%</b> ${esc(tr('complete'))} · <b>${done}</b> ${esc(tr('done'))} / ${total}`
 
@@ -938,9 +1019,10 @@ function render(s, events) {
   // side panels — logs and run state only
   const running = list.filter((t) => eff(t.id) === 'running')
   const maxExec = s.plan.maxExecutors ?? 3
-  $('#parTitle').innerHTML = `${esc(tr('Working'))} <span style="color:${running.length >= maxExec ? 'var(--running)' : 'var(--dim)'}">${running.length}/${maxExec}</span> · ${esc(tr('review'))} <span style="color:${inReview.length ? 'var(--review)' : 'var(--dim)'}">${inReview.length}</span>`
-  $('#parallel').innerHTML = running.length || inReview.length
+  $('#parTitle').innerHTML = `${esc(tr('Planning'))} <span style="color:var(--planning)">${planningNow.length}</span> · ${esc(tr('Working'))} <span style="color:${running.length >= maxExec ? 'var(--running)' : 'var(--dim)'}">${running.length}/${maxExec}</span> · ${esc(tr('review'))} <span style="color:${inReview.length ? 'var(--review)' : 'var(--dim)'}">${inReview.length}</span>`
+  $('#parallel').innerHTML = busy
     ? [
+        ...planningNow.map((t) => `<span class="plan" onclick="openTask('${jsq(t.id)}')"><i class="sp plan"></i>${esc(t.id)} <span style="color:var(--planning)">✎ @${esc(t.planner)}</span></span>`),
         ...running.map((t) => `<span onclick="openTask('${jsq(t.id)}')"><i class="sp"></i>${esc(t.id)} <span style="color:var(--accent)">@${esc(t.agent)}</span></span>`),
         ...inReview.map((t) => `<span class="rev" onclick="openTask('${jsq(t.id)}')"><i class="sp rev"></i>${esc(t.id)} <span style="color:var(--review)">⌕ @${esc(t.reviewer)}</span></span>`),
       ].join('')
@@ -950,7 +1032,7 @@ function render(s, events) {
     ? bad.map((t) => `<div class="ev">${esc(t.id)} — ${t.attempts.length} ${esc(tr('attempt(s)'))}${t.attempts.at(-1)?.reason ? ` · ${esc(t.attempts.at(-1).reason)}` : ''}</div>`).join('')
     : '<span class="empty"><span data-i18n="none">none</span></span>'
   $('#events').innerHTML = events.slice().reverse().map((e) => {
-    const extra = e.reason ?? e.evidence ?? e.agent ?? e.text ?? ''
+    const extra = e.reason ?? e.evidence ?? e.planner ?? e.agent ?? e.text ?? ''
     return `<div class="ev"><span class="t-${esc(e.type)}"><time>${fmtTime(e.at)}</time><b>${esc(tr(e.type.replace('task_', '').replace('run_', '')))}</b> ${esc(e.task ?? '')} <span style="color:var(--dim)">${esc(String(extra).slice(0, 80))}</span></span></div>`
   }).join('')
 
@@ -1101,13 +1183,17 @@ function fillPop(id) {
   const depChip = (d) => `<span class="dep" onclick="openTask('${jsq(d)}')">${DOT[eff(d)] ?? ''} ${esc(d)}</span>`
   const dependents = Object.values(STATE.tasks).filter((x) => x.deps.includes(id)).map((x) => x.id)
   $('#popBody').innerHTML = `
-    <h2>${esc(t.id)} <span class="st" style="color:${c};border-color:${c}">${esc(tr(e))}${live}</span></h2>
+    <h2>${esc(t.id)} <span class="st" style="color:${c};border-color:${c}">${esc(statusLabel(e))}${live}</span></h2>
     <div style="color:var(--dim);font-size:12px;margin-top:4px">${esc(t.title)}</div>
     <dl>
       <dt><span data-i18n="Phase">Phase</span></dt><dd>${esc(t.phase ?? '—')}</dd>
       <dt><span data-i18n="Depends on">Depends on</span></dt><dd>${t.deps.map(depChip).join('') || '—'}</dd>
       <dt><span data-i18n="Unlocks">Unlocks</span></dt><dd>${dependents.map(depChip).join('') || '—'}</dd>
       <dt><span data-i18n="Validation contract">Validation contract</span></dt><dd>${fmtContract(t.validation)}</dd>
+      ${t.planner ? `<dt>${esc(tr('Planner'))}</dt><dd>@${esc(t.planner)}</dd>` : ''}
+      ${fmtTaskPlan(t.taskPlan)}
+      ${t.planningAttempts?.length ? `<dt>${esc(tr('Planning attempts'))}</dt><dd>${t.planningAttempts.map((a) =>
+        `<div class="att">#${a.n} @${esc(a.agent)} · ${fmtTime(a.startedAt)}${a.endedAt ? ` → ${fmtTime(a.endedAt)}` : ' (' + tr('planning') + ')'} ${esc(tr(a.result ?? ''))}</div>`).join('')}</dd>` : ''}
       ${t.blockReason ? `<dt><span data-i18n="Blocked">Blocked</span></dt><dd>${esc(t.blockReason)}</dd>` : ''}
       ${t.skipReason ? `<dt><span data-i18n="Skipped">Skipped</span></dt><dd>${esc(t.skipReason)}</dd>` : ''}
       <dt><span data-i18n="Attempts">Attempts</span></dt><dd>${t.attempts.map((a) =>
@@ -1153,13 +1239,13 @@ async function loadResults() {
 function renderResults(s) {
   const a = analyse(s, FULL_EVENTS)
   const pct = (n, d) => (d > 0 ? Math.round((100 * n) / d) : 0)
-  const bar = (l, r) => {
-    const lp = pct(l, l + r)
-    return `<span class="minibar"><i style="width:${lp}%;background:var(--running)"></i><i style="width:${100 - lp}%;background:var(--review)"></i></span>`
-  }
+  const bar = (p) => `<span class="minibar">${[['planning', p.planning], ['running', p.exec], ['review', p.review]]
+    .map(([color, value]) => `<i style="width:${pct(value, p.agentTime)}%;background:var(--${color})"></i>`).join('')}</span>`
   const tile = (k, v, sub) => `<div class="tile"><div class="k">${esc(tr(k))}</div><div class="v">${esc(v)}</div><div class="s">${esc(tr(sub ?? ''))}</div></div>`
 
   const execPct = pct(a.execTotal, a.agentTotal)
+  const planPct = pct(a.planningTotal, a.agentTotal)
+  const reviewPct = pct(a.reviewTotal, a.agentTotal)
   const ranked = a.per.filter((p) => p.agentTime > 0).sort((x, y) => y.agentTime - x.agentTime)
 
   // Describe observed timings; they do not prove defects, coverage or business scope.
@@ -1183,27 +1269,30 @@ function renderResults(s) {
     <div class="tiles">
       ${tile('Wall clock', fmtMs(a.wall), a.anyLive ? 'so far' : 'init → last task')}
       ${tile('Agent time', fmtMs(a.agentTotal), 'sum of recorded agent intervals')}
-      ${tile('Parallel gain', `${a.speedup.toFixed(2)}×`, `${a.maxExec} executors + review headroom`)}
+      ${tile('Parallel gain', `${a.speedup.toFixed(2)}×`, `${a.cap} total agent slots`)}
       ${tile('Critical path', fmtMs(a.cpLen), `${pct(a.cpLen, a.wall)}% of wall clock`)}
+      ${tile('Planning share', `${planPct}%`, fmtMs(a.planningTotal))}
       ${tile('Review share', `${pct(a.reviewTotal, a.agentTotal)}%`, `${a.reviews} verdicts · ${a.rejections} rejected`)}
       ${tile('Retries', String(a.retries), a.blockedTotal > 0 ? `blocked ${fmtMs(a.blockedTotal)}` : 'no human blocks')}
     </div>
 
-    <h3><span data-i18n="Agent time: building vs verifying">Agent time: building vs verifying</span></h3>
+    <h3><span data-i18n="Agent time: planning, building and verifying">Agent time: planning, building and verifying</span></h3>
     <div class="split">
+      <div style="width:${planPct}%;background:var(--planning)">${planPct >= 12 ? esc(tr(`planning ${fmtMs(a.planningTotal)}`)) : ''}</div>
       <div style="width:${execPct}%;background:var(--running)">${execPct >= 12 ? esc(tr(`exec ${fmtMs(a.execTotal)}`)) : ''}</div>
-      <div style="width:${100 - execPct}%;background:var(--review)">${100 - execPct >= 12 ? esc(tr(`review ${fmtMs(a.reviewTotal)}`)) : ''}</div>
+      <div style="width:${reviewPct}%;background:var(--review)">${reviewPct >= 12 ? esc(tr(`review ${fmtMs(a.reviewTotal)}`)) : ''}</div>
     </div>
 
     <h3><span data-i18n="Per task">Per task</span></h3>
     <table class="rtable">
-      <tr><th><span data-i18n="Task">Task</span></th><th class="num"><span data-i18n="Exec">Exec</span></th><th class="num"><span data-i18n="Review">Review</span></th><th><span data-i18n="build vs verify">build vs verify</span></th>
+      <tr><th><span data-i18n="Task">Task</span></th><th class="num"><span data-i18n="Planning">Planning</span></th><th class="num"><span data-i18n="Exec">Exec</span></th><th class="num"><span data-i18n="Review">Review</span></th><th><span data-i18n="plan / execute / review">plan / execute / review</span></th>
           <th class="num"><span data-i18n="Queued">Queued</span></th><th class="num"><span data-i18n="Blocked">Blocked</span></th><th class="num"><span data-i18n="Att.">Att.</span></th><th class="num"><span data-i18n="Verdicts">Verdicts</span></th></tr>
       ${ranked.map((p) => `<tr>
         <td class="tid" onclick="jumpTo('${jsq(p.id)}')">${esc(p.id)} <span style="color:var(--dim)">${esc((p.title ?? '').slice(0, 34))}</span></td>
+        <td class="num">${fmtMs(p.planning)}</td>
         <td class="num">${fmtMs(p.exec)}</td>
         <td class="num">${p.skipsReview ? '<span style="color:var(--dim)"><span data-i18n="gate only">gate only</span></span>' : fmtMs(p.review)}</td>
-        <td>${p.review > 0 ? bar(p.exec, p.review) : ''}</td>
+        <td>${bar(p)}</td>
         <td class="num">${p.queue == null ? '—' : fmtMs(p.queue)}</td>
         <td class="num">${p.blocked > 0 ? `<span style="color:var(--blocked)">${fmtMs(p.blocked)}</span>` : '—'}</td>
         <td class="num">${p.attempts > 1 ? `<span style="color:var(--running)">↻${p.attempts}</span>` : p.attempts}</td>

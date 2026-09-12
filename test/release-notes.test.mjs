@@ -8,11 +8,12 @@ const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.u
 test('current release has concise English update highlights with descriptive subtitles', () => {
   const notes = releaseNotes(version)
   assert.deepEqual(notes.map(section => section.title), [
-    'Fixed — Legacy run recovery',
-    'Fixed — Windows state persistence',
-    'Added — Executor alias and review guidance'
+    'Added — Per-task research and planning',
+    'Added — Planning visibility',
+    'Preserved — Existing work and independent review'
   ])
-  assert.ok(notes.flatMap(section => section.items).includes('Preserve terminal contracts during sync-plan and retry'))
+  assert.ok(notes.flatMap(section => section.items).includes('A dedicated planner researches each new task before execution'))
+  assert.ok(releaseNotes('1.1.2').flatMap(section => section.items).includes('Preserve terminal contracts during sync-plan and retry'))
   assert.deepEqual(releaseNotes(version, 'pt-BR'), notes)
   assert.deepEqual(releaseNotes('0.0.0'), [])
 })

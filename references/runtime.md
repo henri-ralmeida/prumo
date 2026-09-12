@@ -1,7 +1,7 @@
 # Prumo engine reference
 
 **A foreman for your task graph**: executes an approved plan as a DAG — dispatching parallel
-subagent executors, refusing to sign off any task a fresh reviewer has not inspected, and
+planners and executors, refusing to sign off any task a fresh reviewer has not inspected, and
 watching the whole site on a live dashboard.
 
 Install the skill and PO First for your environment; see the [installation guide](../README.md).
@@ -12,6 +12,8 @@ bunx @henri-ralmeida/prumo@latest install --claude
 
 ## What it does
 
+- **Research before execution** — a dedicated planner studies each new task after dependencies
+  deliver, records sources, decisions and execution steps, and resolves consequential questions.
 - **Parallel executors, capped** — independent tasks run at once; up to 3 executors out of
   4 total slots, so a finished task never waits for capacity to be reviewed.
 - **Author ≠ verifier, enforced** — every task is validated by a FRESH reviewer agent that
@@ -24,12 +26,12 @@ bunx @henri-ralmeida/prumo@latest install --claude
 - **Zero runtime dependencies** — Node.js 22+. State is plain JSON +
   append-only NDJSON in a central Prumo workspace outside project repositories.
 - **Tokens are spent only by agents** — the engine and the dashboard are plain Node
-  processes making no model calls. Executors and reviewers (subagents) are the cost; the
+  processes making no model calls. Planners, executors and reviewers (subagents) are the cost; the
   orchestrator adds a small constant overhead; watching the dashboard costs nothing.
 
 ## What you need before running it
 
-The skill executes, it never plans:
+The global scope must be approved before per-task research and execution:
 
 1. **An approved plan** in the engine's format
    (`$PRUMO_ROOT/.specs/graph/plans/<name>.plan.json` — tasks,
@@ -39,7 +41,7 @@ The skill executes, it never plans:
    and says so.
 2. **Node.js 22+** (no project dependencies to install).
 3. **An agent that can dispatch subagents** (e.g. Claude Code) to act as orchestrator,
-   executors and reviewers.
+   dedicated planners, executors and independent reviewers.
 
 After installing, fill in the **"Project overrides"** section of [SKILL.md](../SKILL.md) (or your
 project's agent rules file): the per-task validation gate, the commit policy, where the
@@ -122,7 +124,8 @@ plans live in the workspace's `.specs/graph/plans/`. Node.js 22+, zero runtime d
 
 ### Task contract
 
-Every field a planning skill needs to emit. Only `id` and `title` are required to initialize; passing review also requires a sufficient validation contract.
+Every field a global planning workflow needs to emit. Initialization requires `id`, `title`
+and a valid validation contract; the per-task planner refines execution without weakening that gate.
 
 | Field           | Type                          | Default   | Meaning                                                                                       |
 | --------------- | ----------------------------- | --------- | --------------------------------------------------------------------------------------------- |
@@ -240,7 +243,8 @@ For a genuinely rejected delivery whose approved contract also changes:
 2. Edit the approved plan, replacing superseded criteria rather than retaining contradictions.
 3. Run `sync-plan --plan <approved-plan.json>` while the task is `failed`. Inspect the task in
    `graph`: validation, dependencies and write scope must match before proceeding.
-4. Run `retry <task>`, then `start <task> --agent <executor>` and dispatch the actual harness agent.
+4. Run `retry <task>`. For tasks requiring planning, dispatch `plan-task`, research and record
+   `finish-planning`; then `start <task> --agent <executor>` with the actual executor dispatch.
 
 Use the selected `--run` on every call. `retry` does not reload a plan and refuses a failed
 task whose recorded contract differs from its approved source; synchronize and inspect first.
@@ -250,7 +254,7 @@ same attempt instead. Completed tasks need explicit follow-up work, not rewritte
 Prefer structured file editing. If a temporary program is needed for a large plan, verify its
 backup and exact diff and remove it afterward; it is not an engine command.
 
-Resume from persisted state rather than replaying the sequence. When `start`/`review` succeeded
+Resume from persisted state rather than replaying the sequence. When `plan-task`/`start`/`review` succeeded
 but native agent dispatch did not happen, complete that dispatch in the same attempt if authorized.
 Confirm the actual agent handle; if dispatch is unavailable or the user paused, block with the
 orchestration reason. Do not invent another failed implementation or claim an agent is running
@@ -263,14 +267,15 @@ the original phase. Completed/skipped tasks cannot be paused.
 
 | Command | Result |
 | --- | --- |
-| `unblock <task>` | Restores pending/running/reviewing/failed without adding an attempt. |
+| `unblock <task>` | Restores pending/planning/running/reviewing/failed without adding an attempt. |
 | `unblock <task> --reviewer <agent>` | Paused running/reviewing work goes directly to independent review in the same open attempt. |
 
 Resume reacquires capacity and checks dependencies and the active agent's availability.
-Direct review needs only a total slot, not an executor slot. Existing explicit --force scheduling
-overrides still apply; --force cannot manufacture an open attempt or an independent reviewer.
+Direct review needs only a total slot, not an executor slot. For tasks requiring planning,
+`--force` cannot bypass planning, dependencies, total capacity or concurrent agent uniqueness;
+the executor-quota override remains. It cannot manufacture an open attempt or a valid review.
 No command dispatches an agent. A rejected resume leaves the block reason and history intact.
-Resuming pending work still needs start; failed work still needs retry before another attempt.
+Resuming pending work still needs current planning before start when required; failed work still needs retry.
 
 A legacy blocked task without a recorded phase defaults to pending only if it has never started.
 Missing/invalid history on an existing attempt is refused rather than guessed. Inspect that
@@ -279,16 +284,83 @@ a completed receipt remains subject to the same attempt, reviewer and contract c
 
 Regression checks: `node --test scripts/validation.test.mjs`.
 
+### Task-plan artifact
+
+New tasks, including tasks added by `sync-plan` to old runs, receive `planningRequired: true`.
+Existing tasks without that marker keep their original lifecycle and history. Do not reset
+completed or active legacy work on upgrade. Planner metadata is generated by the engine, not
+an opt-out field in the source plan.
+
+After all dependencies are `done` or `skipped`, pair `plan-task T1 --agent <planner>` with a
+real dedicated native subagent. It researches the **current** code, artifacts and dependency
+outputs, checks relevant documentation and applies PO First. Reuse settled decisions; route
+unresolved consequential questions through the principal conversation and native question
+tools when available. Ordinary refinement needs no new approval. Material changes return to
+the user/global plan. The planner writes its designated JSON artifact; only the orchestrator
+records engine transitions. See [the planner assignment](../SKILL.md#per-task-research-and-planning).
+
+Example for a task with one executable validation check:
+
+```json
+{
+  "research": [{ "source": "src/import.mjs", "findings": "The existing importer validates each row before writing; reuse that boundary." }],
+  "decisions": [{ "question": "How should invalid rows behave?", "answer": "The approved contract requires rejection without partial writes." }],
+  "steps": ["Extend the existing importer validation.", "Add the missing invalid-row scenario to the existing behavioral check."],
+  "verification": [{ "criterion": "An invalid row produces the approved error and leaves stored records unchanged.", "check": 1 }],
+  "openQuestions": []
+}
+```
+
+`finish-planning T1 --plan <task-plan.json>` requires nonempty `research` (`source`, `findings`),
+`steps` (strings) and `verification` (`criterion`, `check`). Every validation-array entry must
+be mapped by its **1-based numeric index**; use `"inspection"` only for an approved prose
+inspection contract. `decisions` is an array of resolved `question`/`answer` pairs; it may be
+empty. `openQuestions` is an array of `question`, boolean `blocking` and optional `answer`;
+it may also be empty. An unanswered blocking question prevents completion. Never invent an
+answer or downgrade a consequential uncertainty to pass this check.
+
+The engine stores `taskPlan`, planner/timing/context metadata and planning history, then
+returns ordinary work to pending with effective `ready`. It verifies structure and recorded
+freshness, not source truth or agent identity. The executor must read and recheck the artifact;
+the fresh independent reviewer judges the delivery against approved objectives/current criteria
+and can reject flawed planning. Planning does not replace a behavioral gate.
+
+For tasks requiring planning, task, dependency or global-decision changes can invalidate research; `retry` also requires new
+research while retaining previous plans. If the execution scope changes during running/reviewing,
+block the work, synchronize the approved change, then dispatch `plan-task` on the blocked task.
+`finish-planning` returns it to **blocked**, preserving the original phase, reason and open
+execution attempt. Only explicit `unblock` resumes it; do not invent fail/retry to refresh
+planning. Validation-only `refresh-contract` remains possible within the same attempt and
+requires fresh validation. Receipts from the old planning scope cannot approve the new scope.
+
+### Effective states
+
+`pending` is stored; readiness is derived from dependencies and current planning.
+
+| Effective state | Meaning | Dashboard color |
+| --- | --- | --- |
+| `waiting` | Dependencies are incomplete | Gray |
+| `ready_to_plan` | Dependencies delivered; current task plan needed | Blue |
+| `planning` | Dedicated planner researching and preparing the task | Pink |
+| `ready` | Ready to execute with a current plan, or original legacy readiness | Teal |
+| `running` | Executor working | Amber |
+| `reviewing` | Independent reviewer working | Cyan |
+| `done` | Accepted delivery | Green |
+| `failed` | Rejected attempt | Red |
+| `blocked` | Paused pending a decision or another impediment | Purple |
+| `skipped` | Explicitly skipped | Gray |
+
 **Tuning parallelism.** `maxExecutors` (default 3) caps agents WRITING at once;
-`maxParallel` (default 4) caps total busy agents (running + reviewing). The defaults are a
+`maxParallel` (default 4) caps total busy agents (planning + running + reviewing). Planning
+does not consume an executor slot or execution attempt. The defaults are a
 safe floor, not a law — a bigger machine and a wide plan can run 6+8 or more. Two things to
 know when raising them: keep `maxExecutors` strictly below `maxParallel` (that headroom is
 what keeps review permanently unblockable — the engine's core property), and remember the
 real ceiling is usually elsewhere: the plan's dep width, your API rate limits, and token
 burn scale with every extra executor.
 
-`deps` is the whole scheduling model: a task is **ready** when every dep is `done` or
-`skipped`. Serialization (e.g. migrations must never run in parallel) is expressed as a dep
+`deps` orders the work: a new task is **ready to plan** when every dep is `done` or
+`skipped`, then **ready to execute** after current planning. Serialization is expressed as a dep
 chain, not as engine logic.
 
 A task is **isolated in space, ordered in time**: it must never share a file with a task that
@@ -303,6 +375,9 @@ PRUMO_ROOT="$PRUMO_HOME/my-workspace"
 mkdir -p "$PRUMO_ROOT/.specs/graph/plans" && export PRUMO_ROOT
 node .claude/skills/prumo/scripts/engine.mjs init --plan "$PRUMO_ROOT/.specs/graph/plans/x.plan.json" --run x-01
 node .claude/skills/prumo/scripts/engine.mjs ready                 # what can start now
+node .claude/skills/prumo/scripts/engine.mjs plan-task T1 --agent plan-server  # dispatch native planner
+# Planner researches current context and writes this artifact; resolve blocking questions first.
+node .claude/skills/prumo/scripts/engine.mjs finish-planning T1 --plan <task-plan.json>
 node .claude/skills/prumo/scripts/engine.mjs start T1 --agent ag-server      # max 3 executors
 node .claude/skills/prumo/scripts/engine.mjs review T1 --agent rev-server    # hand to a fresh reviewer
 node .claude/skills/prumo/scripts/engine.mjs validate T1 --ok --evidence "reviewed the 3 behavior cases" --cwd <absolute-project>
@@ -319,13 +394,14 @@ Rules the engine enforces (everything else is the orchestrator's judgment):
   this the run would init fine and deadlock in silence — every task on the cycle waiting for
   the others forever, and `ready` never listing them.
 
-- `start` refuses a task whose deps are not met (override: `--force`).
+- `plan-task` and `start` require complete dependencies; new tasks also require current planning
+  before `start`. `--force` cannot bypass these requirements for tasks requiring planning.
 - `start` refuses past `maxExecutors` (default **3**) and past `maxParallel` (default **4**)
-  total busy agents (`running` + `reviewing`). `review` itself is never capacity-checked — it
+  total busy agents (`planning` + `running` + `reviewing`). `review` itself is never capacity-checked — it
   is a role handoff on a slot the task already holds — so a finished task is always judged
   immediately, and any number of reviews run in parallel. Executors are capped below the total
   on purpose: that headroom is what keeps review unblockable.
-- Both refuse an `--agent` name already busy on another task: **one agent, one task**. A label
+- Planning, execution and review refuse an agent already busy on another task: **one agent, one task**. A label
   on two concurrent tasks means either a mislabelled dispatch or one agent doing both — and
   then the parallelism is a fiction the graph would happily record as real.
 - `review` refuses a reviewer that authored the task, and `done` refuses a validation recorded
@@ -369,13 +445,10 @@ run would cross every card between the two), and a dep whose source sits in a LA
 routed around the SIDE in its own colour — that one means the phase numbering hides a real
 ordering constraint, worth seeing rather than smoothing over.
 
-The **orchestrator** and the **reviewer** sit side by side above the graph: dispatch fans DOWN
-from the orchestrator, and a task under review sends its line back UP to the reviewer — it must
-climb back and be judged before anything below it proceeds. The reviewer deliberately does NOT
-sit at the bottom: down the vertical axis means phase order, and a hub parked there reads as
-"review happens after every phase", when it happens at the end of every TASK. Neither hub is
-placed in the middle with the graph around it — the moment the graph encircles a hub, "before
-and after" is gone, and that ordering is the one thing the graph exists to show.
+The **planner**, **orchestrator** and **reviewer** sit above the graph, with role connections
+to their active tasks. Task details show the planner, sources/findings, decisions, execution
+steps, verification mapping and open questions. Labels and distinct colors separate ready to
+plan, in planning and ready to execute without replacing existing states.
 
 ### Navigating
 
@@ -398,14 +471,15 @@ it is DERIVED from the attempt timestamps and events the engine already records 
 collection, no engine involvement, and nothing it cannot derive is estimated:
 
 - **Wall clock vs agent time**, and the parallel gain between them (agent time ÷ wall clock).
-- **Build vs verify** — how the agent time split between executors and reviewers. This is the
+- **Plan vs build vs verify** — agent time split between planners, executors and reviewers;
+  planning time excludes paused intervals. This is the
   cost question: reviewing is a real share of the bill, and it is only visible as a share.
 - **Critical path** vs wall clock. The longest chain of dependent work is the floor no number
   of executors can go under, so this is what separates "add agents" from "restructure the
   plan" — if the path is ~all of the wall clock, more executors buy nothing.
 - **Slots busy over the run**, sampled, with the executor cap drawn in — where the graph ran
   wide and where it ran on one thread.
-- **Per task**: exec, review, time queued waiting on deps, time blocked on the dev, attempts
+- **Per task**: planning, exec, review, time queued waiting on deps, time blocked on the dev, attempts
   and verdicts.
 - **What the numbers support** — findings stated with their evidence, not advice: whether
   review cost is FIXED across tasks (the signature of running the whole suite per task,

@@ -54,7 +54,18 @@ function fixture(t, task = {}, planOptions = {}, { init = true } = {}) {
     ok('start', 'T1', '--agent', 'executor')
     ok('review', 'T1', '--agent', 'reviewer')
   }
-  if (init) ok('init', '--plan', planPath, '--run', 'regression')
+  if (init) {
+    ok('init', '--plan', planPath, '--run', 'regression')
+    // These regressions exercise pre-1.3 active runs; planner gates have their own CLI suite.
+    const legacy = state()
+    for (const task of Object.values(legacy.tasks)) {
+      delete task.planningRequired
+      delete task.planner
+      delete task.planningAttempts
+      delete task.planningHistory
+    }
+    save(legacy)
+  }
   const events = () => readFileSync(join(root, '.specs/graph/regression/events.ndjson'), 'utf8').trim().split('\n').map(JSON.parse)
   return { cli, ok, rejected, state, save, project, validate, beginReview, options, plan, planPath, events }
 }

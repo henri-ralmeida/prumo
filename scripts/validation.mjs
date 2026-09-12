@@ -49,6 +49,84 @@ export function validationContract(task) {
   return { mode, steps, key: JSON.stringify([mode, task.inspectionReason ?? '', task.validation]) }
 }
 
+// Evidence is supplied by the planner; this gate checks completeness, not the truth of research.
+export function assertTaskPlan(task, plan) {
+  insist(plan && typeof plan === 'object' && !Array.isArray(plan), 'task plan must be a JSON object')
+  insist(Array.isArray(plan.research) && plan.research.length > 0 &&
+    plan.research.every(item => item && nonempty(item.source) && nonempty(item.findings)),
+  'task plan research needs nonempty source and findings for each entry')
+  insist(Array.isArray(plan.decisions) && plan.decisions.every(item => item && nonempty(item.question) && nonempty(item.answer)),
+    'task plan decisions must contain resolved question and answer entries; use [] when none are needed')
+  insist(Array.isArray(plan.steps) && plan.steps.length > 0 && plan.steps.every(nonempty),
+    'task plan needs nonempty execution steps')
+  const contract = validationContract(task)
+  const checks = contract.steps.length ? contract.steps.map((_, index) => index + 1) : ['inspection']
+  insist(Array.isArray(plan.verification) && plan.verification.length > 0 &&
+    plan.verification.every(item => item && nonempty(item.criterion) && checks.includes(item.check)) &&
+    checks.every(check => plan.verification.some(item => item.check === check)),
+  'task plan verification must map observable criteria to every validation check (1-based index, or "inspection")')
+  insist(Array.isArray(plan.openQuestions) && plan.openQuestions.every(item => item &&
+    nonempty(item.question) && typeof item.blocking === 'boolean' &&
+    (item.answer === undefined || nonempty(item.answer))),
+  'task plan openQuestions must contain question, blocking boolean and optional nonempty answer')
+  insist(plan.openQuestions.every(item => !item.blocking || nonempty(item.answer)),
+    'task plan has unanswered blocking questions; resolve them with the user before execution')
+}
+
+export function planTaskFromState(t) {
+  return {
+    id: t.id,
+    phase: t.phase,
+    title: t.title,
+    deps: t.deps,
+    validation: t.validation,
+    validationMode: t.validationMode,
+    inspectionReason: t.inspectionReason,
+    requireReview: t.requireReview,
+    maxAttempts: t.maxAttempts,
+    tags: t.tags,
+    touches: t.touches,
+  }
+}
+
+// Shared by the engine and read-only dashboard: readiness must use exactly the same evidence.
+export function planningContext(state, task, {
+  scopeOnly = false, attempt = task.attempts.length + (task.planningReturn ? 0 : 1),
+} = {}) {
+  const dependencies = new Set()
+  const visit = id => {
+    if (dependencies.has(id)) return
+    dependencies.add(id)
+    for (const dep of state.tasks[id]?.deps ?? []) visit(dep)
+  }
+  task.deps.forEach(visit)
+  const contract = t => [planTaskFromState(t), t.contractRevision ?? 0, t.planningRevision ?? 0]
+  const { validation, validationMode, inspectionReason, ...scope } = planTaskFromState(task)
+  return createHash('sha256').update(JSON.stringify([
+    state.plan.name, state.plan.description, state.plan.requireReview, state.plan.planningRevision ?? 0,
+    scopeOnly ? [scope, task.scopeRevision ?? 0] : contract(task), attempt,
+    [...dependencies].sort().map(id => {
+      const dep = state.tasks[id]
+      return dep ? [id, contract(dep), dep.state, dep.attempts, dep.validations, dep.skipReason] : [id, null]
+    }),
+  ])).digest('hex')
+}
+
+export function hasCurrentTaskPlan(state, task) {
+  if (!task.planningRequired) return true
+  try { assertTaskPlan(task, task.taskPlan) } catch { return false }
+  return hasCurrentTaskScope(state, task, task.attempts.length + 1) &&
+    task.taskPlan.context === planningContext(state, task) && task.taskPlan.attempt === task.attempts.length + 1
+}
+
+// Validation-only refreshes do not invalidate the research behind an active execution attempt.
+export function hasCurrentTaskScope(state, task, attempt = task.attempts.length) {
+  if (!task.planningRequired) return true
+  const plan = task.taskPlan
+  return nonempty(plan?.planner) && nonempty(plan.completedAt) && plan.attempt === attempt &&
+    plan.scope === planningContext(state, task, { scopeOnly: true, attempt })
+}
+
 function execute(run, options, timeoutMs) {
   return new Promise((resolve) => {
     const child = spawn(run, { ...options, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' })

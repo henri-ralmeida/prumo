@@ -1,5 +1,24 @@
 # Changelog / Histórico
 
+## 1.2.0 — 2026-09-12
+
+### Added — Per-task research and planning
+
+- Require a dedicated native planner for every new task after dependencies deliver and before execution. Apply PO First to current research, consequential questions, recorded decisions and task-specific execution plans without repeating global approval for ordinary refinement.
+- Add `plan-task` and `finish-planning`, with structured sources/findings, decisions, steps, verification mappings and resolved blocking questions. Planning shares total agent capacity and does not consume an execution attempt.
+
+### Added — Planning visibility
+
+- Distinguish blue **ready to plan**, pink **in planning** and teal **ready to execute** in English and Brazilian Portuguese.
+- Show a planner hub, role connections, task-plan details and planning time excluding pauses; retain all existing task states.
+- Give the native run selector and its options explicit dark-theme colors to keep their text readable.
+
+### Preserved — Existing work and independent review
+
+- Preserve legacy tasks and history; tasks added to old runs require planning. Retry needs current research while retaining previous plans and receipts.
+- Replan approved scope changes on paused active work, return it to blocked and explicitly resume the same attempt. Validation-only refresh still preserves execution.
+- Keep independent review and behavioral gates. The engine checks structural evidence and context freshness; it does not certify research quality or real model dispatch.
+
 ## 1.1.2
 
 ### Fixed — Legacy run recovery

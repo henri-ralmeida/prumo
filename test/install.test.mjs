@@ -233,7 +233,14 @@ test('overlay migrates the legacy skill, preserves run data and supports complet
   const planPath = join(root, 'approved.json')
   put(planPath, { name: 'legacy', tasks: [{ id: 'T1', title: 'Keep my scope', validationMode: 'inspection', inspectionReason: 'Documentation', validation: 'Inspect document' }] })
   const env = { ...process.env, PRUMO_HOME: central, PRUMO_ROOT: root, PRUMO_LANG: 'en' }
-  for (const args of [['init', '--plan', planPath, '--run', 'legacy'], ['start', 'T1', '--agent', 'original'], ['block', 'T1', '--reason', 'User pause']]) {
+  const taskPlan = join(root, 'task-plan.json')
+  put(taskPlan, {
+    research: [{ source: 'approved.json', findings: 'Documentation-only task with an approved inspection contract.' }],
+    decisions: [], steps: ['Inspect the document against its approved scope.'],
+    verification: [{ criterion: 'Document matches the approved scope.', check: 'inspection' }], openQuestions: [],
+  })
+  for (const args of [['init', '--plan', planPath, '--run', 'legacy'], ['plan-task', 'T1', '--agent', 'planner'],
+    ['finish-planning', 'T1', '--plan', taskPlan], ['start', 'T1', '--agent', 'original'], ['block', 'T1', '--reason', 'User pause']]) {
     const result = spawnSync(process.execPath, [join(source, 'scripts', 'engine.mjs'), ...args], { env, encoding: 'utf8' })
     assert.equal(result.status, 0, result.stderr)
   }
@@ -398,7 +405,17 @@ test('an in-flight validation finishes across overlay without a new attempt or s
   put(join(f.cwd, 'verify.cjs'), "const fs=require('node:fs'); fs.writeFileSync('started','yes'); const timer=setInterval(()=>{if(fs.existsSync('continue')){clearInterval(timer); console.log('behavior verified');}},30); setTimeout(()=>process.exit(2),15000).unref();")
   const plan = join(root, 'plan.json')
   put(plan, { name: 'active', tasks: [{ id: 'T1', title: 'Active work', validation: [{ kind: 'functional', run: 'node verify.cjs', expect: 'behavior verified' }] }] })
-  for (const args of [['init', '--plan', plan, '--run', 'active'], ['start', 'T1', '--agent', 'executor'], ['review', 'T1', '--agent', 'reviewer']]) assert.equal(cli(args).status, 0)
+  const taskPlan = join(root, 'task-plan.json')
+  put(taskPlan, {
+    research: [{ source: 'verify.cjs', findings: 'Signals startup and waits for the continuation file before reporting verification.' }],
+    decisions: [], steps: ['Preserve the running verification while overlaying the installed skill.'],
+    verification: [{ criterion: 'The verification completes across installation in the same attempt.', check: 1 }], openQuestions: [],
+  })
+  for (const args of [['init', '--plan', plan, '--run', 'active'], ['plan-task', 'T1', '--agent', 'planner'],
+    ['finish-planning', 'T1', '--plan', taskPlan], ['start', 'T1', '--agent', 'executor'], ['review', 'T1', '--agent', 'reviewer']]) {
+    const result = cli(args)
+    assert.equal(result.status, 0, result.stdout + result.stderr)
+  }
   const child = spawn(process.execPath, [engine, 'validate', 'T1', '--ok', '--evidence', 'Executed observable verification', '--cwd', f.cwd], { env, cwd: f.cwd, stdio: ['ignore', 'pipe', 'pipe'] })
   let output = ''
   child.stdout.on('data', value => { output += value })
@@ -418,5 +435,7 @@ test('an in-flight validation finishes across overlay without a new attempt or s
   assert.equal(done.status, 0, done.stderr)
   const state = JSON.parse(read(statePath))
   assert.equal(state.tasks.T1.attempts.length, 1)
+  assert.equal(state.tasks.T1.planningHistory.length, 1)
+  assert.equal(state.tasks.T1.taskPlan.planner, 'planner')
   assert.equal(state.tasks.T1.state, 'done')
 })

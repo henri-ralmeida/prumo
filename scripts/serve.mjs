@@ -18,6 +18,7 @@ const ENGINE = join(HERE, 'engine.mjs')
 
 import { findRoot, storageHome, graphRoots as listRoots } from './storage.mjs'
 import { language, localizeDashboard, log, errorLog, tr } from './i18n.mjs'
+import { hasCurrentTaskPlan } from './validation.mjs'
 
 let ROOT
 try { ROOT = findRoot() } catch (error) { errorLog('[prumo] ERROR: ' + error.message); process.exit(1) }
@@ -128,7 +129,7 @@ function derive(state) {
         const dep = state.tasks[d]
         return !dep || (dep.state !== 'done' && dep.state !== 'skipped')
       })
-      effective = blockedBy.length === 0 ? 'ready' : 'waiting'
+      effective = blockedBy.length ? 'waiting' : hasCurrentTaskPlan(state, t) ? 'ready' : 'ready_to_plan'
     }
     out[id] = { effective, blockedBy }
   }
