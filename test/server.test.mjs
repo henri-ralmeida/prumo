@@ -33,7 +33,7 @@ test('dashboard selects legacy and central data without writes or translation of
     phases: ['PLAN', 'ACTIVE', 'EXEC', 'WAIT'].map(id => ({ id: `F_${id}`, title: id })),
     tasks: ['PLAN', 'ACTIVE', 'EXEC', 'WAIT'].map(id => ({
     phase: `F_${id}`,
-    id, title: id, deps: id === 'WAIT' ? ['PLAN'] : [], validationMode: 'inspection',
+    id, title: id, deps: id === 'PLAN' ? ['ACTIVE'] : id === 'ACTIVE' ? ['EXEC'] : id === 'WAIT' ? ['PLAN'] : [], validationMode: 'inspection',
     inspectionReason: 'Server fixture contains no runtime changes', validation: 'Inspect fixture states',
   })) }))
   const command = (...args) => execFileSync(process.execPath, [engine, ...args], { cwd: root, env: environment, windowsHide: true, encoding: 'utf8' })

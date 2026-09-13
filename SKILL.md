@@ -107,11 +107,18 @@ node $ENGINE init --plan "$PRUMO_ROOT/.specs/graph/plans/<name>.plan.json" --run
 prumo dashboard enable  # http://localhost:4949 — per-user background service
 ```
 
-The global dashboard only observes; it never synchronizes a plan. When an approved plan changes, the
-orchestrator explicitly runs `engine.mjs sync-plan --plan <approved-plan>` through the run lock: new tasks
-are added, pending/failed/blocked task contracts are refreshed, and active/done task history is preserved. Task removal is refused.
-If a preserved task differs, sync-plan reports it; an approved validation change for active
-work needs refresh-contract, not fail/retry. Always check the persisted task before review.
+The global dashboard only observes; it never synchronizes a plan. Before `init`, `sync-plan` or resuming
+an existing run, inspect the approved source and persisted graph for legacy contracts. Normalize every
+nonterminal prose or obsolete validation into the current executable validation schema using repository
+evidence, restore declared phase order and membership from the approved plan structure, preserve task IDs,
+dependencies, scope and history, then run `sync-plan` on the same run
+and inspect the persisted result. Do not create an auxiliary run to avoid adapting old tasks. Ask in the
+principal discussion only when a consequential contract meaning cannot be established from the repository.
+
+`sync-plan` adds new tasks, refreshes pending/failed/blocked contracts and preserves active/done history.
+Task removal is refused. Adopt a migrated task-scoped run one eligible phase at a time with
+`begin-phase-discussion <phase> --adopt-legacy`. An approved validation change for active work needs
+`refresh-contract`, not fail/retry. Always check the persisted task before review.
 
 On Windows, use PowerShell environment assignment ($env:PRUMO_ROOT) and quoted paths instead of POSIX shell syntax. Start background helpers hidden. Keep the actual working directory in the approved validation step; do not translate or rewrite its commands.
 
@@ -147,8 +154,12 @@ node $ENGINE done T4
 ### Two planning levels
 
 Global Plan/Spec mode defines and approves the graph. For new phased runs, each phase follows
-**one discussion → one read-only planner → separate immutable plans per task**. Discussion and planning
-may happen before member dependencies deliver; the task DAG alone decides when each executor can start.
+**one discussion → one read-only planner → separate immutable plans per task**. Process phases in declared
+order: a later phase cannot begin discussion or planning until every task in each earlier phase is
+`done` or `skipped`. The only exception is a later phase reached through a direct or transitive dependency
+of a nonterminal earlier task; discuss and plan that whole provider phase early, while its evidence remains
+an unresolved input until independently validated. Member dependencies never delay their own phase
+discussion or planning; the task DAG decides when each executor can start.
 
 Before dispatching the planner, the orchestrator runs an agnostic discovery protocol in the principal
 Codex, Claude Code or Kiro conversation. Load the global plan, settled decisions and dependency outputs;
@@ -378,9 +389,13 @@ Keep validation proportional to the approved task. A reviewer can run missing ve
 on delivered work in the current attempt. Existing artifacts help the review; an executor's
 report alone is still not approval.
 
-For a legacy graph-foreman run, preserve state and history. If a pending task has an invalid
-functional contract, `start` refuses dispatch; correct the approved source and run `sync-plan`.
-If work is already running or reviewing, keep the attempt and use `refresh-contract` below.
+For a legacy graph-foreman run, adaptation is mandatory before new dispatch. Inspect each nonterminal
+task, translate old prose validation into current executable checks supported by repository evidence,
+update the approved source, and run `sync-plan` against the original run. Preserve IDs, dependency edges,
+phase membership, delivered history and existing attempts; never edit `state.json` or migrate only the
+currently blocked task. If work is already running or reviewing, keep the attempt and use
+`refresh-contract` below. If the old wording leaves a consequential meaning unresolved, settle only that
+point in the principal discussion, then complete the migration instead of abandoning it.
 
 After adapting the approved plan, use:
 

@@ -1,4 +1,10 @@
 {
+  "1.3.1": {
+    "en": [
+      { "title": "Fixed — Sequential phase planning", "items": ["Open phases in declared order after earlier work is terminal", "Allow a later provider phase early only for direct or transitive dependency inputs"] },
+      { "title": "Improved — Legacy run adoption", "items": ["Normalize every nonterminal legacy contract before sync-plan", "Preserve the original run and adopt eligible phases without auxiliary migration runs"] }
+    ]
+  },
   "1.3.0": {
     "en": [
       { "title": "Added — Automatic global dashboard", "items": ["Start the read-only dashboard after global npm installation", "Manage per-user startup with dashboard enable, disable and status commands", "Keep Task Scheduler primary on Windows and fall back to one hidden current-user Startup entry without administrator access"] },

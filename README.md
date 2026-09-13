@@ -129,7 +129,7 @@ No manual data migration is required. Finish sessions that are actively loading 
 The backup includes a restore command:
 
 ```sh
-bunx @henri-ralmeida/prumo@1.3.0 restore "<backup-directory>"
+bunx @henri-ralmeida/prumo@1.3.1 restore "<backup-directory>"
 ```
 
 Restore refuses to overwrite files edited since installation. Plans keep their current state: reverting an installation must not erase ongoing work. Maintain your own business-data backups; the installer does not take a consistent snapshot of every live plan.
@@ -140,9 +140,9 @@ An enabled dashboard is restarted after installation or update so it serves the 
 
 Present and approve the global plan in Plan/Spec mode in your AI harness. If that mode blocks writes or agent dispatch, leave it after approval. Then invoke `/prumo <plan-or-run>` in Claude Code or Kiro, or `$prumo` in Codex. The engine records dispatches; the harness creates agents. If dedicated planners, executors or independent reviewers are unavailable, the workflow must report that limitation.
 
-In **1.3.0**, planning has two levels. Global Plan/Spec mode defines and approves the graph. Each phase then follows **discuss → plan → execute → review**: the orchestrator first records the phase as discussing, researches it and asks at least one contextual question in the principal conversation. When consequential gray areas are closed, one dedicated read-only planner searches and reads the current project, then writes one separate immutable `task-plan-<id>.json` for every task in that phase. The planner does not edit product files or graph state.
+In **1.3.1**, planning has two levels. Global Plan/Spec mode defines and approves the graph. Each phase then follows **discuss → plan → execute → review**: the orchestrator first records the phase as discussing, researches it and asks at least one contextual question in the principal conversation. When consequential gray areas are closed, one dedicated read-only planner searches and reads the current project, then writes one separate immutable `task-plan-<id>.json` for every task in that phase. The planner does not edit product files or graph state.
 
-Phase discussion and planning can happen before member dependencies are complete. The task DAG remains the execution authority: each executor starts only when its own inputs are ready, and a fresh independent reviewer checks its result. An earlier task that depends on a later phase records that input as unresolved. The producer's current passing validation receipt, or an explicit skip waiver, satisfies it at execution time without rewriting a sound plan.
+Phases are discussed and planned in declared order; the next phase opens only after every earlier task is done or skipped. A later provider phase may open early only when a nonterminal earlier task reaches it through a direct or transitive dependency. That whole provider phase is planned once, and its evidence remains unresolved until independently validated. Task dependencies gate executors, not discussion or planning inside the eligible phase.
 
 Resolve `$ENGINE` to `scripts/engine.mjs` inside the installed Prumo skill. The complete phase handoff is:
 
@@ -167,7 +167,7 @@ node "$ENGINE" review T1 --agent reviewer-T1
 
 Discovery uses the host's native question UI when available and a structured principal-chat fallback otherwise. It records light research, real answers, PO First coverage, decisions, deferred ideas and why no consequential gray area remains. The planner consumes it without repeating the discussion. Material changes to scope, contract or shared phase decisions require fresh discussion/planning for the affected work; a reviewer-marked plan defect replans only that task. Ordinary executor findings and corrective retries reuse a sound, current immutable plan.
 
-Existing task-scoped runs retain their lifecycle and history. A compatible pre-execution phase can opt in with `begin-phase-discussion <phase> --adopt-legacy`; unsafe adoption is refused atomically. See the [phase planning artifact and recovery rules](references/runtime.md#task-plan-artifact).
+Existing task-scoped runs retain their lifecycle and history. Before continuing them, Prumo's skill inspects and normalizes every nonterminal legacy contract in the approved source, synchronizes the original run, then adopts eligible phases in order with `begin-phase-discussion <phase> --adopt-legacy`. It never creates a second run to avoid migration; unsafe adoption is refused atomically. See the [phase planning artifact and recovery rules](references/runtime.md#task-plan-artifact).
 
 For new work, select a central workspace. On macOS/Linux:
 
