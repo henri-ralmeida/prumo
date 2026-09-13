@@ -15,7 +15,7 @@ const DISCOVERY_AREAS = [
   'problem', 'affected', 'outcome', 'currentBehavior', 'desiredBehavior',
   'rules', 'exceptions', 'scope', 'acceptance',
 ]
-const DISCOVERY_FIELDS = ['research', 'questions', 'coverage', 'decisions', 'deferred', 'closure']
+const DISCOVERY_FIELDS = ['research', 'questions', 'coverage', 'decisions', 'deferred', 'closure', 'roundId', 'nonce']
 const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
   ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value
 
@@ -123,6 +123,65 @@ export function planTaskFromState(t) {
   }
 }
 
+const digest = value => createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex')
+
+// Phase planning is intentionally contract-only: delivery progress may satisfy an input,
+// but must never rewrite an already approved plan.
+export function phasePlanningContext(state, task) {
+  const dependencies = new Set()
+  const visit = id => {
+    if (dependencies.has(id)) return
+    dependencies.add(id)
+    for (const dep of state.tasks[id]?.deps ?? []) visit(dep)
+  }
+  task.deps.forEach(visit)
+  const contract = t => [planTaskFromState(t), t.contractRevision ?? 0, t.scopeRevision ?? 0]
+  return digest([
+    state.plan.name, state.plan.description, state.plan.requireReview, state.plan.planningRevision ?? 0,
+    contract(task), [...dependencies].sort().map(id => [id, state.tasks[id] ? contract(state.tasks[id]) : null]),
+  ])
+}
+
+export function phaseRequiredInputs(state, task) {
+  return task.deps.filter(id => !['done', 'skipped'].includes(state.tasks[id]?.state)).sort().map(id => ({
+    task: id,
+    phase: state.tasks[id]?.phase ?? null,
+    requiredEvidence: `current terminal receipt for ${id}`,
+  }))
+}
+
+export function assertPhaseTaskPlan(state, task, plan, binding, expected = phaseRequiredInputs(state, task)) {
+  assertTaskPlan(task, plan)
+  insist(plan.phaseBinding?.phaseId === binding.phaseId &&
+    plan.phaseBinding?.discussionRoundId === binding.discussionRoundId &&
+    plan.phaseBinding?.plannerRound === binding.plannerRound,
+  'phase task plan binding must match phase, discussion round and planner round')
+  insist(Array.isArray(plan.unresolvedInputs) && plan.unresolvedInputs.every(input =>
+    input && nonempty(input.task) && Object.hasOwn(input, 'phase') && nonempty(input.requiredEvidence)),
+  'phase task plan unresolvedInputs must contain task, phase and requiredEvidence')
+  insist(JSON.stringify(plan.unresolvedInputs.map(input => [input.task, input.phase]).sort()) ===
+    JSON.stringify(expected.map(input => [input.task, input.phase]).sort()),
+  'phase task plan must list exactly the currently incomplete direct dependencies as unresolved inputs')
+}
+
+export function executionInputReceipt(state, task) {
+  const inputs = task.deps.slice().sort().map(id => {
+    const dep = state.tasks[id]
+    insist(dep && ['done', 'skipped'].includes(dep.state), `${task.id} still waiting on: ${id}`)
+    if (dep.state === 'skipped') {
+      insist(nonempty(dep.skipReason), `${id} skip waiver needs a reason`)
+      return { task: id, phase: dep.phase ?? null, result: 'waived', reason: dep.skipReason }
+    }
+    const validation = dep.validations?.at(-1)
+    insist(validation?.ok && validation.attempt === dep.attempts?.length,
+      `${id} has no current passing validation receipt`)
+    return { task: id, phase: dep.phase ?? null, result: 'validated', attempt: dep.attempts.length,
+      validation: digest([validation.token, validation.at, validation.agent, validation.evidence,
+        validation.planningScope, dep.contractRevision ?? 0, dep.stateRevision ?? 0]) }
+  })
+  return { inputs, digest: digest(inputs) }
+}
+
 // Shared by the engine and read-only dashboard: readiness must use exactly the same evidence.
 export function planningContext(state, task, {
   scopeOnly = false, attempt = task.attempts.length + (task.planningReturn ? 0 : 1),
@@ -147,25 +206,65 @@ export function planningContext(state, task, {
 }
 
 export function hasCurrentTaskPlan(state, task) {
-  if (!task.planningRequired) return true
+  if (state.legacyPhaseAdoption && !state.phaseWorkflows?.[task.phase]?.adoptedLegacy) return false
+  if (!task.planningRequired) return state.plan.planningMode !== 'phase'
   try { assertTaskPlan(task, task.taskPlan) } catch { return false }
+  if (task.taskPlan?.phaseId) {
+    const phase = state.phaseWorkflows?.[task.taskPlan.phaseId]
+    const discussion = phase?.discussionAttempts?.find(round =>
+      round.roundId === task.taskPlan.phaseBinding?.discussionRoundId)
+    const discovery = discussion?.discovery ??
+      (phase?.discovery?.roundId === discussion?.roundId ? phase.discovery : null)
+    const latestTargets = phase?.discussionAttempts?.find(round => round.roundId === phase.discovery?.roundId)?.targets ?? []
+    return !task.phasePlanDefect && (!latestTargets.includes(task.id) || phase.discovery.roundId === discussion?.roundId) &&
+      discovery?.digest === task.taskPlan.phaseDiscoveryDigest &&
+      discovery.digest === discoveryDigest(discovery) &&
+      task.taskPlan.scope === phasePlanningContext(state, task)
+  }
   const discoveryCurrent = !task.discoveryRequired || (nonempty(task.discovery?.digest) &&
     task.discovery.digest === discoveryDigest(task.discovery) &&
     task.taskPlan.discoveryDigest === task.discovery.digest &&
     task.discovery.context === task.taskPlan.context && task.discovery.attempt === task.taskPlan.attempt)
-  return discoveryCurrent && hasCurrentTaskScope(state, task, task.attempts.length + 1) &&
-    task.taskPlan.context === planningContext(state, task) && task.taskPlan.attempt === task.attempts.length + 1
+  return discoveryCurrent && hasCurrentTaskScope(state, task, task.attempts.length + 1)
 }
 
 // Validation-only refreshes do not invalidate the research behind an active execution attempt.
 export function hasCurrentTaskScope(state, task, attempt = task.attempts.length) {
-  if (!task.planningRequired) return true
+  if (state.legacyPhaseAdoption && !state.phaseWorkflows?.[task.phase]?.adoptedLegacy) return false
+  if (!task.planningRequired) return state.plan.planningMode !== 'phase'
   const plan = task.taskPlan
-  return nonempty(plan?.planner) && nonempty(plan.completedAt) && plan.attempt === attempt &&
-    (!task.discoveryRequired || (nonempty(task.discovery?.digest) &&
-      task.discovery.digest === discoveryDigest(task.discovery) && plan.discoveryDigest === task.discovery.digest &&
-      task.discovery.context === plan.context && task.discovery.attempt === plan.attempt)) &&
-    plan.scope === planningContext(state, task, { scopeOnly: true, attempt })
+  try { assertTaskPlan(task, plan) } catch { return false }
+  if (!(nonempty(plan?.planner) && nonempty(plan.completedAt))) return false
+  if (plan.phaseId) {
+    const phase = state.phaseWorkflows?.[plan.phaseId]
+    const discussion = phase?.discussionAttempts?.find(round => round.roundId === plan.phaseBinding?.discussionRoundId)
+    const discovery = discussion?.discovery ??
+      (phase?.discovery?.roundId === discussion?.roundId ? phase.discovery : null)
+    const latestTargets = phase?.discussionAttempts?.find(round => round.roundId === phase.discovery?.roundId)?.targets ?? []
+    return !task.phasePlanDefect && (!latestTargets.includes(task.id) || phase.discovery.roundId === discussion?.roundId) &&
+      discovery?.digest === plan.phaseDiscoveryDigest &&
+      discovery.digest === discoveryDigest(discovery) && plan.scope === phasePlanningContext(state, task)
+  }
+  const discoveryCurrent = !task.discoveryRequired || (nonempty(task.discovery?.digest) &&
+    task.discovery.digest === discoveryDigest(task.discovery) && plan.discoveryDigest === task.discovery.digest &&
+    task.discovery.context === plan.context && task.discovery.attempt === plan.attempt)
+  if (!discoveryCurrent) return false
+  if (plan.attempt === attempt)
+    return plan.scope === planningContext(state, task, { scopeOnly: true, attempt }) &&
+      (task.state !== 'failed' || plan.context === planningContext(state, task, { attempt }))
+  const retry = task.retryPlan
+  const failed = task.attempts[attempt - 2]
+  return retry?.attempt === attempt && retry.planSourceAttempt === plan.attempt &&
+    retry.failedAttempt === attempt - 1 && failed?.n === retry.failedAttempt && failed.result === 'failed' &&
+    failed.reason === retry.reason && nonempty(retry.reason) && retry.context === planningContext(state, task, { attempt }) &&
+    retry.discoveryDigest === task.discovery?.digest && retry.planContext === plan.context && retry.planScope === plan.scope &&
+    plan.scope === planningContext(state, task, { scopeOnly: true, attempt: plan.attempt }) &&
+    retry.scope === planningContext(state, task, { scopeOnly: true, attempt })
+}
+
+export function currentPlanningScope(state, task, attempt = task.attempts.length) {
+  if (!task.planningRequired || !hasCurrentTaskScope(state, task, attempt)) return undefined
+  return task.taskPlan.attempt === attempt ? task.taskPlan.scope : task.retryPlan.scope
 }
 
 function execute(run, options, timeoutMs) {
