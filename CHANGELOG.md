@@ -2,6 +2,12 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 1.3.2 — 2026-09-13
+
+- Treat an explicitly named task as a hard planning boundary: use one discussion and one planner, and keep its prerequisites, evidence gaps and internal deliverables inside that task plan.
+- Require explicit user approval before adding helper tasks, planning sibling tasks or dispatching extra planners.
+- Keep graph-wide legacy contract normalization separate from planning scope, so migration does not silently expand the requested work.
+
 ## 1.3.1 — 2026-09-13
 
 - Enforce declared phase order for discussion and planning: a later phase opens only after earlier phases are terminal, except when it provides a direct or transitive dependency required by nonterminal earlier work.

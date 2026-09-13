@@ -47,6 +47,8 @@ uma discussão visível e um planejador somente leitura por fase. O planejador p
 todas as tarefas anteriores terminarem. Uma fase posterior só abre antes quando uma dependência direta
 ou transitiva de tarefa anterior não terminal chega a um membro dela; a fase produtora inteira é então
 discutida e planejada. Dependências das tarefas liberam a execução, não o planejamento da fase elegível.
+Uma tarefa existente nomeada explicitamente é um limite rígido: pré-requisitos, lacunas de evidência e
+entregas internas permanecem em seu único plano; criar tarefas auxiliares ou planejar irmãs exige aprovação.
 A conversa executa
 `begin-phase-discussion <fase>` antes do prompt, pesquisa a fase e sempre faz uma pergunta contextual.
 
@@ -58,8 +60,9 @@ respostas reais, canal/rodada, cobertura PO First, decisões e motivo de encerra
 
 Antes de continuar uma run antiga, a skill inspeciona cada contrato não terminal, normaliza validações
 obsoletas ou em prosa na fonte aprovada com evidência do repositório e executa `sync-plan` no run original.
-Ela não cria um run auxiliar nem migra apenas a tarefa bloqueada. A adoção de cada fase elegível é explícita
-com `begin-phase-discussion <fase> --adopt-legacy`: o histórico terminal permanece intacto e todas as
+Essa migração do contrato inteiro não autoriza ampliar o grafo ou o planejamento. Quando o usuário nomeia
+uma tarefa existente, mantenha uma discussão e um planner somente para ela. Nos demais casos, a adoção de
+cada fase elegível é explícita com `begin-phase-discussion <fase> --adopt-legacy`: o histórico terminal permanece intacto e todas as
 tarefas não terminais adotadas precisam estar antes da execução, sem rodada de tarefa aberta. Uma adoção
 insegura é recusada sem alterar estado ou eventos.
 

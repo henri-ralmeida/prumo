@@ -49,8 +49,8 @@ test('update detects installed harnesses and custom paths, preserves preferences
   const updated = run(false)
   assert.equal(updated.status, 0, updated.stdout + updated.stderr)
   assert.match(updated.stdout, /Prumo updated successfully/)
-  assert.match(updated.stdout, /Fixed — Sequential phase planning/)
-  assert.match(updated.stdout, /- Normalize every nonterminal legacy contract before sync-plan/)
+  assert.match(updated.stdout, /Fixed — Explicit task scope/)
+  assert.match(updated.stdout, /- Keep one discussion and one planner when the user names one task/)
   for (const marker of markers) {
     assert.equal(JSON.parse(read(marker)).version, version)
     assert.equal(read(join(dirname(marker), 'scripts', 'engine.mjs')), read(join(source, 'scripts', 'engine.mjs')))
