@@ -22,7 +22,7 @@ function fixture(t, tasks = [{ id: 'T1', title: 'Delivery estimate' }], options 
   mkdirSync(project)
   writeFileSync(join(project, 'delivery.cjs'), 'exports.days = express => express ? 1 : 3;\n')
   writeFileSync(join(project, 'delivery.test.cjs'), "const assert=require('node:assert/strict');const {days}=require('./delivery.cjs');assert.equal(days(true),1);assert.equal(days(false),3);\n")
-  const plan = { name: 'Planning regression', ...options, tasks: tasks.map(task => ({ validation: [check], ...task })) }
+  const plan = { name: 'Planning regression', planningMode: 'task', ...options, tasks: tasks.map(task => ({ validation: [check], ...task })) }
   const planPath = join(root, 'plan.json')
   const writePlan = () => writeFileSync(planPath, JSON.stringify(plan))
   writePlan()
@@ -78,12 +78,23 @@ function fixture(t, tasks = [{ id: 'T1', title: 'Delivery estimate' }], options 
     writeFileSync(path, JSON.stringify(value))
     return ok('finish-planning', id, '--plan', path)
   }
-  const beginPlan = (id = 'T1', agent = 'planner-' + id, value = discovery()) =>
-    ok('plan-task', id, '--agent', agent, '--context', contextPath(value, id))
+  const discuss = (id = 'T1', value = discovery()) => {
+    ok('begin-discussion', id)
+    const round = state().tasks[id].discussionAttempts.at(-1)
+    const bound = { ...value, roundId: round.roundId, nonce: round.nonce,
+      questions: value.questions.map(question => ({ ...question, roundId: round.roundId })) }
+    const path = contextPath(bound, id)
+    ok('finish-discussion', id, '--context', path)
+    return path
+  }
+  const beginPlan = (id = 'T1', agent = 'planner-' + id, value = discovery()) => {
+    discuss(id, value)
+    return ok('plan-task', id, '--agent', agent)
+  }
   const planTask = (id = 'T1', agent = 'planner-' + id) => { beginPlan(id, agent); finish(id) }
   ok('init', '--plan', planPath, '--run', 'planning')
   return { root, project, plan, planPath, writePlan, cli, ok, rejected, state, save, events, graph,
-    artifact, discovery, contextPath, beginPlan, finish, planTask }
+    artifact, discovery, contextPath, discuss, beginPlan, finish, planTask }
 }
 
 test('event progress counts executor plan steps and actual reviewer checks per attempt', t => {
@@ -122,11 +133,11 @@ test('event progress counts executor plan steps and actual reviewer checks per a
 
 test('new tasks require researched planning before execution and still require independent behavioral review', t => {
   const f = fixture(t, [{ id: 'T1', title: 'Delivery estimate' }, { id: 'T2', title: 'Dependent delivery', deps: ['T1'] }])
-  assert.equal(f.graph().derived.T1.effective, 'ready_to_plan')
+  assert.equal(f.graph().derived.T1.effective, 'ready_for_discussion')
   assert.equal(f.graph().derived.T2.effective, 'waiting')
   f.rejected(/completed current planning/, 'start', 'T1', '--agent', 'executor', '--force')
-  f.rejected(/still waiting on: T1/, 'plan-task', 'T2', '--agent', 'planner-T2', '--force', '--context', f.contextPath(f.discovery(), 'T2'))
-  assert.match(f.ok('ready').output, /T1.*ready_to_plan/)
+  f.rejected(/still waiting on: T1/, 'begin-discussion', 'T2')
+  assert.match(f.ok('ready').output, /T1.*ready_for_discussion/)
   f.beginPlan('T1', 'planner')
   assert.equal(f.graph().derived.T1.effective, 'planning')
   assert.equal(f.state().tasks.T1.attempts.length, 0)
@@ -151,14 +162,22 @@ test('new tasks require researched planning before execution and still require i
   writeFileSync(join(f.project, 'delivery.cjs'), 'exports.days = express => express ? 1 : 3;\n')
   f.ok('validate', 'T1', '--ok', '--evidence', 'Both delivery scenarios match the policy', '--cwd', f.project)
   f.ok('done', 'T1')
-  assert.equal(f.graph().derived.T2.effective, 'ready_to_plan')
+  assert.equal(f.graph().derived.T2.effective, 'ready_for_discussion')
   assert.equal(f.state().tasks.T1.attempts.length, 1)
 })
 
-test('discovery is completed in the principal conversation before a planner is dispatched', t => {
+test('discussion is persisted before questions and must close before a planner is dispatched', t => {
   const f = fixture(t)
+  f.rejected(/completed current discussion/, 'plan-task', 'T1', '--agent', 'planner')
+  f.ok('begin-discussion', 'T1')
   const baseline = f.state(), events = f.events()
-  f.rejected(/needs --context/, 'plan-task', 'T1', '--agent', 'planner')
+  assert.equal(baseline.tasks.T1.state, 'discussing')
+  assert.match(baseline.tasks.T1.discussionAttempts[0].roundId, /^[0-9a-f-]{36}$/)
+  const issued = baseline.tasks.T1.discussionAttempts[0]
+  const wrongRound = { ...f.discovery(), roundId: 'wrong-round', nonce: issued.nonce,
+    questions: f.discovery().questions.map(question => ({ ...question, roundId: 'wrong-round' })) }
+  f.rejected(/roundId and nonce/, 'finish-discussion', 'T1', '--context', f.contextPath(wrongRound))
+  assert.deepEqual(f.state(), baseline)
   for (const change of [
     { questions: [] },
     { questions: [{ question: 'What changes?', answer: '', channel: 'chat-fallback', round: 1 }] },
@@ -166,13 +185,25 @@ test('discovery is completed in the principal conversation before a planner is d
     { coverage: { problem: 'Only one area' } },
     { closure: '' },
   ]) {
-    f.rejected(/discovery/, 'plan-task', 'T1', '--agent', 'planner', '--context', f.contextPath({ ...f.discovery(), ...change }))
+    const round = baseline.tasks.T1.discussionAttempts[0]
+    const candidate = { ...f.discovery(), ...change, roundId: round.roundId, nonce: round.nonce }
+    candidate.questions = (candidate.questions ?? []).map(question => ({ ...question, roundId: round.roundId }))
+    f.rejected(/discovery/, 'finish-discussion', 'T1', '--context', f.contextPath(candidate))
     assert.deepEqual(f.state(), baseline)
     assert.equal(f.events(), events)
   }
   const context = f.discovery()
   context.questions.push({ question: 'Is there another consequential gray area?', answer: 'No.', channel: 'native', round: 2 })
-  f.beginPlan('T1', 'planner', context)
+  const round = baseline.tasks.T1.discussionAttempts[0]
+  context.roundId = round.roundId
+  context.nonce = round.nonce
+  context.questions = context.questions.map(question => ({ ...question, roundId: round.roundId }))
+  f.ok('finish-discussion', 'T1', '--context', f.contextPath(context))
+  assert.equal(f.graph().derived.T1.effective, 'ready_to_plan')
+  const discussed = f.state()
+  f.rejected(/no open discussion/, 'finish-discussion', 'T1', '--context', f.contextPath(context))
+  assert.deepEqual(f.state(), discussed)
+  f.ok('plan-task', 'T1', '--agent', 'planner')
   const task = f.state().tasks.T1
   assert.equal(task.state, 'planning')
   assert.equal(task.discovery.questions.length, 2)
@@ -191,24 +222,13 @@ test('planning is bound to canonical discovery and restarts only when its conten
   const afterA = f.state(), eventsA = f.events()
   const digestA = afterA.tasks.T1.discovery.digest
 
-  const sameA = structuredClone(discoveryA)
-  sameA.coverage = Object.fromEntries(Object.entries(sameA.coverage).reverse())
-  f.ok('plan-task', 'T1', '--agent', 'planner-that-must-not-start', '--context', f.contextPath(sameA))
+  f.ok('plan-task', 'T1', '--agent', 'planner-that-must-not-start')
   assert.deepEqual(f.state(), afterA)
   assert.equal(f.events(), eventsA)
 
-  const discoveryB = structuredClone(discoveryA)
-  discoveryB.questions[0].answer = 'Yes, with the clarified B decision.'
-  discoveryB.decisions[0].answer = 'Use clarified behavior B.'
-  discoveryB.closure = 'Decision B resolves the changed task-specific gray area.'
-  f.beginPlan('T1', 'planner-B', discoveryB)
   const afterB = f.state(), task = afterB.tasks.T1
-  assert.equal(task.planner, 'planner-B')
-  assert.equal(task.planningAttempts.length, 2)
-  assert.equal(task.planningAttempts[0].result, 'superseded')
-  assert.ok(task.planningAttempts[0].endedAt)
-  assert.notEqual(task.discovery.digest, digestA)
-  assert.equal(task.planningAttempts[1].discoveryDigest, task.discovery.digest)
+  assert.equal(task.discovery.digest, digestA)
+  assert.equal(task.planningAttempts.length, 1)
 
   const damaged = structuredClone(afterB)
   damaged.tasks.T1.discovery.questions[0].answer = 'Changed behind the planner'
@@ -255,15 +275,18 @@ test('planners consume total capacity and cannot share an agent with execution o
   const f = fixture(t, tasks, { maxParallel: 2, maxExecutors: 1 })
   f.planTask('T1')
   f.ok('start', 'T1', '--agent', 'executor')
-  f.rejected(/already on T1/, 'plan-task', 'T2', '--agent', 'executor', '--force', '--context', f.contextPath(f.discovery(), 'T2'))
+  f.discuss('T2')
+  f.rejected(/already on T1/, 'plan-task', 'T2', '--agent', 'executor', '--force')
   f.ok('review', 'T1', '--agent', 'reviewer')
-  f.rejected(/already on T1/, 'plan-task', 'T2', '--agent', 'reviewer', '--context', f.contextPath(f.discovery(), 'T2'))
-  f.beginPlan('T2', 'planner')
-  f.rejected(/agents busy/, 'plan-task', 'T3', '--agent', 'other', '--force', '--context', f.contextPath(f.discovery(), 'T3'))
+  f.rejected(/already on T1/, 'plan-task', 'T2', '--agent', 'reviewer')
+  f.ok('plan-task', 'T2', '--agent', 'planner')
+  f.discuss('T3')
+  f.rejected(/agents busy/, 'plan-task', 'T3', '--agent', 'other', '--force')
   assert.match(f.ok('ready').output, /1 in planning.*0 agent slots/)
   f.ok('block', 'T1', '--reason', 'Release review slot')
-  f.rejected(/already on T2/, 'plan-task', 'T3', '--agent', 'planner', '--force', '--context', f.contextPath(f.discovery(), 'T3'))
-  f.planTask('T3', 'third-planner')
+  f.rejected(/already on T2/, 'plan-task', 'T3', '--agent', 'planner', '--force')
+  f.ok('plan-task', 'T3', '--agent', 'third-planner')
+  f.finish('T3')
   f.rejected(/already on T2/, 'start', 'T3', '--agent', 'planner', '--force')
   f.ok('start', 'T3', '--agent', 'third-executor')
   f.rejected(/already on T2/, 'review', 'T3', '--agent', 'planner')
@@ -302,7 +325,7 @@ test('task contract changes invalidate completed planning, including a later ret
     f.plan.tasks[0].title = title
     f.writePlan()
     f.ok('sync-plan', '--plan', f.planPath)
-    assert.equal(f.graph().derived.T1.effective, 'ready_to_plan')
+    assert.equal(f.graph().derived.T1.effective, 'ready_for_discussion')
     f.rejected(/completed current planning/, 'start', 'T1', '--agent', 'executor', '--force')
   }
   assert.deepEqual(f.state().tasks.T1.taskPlan, before.taskPlan)
@@ -346,14 +369,14 @@ test('delivered dependency changes invalidate planning; unrelated task progress 
   f.beginPlan('T2', 'other-planner')
   assert.equal(f.graph().derived.T1.effective, 'ready')
   f.ok('skip', 'T0', '--reason', 'Different approved prerequisite outcome')
-  assert.equal(f.graph().derived.T1.effective, 'ready_to_plan')
+  assert.equal(f.graph().derived.T1.effective, 'ready_for_discussion')
   f.rejected(/completed current planning/, 'start', 'T1', '--agent', 'executor', '--force')
   assert.deepEqual(f.state().tasks.T1.taskPlan, original)
   f.planTask('T1')
   const state = f.state()
   state.tasks.T0.title = 'Recovered dependency contract changed'
   f.save(state)
-  assert.equal(f.graph().derived.T1.effective, 'ready_to_plan')
+  assert.equal(f.graph().derived.T1.effective, 'ready_for_discussion')
   f.rejected(/completed current planning/, 'start', 'T1', '--agent', 'executor')
 })
 
@@ -364,10 +387,10 @@ test('real failure requires fresh research for the next attempt and preserves th
   f.ok('review', 'T1', '--agent', 'reviewer')
   writeFileSync(join(f.project, 'delivery.cjs'), 'exports.days = () => 99;\n')
   f.rejected(/functional.*failed/, 'validate', 'T1', '--ok', '--evidence', 'Delivery branches returned 99 days', '--cwd', f.project)
-  f.ok('fail', 'T1', '--reason', 'Both delivery branches violate the approved policy')
+  f.ok('fail', 'T1', '--reason', 'Both delivery branches violate the approved policy', '--plan-defect')
   const failed = f.state().tasks.T1
   f.ok('retry', 'T1')
-  assert.equal(f.graph().derived.T1.effective, 'ready_to_plan')
+  assert.equal(f.graph().derived.T1.effective, 'ready_for_discussion')
   assert.deepEqual(f.state().tasks.T1.taskPlan, failed.taskPlan)
   f.rejected(/completed current planning/, 'start', 'T1', '--agent', 'executor-v2', '--force')
   f.planTask('T1', 'planner-v2')
@@ -482,7 +505,7 @@ test('missing or damaged stored plans cannot dispatch and inspection tasks still
 test('legacy tasks retain their lifecycle and history while tasks added by sync-plan require planning', t => {
   const f = fixture(t)
   const legacy = f.state()
-  for (const field of ['discoveryRequired', 'planningRequired', 'planner', 'planningAttempts', 'planningHistory']) delete legacy.tasks.T1[field]
+  for (const field of ['discussionRequired', 'discussionAttempts', 'discoveryRequired', 'planningRequired', 'planner', 'planningAttempts', 'planningHistory']) delete legacy.tasks.T1[field]
   f.save(legacy)
   assert.equal(f.graph().derived.T1.effective, 'ready')
   f.ok('start', 'T1', '--agent', 'legacy-executor')
@@ -493,17 +516,95 @@ test('legacy tasks retain their lifecycle and history while tasks added by sync-
   assert.deepEqual(f.state().tasks.T1, active)
   assert.equal(f.state().tasks.T2.discoveryRequired, true)
   assert.equal(f.state().tasks.T2.planningRequired, true)
-  f.rejected(/needs --context/, 'plan-task', 'T2', '--agent', 'planner')
-  assert.equal(f.graph().derived.T2.effective, 'ready_to_plan')
+  f.rejected(/completed current discussion/, 'plan-task', 'T2', '--agent', 'planner')
+  assert.equal(f.graph().derived.T2.effective, 'ready_for_discussion')
   f.ok('fail', 'T1', '--reason', 'Legacy real failure')
   f.ok('retry', 'T1')
   f.ok('start', 'T1', '--agent', 'legacy-executor-v2')
   assert.equal(f.state().tasks.T1.attempts.length, 2)
 })
 
+test('legacy discussion adoption is explicit, atomic and limited to one eligible task', t => {
+  const f = fixture(t, [{ id: 'T1', title: 'Adopt this task' }, { id: 'T2', title: 'Keep legacy' }])
+  const legacy = f.state()
+  for (const task of Object.values(legacy.tasks)) {
+    for (const field of ['discussionRequired', 'discoveryRequired', 'planningRequired', 'planner']) delete task[field]
+    task.discussionAttempts = [{ roundId: 'old-discussion', endedAt: '2025-01-01T00:00:00.000Z', result: 'closed' }]
+    task.planningAttempts = [{ n: 1, endedAt: '2025-01-01T00:00:00.000Z', result: 'planned' }]
+    task.planningHistory = [{ planner: 'old-planner', completedAt: '2025-01-01T00:00:00.000Z' }]
+    task.notes.push({ text: 'preserve me', at: '2025-01-01T00:00:00.000Z' })
+  }
+  legacy.tasks.T1.state = 'failed'
+  f.save(legacy)
+  const untouched = structuredClone(legacy.tasks.T2)
+
+  f.rejected(/--adopt-legacy/, 'begin-discussion', 'T2')
+  assert.deepEqual(f.state().tasks.T2, untouched)
+  f.ok('begin-discussion', 'T1', '--adopt-legacy')
+
+  const adopted = f.state().tasks.T1
+  assert.equal(adopted.state, 'discussing')
+  assert.equal(adopted.discussionRequired, true)
+  assert.equal(adopted.discoveryRequired, true)
+  assert.equal(adopted.planningRequired, true)
+  assert.equal(adopted.notes[0].text, 'preserve me')
+  assert.equal(adopted.planningHistory[0].planner, 'old-planner')
+  assert.equal(adopted.planningAttempts[0].result, 'planned')
+  assert.equal(adopted.discussionAttempts[0].result, 'closed')
+  assert.match(adopted.discussionAttempts.at(-1).roundId, /^[0-9a-f-]{36}$/)
+  assert.deepEqual(f.state().tasks.T2, untouched)
+  const event = f.events().trim().split('\n').map(JSON.parse).at(-1)
+  assert.equal(event.type, 'task_discussion')
+  assert.equal(event.task, 'T1')
+  assert.equal(event.adoptedLegacy, true)
+  const discovery = f.discovery(), round = adopted.discussionAttempts.at(-1)
+  discovery.roundId = round.roundId
+  discovery.nonce = round.nonce
+  discovery.questions = discovery.questions.map(question => ({ ...question, roundId: round.roundId }))
+  f.ok('finish-discussion', 'T1', '--context', f.contextPath(discovery))
+  assert.equal(f.graph().derived.T1.effective, 'ready_to_plan')
+})
+
+test('legacy discussion adoption refuses unsafe tasks without changing state or events', t => {
+  const f = fixture(t)
+  const initial = f.state().tasks.T1
+  const legacy = overrides => ({ ...structuredClone(initial), discussionRequired: undefined,
+    discoveryRequired: undefined, planningRequired: undefined, ...overrides })
+  const cases = [
+    ['running state', /only while pending or failed/, legacy({ state: 'running' })],
+    ['terminal state', /only while pending or failed/, legacy({ state: 'done' })],
+    ['execution history', /after execution started/, legacy({ state: 'failed', attempts: [{ n: 1, result: 'failed' }] })],
+    ['open discussion', /open discussion or planning round/, legacy({ state: 'pending', discussionAttempts: [{ startedAt: '2025-01-01T00:00:00.000Z' }] })],
+    ['open planning', /open discussion or planning round/, legacy({ state: 'pending', planningAttempts: [{ startedAt: '2025-01-01T00:00:00.000Z' }] })],
+  ]
+  for (const [label, pattern, task] of cases) {
+    const state = f.state()
+    state.tasks.T1 = task
+    f.save(state)
+    const statePath = join(f.root, '.specs/graph/planning/state.json')
+    const beforeState = readFileSync(statePath, 'utf8')
+    const beforeEvents = f.events()
+    f.rejected(pattern, 'begin-discussion', 'T1', '--adopt-legacy')
+    assert.equal(readFileSync(statePath, 'utf8'), beforeState, label)
+    assert.equal(f.events(), beforeEvents, label)
+  }
+
+  const blocked = fixture(t, [{ id: 'T1', title: 'Dependency' }, { id: 'T2', title: 'Blocked legacy', deps: ['T1'] }])
+  const state = blocked.state()
+  delete state.tasks.T2.discussionRequired
+  blocked.save(state)
+  const statePath = join(blocked.root, '.specs/graph/planning/state.json')
+  const beforeState = readFileSync(statePath, 'utf8'), beforeEvents = blocked.events()
+  blocked.rejected(/still waiting on: T1/, 'begin-discussion', 'T2', '--adopt-legacy')
+  assert.equal(readFileSync(statePath, 'utf8'), beforeState)
+  assert.equal(blocked.events(), beforeEvents)
+})
+
 test('1.2.0 planning tasks remain compatible without a retroactive discovery gate', t => {
   const f = fixture(t)
   const previous = f.state()
+  delete previous.tasks.T1.discussionRequired
+  delete previous.tasks.T1.discussionAttempts
   delete previous.tasks.T1.discoveryRequired
   f.save(previous)
   f.ok('plan-task', 'T1', '--agent', 'previous-planner')
