@@ -1,13 +1,13 @@
 ---
 name: prumo
-description: Executes an approved plan as a task GRAPH — a dedicated planner researches each task before execution, parallel subagents deliver, and independent review validates before done. Includes PO First and a live dashboard.
+description: Executes an approved plan as a task GRAPH — one read-only planner researches each phase and writes immutable task plans, parallel subagents deliver, and independent review validates before done. Includes PO First and a live dashboard.
 ---
 
 # /prumo [plan|run]
 
 
 Runs an **already approved** plan through the graph engine bundled with this skill: a DAG of
-tasks, a dedicated subagent researching and planning each new task, parallel executors, a validation gate before anything
+tasks, one read-only planner researching each phase and composing immutable plans for its tasks, parallel executors, a validation gate before anything
 is `done`, and a read-only dashboard the dev can watch.
 
 ## When to use
@@ -19,7 +19,7 @@ is `done`, and a read-only dashboard the dev can watch.
 
 ## When NOT to use
 
-- **No approved global plan yet** — approve the overall scope first; per-task planning refines its execution
+- **No approved global plan yet** — approve the overall scope first; phase planning then refines each task's execution
 - **Small or strictly sequential work** — a 3-task chain needs no orchestrator; just do it
 - **Solo agents without subagent dispatch** — without dedicated planners, executors and reviewers, the
   gate has nothing to enforce
@@ -82,8 +82,8 @@ inside a central workspace, `PRUMO_ROOT` may be omitted. Never add `.specs/` to 
 Plans live in `$PRUMO_ROOT/.specs/graph/plans/<name>.plan.json`. Translation is mechanical;
 three fields carry judgment:
 
-- **`deps` orders the work.** A new task is ready to plan when every dep is `done` or
-  `skipped`; only a completed current task plan makes it ready to execute. Anything that must not run in parallel is a dep chain — migrations serialize
+- **`deps` orders execution.** Phase discussion and planning may happen before dependencies finish;
+  a task becomes ready to execute only with a current task plan and every dep `done` or `skipped`. Anything that must not run in parallel is a dep chain — migrations serialize
   because each depends on the last, not because the engine knows what a migration is. A dep
   added "to be safe" costs parallelism; one omitted hands two agents the same file.
 - **`validation` is what must be TRUE before done**, written so a DIFFERENT agent could check
@@ -104,21 +104,20 @@ Full task contract (every field, defaults, per-task `requireReview`/`maxAttempts
 
 ```bash
 node $ENGINE init --plan "$PRUMO_ROOT/.specs/graph/plans/<name>.plan.json" --run <name>-01
-node $SERVE --sync-plan  # http://localhost:4949 — background, safe to kill anytime
+prumo dashboard enable  # http://localhost:4949 — per-user background service
 ```
 
-`--sync-plan` watches the plan recorded by `init`. When an approved plan changes, it calls
-`engine.mjs sync-plan` through the run lock: new tasks are added, pending/failed/blocked task
-contracts are refreshed, and active/done task history is preserved. Task removal is refused.
+The global dashboard only observes; it never synchronizes a plan. When an approved plan changes, the
+orchestrator explicitly runs `engine.mjs sync-plan --plan <approved-plan>` through the run lock: new tasks
+are added, pending/failed/blocked task contracts are refreshed, and active/done task history is preserved. Task removal is refused.
 If a preserved task differs, sync-plan reports it; an approved validation change for active
 work needs refresh-contract, not fail/retry. Always check the persisted task before review.
 
 On Windows, use PowerShell environment assignment ($env:PRUMO_ROOT) and quoted paths instead of POSIX shell syntax. Start background helpers hidden. Keep the actual working directory in the approved validation step; do not translate or rewrite its commands.
 
-Start the server **in the background and give the dev the URL before dispatching a single
-agent** — a dashboard offered after the run is a log, not observability. It follows
-`$PRUMO_ROOT/.specs/graph/CURRENT`, which `init` just repointed at this run. A taken port usually means the
-previous run's dashboard is still up and already serving this one.
+Ensure the server is available and give the dev the URL before dispatching a single agent. It discovers
+known central workspaces and registered projects and follows their current runs. A taken port may be a
+managed Prumo or an unrelated process; use `prumo dashboard status` and never terminate an unidentified owner.
 
 **Two runs at once** work only when neither leans on the defaults: pass `--run <name>` to every
 command for the non-current run, and give the second dashboard its own port AND pin —
@@ -135,8 +134,10 @@ Use a different native agent for each role on a task; recording another label is
 
 ```bash
 node $ENGINE ready                              # separate planning/execution readiness and capacity
-node $ENGINE plan-task T4 --agent plan-scenes --context <discovery.json>  # after discuss; pair with planner dispatch
-node $ENGINE finish-planning T4 --plan <task-plan.json>  # after research and consequential answers
+node $ENGINE begin-phase-discussion F2          # persist phase discussion BEFORE asking
+node $ENGINE finish-phase-discussion F2 --context <discovery.json>
+node $ENGINE plan-phase F2 --agent plan-scenes  # one read-only planner for the phase
+node $ENGINE finish-phase-planning F2 --plan-dir <artifact-directory>
 node $ENGINE start T4 --agent ag-scenes         # dispatch up to the cap, in the SAME message
 node $ENGINE review T4 --agent rev-scenes       # executor finished → hand to a fresh reviewer
 node $ENGINE validate T4 --ok --evidence "..." --cwd <absolute-project>  # the REVIEWER's verdict
@@ -145,13 +146,13 @@ node $ENGINE done T4
 
 ### Two planning levels
 
-Global Plan/Spec mode uses the full request to define and approve the graph and its task contracts. It
-does not replace the task-level loop and execution does not need to remain in that mode. After each
-task's dependencies deliver, run **discuss → plan → executor → reviewer**.
+Global Plan/Spec mode defines and approves the graph. For new phased runs, each phase follows
+**one discussion → one read-only planner → separate immutable plans per task**. Discussion and planning
+may happen before member dependencies deliver; the task DAG alone decides when each executor can start.
 
 Before dispatching the planner, the orchestrator runs an agnostic discovery protocol in the principal
 Codex, Claude Code or Kiro conversation. Load the global plan, settled decisions and dependency outputs;
-scout the task's current code and artifacts; identify specific PO First gray areas; then always ask at
+scout the phase's current code and artifacts; identify specific PO First gray areas; then always ask at
 least one contextual question. Select the question channel from tools actually exposed and allowed in
 the principal session, respecting their current schema and mode restrictions:
 
@@ -173,28 +174,36 @@ Continue independent research while waiting. Record only the channel that actual
 Reuse current answers, ask adaptive follow-ups, and stop only when no uncertainty capable of
 changing behavior, scope, acceptance or execution remains. Put out-of-scope ideas in `deferred`.
 
-Write the resulting discovery JSON before creating a planner. It contains light research, answered
-questions with their real `native` or `chat-fallback` channel and round, concise PO First coverage,
-resolved decisions, deferred ideas and the closure reason. Then pair the real planner dispatch with:
+Run `begin-phase-discussion` before presenting the first question. It persists the phase as `discussing` and issues the
+current `roundId` and `nonce`. Write the resulting discovery JSON with those values and bind at least
+one freshly answered question to that `roundId`; include light research, the real `native` or
+`chat-fallback` channel, PO First coverage, decisions, deferred ideas and closure. Then run:
 
 ```bash
-node $ENGINE plan-task T4 --agent <planner> --context <discovery.json>
+node $ENGINE finish-phase-discussion F2 --context <discovery.json>
+node $ENGINE plan-phase F2 --agent <planner>
+node $ENGINE finish-phase-planning F2 --plan-dir <artifact-directory>
 ```
 
-The engine validates and atomically persists discovery before changing the task to `planning`. A missing
-answer or coverage keeps it `ready_to_plan`. The engine proves record shape and order, not conversation
-quality, the visual component used or agent identity. Tasks from 1.2.0 without `discoveryRequired` remain
-compatible; new tasks created by `init` or `sync-plan` require discovery.
+The planner writes `task-plan-<id>.json` for every targeted member. The engine validates the whole batch
+before recording any artifact. Each artifact is immutable and lists incomplete direct dependencies as
+unresolved inputs. A later producer's independently reviewed validation receipt, or an explicit skip waiver,
+satisfies that input at execution time without rewriting the plan. Contract changes stale only the affected
+plan and true downstream scopes; shared phase discovery stales nonterminal plans in that phase; a marked
+plan defect stales only that task.
 
-The engine hashes the validated discovery fields with canonical JSON and binds that digest to the planning
-round and final taskPlan. Repeating `plan-task --context` with identical content while planning is a no-op;
-a changed discovery supersedes the open round and starts a new planner round bound to the new digest.
-`finish-planning` refuses a round whose discovery no longer matches the persisted context.
+Existing task-scoped runs keep `begin-discussion`, `finish-discussion`, `plan-task` and `finish-planning`.
+Adopt one whole safe phase explicitly with `begin-phase-discussion <phase> --adopt-legacy`; terminal history
+is preserved and every adopted nonterminal member must still be pre-execution with no open round.
 
-### Per-task research and planning
+The engine hashes the validated discovery and issued receipt with canonical JSON and binds that digest to
+the planning round and final task plans. Repeating `plan-phase` while that round is active is a no-op.
+`finish-phase-planning` refuses a round whose discovery no longer matches the persisted context.
 
-Every new task gets a dedicated native planner subagent **after discovery closes and before its executor
-starts**. This is separate from authoring the approved global plan.
+### Phase research and per-task plans
+
+Every phase gets one dedicated native planner after its discovery closes. The planner remains read-only:
+it researches the phase and writes only a separate plan artifact for each targeted task.
 Research the current code, artifacts, dependency outputs, project rules and relevant source
 documentation first; reuse useful prior research, but verify that it still applies. Read-only
 inspection and safe research checks are allowed. The planner writes only its designated task-plan
@@ -208,18 +217,18 @@ Ordinary refinement within approved scope needs no new task approval. Material c
 scope, behavior, acceptance or shared decisions return to the user and global plan workflow.
 
 ```text
-You are the PLANNER for <T4>: <title>. Research and prepare this task; do not implement it.
-Read project rules, approved objective/constraints, current task contract and dependency outputs: <references>.
-Read the persisted discovery and its locked decisions: <task.discovery from state.json>.
+You are the read-only PLANNER for phase <F2>. Research every targeted task; do not implement them.
+Read project rules, approved objective/constraints, member contracts and known dependency outputs: <references>.
+Read the persisted phase discovery and its locked decisions: <phaseWorkflows.F2.discovery from state.json>.
 Inspect the current implementation/artifacts and relevant sources; identify existing solutions and impacts.
 Apply PO First. Do not repeat discovery questions; return newly found consequential gaps to the orchestrator.
 Preserve known decisions; propose any material contract change for the authorized global-plan workflow.
-Write ONLY <absolute task-plan.json>: research sources/findings, resolved decisions, execution steps,
-criterion-to-check verification mapping, and open questions. Schema: references/runtime.md#task-plan-artifact.
+Write ONLY task-plan-<id>.json in <absolute artifact directory> for each target: research, decisions,
+steps, verification, open questions, phaseBinding and unresolvedInputs. Schema: references/runtime.md#task-plan-artifact.
 Do not edit .specs/graph/ state. Report the artifact path, findings and any decision that blocks execution.
 ```
 
-The orchestrator records `finish-planning` only after inspecting the actual artifact. The engine
+The orchestrator records `finish-phase-planning` only after inspecting the complete artifact batch. The engine
 requires research, steps, a mapping to every validation check and no unanswered blocking question;
 it checks structure and freshness, not the truth of research or real agent identity. `init` still
 requires a valid behavioral contract: planning never permits fake `echo` checks or inspection
@@ -229,7 +238,7 @@ These roles reduce opportunities for error; none guarantees that models cannot m
 
 ### Dispatch — recording a role does not create an agent
 
-**Every `plan-task --context` and `start` is paired with a native subagent call in the SAME message**.
+**Every `plan-phase` and `start` is paired with a native subagent call in the SAME message**.
 Dispatch ready planning tasks within total capacity and ready execution tasks within both caps — parallelism is
 the point of the graph, and tasks that share no dep share no file. The engine only ever sees
 the `--agent` string, so an orchestrator that runs `start` and then writes the code itself
@@ -240,7 +249,7 @@ EXISTS. That is the one rule here the engine cannot enforce for you.
 wearing a different label. It is not capacity-capped, so it goes out the moment work finishes.
 
 After an interruption, inspect persisted state and the harness's actual agent status before
-repeating commands. If `plan-task`, `start` or `review` was recorded but no agent was dispatched, complete
+repeating commands. If `plan-phase`, `start` or `review` was recorded but no agent was dispatched, complete
 that dispatch in the same attempt when authorized; do not repeat fail/retry/start. Record the
 actual agent handle in a note if it differs from the engine label. If dispatch is unavailable
 or the user paused work, block with the real orchestration reason. A recorded label is not
@@ -399,13 +408,15 @@ Reuse explicit user steering as approval; ask only when a new requirement remain
 
 | Situation | Next action |
 | --- | --- |
-| Actual rejected delivery, unchanged contract | Record `fail --reason`, then `retry`, fresh task planning, and `start` with real agent dispatches. |
+| Actual rejected delivery, unchanged contract and sound plan | Record the reviewer's actionable `fail --reason`, then `retry` and `start`; the engine reuses the approved plan only while its contract, discovery, scope and dependency binding remain current. |
+| Reviewer finds the task plan itself defective | Record `fail --reason "..." --plan-defect`, then `retry`; run fresh discussion and planning for that task through its phase before execution. |
 | Actual rejected delivery, approved contract also changed | Record the real failure; edit the approved plan; `sync-plan` while `failed`; inspect the persisted contract, `touches` and dependencies; then `retry`, fresh task planning and execution. |
 | Delivered work needs only an approved validation update | `refresh-contract`, then verification by an independent reviewer in the same attempt; no invented failure or executor. |
 | New scope after `done`/`skipped` | Create an explicit follow-up through the approved planning workflow; preserve completed history. |
 
-For the combined rejection case, the sequence below applies to tasks requiring planning;
-legacy tasks retain their original retry/start sequence:
+For the combined rejection case, phased runs use their phase workflow. A selective defect targets only
+the affected task; a shared phase decision targets the phase's nonterminal members. Legacy task-scoped
+runs retain `begin-discussion`, `finish-discussion`, `plan-task` and `finish-planning`. For a phased run:
 
 ```bash
 node $ENGINE fail T4 --reason "review: <actual unmet criterion>" --run <run-name>
@@ -413,9 +424,10 @@ node $ENGINE fail T4 --reason "review: <actual unmet criterion>" --run <run-name
 node $ENGINE sync-plan --plan <approved-plan.json> --run <run-name>
 node $ENGINE graph --run <run-name>  # inspect T4's persisted definition before retry
 node $ENGINE retry T4 --run <run-name>
-node $ENGINE plan-task T4 --agent <planner> --context <discovery.json> --run <run-name>  # after discuss; pair with dispatch
-# Planner consumes discovery, researches current context and records the artifact without repeating questions.
-node $ENGINE finish-planning T4 --plan <task-plan.json> --run <run-name>
+node $ENGINE begin-phase-discussion F2 --run <run-name> # before the principal-chat question
+node $ENGINE finish-phase-discussion F2 --context <discovery.json> --run <run-name>
+node $ENGINE plan-phase F2 --agent <planner> --run <run-name> # pair with one read-only planner dispatch
+node $ENGINE finish-phase-planning F2 --plan-dir <artifact-directory> --run <run-name>
 node $ENGINE start T4 --agent <executor> --run <run-name>  # pair with actual dispatch
 ```
 
@@ -423,8 +435,11 @@ Resume from the recorded phase if some steps already happened. `retry` alone doe
 the plan and refuses to proceed when the recorded failed task differs from its approved source;
 run `sync-plan` and inspect first. `sync-plan` preserves active/completed definitions; refresh
 only updates validation fields and does not record a rejection. Preserve the prior attempt's
-reason and evidence; carry the current contract and actionable rejection into the next
-executor's assignment. Prefer the harness's structured editor for the approved plan. If a
+reason and evidence. A bounded corrective retry records `planSourceAttempt` separately from the
+immediately rejected `correctionOf` attempt and carries that review reason as execution context,
+without changing the approved task plan or adding a fabricated planning round. Missing
+reviewer rationale, `--plan-defect`, or a changed contract, discovery, scope or dependency result
+makes the task ready to plan instead. Prefer the harness's structured editor for the approved plan. If a
 temporary program is the safest way to change a large plan, verify its backup and exact diff,
 then remove it; that helper is not a Prumo transition.
 
@@ -444,10 +459,12 @@ unblock. Both a pending in-flight validation and a changed contract need fresh v
 completed evidence and attempt history remain recorded. Explain an earlier orchestration mistake
 with a note; do not rewrite it as an implementation failure or erase historical attempts.
 
-For tasks requiring planning, task/dependency/global decision changes can make research stale. Pending work needs new planning;
-retry also requires fresh planning while preserving prior plans and evidence. If an active execution
-scope changes, keep its attempt, block it, synchronize the approved change and dispatch `plan-task`.
-`finish-planning` returns this work to **blocked**, preserving its original phase and reason;
+For tasks requiring planning, task/dependency/global decision changes can make research stale. Pending work needs new planning.
+A reviewer-rejected implementation may reuse its current approved plan only for a bounded correction
+while the complete recorded planning context still matches;
+plan defects and material changes require fresh planning while preserving prior plans and evidence. If an active execution
+scope changes, keep its attempt, block it, synchronize the approved change and use its phase discussion/planning workflow.
+`finish-phase-planning` returns this work to **blocked**, preserving its original phase and reason;
 explicit `unblock` then resumes the same attempt. Do not fabricate fail/retry for replanning.
 Validation-only changes can still use `refresh-contract` and fresh review in the same attempt.
 

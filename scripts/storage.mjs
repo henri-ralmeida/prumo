@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve, relative, isAbsolute, sep, basename } from 'node:path'
 
@@ -48,4 +48,61 @@ export function graphRoots(root, central) {
     roots.set(path, { name, path, graphDir: join(path, '.specs', 'graph') })
   }
   return [...roots.values()]
+}
+
+export function globalGraphRoots(env = process.env, home = homedir()) {
+  const warnings = []
+  const paths = new Map()
+  const key = path => process.platform === 'win32' ? path.toLowerCase() : path
+  const add = path => {
+    if (typeof path !== 'string' || !isAbsolute(path)) return
+    path = resolve(path)
+    if (existsSync(join(path, '.specs', 'graph'))) paths.set(key(path), path)
+  }
+
+  const centrals = [...new Set([
+    env.PRUMO_HOME,
+    env.GRAPH_FOREMAN_HOME,
+    join(home, '.local', 'share', 'prumo'),
+    join(home, '.local', 'share', 'graph-foreman'),
+  ].filter(Boolean).map(path => resolve(path)))]
+  for (const central of centrals) {
+    if (!existsSync(central)) continue
+    try {
+      for (const entry of readdirSync(central, { withFileTypes: true })) {
+        if (entry.isDirectory() && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(entry.name)) add(join(central, entry.name))
+      }
+    } catch { warnings.push(`Could not read workspace directory: ${central}`) }
+  }
+
+  const registry = join(home, '.local', 'share', 'prumo', 'installations.json')
+  if (existsSync(registry)) {
+    try {
+      const entries = JSON.parse(readFileSync(registry, 'utf8'))
+      if (!Array.isArray(entries)) throw new Error('expected an array')
+      for (const entry of entries) {
+        if (!entry || !Array.isArray(entry.projects)) {
+          warnings.push('Ignored an invalid installation registry entry')
+          continue
+        }
+        for (const project of entry.projects) {
+          if (typeof project !== 'string' || !isAbsolute(project) || !existsSync(join(resolve(project), '.specs', 'graph'))) {
+            warnings.push(`Ignored unavailable registered project: ${String(project)}`)
+            continue
+          }
+          add(project)
+        }
+      }
+    } catch { warnings.push(`Could not read installation registry: ${registry}`) }
+  }
+
+  const names = new Set()
+  const roots = [...paths.values()].sort((a, b) => a.localeCompare(b)).map(path => {
+    const base = basename(path)
+    let name = base
+    for (let suffix = 2; names.has(name); suffix++) name = `${base}-${suffix}`
+    names.add(name)
+    return { name, path, graphDir: join(path, '.specs', 'graph') }
+  })
+  return { roots, warnings: [...new Set(warnings)] }
 }

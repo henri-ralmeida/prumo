@@ -6,7 +6,8 @@ import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync, spawn } from 'node:child_process'
 import { setTimeout } from 'node:timers/promises'
-import { planInstall, applyInstall, restoreInstall, installationStatus, detectHarnesses, discoverInstallations } from '../lib/install.mjs'
+import { planInstall, applyInstall, restoreInstall, installationStatus, detectHarnesses, discoverInstallations, reconcileDashboardInstall } from '../lib/install.mjs'
+import { runPostinstall } from '../scripts/postinstall.mjs'
 import { inside, findRoot, storageHome, graphRoots } from '../scripts/storage.mjs'
 
 const source = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -49,12 +50,15 @@ function isolatedCli(f) {
   const env = { ...process.env, HOME: f.home, USERPROFILE: f.home, CLAUDE_CONFIG_DIR: join(f.home, '.claude'), CODEX_HOME: join(f.home, '.codex'), PRUMO_HOME: join(f.home, 'data'), PRUMO_LANG: 'en' }
   for (const key of Object.keys(env)) if (/^path$/i.test(key) || ['GRAPH_ROOT', 'PRUMO_ROOT', 'GRAPH_FOREMAN_HOME'].includes(key)) delete env[key]
   const commands = join(f.home, 'test-commands')
+  const commandLog = join(f.home, 'npm-commands')
   const npm = join(commands, process.platform === 'win32' ? 'npm.cmd' : 'npm')
-  put(npm, process.platform === 'win32' ? '@exit /b 0\r\n' : '#!/bin/sh\nexit 0\n')
+  put(npm, process.platform === 'win32' ? `@echo %*>>"${commandLog}"\r\n@exit /b 0\r\n` : `#!/bin/sh\nprintf '%s\\n' "$*" >> '${commandLog}'\n`)
   chmodSync(npm, 0o755)
   env.PATH = commands
   if (process.platform === 'win32') env.PATHEXT = '.CMD;.EXE'
-  return args => spawnSync(process.execPath, [join(source, 'bin', 'prumo.mjs'), ...args], { cwd: f.cwd, env, encoding: 'utf8', timeout: 20000, windowsHide: true })
+  const invoke = (args, extraEnv = {}) => spawnSync(process.execPath, [join(source, 'bin', 'prumo.mjs'), ...args], { cwd: f.cwd, env: { ...env, ...extraEnv }, encoding: 'utf8', timeout: 20000, windowsHide: true })
+  invoke.commandLog = commandLog
+  return invoke
 }
 
 test('automatic detection uses existing configuration, local legacy skills and executable paths without running them', t => {
@@ -130,12 +134,16 @@ test('automatic CLI installs only detected harnesses, preserves runs and backups
   assert.equal(blocked.status, 1)
   assert.match(blocked.stderr, /Interactive selection needs a terminal/)
   assert.equal(existsSync(marker('claude')), false)
+  put(join(f.home, '.local', 'share', 'prumo', 'dashboard.json'), { enabled: false, mechanism: process.platform === 'win32' ? 'schtasks' : process.platform === 'darwin' ? 'launchd' : 'xdg' })
   const installed = cli(['install', '--all', '--lang', 'pt-BR'])
   assert.equal(installed.status, 0, installed.stdout + installed.stderr)
   assert.match(installed.stdout, /Prumo instalado com sucesso/)
   assert.ok(installed.stdout.includes('Prumo v' + packageVersion))
   assert.doesNotMatch(installed.stdout, /Alterações \/|gravar:|Backup:/)
   for (const harness of ['claude', 'kiro']) assert.equal(JSON.parse(read(marker(harness))).lang, 'pt-BR')
+  const doctor = cli(['doctor', '--claude'])
+  assert.equal(doctor.status, 0, doctor.stdout + doctor.stderr)
+  assert.match(doctor.stdout, /dashboard: .*; .*; disabled/)
   assert.equal(existsSync(marker('codex')), false)
   assert.equal(existsSync(join(f.home, '.codex')), false)
   assert.equal(read(state), before)
@@ -164,6 +172,7 @@ test('automatic CLI reports no detection and continues independent harnesses aft
   assert.equal(cli(['doctor']).status, 1)
   assert.equal(cli(['install', '--claude', '--kiro']).status, 1)
   assert.equal(cli(['install', '--all', '--claude']).status, 1)
+  put(join(f.home, '.local', 'share', 'prumo', 'dashboard.json'), { enabled: false, mechanism: process.platform === 'win32' ? 'schtasks' : process.platform === 'darwin' ? 'launchd' : 'xdg' })
   put(join(f.home, '.claude', 'settings.json'), '{broken')
   put(join(f.home, '.kiro', 'settings', 'cli.json'), {})
   const conflict = cli(['install', '--all'])
@@ -171,6 +180,54 @@ test('automatic CLI reports no detection and continues independent harnesses aft
   assert.equal(read(join(f.home, '.claude', 'settings.json')), '{broken')
   assert.ok(existsSync(join(f.home, '.kiro', 'skills', 'prumo', 'SKILL.md')))
   assert.match(read(join(f.home, '.kiro', 'steering', 'po-first.md')), /inclusion: always/)
+})
+
+test('dashboard reconciliation is partial-safe, resumable, dry-run inert and respects opt-out', async () => {
+  const calls = []
+  const enable = async options => { calls.push(['enable', options]); return { ok: true, url: 'http://localhost:4949' } }
+  const restart = async options => { calls.push(['restart', options]); return { ok: true, url: 'http://localhost:4949' } }
+  const none = await reconcileDashboardInstall(0, { status: async () => { throw new Error('must not inspect') }, enable, restart })
+  assert.deepEqual(none, { ok: false, action: 'none' })
+  const disabled = await reconcileDashboardInstall(2, { status: async () => ({ disabled: true }), enable, restart })
+  assert.equal(disabled.action, 'disabled')
+  const preview = await reconcileDashboardInstall(1, { dryRun: true, status: async () => ({ enabled: false, disabled: false }), enable, restart })
+  assert.equal(preview.action, 'enable')
+  assert.deepEqual(calls, [])
+  assert.equal((await reconcileDashboardInstall(1, { dashboardOptions: { packageRoot: '/global/prumo' }, status: async () => ({ enabled: false }), enable, restart })).action, 'enable')
+  assert.equal((await reconcileDashboardInstall(3, { dashboardOptions: { packageRoot: '/global/prumo' }, status: async () => ({ enabled: true }), enable, restart })).action, 'restart')
+  assert.deepEqual(calls.map(([action]) => action), ['enable', 'restart'])
+})
+
+test('postinstall is inert locally and delegates global setup to the current absolute CLI', () => {
+  const calls = []
+  const root = resolve(source)
+  const env = { EXISTING: 'kept', npm_lifecycle_event: 'postinstall', npm_package_json: join(root, 'package.json') }
+  assert.equal(runPostinstall({ global: false, run: () => { throw new Error('must stay inert') } }), 0)
+  const code = runPostinstall({ root, env, global: true, execPath: process.execPath, run(file, args, options) { calls.push([file, args, options]); return { status: 2 } } })
+  assert.equal(code, 2)
+  assert.equal(calls[0][0], process.execPath)
+  assert.deepEqual(calls[0][1], [join(root, 'bin', 'prumo.mjs'), 'install', '--all'])
+  assert.equal(calls[0][2].stdio, 'inherit')
+  assert.deepEqual(calls[0][2].env, { ...env, PRUMO_POSTINSTALL_LIFECYCLE: '1' })
+  assert.equal(env.PRUMO_POSTINSTALL_LIFECYCLE, undefined)
+})
+
+test('only an authentic postinstall child skips the recursive global CLI update', t => {
+  const f = fixture(t, 'codex')
+  put(join(f.home, '.codex', 'config.toml'), '')
+  put(join(f.home, '.local', 'share', 'prumo', 'dashboard.json'), { enabled: false, mechanism: 'xdg' })
+  const cli = isolatedCli(f)
+  const markerOnly = cli(['install', '--all'], { PRUMO_POSTINSTALL_LIFECYCLE: '1' })
+  assert.equal(markerOnly.status, 0, markerOnly.stdout + markerOnly.stderr)
+  assert.match(read(cli.commandLog), /install --global --ignore-scripts/)
+  rmSync(cli.commandLog, { force: true })
+  const lifecycle = cli(['install', '--all'], {
+    PRUMO_POSTINSTALL_LIFECYCLE: '1', npm_lifecycle_event: 'postinstall', npm_package_json: join(source, 'package.json'),
+  })
+  assert.equal(lifecycle.status, 0, lifecycle.stdout + lifecycle.stderr)
+  assert.equal(existsSync(join(f.home, '.agents', 'skills', 'prumo', 'SKILL.md')), true)
+  assert.equal(existsSync(cli.commandLog), false, 'authentic lifecycle must not resolve or replace its own global package')
+  assert.equal(JSON.parse(read(join(f.home, '.local', 'share', 'prumo', 'dashboard.json'))).enabled, false, 'dashboard opt-out remains respected')
 })
 
 for (const harness of ['claude', 'kiro', 'codex']) test(`${harness}: persistent install, activation, idempotence and restore`, t => {
@@ -245,12 +302,22 @@ test('overlay migrates the legacy skill, preserves run data and supports complet
     coverage: { problem: 'Document scope', affected: 'Readers', outcome: 'Accurate document', currentBehavior: 'Scope exists',
       desiredBehavior: 'Preserve it', rules: 'Inspection only', exceptions: 'None', scope: 'Documentation', acceptance: 'Inspection passes' },
     decisions: [], deferred: [], closure: 'The documentation task is fully specified.' })
-  for (const args of [['init', '--plan', planPath, '--run', 'legacy'], ['plan-task', 'T1', '--agent', 'planner', '--context', discovery],
+  const statePath = join(root, '.specs', 'graph', 'legacy', 'state.json')
+  for (const args of [['init', '--plan', planPath, '--run', 'legacy'], ['begin-discussion', 'T1']]) {
+    const result = spawnSync(process.execPath, [join(source, 'scripts', 'engine.mjs'), ...args], { env, encoding: 'utf8' })
+    assert.equal(result.status, 0, result.stderr)
+  }
+  const round = JSON.parse(read(statePath)).tasks.T1.discussionAttempts.at(-1)
+  const context = JSON.parse(read(discovery))
+  context.roundId = round.roundId
+  context.nonce = round.nonce
+  context.questions = context.questions.map(question => ({ ...question, roundId: round.roundId }))
+  put(discovery, context)
+  for (const args of [['finish-discussion', 'T1', '--context', discovery], ['plan-task', 'T1', '--agent', 'planner', '--context', discovery],
     ['finish-planning', 'T1', '--plan', taskPlan], ['start', 'T1', '--agent', 'original'], ['block', 'T1', '--reason', 'User pause']]) {
     const result = spawnSync(process.execPath, [join(source, 'scripts', 'engine.mjs'), ...args], { env, encoding: 'utf8' })
     assert.equal(result.status, 0, result.stderr)
   }
-  const statePath = join(root, '.specs', 'graph', 'legacy', 'state.json')
   const eventsPath = join(root, '.specs', 'graph', 'legacy', 'events.ndjson')
   const before = [read(statePath), read(eventsPath), read(planPath)]
   assert.ok(f.plan().data.some(data => data.root === root))
@@ -423,7 +490,18 @@ test('an in-flight validation finishes across overlay without a new attempt or s
     coverage: { problem: 'Overlay during validation', affected: 'Active run', outcome: 'No lost attempt', currentBehavior: 'Validation is active',
       desiredBehavior: 'Complete same attempt', rules: 'Preserve state', exceptions: 'None', scope: 'Overlay', acceptance: 'Validation completes' },
     decisions: [], deferred: [], closure: 'The in-flight behavior is fully specified.' })
-  for (const args of [['init', '--plan', plan, '--run', 'active'], ['plan-task', 'T1', '--agent', 'planner', '--context', discovery],
+  for (const args of [['init', '--plan', plan, '--run', 'active'], ['begin-discussion', 'T1']]) {
+    const result = cli(args)
+    assert.equal(result.status, 0, result.stdout + result.stderr)
+  }
+  const statePath = join(root, '.specs', 'graph', 'active', 'state.json')
+  const round = JSON.parse(read(statePath)).tasks.T1.discussionAttempts.at(-1)
+  const context = JSON.parse(read(discovery))
+  context.roundId = round.roundId
+  context.nonce = round.nonce
+  context.questions = context.questions.map(question => ({ ...question, roundId: round.roundId }))
+  put(discovery, context)
+  for (const args of [['finish-discussion', 'T1', '--context', discovery], ['plan-task', 'T1', '--agent', 'planner', '--context', discovery],
     ['finish-planning', 'T1', '--plan', taskPlan], ['start', 'T1', '--agent', 'executor'], ['review', 'T1', '--agent', 'reviewer']]) {
     const result = cli(args)
     assert.equal(result.status, 0, result.stdout + result.stderr)
@@ -437,7 +515,6 @@ test('an in-flight validation finishes across overlay without a new attempt or s
   const deadline = Date.now() + 10000
   while (!existsSync(join(f.cwd, 'started')) && Date.now() < deadline) await setTimeout(30)
   assert.ok(existsSync(join(f.cwd, 'started')), output)
-  const statePath = join(root, '.specs', 'graph', 'active', 'state.json')
   const before = read(statePath)
   f.install()
   assert.equal(read(statePath), before)
