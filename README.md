@@ -2,7 +2,7 @@
 
 **English** · [Português (Brasil)](README.pt-BR.md)
 
-Prumo combines the [graph-foreman](https://github.com/JrSantiaggo/graph-foreman) engine with PO First: approved plans, research and planning for each task, dependency-aware execution, independent review, validation evidence and a local dashboard. The same workflow supports software, data, automation, migrations and other domains.
+Prumo combines the [graph-foreman](https://github.com/JrSantiaggo/graph-foreman) engine with PO First: approved plans, phase-wide research and planning, dependency-aware execution, independent review, validation evidence and a local dashboard. The same workflow supports software, data, automation, migrations and other domains.
 
 The plan defines the expected outcome; the engine enforces transitions and records evidence. Your AI harness performs the work and dispatches its agents.
 
@@ -10,7 +10,17 @@ The plan defines the expected outcome; the engine enforces transitions and recor
 
 Requires **Node.js 22 or newer** and the chosen harness. The installer does not install Claude Code, Kiro or Codex, or expand their execution permissions.
 
-Start the interactive installer or select a harness directly:
+Install the CLI, Prumo skill, PO First and the per-user dashboard service in one step:
+
+```sh
+npm install -g @henri-ralmeida/prumo
+```
+
+The global npm `postinstall` configures every detected supported harness and enables the dashboard at [http://localhost:4949](http://localhost:4949). A project-local npm install is inert: it does not change global harness configuration or register startup. If npm scripts were disabled, or a new harness was installed later, repair the setup with `prumo install --all`.
+
+At least one successfully configured harness is kept and the dashboard is enabled even if another harness fails, but the command exits nonzero and reports the incomplete configuration. If none can be configured, installation exits nonzero and does not enable the dashboard. Repeating the command resumes safely without duplicating files, managed instruction blocks or startup records.
+
+You can also start the interactive installer, select a harness directly or preview the changes:
 
 | Target | Command |
 |---|---|
@@ -19,6 +29,8 @@ Start the interactive installer or select a harness directly:
 | Claude Code | `bunx @henri-ralmeida/prumo@latest install --claude` |
 | Kiro | `bunx @henri-ralmeida/prumo@latest install --kiro` |
 | Codex | `bunx @henri-ralmeida/prumo@latest install --codex` |
+| Repair after disabled npm scripts | `prumo install --all` |
+| Preview harness and dashboard changes | `prumo install --all --dry-run` |
 
 It detects available environments from real configuration or commands on `PATH` (`claude`, `kiro-cli` / `kiro`, `codex`). Empty `~/.claude`, `~/.kiro` and `~/.codex` directories are not enough. A checkbox menu shows only detected environments, initially all selected. Use the arrow keys to move, Space to toggle, A for all/none, Enter to install, or Esc to cancel. Installation is per user and available across projects; no changes are applied before selection.
 
@@ -51,7 +63,7 @@ bunx @henri-ralmeida/prumo@latest install --claude --lang en --dry-run
 bunx @henri-ralmeida/prumo@latest doctor --claude --lang en
 ```
 
-`--dry-run` only previews changes; without a terminal or harness flag, it previews all detected environments. A real installation shows compact progress; `--dry-run` reports affected files, backups and conflicts. Repeat the command to update; identical files and instruction blocks are not duplicated. Repeatable `--project <path>` includes additional projects when looking for existing installations and data. It does not scan your entire disk.
+`--dry-run` only previews harness changes and dashboard service creation or restart. A real installation shows compact progress; the preview reports affected files, backups and conflicts. Repeat the command to repair or update; identical files, instruction blocks and startup records are not duplicated. Repeatable `--project <path>` registers additional projects and includes them when looking for existing installations and runs. Prumo does not scan your entire disk.
 
 | Harness | Invocation | PO First activation |
 |---|---|---|
@@ -63,6 +75,23 @@ PO First also applies outside Prumo. It prioritizes outcomes, rules, scope, deci
 
 Open a new session after installation. `doctor` distinguishes installed files, completed configuration and pending activation conditions. Local overrides, explicitly disabled skills and Markdown agents needing an inheritance check are reported; installation does not override harness policies. Filesystem inspection is not proof of model behavior.
 
+### Dashboard operations
+
+```sh
+prumo dashboard status
+prumo dashboard enable
+prumo dashboard disable
+prumo dashboard
+```
+
+`status` reports registration, process, version, port, URL and the selected startup mechanism. `enable` registers startup for the current user and starts the server immediately: Task Scheduler is tried first on Windows; if its per-user task cannot be created, Prumo automatically uses one hidden entry in the current user's Startup folder without requesting administrator access. macOS uses a LaunchAgent, and Linux uses a user systemd service with XDG autostart fallback. Reinstalls and updates keep the selected mechanism. `disable` stops an exactly identified Prumo process and removes only its managed registration; this choice survives reinstall and update. The bare `prumo dashboard` command runs the server in the foreground.
+
+The server listens only on `127.0.0.1:4949` and is read-only. It discovers known central workspaces and projects recorded in `installations.json`, selects the most recently modified current run, notices new runs without restart and shows an empty state when none exist. It does not execute tasks, edit graph state, synchronize plans or scan the disk.
+
+The dashboard keeps every card in place while filters dim unrelated work. Filters cover all, completed, incomplete, waiting dependencies, ready for discussion, discussing, ready to plan, planning, ready to execute, executing, reviewing, blocked, failed and skipped; `done` and `skipped` are terminal. Turn dependency context on to reveal direct predecessors, successors and their connecting curves. Density is detailed through 24 tasks, compact through 100 and dense above that; phases also wrap to the viewport width, and the side panel can collapse without losing selection or navigation.
+
+For startup or port trouble, begin with `prumo dashboard status`. If another Prumo owns port 4949, setup reuses or restarts the managed service. If an unrelated process owns it, Prumo reports the conflict and never terminates that process; resolve the owner yourself, then run `prumo dashboard enable`.
+
 ## Update installed environments
 
 The installer and updater make the short command available:
@@ -72,7 +101,7 @@ prumo update --dry-run
 prumo update
 ```
 
-`bunx @henri-ralmeida/prumo@latest update` provides the same update from any directory. A real update installs or updates the global CLI and refreshes Prumo/PO First in every detected installed harness; `--dry-run` only previews those changes. npm must be available; a download failure leaves installations unchanged.
+`bunx @henri-ralmeida/prumo@latest update` provides the same update from any directory. A real update installs or updates the global CLI, refreshes Prumo/PO First in every detected installed harness and restarts an enabled dashboard. An explicit `dashboard disable` remains respected. `--dry-run` only previews those changes. npm must be available; a download failure leaves installations unchanged.
 
 Normal updates show a compact colored progress bar in interactive terminals and finish with `Prumo updated successfully`, followed by the installed `Prumo v<version>`. Use `prumo update --dry-run` for the detailed file and conflict preview. The installer records installed environments and custom paths in `~/.local/share/prumo/installations.json`. Update also recognizes existing Prumo markers in standard locations and projects supplied with `--project`. It preserves each installation's language unless `--lang` is supplied, uses the same backups and conflict handling as installation, and skips environments containing only graph-foreman. It never resumes plans or creates attempts. After a successful `prumo update`, `prumo -v` reports the published version used for the update.
 
@@ -100,28 +129,45 @@ No manual data migration is required. Finish sessions that are actively loading 
 The backup includes a restore command:
 
 ```sh
-bunx @henri-ralmeida/prumo@1.2.2 restore "<backup-directory>"
+bunx @henri-ralmeida/prumo@1.3.0 restore "<backup-directory>"
 ```
 
 Restore refuses to overwrite files edited since installation. Plans keep their current state: reverting an installation must not erase ongoing work. Maintain your own business-data backups; the installer does not take a consistent snapshot of every live plan.
 
-An open dashboard can load the updated interface on its next request. Its process keeps already-loaded code until restarted; the installer never restarts it silently.
+An enabled dashboard is restarted after installation or update so it serves the installed version. A disabled dashboard remains disabled.
 
 ## Run an approved plan
 
-Present and approve the global plan in your AI harness. Invoke `/prumo <plan-or-run>` or `$prumo` in Codex. The engine records dispatches; the harness creates agents. If dedicated planners, executors or independent reviewers are unavailable, the workflow must report that limitation.
+Present and approve the global plan in Plan/Spec mode in your AI harness. If that mode blocks writes or agent dispatch, leave it after approval. Then invoke `/prumo <plan-or-run>` in Claude Code or Kiro, or `$prumo` in Codex. The engine records dispatches; the harness creates agents. If dedicated planners, executors or independent reviewers are unavailable, the workflow must report that limitation.
 
-In **1.2.1**, planning has two levels. Global Plan/Spec mode uses the full request to define and approve the graph. During execution, each new task follows **discuss → plan → executor → reviewer**: after dependencies deliver, the principal conversation reuses the global plan and their outputs, scouts the current task, asks at least one contextual question and closes its consequential PO First gray areas. Only then does it dispatch a dedicated planner to research in depth and record the task-specific execution plan. The rest of the run does not need to remain in global Plan/Spec mode.
+In **1.3.0**, planning has two levels. Global Plan/Spec mode defines and approves the graph. Each phase then follows **discuss → plan → execute → review**: the orchestrator first records the phase as discussing, researches it and asks at least one contextual question in the principal conversation. When consequential gray areas are closed, one dedicated read-only planner searches and reads the current project, then writes one separate immutable `task-plan-<id>.json` for every task in that phase. The planner does not edit product files or graph state.
+
+Phase discussion and planning can happen before member dependencies are complete. The task DAG remains the execution authority: each executor starts only when its own inputs are ready, and a fresh independent reviewer checks its result. An earlier task that depends on a later phase records that input as unresolved. The producer's current passing validation receipt, or an explicit skip waiver, satisfies it at execution time without rewriting a sound plan.
+
+Resolve `$ENGINE` to `scripts/engine.mjs` inside the installed Prumo skill. The complete phase handoff is:
+
+```sh
+node "$ENGINE" begin-phase-discussion F1
+# Ask and answer the phase questions in the principal conversation.
+node "$ENGINE" finish-phase-discussion F1 --context "$PRUMO_ROOT/.specs/graph/plans/discovery-F1.json"
+node "$ENGINE" plan-phase F1 --agent plan-F1
+# The read-only planner writes one task-plan-<id>.json per target.
+node "$ENGINE" finish-phase-planning F1 --plan-dir "$PRUMO_ROOT/.specs/graph/plans"
+node "$ENGINE" start T1 --agent executor-T1
+node "$ENGINE" review T1 --agent reviewer-T1
+```
 
 | Dashboard state | Color | What it means |
 |---|---|---|
-| Ready to plan (`ready_to_plan`) | Blue | Dependencies delivered; task discussion must close before planner dispatch |
-| In planning (`planning`) | Pink | Discovery is recorded; a dedicated planner is researching and preparing the task |
-| Ready to execute (`ready`) | Teal | Current research, decisions, steps and verification mapping are recorded |
+| Ready for discussion (`ready_for_discussion`) | Violet | The phase needs a current principal-conversation discussion; this can happen before task dependencies finish |
+| Discussing (`discussing`) | Violet | Persisted phase state while the principal conversation resolves consequential gray areas |
+| Ready to plan (`ready_to_plan`) | Blue | Persisted phase state after discussion closes; its planner may start before task dependencies finish |
+| In planning (`planning`) | Pink | One read-only planner is preparing the phase's separate task plans |
+| Ready to execute (`ready`) | Teal | The task plan is current and DAG inputs are ready |
 
-Discovery uses the host's native question UI when available and a structured principal-chat fallback otherwise. It records light research, real answers, PO First coverage, decisions, deferred ideas and why no consequential gray area remains. `plan-task --context <discovery.json>` persists that evidence before planning starts; the planner consumes it without repeating the discussion. Material scope changes return to the user/global plan. The engine checks structure and freshness; it cannot certify research quality, the UI used or real model dispatch.
+Discovery uses the host's native question UI when available and a structured principal-chat fallback otherwise. It records light research, real answers, PO First coverage, decisions, deferred ideas and why no consequential gray area remains. The planner consumes it without repeating the discussion. Material changes to scope, contract or shared phase decisions require fresh discussion/planning for the affected work; a reviewer-marked plan defect replans only that task. Ordinary executor findings and corrective retries reuse a sound, current immutable plan.
 
-Existing tasks retain their lifecycle and history. Tasks added to an old run require planning. Retry requires fresh planning; approved scope changes during paused execution can be replanned and explicitly resumed in the same attempt. See the [task-plan artifact and recovery rules](references/runtime.md#task-plan-artifact).
+Existing task-scoped runs retain their lifecycle and history. A compatible pre-execution phase can opt in with `begin-phase-discussion <phase> --adopt-legacy`; unsafe adoption is refused atomically. See the [phase planning artifact and recovery rules](references/runtime.md#task-plan-artifact).
 
 For new work, select a central workspace. On macOS/Linux:
 

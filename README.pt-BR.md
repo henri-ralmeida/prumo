@@ -2,7 +2,7 @@
 
 [English](README.md) · **Português (Brasil)**
 
-Prumo reúne o motor do [graph-foreman](https://github.com/JrSantiaggo/graph-foreman) com PO First: planos aprovados, pesquisa e planejamento por tarefa, execução ordenada por dependências, revisão independente, evidências de validação e um dashboard local. O mesmo fluxo atende software, dados, automação, migrações e outras demandas.
+Prumo reúne o motor do [graph-foreman](https://github.com/JrSantiaggo/graph-foreman) com PO First: planos aprovados, pesquisa e planejamento por fase, execução ordenada por dependências, revisão independente, evidências de validação e um dashboard local. O mesmo fluxo atende software, dados, automação, migrações e outras demandas.
 
 O plano define o resultado esperado; o motor controla estados e registros. O ambiente de IA executa o trabalho e dispara seus agentes.
 
@@ -10,7 +10,17 @@ O plano define o resultado esperado; o motor controla estados e registros. O amb
 
 Requer **Node.js 22 ou superior** e o ambiente escolhido. O instalador não instala Claude Code, Kiro ou Codex, nem altera suas permissões de execução.
 
-Abra o instalador interativo ou escolha um ambiente diretamente:
+Instale a CLI, a skill Prumo, o PO First e o serviço de dashboard do usuário em uma etapa:
+
+```sh
+npm install -g @henri-ralmeida/prumo
+```
+
+O `postinstall` global do npm configura todos os ambientes suportados detectados e habilita o dashboard em [http://localhost:4949](http://localhost:4949). Uma instalação npm local no projeto é inerte: não altera configurações globais nem registra inicialização. Se os scripts do npm estavam desabilitados, ou um novo ambiente foi instalado depois, repare a configuração com `prumo install --all`.
+
+Ao menos um ambiente configurado com sucesso é preservado e o dashboard é habilitado mesmo se outro falhar, mas o comando retorna código diferente de zero e informa a configuração incompleta. Se nenhum puder ser configurado, a instalação retorna erro e não habilita o dashboard. Repetir o comando retoma com segurança, sem duplicar arquivos, blocos gerenciados ou registros de inicialização.
+
+Você também pode abrir o instalador interativo, escolher um ambiente ou conferir a prévia:
 
 | Destino | Comando |
 |---|---|
@@ -19,6 +29,8 @@ Abra o instalador interativo ou escolha um ambiente diretamente:
 | Claude Code | `bunx @henri-ralmeida/prumo@latest install --claude` |
 | Kiro | `bunx @henri-ralmeida/prumo@latest install --kiro` |
 | Codex | `bunx @henri-ralmeida/prumo@latest install --codex` |
+| Reparar após scripts npm desabilitados | `prumo install --all` |
+| Conferir mudanças de ambientes e dashboard | `prumo install --all --dry-run` |
 
 Ele detecta ambientes por configurações reais ou comandos no `PATH` (`claude`, `kiro-cli` / `kiro`, `codex`). Pastas vazias como `~/.claude`, `~/.kiro` e `~/.codex` não bastam. O menu mostra somente os ambientes detectados, inicialmente todos marcados. Use as setas para navegar, Espaço para marcar/desmarcar, A para todos/nenhum, Enter para instalar ou Esc para cancelar. A instalação é por usuário e vale para seus projetos; nenhuma alteração é aplicada antes da seleção.
 
@@ -51,7 +63,7 @@ bunx @henri-ralmeida/prumo@latest install --claude --lang pt-BR --dry-run
 bunx @henri-ralmeida/prumo@latest doctor --claude --lang pt-BR
 ```
 
-`--dry-run` apenas mostra as alterações; sem terminal ou opção de ambiente, mostra a prévia de todos os detectados. A instalação real mostra progresso enxuto; `--dry-run` informa arquivos, backups e conflitos. Repita o comando para atualizar; arquivos e blocos idênticos não são duplicados. `--project <caminho>` inclui um projeto adicional na busca por instalações e dados existentes; pode ser repetido. Não há varredura indiscriminada do disco.
+`--dry-run` apenas mostra mudanças nos ambientes e a criação ou reinício do serviço do dashboard. A instalação real mostra progresso enxuto; a prévia informa arquivos, backups e conflitos. Repita o comando para reparar ou atualizar; arquivos, blocos e registros de inicialização idênticos não são duplicados. `--project <caminho>` registra um projeto adicional e o inclui na busca por instalações e runs; pode ser repetido. O Prumo não varre o disco inteiro.
 
 | Ambiente | Invocação | PO First |
 |---|---|---|
@@ -63,6 +75,23 @@ PO First vale também fora do Prumo. Prioriza resultado, regras, escopo, decisõ
 
 Abra uma nova sessão depois de instalar. `doctor` distingue arquivos instalados, configuração concluída e condições pendentes. Configurações locais, skills explicitamente desabilitadas e agentes Markdown que exigem conferência da herança são informados; o instalador não promete sobrepor políticas do ambiente. Inspeção de arquivos não comprova o comportamento de um modelo.
 
+### Operações do dashboard
+
+```sh
+prumo dashboard status
+prumo dashboard enable
+prumo dashboard disable
+prumo dashboard
+```
+
+`status` informa registro, processo, versão, porta, URL e o mecanismo de inicialização escolhido. `enable` registra a inicialização para o usuário atual e inicia o servidor imediatamente: no Windows, tenta primeiro o Agendador de Tarefas; se a tarefa do usuário não puder ser criada, o Prumo usa automaticamente uma única entrada oculta na pasta Inicializar do usuário atual, sem pedir acesso de administrador. O macOS usa um LaunchAgent, e o Linux usa um serviço systemd do usuário com fallback XDG. Reinstalações e atualizações preservam o mecanismo escolhido. `disable` encerra um processo Prumo identificado com exatidão e remove somente o registro gerenciado; essa escolha sobrevive a reinstalações e atualizações. `prumo dashboard` sem complemento executa o servidor em primeiro plano.
+
+O servidor escuta somente em `127.0.0.1:4949` e é somente leitura. Ele descobre workspaces centrais conhecidos e projetos registrados em `installations.json`, escolhe a run atual modificada mais recentemente, percebe novas runs sem reiniciar e mostra estado vazio quando nenhuma existe. Ele não executa tarefas, edita o estado do grafo, sincroniza planos nem varre o disco.
+
+O dashboard mantém todos os cards no lugar enquanto os filtros reduzem a opacidade do trabalho não relacionado. Os filtros cobrem todos, concluídos, incompletos, aguardando dependências, prontos para discussão, em discussão, prontos para planejamento, planejando, prontos para executar, executando, revisando, bloqueados, falhos e ignorados; `done` e `skipped` são terminais. Ligue o contexto de dependências para revelar predecessores, sucessores diretos e suas curvas. A densidade é detalhada até 24 tarefas, compacta até 100 e densa acima disso; as fases também quebram conforme a largura da janela, e o painel lateral pode ser recolhido sem perder seleção ou navegação.
+
+Em problemas de inicialização ou porta, comece por `prumo dashboard status`. Se outro Prumo ocupa a porta 4949, a configuração reutiliza ou reinicia o serviço gerenciado. Se for outro processo, o Prumo informa o conflito e nunca o encerra; resolva o processo identificado e execute `prumo dashboard enable`.
+
 ## Atualizar os ambientes instalados
 
 O instalador e o atualizador disponibilizam o comando curto:
@@ -72,7 +101,7 @@ prumo update --dry-run
 prumo update
 ```
 
-`bunx @henri-ralmeida/prumo@latest update` oferece a mesma atualização em qualquer pasta. Uma atualização real instala ou atualiza a CLI global e atualiza Prumo/PO First em todos os ambientes instalados detectados; `--dry-run` apenas mostra essas alterações. O npm precisa estar disponível; falha no download mantém as instalações intactas.
+`bunx @henri-ralmeida/prumo@latest update` oferece a mesma atualização em qualquer pasta. Uma atualização real instala ou atualiza a CLI global, atualiza Prumo/PO First em todos os ambientes instalados detectados e reinicia o dashboard habilitado. Um `dashboard disable` explícito continua respeitado. `--dry-run` apenas mostra essas alterações. O npm precisa estar disponível; falha no download mantém as instalações intactas.
 
 Atualizações normais mostram uma barra colorida e compacta de progresso por etapas em terminais interativos e terminam com `Prumo atualizado com sucesso`, seguido da versão instalada em `Prumo v<versão>`. Use `prumo update --dry-run` para ver a prévia detalhada de arquivos e conflitos. O instalador registra ambientes e caminhos personalizados em `~/.local/share/prumo/installations.json`. A atualização também reconhece marcadores existentes do Prumo nos locais padrão e nos projetos informados com `--project`. Preserva o idioma de cada instalação, salvo uso de `--lang`, e reutiliza os backups e o tratamento de conflitos da instalação. Ambientes que contêm somente graph-foreman ficam fora da atualização. Não retoma planos nem cria tentativas. Após `prumo update` concluir, `prumo -v` mostra a versão publicada usada na atualização.
 
@@ -100,28 +129,45 @@ Não é necessário migrar os dados manualmente. Encerre sessões que estejam ca
 O backup informa o comando de reversão:
 
 ```sh
-bunx @henri-ralmeida/prumo@1.2.2 restore "<diretório-do-backup>"
+bunx @henri-ralmeida/prumo@1.3.0 restore "<diretório-do-backup>"
 ```
 
 A reversão recusa sobrescrever arquivos que você editou depois. Os planos continuam no estado atual: reverter uma instalação não deve apagar trabalho em andamento. Mantenha sua rotina de backup dos dados de negócio; o instalador não captura uma imagem consistente de todos os planos ativos.
 
-Um dashboard já aberto pode carregar a nova interface no próximo acesso. Seu processo continua com o código já carregado até ser reiniciado; a instalação não o reinicia silenciosamente.
+O dashboard habilitado é reiniciado depois de instalação ou atualização para servir a versão instalada. Um dashboard desabilitado permanece desabilitado.
 
 ## Executar um plano
 
-Apresente e aprove o plano global no ambiente de IA. Invoque `/prumo <plano-ou-execução>` ou `$prumo` no Codex. O motor registra despachos; quem cria agentes é o ambiente. Sem suporte a planejadores dedicados, executores ou revisores independentes, o fluxo deve informar a limitação.
+Apresente e aprove o plano global no modo Plan/Spec do ambiente de IA. Se esse modo bloquear escrita ou despacho de agentes, saia dele depois da aprovação. Então invoque `/prumo <plano-ou-execução>` no Claude Code ou Kiro, ou `$prumo` no Codex. O motor registra despachos; quem cria agentes é o ambiente. Sem suporte a planejadores dedicados, executores ou revisores independentes, o fluxo deve informar a limitação.
 
-Na **1.2.1**, há dois níveis de planejamento. O modo Plan/Spec global usa todo o pedido para definir e aprovar o grafo. Durante a execução, cada tarefa nova segue **discutir → planejar → executar → revisar**: depois das dependências, a conversa principal reaproveita o plano global e as entregas, faz uma pesquisa leve, pergunta ao menos uma questão contextual e fecha as áreas cinzentas relevantes de PO First. Só então dispara um planejador dedicado para pesquisar em profundidade e registrar o plano específico da tarefa. O restante da execução não precisa permanecer no modo Plan/Spec global.
+Na **1.3.0**, há dois níveis de planejamento. O modo Plan/Spec global define e aprova o grafo. Cada fase então segue **discutir → planejar → executar → revisar**: primeiro o orquestrador registra a fase em discussão, pesquisa e faz ao menos uma pergunta contextual na conversa principal. Quando as áreas cinzentas relevantes estão fechadas, um planejador dedicado e somente leitura pesquisa o projeto e grava um `task-plan-<id>.json` separado e imutável para cada tarefa da fase. O planejador não edita arquivos do produto nem o estado do grafo.
+
+A discussão e o planejamento da fase podem ocorrer antes de suas dependências terminarem. O DAG continua sendo a autoridade de execução: cada executor só começa quando suas próprias entradas estão prontas, e um revisor independente confere o resultado. Uma tarefa anterior que depende de fase posterior registra a entrada como não resolvida. O recibo atual de validação aprovada do produtor, ou uma dispensa explícita por tarefa pulada, satisfaz a entrada na execução sem reescrever um plano correto.
+
+Resolva `$ENGINE` como `scripts/engine.mjs` dentro da skill Prumo instalada. A passagem completa da fase é:
+
+```sh
+node "$ENGINE" begin-phase-discussion F1
+# Faça e responda às perguntas da fase na conversa principal.
+node "$ENGINE" finish-phase-discussion F1 --context "$PRUMO_ROOT/.specs/graph/plans/discovery-F1.json"
+node "$ENGINE" plan-phase F1 --agent plan-F1
+# O planejador somente leitura grava um task-plan-<id>.json por tarefa alvo.
+node "$ENGINE" finish-phase-planning F1 --plan-dir "$PRUMO_ROOT/.specs/graph/plans"
+node "$ENGINE" start T1 --agent executor-T1
+node "$ENGINE" review T1 --agent reviewer-T1
+```
 
 | Estado no dashboard | Cor | Significado |
 |---|---|---|
-| Pronto para planejamento (`ready_to_plan`) | Azul | Dependências entregues; a discussão da tarefa precisa fechar antes do planejador |
-| Em planejamento (`planning`) | Rosa | Descoberta registrada; um planejador dedicado pesquisa e prepara a tarefa |
-| Pronto para executar (`ready`) | Verde-azulado | Pesquisa atual, decisões, passos e verificações estão registrados |
+| Pronto para discussão (`ready_for_discussion`) | Violeta | A fase precisa de discussão atual na conversa principal; ela pode acontecer antes das dependências das tarefas terminarem |
+| Em discussão (`discussing`) | Violeta | Estado persistido da fase enquanto a conversa principal resolve áreas cinzentas relevantes |
+| Pronto para planejamento (`ready_to_plan`) | Azul | Estado persistido da fase após encerrar a discussão; o planejador pode começar antes das dependências terminarem |
+| Em planejamento (`planning`) | Rosa | Um planejador somente leitura prepara planos separados para as tarefas da fase |
+| Pronto para executar (`ready`) | Verde-azulado | O plano da tarefa está atual e suas entradas do DAG estão prontas |
 
-A descoberta usa a caixa nativa de perguntas do ambiente quando disponível e um bloco estruturado na conversa principal quando não estiver. Ela registra pesquisa leve, respostas reais, cobertura PO First, decisões, ideias adiadas e o motivo de não restar área cinzenta relevante. `plan-task --context <descoberta.json>` persiste essa evidência antes de iniciar o planejamento; o planejador a consome sem repetir a discussão. Mudanças materiais de escopo voltam ao usuário/plano global. O motor confere estrutura e atualidade; não comprova a qualidade semântica, a interface usada nem o despacho real do modelo.
+A descoberta usa a caixa nativa de perguntas do ambiente quando disponível e um bloco estruturado na conversa principal quando não estiver. Ela registra pesquisa leve, respostas reais, cobertura PO First, decisões, ideias adiadas e o motivo de não restar área cinzenta relevante. O planejador a consome sem repetir a discussão. Mudanças materiais de escopo, contrato ou decisões compartilhadas da fase exigem nova discussão e planejamento do trabalho afetado; um defeito de plano marcado pelo revisor replaneja somente aquela tarefa. Achados comuns do executor e retries corretivos reutilizam o plano imutável quando ele continua correto e atual.
 
-Tarefas existentes preservam fluxo e histórico. Tarefas adicionadas a uma run antiga exigem planejamento. Retry exige pesquisa atual; mudanças aprovadas de escopo durante execução pausada podem ser replanejadas e retomadas explicitamente na mesma tentativa. Consulte [planejamento por tarefa](references/runtime.pt-BR.md#planejamento-por-tarefa) e [planos em andamento](references/runtime.pt-BR.md#planos-em-andamento).
+Runs existentes no modo por tarefa preservam fluxo e histórico. Uma fase compatível antes da execução pode aderir com `begin-phase-discussion <fase> --adopt-legacy`; adoção insegura é recusada de forma atômica. Consulte [artefato de planejamento por fase](references/runtime.pt-BR.md#descoberta-e-planejamento-por-fase) e [planos em andamento](references/runtime.pt-BR.md#planos-em-andamento).
 
 Para novos planos, selecione um workspace central. No PowerShell:
 

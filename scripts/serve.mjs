@@ -16,15 +16,9 @@ import { fileURLToPath } from 'node:url'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ENGINE = join(HERE, 'engine.mjs')
 
-import { findRoot, storageHome, graphRoots as listRoots } from './storage.mjs'
+import { findRoot, storageHome, graphRoots as listRoots, globalGraphRoots } from './storage.mjs'
 import { language, localizeDashboard, log, errorLog, tr } from './i18n.mjs'
-import { hasCurrentTaskPlan } from './validation.mjs'
-
-let ROOT
-try { ROOT = findRoot() } catch (error) { errorLog('[prumo] ERROR: ' + error.message); process.exit(1) }
-const GRAPH_DIR = join(ROOT, '.specs', 'graph')
-const ROOT_NAME = basename(ROOT)
-const INDEX_ROOT = storageHome()
+import { discoveryDigest, hasCurrentTaskPlan, phasePlanningContext, planningContext } from './validation.mjs'
 
 const argv = process.argv.slice(2)
 const flag = (name, fallback) => {
@@ -34,6 +28,17 @@ const flag = (name, fallback) => {
 const PORT = Number(flag('port', 4949))
 const RUN_FLAG = flag('run', null)
 const SYNC_PLAN = argv.includes('--sync-plan')
+const GLOBAL = argv.includes('--global')
+if (GLOBAL && SYNC_PLAN) {
+  errorLog('[prumo] ERROR: --global is read-only and cannot be combined with --sync-plan')
+  process.exit(1)
+}
+
+let ROOT = null
+if (!GLOBAL) try { ROOT = findRoot() } catch (error) { errorLog('[prumo] ERROR: ' + error.message); process.exit(1) }
+const GRAPH_DIR = ROOT && join(ROOT, '.specs', 'graph')
+const ROOT_NAME = ROOT && basename(ROOT)
+const INDEX_ROOT = storageHome()
 
 /* The run name reaches join() as a path segment, so it is allowlisted, never trusted:
  * plain slug, no leading dot, no separators. Applies to ?run=, --run and CURRENT alike. */
@@ -41,7 +46,9 @@ function safeRun(name) {
   return name && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name) ? name : null
 }
 
-function graphRoots() { return listRoots(ROOT, INDEX_ROOT) }
+function graphRoots() {
+  return GLOBAL ? globalGraphRoots() : { roots: listRoots(ROOT, INDEX_ROOT), warnings: [] }
+}
 
 function currentRun(root = ROOT) {
   if (root === ROOT && RUN_FLAG) return safeRun(RUN_FLAG)
@@ -49,10 +56,12 @@ function currentRun(root = ROOT) {
   return existsSync(p) ? safeRun(readFileSync(p, 'utf8').trim()) : null
 }
 
-function listRuns() {
-  const current = currentRun()
+function catalog() {
+  const { roots, warnings } = graphRoots()
   const runs = []
-  for (const root of graphRoots()) {
+  let selected = GLOBAL ? null : { root: roots.find(candidate => candidate.path === ROOT), run: currentRun() }
+  let newest = -1
+  for (const root of roots) {
     if (!existsSync(root.graphDir)) continue
     for (const entry of readdirSync(root.graphDir, { withFileTypes: true })) {
       if (!entry.isDirectory() || !safeRun(entry.name)) continue
@@ -68,16 +77,41 @@ function listRuns() {
         })
       } catch { /* one damaged run must not hide the others */ }
     }
+    if (GLOBAL) {
+      const currentPath = join(root.graphDir, 'CURRENT')
+      if (!existsSync(currentPath)) continue
+      try {
+        const run = safeRun(readFileSync(currentPath, 'utf8').trim())
+        if (!run) {
+          warnings.push(`Ignored invalid CURRENT in ${root.path}`)
+          continue
+        }
+        const statePath = join(root.graphDir, run, 'state.json')
+        if (!existsSync(statePath)) {
+          warnings.push(`Ignored CURRENT without state in ${root.path}: ${run}`)
+          continue
+        }
+        JSON.parse(readFileSync(statePath, 'utf8'))
+        const modified = statSync(currentPath).mtimeMs
+        if (modified > newest) { newest = modified; selected = { root, run } }
+      } catch { warnings.push(`Ignored invalid CURRENT in ${root.path}`) }
+    }
   }
   runs.sort((a, b) => a.run.localeCompare(b.run))
-  return { currentRoot: ROOT_NAME, current, runs }
+  return { roots, warnings, currentRoot: selected?.root?.name ?? null, current: selected?.run ?? null, runs }
+}
+
+function listRuns() {
+  const { currentRoot, current, runs, warnings } = catalog()
+  return { currentRoot, current, runs, warnings }
 }
 
 function selectedGraph(url) {
+  const snapshot = catalog()
   const requestedRoot = url.searchParams.get('root')
   const root = requestedRoot === null
-    ? graphRoots().find((candidate) => candidate.path === ROOT)
-    : graphRoots().find((candidate) => candidate.name === safeRun(requestedRoot))
+    ? snapshot.roots.find(candidate => candidate.name === snapshot.currentRoot)
+    : snapshot.roots.find(candidate => candidate.name === requestedRoot)
   if (!root) return null
   const requestedRun = url.searchParams.get('run')
   if (requestedRun !== null && !safeRun(requestedRun)) return null
@@ -119,19 +153,57 @@ if (SYNC_PLAN) {
 
 /** Same derivation the engine uses — duplicated on purpose so this stays dependency-free
  *  read-only (importing engine.mjs would run its CLI arg handling). Keep in sync. */
+function phaseTargets(state, phaseId) {
+  return Object.values(state.tasks).filter(task => task.phase === phaseId && !['done', 'skipped'].includes(task.state) &&
+    !(task.taskPlan?.phaseId === phaseId && hasCurrentTaskPlan(state, task)))
+}
+
+function currentPhaseDiscussion(state, phase) {
+  const round = phase?.discussionAttempts?.at(-1)
+  const targets = round?.targets?.map(id => state.tasks[id]).filter(Boolean)
+  if (round?.result !== 'discussed' || targets?.length !== round.targets.length ||
+      !phaseTargets(state, phase.id).every(task => round.targets.includes(task.id))) return false
+  const context = JSON.stringify([state.plan.name, state.plan.description, state.plan.planningRevision ?? 0, phase.id,
+    targets.map(task => [task.id, phasePlanningContext(state, task)]).sort()])
+  return round.context === context && phase.discovery?.context === context && phase.discovery?.roundId === round.roundId &&
+    phase.discovery?.nonce === round.nonce && phase.discovery?.digest === round.discoveryDigest &&
+    phase.discovery.digest === discoveryDigest(phase.discovery)
+}
+
+function currentDiscussion(state, task) {
+  const round = task.discussionAttempts?.at(-1)
+  return round?.result === 'discussed' && round.context === planningContext(state, task) &&
+    round.attempt === task.attempts.length + (task.planningReturn ? 0 : 1) &&
+    task.discovery?.roundId === round.roundId && task.discovery?.nonce === round.nonce &&
+    task.discovery?.digest === round.discoveryDigest && task.discovery.digest === discoveryDigest(task.discovery)
+}
+
 function derive(state) {
   const out = {}
   for (const [id, t] of Object.entries(state.tasks)) {
     let effective = t.state
     let blockedBy = []
+    const phase = state.phaseWorkflows?.[t.phase]
     if (t.state === 'pending') {
       blockedBy = t.deps.filter((d) => {
         const dep = state.tasks[d]
         return !dep || (dep.state !== 'done' && dep.state !== 'skipped')
       })
-      effective = blockedBy.length ? 'waiting' : hasCurrentTaskPlan(state, t) ? 'ready' : 'ready_to_plan'
+      const phaseAdopted = !(state.legacyPhaseAdoption && !phase?.adoptedLegacy)
+      effective = blockedBy.length ? 'waiting' : !phaseAdopted ? 'pending' : hasCurrentTaskPlan(state, t) ? 'ready' :
+        state.plan.planningMode === 'phase' ? (currentPhaseDiscussion(state, phase) ? 'ready_to_plan' : 'ready_for_discussion') :
+          t.discussionRequired && !currentDiscussion(state, t) ? 'ready_for_discussion' : 'ready_to_plan'
     }
-    out[id] = { effective, blockedBy }
+    const planningStatus = state.legacyPhaseAdoption && !phase?.adoptedLegacy ? 'awaiting_phase_adoption' : hasCurrentTaskPlan(state, t) ? 'planned' :
+      phase?.state === 'discussing' ? 'phase_discussing' : phase?.state === 'planning' ? 'phase_planning' : 'awaiting_phase_plan'
+    let inputStatus
+    if (t.taskPlan?.phaseId && t.taskPlan.unresolvedInputs?.length) {
+      const inputs = t.taskPlan.unresolvedInputs.map(input => state.tasks[input.task])
+      inputStatus = inputs.some(dep => !dep || !['done', 'skipped'].includes(dep.state)) ? 'unresolved_later_phase_input' :
+        inputs.some(dep => dep.state === 'skipped') ? 'waived_input' : 'validated_input'
+    }
+    out[id] = { effective, blockedBy,
+      ...(state.plan.planningMode === 'phase' ? { planningStatus, ...(inputStatus ? { inputStatus } : {}) } : {}) }
   }
   return out
 }
@@ -141,17 +213,36 @@ function json(res, code, body) {
   res.end(JSON.stringify(body))
 }
 
+function productVersion() {
+  for (const path of [join(HERE, '..', 'package.json'), join(HERE, '..', '.prumo-install.json')]) {
+    try {
+      const metadata = JSON.parse(readFileSync(path, 'utf8'))
+      if (typeof metadata.version === 'string') return metadata.version
+    } catch { /* try the next package layout */ }
+  }
+  return 'unknown'
+}
+
+const EMPTY_STATE = { plan: { name: '', phases: [] }, tasks: {}, derived: {}, empty: true }
+
 const server = createServer((req, res) => {
   try {
   const url = new URL(req.url, `http://localhost:${PORT}`)
 
   if (url.pathname === '/api/runs') return json(res, 200, listRuns())
+  if (url.pathname === '/api/health') return json(res, 200, {
+    product: 'prumo', version: productVersion(), mode: GLOBAL ? 'global' : 'workspace',
+    readOnly: true, host: '127.0.0.1', port: server.address().port,
+  })
 
   const selected = selectedGraph(url)
   const run = selected?.run
 
   if (url.pathname === '/api/state') {
-    if (!run) return json(res, 404, { error: tr('no run') })
+    if (!run) {
+      if (GLOBAL && !url.searchParams.has('root') && !url.searchParams.has('run')) return json(res, 200, EMPTY_STATE)
+      return json(res, 404, { error: tr('no run') })
+    }
     const p = join(selected.graphDir, run, 'state.json')
     if (!existsSync(p)) return json(res, 404, { error: tr(`run "${run}" not found`) })
     const state = JSON.parse(readFileSync(p, 'utf8'))
@@ -159,7 +250,10 @@ const server = createServer((req, res) => {
   }
 
   if (url.pathname === '/api/events') {
-    if (!run) return json(res, 404, { error: 'no run' })
+    if (!run) {
+      if (GLOBAL && !url.searchParams.has('root') && !url.searchParams.has('run')) return json(res, 200, { events: [] })
+      return json(res, 404, { error: 'no run' })
+    }
     const p = join(selected.graphDir, run, 'events.ndjson')
     if (!existsSync(p)) return json(res, 200, { events: [] })
     const limit = Number(url.searchParams.get('limit') ?? 300)
@@ -192,8 +286,9 @@ const server = createServer((req, res) => {
 /* Loopback ONLY: this is a read-only dashboard for the dev's own browser. Binding every
  * interface would expose run state to the local network for no benefit. */
 }).listen(PORT, '127.0.0.1', () => {
+  const selected = GLOBAL ? catalog().current : currentRun()
   log(
-    `[prumo] dashboard on http://localhost:${server.address().port} (run: ${currentRun() ?? '—'}, ` +
+    `[prumo] dashboard on http://localhost:${server.address().port} (run: ${selected ?? '—'}, ` +
       `auto-sync: ${SYNC_PLAN ? 'on' : 'off'})`,
   )
 }).on('error', (e) => {

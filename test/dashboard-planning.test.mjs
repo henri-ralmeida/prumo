@@ -25,24 +25,124 @@ const discovery = {
   decisions: [{ question: 'Keep behavior?', answer: 'Yes' }], deferred: ['Future idea'],
 }
 
-function dashboard(lang = 'en') {
-  const nodes = new Map()
-  const element = () => ({
-    innerHTML: '', textContent: '', dataset: {}, style: { setProperty() {} },
-    classList: { add() {}, remove() {}, toggle() {} }, addEventListener() {}, setAttribute() {},
-    getBoundingClientRect: () => ({ width: 1000, height: 700 }),
+function dashboard(lang = 'en', width = 1000, session = new Map(), navigation = { state: null, urls: [] }) {
+  const nodes = new Map(), cards = [], paths = []
+  const windowListeners = new Map()
+  let viewportWidth = width, animationFrame = null
+  const element = (initialClasses = []) => {
+    const classes = new Set(initialClasses)
+    const attributes = new Map()
+    let markup = ''
+    return {
+      textContent: '', dataset: {}, style: { setProperty() {} },
+      classList: {
+        add(...names) { names.forEach((name) => classes.add(name)) },
+        remove(...names) { names.forEach((name) => classes.delete(name)) },
+        toggle(name, force) {
+          const enabled = force === undefined ? !classes.has(name) : Boolean(force)
+          if (enabled) classes.add(name); else classes.delete(name)
+          return enabled
+        },
+        contains(name) { return classes.has(name) },
+      },
+      addEventListener() {},
+      setAttribute(name, value) { attributes.set(name, String(value)) },
+      getAttribute(name) { return attributes.get(name) ?? null },
+      offsetWidth: 280, offsetHeight: 300,
+      getBoundingClientRect: () => ({ width: 1000, height: 700, left: 0, right: 1000, top: 0 }),
+      get innerHTML() { return markup },
+      set innerHTML(value) { markup = String(value) },
+    }
+  }
+  const materialize = (markup, tag, target) => {
+    target.length = 0
+    const pattern = new RegExp(`<${tag}\\b([^>]*)>`, 'g')
+    const sources = [...markup.matchAll(pattern)]
+    const nodeCount = tag === 'div' ? sources.filter(([, source]) => /class="[^"]*\bnode\b/.test(source)).length : 0
+    const cardSize = nodeCount <= 24 ? [212, 52] : nodeCount <= 100 ? [202, 48] : [194, 44]
+    for (const [, source] of sources) {
+      const attrs = Object.fromEntries([...source.matchAll(/([:\w-]+)="([^"]*)"/g)].map(([, name, value]) => [name, value]))
+      const initialClasses = (attrs.class ?? '').split(/\s+/).filter(Boolean)
+      if (tag === 'div' && !initialClasses.includes('node')) continue
+      const item = element(initialClasses)
+      for (const [name, value] of Object.entries(attrs)) {
+        item.setAttribute(name, value)
+        if (name.startsWith('data-')) item.dataset[name.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = value
+      }
+      for (const declaration of (attrs.style ?? '').split(';')) {
+        const [name, value] = declaration.split(':')
+        if (name?.trim()) item.style[name.trim()] = value?.trim() ?? ''
+      }
+      if (tag === 'div') item.getBoundingClientRect = () => {
+        const left = Number.parseFloat(item.style.left) || 0
+        const top = Number.parseFloat(item.style.top) || 0
+        const [width, height] = cardSize
+        return { left, right: left + width, top, bottom: top + height, width, height }
+      }
+      target.push(item)
+    }
+  }
+  const labels = [...html.matchAll(/data-i18n="([^"]+)"/g)].map(([, key]) => {
+    const node = element()
+    node.dataset.i18n = key.replaceAll('&amp;', '&')
+    return node
   })
-  const labels = [...html.matchAll(/data-i18n="([^"]+)"/g)].map(([, key]) => ({ ...element(), dataset: { i18n: key.replaceAll('&amp;', '&') } }))
+  const querySelectorAll = (selector) => {
+    if (selector === '[data-i18n]') return labels
+    if (selector === '.node') return cards
+    if (selector === '.node.lit, .node.lit-self') return cards.filter((node) => node.classList.contains('lit') || node.classList.contains('lit-self'))
+    if (selector === '#edgePaths path') return paths
+    if (selector === '#edgePaths path.lit') return paths.filter((path) => path.classList.contains('lit'))
+    return []
+  }
+  const location = { search: '', origin: 'http://localhost', href: 'http://localhost/' }
   const context = createContext({
     document: {
       documentElement: element(),
-      querySelector(selector) { if (!nodes.has(selector)) nodes.set(selector, element()); return nodes.get(selector) },
-      querySelectorAll: (selector) => selector === '[data-i18n]' ? labels : [],
+      querySelector(selector) {
+        const cardId = selector.match(/^\.node\[data-id="([^"]+)"\]$/)?.[1]
+        if (cardId) return cards.find((node) => node.dataset.id === cardId) ?? null
+        if (!nodes.has(selector)) {
+          const node = element()
+          if (selector === '#nodes' || selector === '#edgePaths') {
+            const target = selector === '#nodes' ? cards : paths
+            const tag = selector === '#nodes' ? 'div' : 'path'
+            Object.defineProperty(node, 'innerHTML', {
+              get() { return node._markup ?? '' },
+              set(value) { node._markup = String(value); materialize(node._markup, tag, target) },
+            })
+          }
+          if (selector === '#viewport') node.getBoundingClientRect = () =>
+            ({ width: viewportWidth, height: 700, left: 0, right: viewportWidth, top: 0 })
+          nodes.set(selector, node)
+        }
+        return nodes.get(selector)
+      },
+      querySelectorAll,
       addEventListener() {},
     },
-    location: { search: '', origin: 'http://localhost', href: 'http://localhost/' },
-    localStorage: { getItem: () => null }, URL, URLSearchParams,
-    performance: { now: () => 0 }, CSS: { escape: (text) => text }, addEventListener() {},
+    location,
+    history: {
+      get state() { return navigation.state },
+      replaceState(state, _unused, url) {
+        navigation.state = state
+        if (url !== undefined) {
+          location.href = String(url)
+          location.search = new URL(location.href).search
+          navigation.urls.push(location.href)
+        }
+      },
+    },
+    localStorage: { getItem: () => null, setItem() {} },
+    sessionStorage: { getItem: (key) => session.get(key) ?? null, setItem: (key, value) => session.set(key, value) },
+    URL, URLSearchParams,
+    innerWidth: width + 330, innerHeight: 800,
+    performance: { now: () => 0 }, CSS: { escape: (text) => text },
+    addEventListener(name, listener) {
+      if (!windowListeners.has(name)) windowListeners.set(name, [])
+      windowListeners.get(name).push(listener)
+    },
+    requestAnimationFrame(callback) { animationFrame = callback; return 1 },
     setTimeout() {}, clearTimeout() {},
     Date: class extends Date { static now() { return Date.parse(instant(100)) } },
   })
@@ -50,10 +150,28 @@ function dashboard(lang = 'en') {
   const script = localizeDashboard(html, lang).match(/<script>([\s\S]*?)<\/script>/)[1]
   runInContext(script.replace(/localize\(\)\s*tick\(\)\s*$/, ''), context)
   return {
-    nodes, labels,
+    nodes, labels, cards, paths,
     run(code, values = {}) { Object.assign(context, values); return runInContext(code, context) },
     render(state, events = []) { this.run('STATE = input; render(STATE, inputEvents)', { input: state, inputEvents: events }) },
+    resize(nextWidth) {
+      viewportWidth = nextWidth
+      context.innerWidth = nextWidth + 330
+      for (const listener of windowListeners.get('resize') ?? []) listener()
+      const callback = animationFrame
+      animationFrame = null
+      callback?.()
+    },
   }
+}
+
+function graphState(count, phaseCount = 4) {
+  const phases = Array.from({ length: phaseCount }, (_, i) => ({ id: `P${i + 1}`, title: `Phase ${i + 1}` }))
+  const tasks = Object.fromEntries(Array.from({ length: count }, (_, i) => {
+    const id = `T${String(i + 1).padStart(3, '0')}`
+    return [id, task(id, i === 0 ? 'running' : 'pending', { phase: phases[i % phaseCount]?.id ?? 'P1' })]
+  }))
+  return { run: `fixture-${count}`, plan: { phases }, tasks,
+    derived: Object.fromEntries(Object.keys(tasks).map((id) => [id, { effective: tasks[id].state, blockedBy: [] }])) }
 }
 
 test('dashboard renders separate planning queues, active planner hub and execution readiness in both languages', () => {
@@ -97,11 +215,210 @@ test('dashboard renders separate planning queues, active planner hub and executi
   }
 })
 
+test('dashboard observes phase discussion, phase planning and per-task input readiness in both languages', () => {
+  const tasks = {
+    A: task('A', 'pending', { phase: 'F1', deps: ['C'], planningRequired: true,
+      taskPlan: { ...plan, phaseId: 'F1', unresolvedInputs: [{ task: 'C', phase: 'F2', requiredEvidence: 'validated output' }] } }),
+    B: task('B', 'pending', { phase: 'F1', planningRequired: true, taskPlan: { ...plan, phaseId: 'F1', unresolvedInputs: [] } }),
+    C: task('C', 'pending', { phase: 'F2', planningRequired: true }),
+  }
+  const state = { run: 'phase-observer', plan: { planningMode: 'phase', maxParallel: 4,
+    phases: [{ id: 'F1', title: 'Consumers' }, { id: 'F2', title: 'Producer' }] }, tasks,
+    phaseWorkflows: {
+      F1: { id: 'F1', state: 'discussing', discussionAttempts: [{ targets: ['A', 'B'] }], planningAttempts: [] },
+      F2: { id: 'F2', state: 'planning', discussionAttempts: [{ targets: ['C'] }], planningAttempts: [{ targets: ['C'] }] },
+    },
+    derived: {
+      A: { effective: 'waiting', blockedBy: ['C'], planningStatus: 'planned', inputStatus: 'unresolved_later_phase_input' },
+      B: { effective: 'ready', blockedBy: [], planningStatus: 'planned' },
+      C: { effective: 'ready_to_plan', blockedBy: [], planningStatus: 'phase_planning' },
+    } }
+  for (const lang of ['en', 'pt-BR']) {
+    const ui = dashboard(lang); ui.render(state)
+    assert.match(ui.nodes.get('#orchSub').textContent, lang === 'en' ? /phase discussion F1: 2 tasks/ : /discussão da fase F1: 2 tarefas/)
+    assert.match(ui.nodes.get('#planSub').textContent, lang === 'en' ? /phase planning F2: 1 tasks/ : /planejamento da fase F2: 1 tarefas/)
+    assert.match(ui.nodes.get('#lanes').innerHTML, lang === 'en' ? /discussion · orchestrator/ : /discussão · orquestrador/)
+    assert.match(ui.nodes.get('#lanes').innerHTML, lang === 'en' ? /planning · planner/ : /planejamento · planejador/)
+    assert.match(ui.nodes.get('#nodes').innerHTML, lang === 'en' ? /unresolved later-phase input/ : /entrada de fase posterior não resolvida/)
+    assert.match(ui.nodes.get('#nodes').innerHTML, /data-st="waiting"[^>]*data-id="A"/, 'primary state remains DAG-driven')
+    assert.match(ui.nodes.get('#edgePaths').innerHTML, /e-discussion[^>]*data-to="A"/)
+    assert.match(ui.nodes.get('#edgePaths').innerHTML, /e-planning[^>]*data-to="C"/)
+  }
+  assert.doesNotMatch(html, /fetch\([^)]*begin-phase|onclick="[^"]*phase-(?:discussion|planning)/,
+    'phase workflow remains observer-only')
+})
+
+test('dashboard keeps an unadopted legacy phase pending until explicit adoption', () => {
+  const state = { run: 'legacy-phase', plan: { planningMode: 'phase', phases: [{ id: 'F1', title: 'Adopted' }, { id: 'F2', title: 'Legacy' }] },
+    legacyPhaseAdoption: true,
+    phaseWorkflows: {
+      F1: { id: 'F1', state: 'planned', adoptedLegacy: true, discussionAttempts: [], planningAttempts: [] },
+      F2: { id: 'F2', state: 'pending', discussionAttempts: [], planningAttempts: [] },
+    },
+    tasks: { B: task('B', 'pending', { phase: 'F2', planningRequired: true }) },
+    derived: { B: { effective: 'pending', blockedBy: [], planningStatus: 'awaiting_phase_adoption' } } }
+  for (const [lang, label] of [['en', 'awaiting phase adoption'], ['pt-BR', 'aguardando adoção da fase']]) {
+    const ui = dashboard(lang)
+    ui.render(state)
+    const card = ui.cards.find(node => node.dataset.id === 'B')
+    assert.equal(card.dataset.st, 'pending')
+    assert.match(ui.nodes.get('#nodes').innerHTML, new RegExp(label))
+    assert.doesNotMatch(ui.nodes.get('#nodes').innerHTML, /ready for discussion|pronto para discussão|ready for execution|pronto para executar/)
+  }
+})
+
+test('status filters use effective state and add only direct dependency context', () => {
+  const tasks = {
+    A: task('A', 'done'),
+    B: task('B', 'pending', { deps: ['A'] }),
+    C: task('C', 'pending', { deps: ['B'] }),
+    D: task('D', 'pending', { deps: ['C'] }),
+    P: task('P', 'pending', { planningRequired: true }),
+    L: task('L', 'planning'), E: task('E'), R: task('R', 'reviewing'),
+    K: task('K', 'blocked'), F: task('F', 'failed'), S: task('S', 'skipped'), U: task('U', 'future_state'),
+  }
+  const effective = { A: 'done', B: 'running', C: 'waiting', D: 'pending', P: 'ready_to_plan', L: 'planning',
+    E: 'ready', R: 'reviewing', K: 'blocked', F: 'failed', S: 'skipped', U: 'future_state' }
+  const state = { run: 'filters', plan: { phases: [{ id: 'P1', title: 'Phase 1' }] }, tasks,
+    derived: Object.fromEntries(Object.entries(effective).map(([id, value]) => [id, { effective: value, blockedBy: tasks[id].deps }])) }
+  const ui = dashboard()
+  ui.render(state)
+  const ids = (filter, deps = false) => ui.run("JSON.stringify([...filterSets(STATE.tasks, inputFilter, inputDeps).allowed].sort())",
+    { inputFilter: filter, inputDeps: deps })
+  const card = (id) => ui.cards.find((node) => node.dataset.id === id)
+  const edge = (from, to) => ui.paths.find((path) => path.dataset.from === from && path.dataset.to === to)
+  const hidden = (from, to) => edge(from, to).classList.contains('filter-hidden')
+  const expected = {
+    done: ['A'], incomplete: ['B', 'C', 'D', 'E', 'F', 'K', 'L', 'P', 'R', 'U'], waiting: ['C'],
+    ready_to_plan: ['P'], planning: ['L'], ready: ['E'], running: ['B'], reviewing: ['R'],
+    blocked: ['K'], failed: ['F'], skipped: ['S'],
+  }
+  assert.equal(ids('all'), JSON.stringify(Object.keys(tasks).sort()))
+  for (const [filter, matches] of Object.entries(expected)) assert.equal(ids(filter), JSON.stringify(matches), filter)
+  assert.equal(ids('running', true), JSON.stringify(['A', 'B', 'C']))
+  assert.equal(ui.run("JSON.stringify([...filterSets(STATE.tasks, 'missing', false).matches])"), '[]')
+
+  assert.equal(ui.cards.length, Object.keys(tasks).length)
+  for (const endpoints of [['A', 'B'], ['B', 'C'], ['C', 'D'], ['__orch', 'B'], ['__plan', 'L'], ['R', '__rev']])
+    assert.ok(edge(...endpoints), endpoints.join(' → '))
+  const positions = Object.fromEntries(ui.cards.map((node) => [node.dataset.id, [node.style.left, node.style.top]]))
+
+  ui.run("setFilter('running')")
+  assert.equal(card('B').classList.contains('filtered-out'), false)
+  assert.equal(card('A').classList.contains('filtered-out'), true)
+  assert.equal(ui.nodes.get('#depsBtn').textContent, 'dependencies off')
+  assert.equal(ui.nodes.get('#depsBtn').getAttribute('aria-pressed'), 'false')
+  assert.equal(ui.nodes.get('#filterCount').textContent, 'filter results 1/12')
+  assert.equal(hidden('A', 'B'), true)
+  assert.equal(hidden('__orch', 'B'), false)
+  assert.equal(hidden('__plan', 'L'), true)
+  assert.equal(hidden('R', '__rev'), true)
+
+  ui.run("openTask('B'); setFilter('reviewing')")
+  assert.equal(ui.run('POP === null'), true)
+  assert.equal(ui.nodes.get('#pop').classList.contains('open'), false)
+
+  ui.run("setFilter('running'); toggleDependencies()")
+  assert.equal(ui.nodes.get('#depsBtn').textContent, 'dependencies on')
+  assert.equal(ui.nodes.get('#depsBtn').getAttribute('aria-pressed'), 'true')
+  for (const id of ['A', 'B', 'C']) assert.equal(card(id).classList.contains('filtered-out'), false, id)
+  assert.equal(card('D').classList.contains('filtered-out'), true)
+  assert.equal(hidden('A', 'B'), false)
+  assert.equal(hidden('B', 'C'), false)
+  assert.equal(hidden('C', 'D'), true)
+  assert.deepEqual(Object.fromEntries(ui.cards.map((node) => [node.dataset.id, [node.style.left, node.style.top]])), positions)
+
+  ui.run("FOCUS = 'B'; applyFocus()")
+  assert.deepEqual(ui.cards.filter((node) => node.classList.contains('lit')).map((node) => node.dataset.id).sort(), ['A', 'B', 'C'])
+  assert.equal(card('B').classList.contains('lit-self'), true)
+  assert.equal(edge('A', 'B').classList.contains('lit'), true)
+  assert.equal(edge('B', 'C').classList.contains('lit'), true)
+  assert.equal(edge('C', 'D').classList.contains('lit'), false)
+
+  ui.run("setFilter('planning')")
+  assert.equal(hidden('__plan', 'L'), false)
+  assert.equal(hidden('__orch', 'B'), true)
+  ui.run("setFilter('reviewing')")
+  assert.equal(hidden('R', '__rev'), false)
+  assert.equal(hidden('__plan', 'L'), true)
+})
+
+test('filter controls expose every state and localize labels and dependency toggle', () => {
+  const options = [...html.matchAll(/<option value="([^"]+)"/g)].map(([, value]) => value)
+  assert.deepEqual(options, ['all', 'done', 'incomplete', 'waiting', 'ready_for_discussion', 'discussing', 'ready_to_plan', 'planning', 'ready', 'running', 'reviewing', 'blocked', 'failed', 'skipped'])
+  for (const [lang, labels] of [['en', ['all tasks', 'incomplete', 'ignored']], ['pt-BR', ['todas', 'incompletas', 'ignoradas']]]) {
+    const ui = dashboard(lang)
+    ui.render({ run: 'empty-filter', plan: { phases: [] }, tasks: {}, derived: {} })
+    for (const label of labels) assert.ok(ui.labels.some((node) => node.textContent === label), `${lang}: ${label}`)
+    assert.equal(ui.nodes.get('#depsBtn').textContent, lang === 'en' ? 'dependencies off' : 'dependências desligadas')
+    assert.equal(ui.nodes.get('#filterCount').textContent, lang === 'en' ? 'filter results 0/0' : 'resultado do filtro 0/0')
+  }
+})
+
+test('responsive layout selects density, wraps large phases and stays within the viewport', () => {
+  for (const [count, expected] of [[6, 'detailed'], [24, 'detailed'], [25, 'compact'], [48, 'compact'], [100, 'compact'], [101, 'dense'], [206, 'dense']]) {
+    const ui = dashboard('en', 960)
+    const state = graphState(count)
+    const result = JSON.parse(ui.run("STATE = input; JSON.stringify(layout(STATE.tasks, 'phase'))", { input: state }))
+    assert.equal(result.density, expected, `${count} tasks`)
+    assert.equal(result.w, 960)
+    for (const point of Object.values(result.pos)) {
+      assert.ok(Number.isFinite(point.x) && Number.isFinite(point.y), `${count}: finite coordinates`)
+      assert.ok(point.x + result.metrics.nodeW <= result.w - 40, `${count}: bounded x`)
+    }
+    ui.render(state)
+    assert.equal(ui.nodes.get('#canvas').dataset.density, expected)
+  }
+
+  for (const mode of ['phase', 'depth']) {
+    const ui = dashboard('en', 700)
+    const state = graphState(48, mode === 'phase' ? 4 : 1)
+    const result = JSON.parse(ui.run('STATE = input; JSON.stringify(layout(STATE.tasks, inputMode))', { input: state, inputMode: mode }))
+    assert.ok(new Set(Object.values(result.pos).map(({ y }) => y)).size > 1, `${mode} wraps vertically`)
+  }
+
+  const state = graphState(206)
+  const wide = dashboard('en', 1200)
+  const narrow = dashboard('en', 700)
+  const wideLayout = JSON.parse(wide.run("STATE = input; JSON.stringify(layout(STATE.tasks, 'phase'))", { input: state }))
+  const narrowLayout = JSON.parse(narrow.run("STATE = input; JSON.stringify(layout(STATE.tasks, 'phase'))", { input: state }))
+  assert.ok(narrowLayout.h > wideLayout.h)
+  assert.ok(narrowLayout.lanes.every((lane, i, lanes) => i === 0 || lanes[i - 1].y + lanes[i - 1].height < lane.y))
+})
+
+test('resize relayout preserves filter, dependency context, selection and view', () => {
+  const ui = dashboard('en', 1200)
+  const state = graphState(48)
+  ui.render(state)
+  ui.run("setFilter('running'); toggleDependencies(); openTask('T013'); FOCUS = 'T013'; SELECTED_RUN = 'fixture-48'; Object.assign(VIEW, { x: 91, y: -37, k: .8 })")
+  const before = JSON.parse(ui.run("JSON.stringify({ filter: FILTER, deps: SHOW_DEPS, pop: POP, focus: FOCUS, selected: SELECTED_RUN, layout: LAYOUT, fitted, view: VIEW, h: CANVAS_H, pos: LAST_POS })"))
+  const beforeAnchor = JSON.parse(ui.run("JSON.stringify(document.querySelector('.node[data-id=\\\"T013\\\"]')?.getBoundingClientRect())"))
+  ui.resize(700)
+  const after = JSON.parse(ui.run("JSON.stringify({ filter: FILTER, deps: SHOW_DEPS, pop: POP, focus: FOCUS, selected: SELECTED_RUN, layout: LAYOUT, fitted, view: VIEW, h: CANVAS_H, pos: LAST_POS })"))
+  assert.equal(after.filter, before.filter)
+  assert.equal(after.deps, before.deps)
+  assert.deepEqual(after.pop, before.pop)
+  assert.equal(after.focus, before.focus)
+  assert.equal(after.selected, before.selected)
+  assert.equal(after.layout, before.layout)
+  assert.equal(after.fitted, before.fitted)
+  assert.deepEqual(after.view, before.view)
+  assert.ok(after.h > before.h)
+  assert.notDeepEqual(after.pos, before.pos)
+  assert.notDeepEqual(after.pos.T013, before.pos.T013)
+  assert.ok(after.pos.T013.y > before.pos.T013.y)
+  const afterAnchor = JSON.parse(ui.run("JSON.stringify(document.querySelector('.node[data-id=\\\"T013\\\"]')?.getBoundingClientRect())"))
+  assert.notDeepEqual(afterAnchor, beforeAnchor)
+  const popPosition = JSON.parse(ui.run("JSON.stringify({ left: parseFloat($('#pop').style.left), top: parseFloat($('#pop').style.top) })"))
+  assert.deepEqual(popPosition, { left: afterAnchor.right + 14, top: afterAnchor.top - 6 })
+  assert.notDeepEqual(popPosition, { left: beforeAnchor.right + 14, top: beforeAnchor.top - 6 })
+})
+
 test('legend follows the workflow and colored role counters and events show actual progress', () => {
   const legend = html.match(/<div class="legend">([\s\S]*?)<\/div>/)[1]
   const order = [...legend.matchAll(/data-i18n="([^"]+)"/g)].map(m => m[1])
-  assert.deepEqual(order.slice(0, 9), ['waiting for dependencies', 'ready for planning', 'discussion · orchestrator', 'planning · planner',
-    'ready for execution', 'execution · executor', 'review · reviewer', '✓ = validated, awaiting done', 'done'])
+  assert.deepEqual(order.slice(0, 11), ['waiting for dependencies', 'ready for discussion', 'discussion · orchestrator', 'ready for planning', 'planning · planner',
+    'ready for execution', 'execution · executor', 'review · reviewer', '✓ = validated, awaiting done', 'done', 'failed'])
   assert.equal((legend.match(/class="role-dot"/g) ?? []).length, 4)
   assert.ok(order.includes('skipped'))
   for (const lang of ['en', 'pt-BR']) {
@@ -115,8 +432,8 @@ test('legend follows the workflow and colored role counters and events show actu
     ]
     ui.render({ run: 'events', plan: {}, tasks: { T4: task('T4') }, derived: { T4: { effective: 'ready' } } }, events)
     const title = ui.nodes.get('#parTitle').innerHTML
-    for (const color of ['planning', 'running', 'review']) assert.ok(title.includes(`color:var(--${color})`))
-    assert.equal((title.match(/<b>/g) ?? []).length, 3)
+    for (const color of ['discussion', 'planning', 'running', 'review']) assert.ok(title.includes(`color:var(--${color})`))
+    assert.equal((title.match(/<b>/g) ?? []).length, 4)
     assert.doesNotMatch(title, / · /)
     if (lang === 'pt-BR') assert.ok(ui.labels.some(node => node.textContent === 'discussão · orquestrador'))
     const log = ui.nodes.get('#events').innerHTML
@@ -126,6 +443,90 @@ test('legend follows the workflow and colored role counters and events show actu
     assert.ok(log.includes(lang === 'en' ? 'Working' : 'Executando'))
     assert.ok(log.includes(lang === 'en' ? 'Review' : 'Revisão'))
   }
+})
+
+test('visual polish keeps fixed arrows, full card labels and a controllable responsive sidebar', () => {
+  assert.match(html, /markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse"/)
+  assert.match(html, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\*, \*::before, \*::after[\s\S]*animation: none !important/)
+  const sectionOrder = ['data-i18n="Legend"', 'id="parTitle"', 'data-i18n="Selected task"', 'data-i18n="Failures &amp; retries"', 'data-i18n="Event log"']
+  assert.deepEqual(sectionOrder.map((part) => html.indexOf(part)), [...sectionOrder.map((part) => html.indexOf(part))].sort((a, b) => a - b))
+
+  for (const [count, density] of [[6, 'detailed'], [48, 'compact'], [101, 'dense']]) {
+    const ui = dashboard('pt-BR')
+    const state = graphState(count)
+    ui.render(state)
+    assert.equal(ui.nodes.get('#canvas').dataset.density, density)
+    assert.match(ui.nodes.get('#nodes').innerHTML, /em execução · executor/)
+  }
+
+  const state = graphState(6)
+  const wide = dashboard('en', 1000)
+  wide.render(state)
+  assert.equal(wide.nodes.get('#sidebar').hidden, false)
+  assert.equal(wide.nodes.get('#sidebarToggle').getAttribute('aria-expanded'), 'true')
+  assert.equal(wide.nodes.get('#sidebarToggle').getAttribute('aria-label'), 'Collapse sidebar')
+
+  const narrow = dashboard('pt-BR', 500)
+  narrow.render(state)
+  assert.equal(narrow.nodes.get('#sidebar').hidden, true)
+  assert.equal(narrow.nodes.get('#sidebarToggle').getAttribute('aria-label'), 'Abrir lateral')
+  narrow.run('toggleSidebar()')
+  narrow.resize(400)
+  assert.equal(narrow.nodes.get('#sidebar').hidden, false, 'manual choice survives resize')
+  assert.equal(narrow.nodes.get('#sidebarToggle').getAttribute('aria-expanded'), 'true')
+  narrow.run("openTask('T001')")
+  assert.equal(narrow.nodes.get('#selectedTask').dataset.task, 'T001')
+  assert.match(narrow.nodes.get('#selectedTask').innerHTML, /T001 · Task T001[\s\S]*em execução · executor/)
+
+  const session = new Map()
+  const firstLoad = dashboard('en', 500, session)
+  firstLoad.render(state)
+  firstLoad.run('toggleSidebar()')
+  const openReload = dashboard('en', 500, session)
+  openReload.render(state)
+  assert.equal(openReload.nodes.get('#sidebar').hidden, false, 'manual open choice survives reload')
+  openReload.run('toggleSidebar()')
+  const collapsedReload = dashboard('en', 1000, session)
+  collapsedReload.render(state)
+  assert.equal(collapsedReload.nodes.get('#sidebar').hidden, true, 'manual collapsed choice survives reload')
+
+  const unavailableStorage = { get() { throw new Error('blocked') }, set() { throw new Error('blocked') } }
+  const navigation = { state: { existing: 'preserved' }, urls: [] }
+  const fallback = dashboard('en', 500, unavailableStorage, navigation)
+  fallback.render(state)
+  assert.equal(fallback.nodes.get('#sidebar').hidden, true, 'responsive default survives unavailable storage')
+  assert.doesNotThrow(() => fallback.run('toggleSidebar()'))
+  assert.deepEqual(JSON.parse(JSON.stringify(navigation.state)), { existing: 'preserved', graphSidebarCollapsed: false })
+  assert.deepEqual(navigation.urls, [], 'sidebar state does not alter the URL')
+  const fallbackReload = dashboard('en', 500, unavailableStorage, navigation)
+  fallbackReload.render(state)
+  assert.equal(fallbackReload.nodes.get('#sidebar').hidden, false, 'manual open choice survives reload without storage')
+  fallbackReload.run("selectRun('workspace/next')")
+  assert.equal(navigation.state.graphSidebarCollapsed, false, 'run selection preserves the sidebar fallback')
+  assert.deepEqual(new URL(navigation.urls.at(-1)).searchParams.get('root'), 'workspace')
+  assert.equal(new URL(navigation.urls.at(-1)).searchParams.has('graphSidebarCollapsed'), false)
+  fallbackReload.run('toggleSidebar()')
+  const collapsedFallbackReload = dashboard('en', 1000, unavailableStorage, navigation)
+  collapsedFallbackReload.render(state)
+  assert.equal(collapsedFallbackReload.nodes.get('#sidebar').hidden, true, 'manual collapsed choice survives reload without storage')
+  assert.equal(navigation.state.existing, 'preserved')
+
+  const linked = dashboard('en')
+  linked.render({ run: 'curves', plan: { phases: [{ id: 'P1', title: 'Phase 1' }] },
+    tasks: { A: task('A', 'done'), B: task('B', 'running', { deps: ['A'], agent: 'executor-1', attempts: [{ startedAt: instant(10) }] }) },
+    derived: { A: { effective: 'done', blockedBy: [] }, B: { effective: 'running', blockedBy: [] } } })
+  assert.match(linked.nodes.get('#edgePaths').innerHTML, /<path class="e-hot"[^>]* d="M [^"]* C [^"]*"/)
+})
+
+test('discussion uses electric lavender and connects the active orchestrator without motion when reduced', () => {
+  assert.match(html, /--discussion:\s*#c084fc/)
+  assert.match(html, /path\.e-discussion[\s\S]*stroke:\s*var\(--discussion\)/)
+  assert.match(html, /@media \(prefers-reduced-motion: reduce\)[\s\S]*animation:\s*none !important/)
+  const ui = dashboard('pt-BR')
+  ui.render({ run: 'discussion', plan: { maxParallel: 4 }, tasks: { T1: task('T1', 'discussing') }, derived: { T1: { effective: 'discussing' } } })
+  assert.equal(ui.nodes.get('#orchNode').classList.contains('discussing'), true)
+  assert.ok(ui.paths.some(path => path.classList.contains('e-discussion') && path.dataset.to === 'T1'))
+  assert.match(ui.nodes.get('#orchSub').textContent, /discutindo 1: T1/)
 })
 
 test('discovery, planner identity and task plan render as escaped text, including answers and checks', () => {

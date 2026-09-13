@@ -3,9 +3,10 @@ import { parseArgs } from 'node:util'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { resolve, join } from 'node:path'
-import { planInstall, applyInstall, restoreInstall, installationStatus, discoverInstallations, detectHarnesses } from '../lib/install.mjs'
-import { globalCliState, launchUpdate, updateGlobalCli, updateRequest } from '../lib/update.mjs'
+import { planInstall, applyInstall, restoreInstall, installationStatus, discoverInstallations, detectHarnesses, reconcileDashboardInstall } from '../lib/install.mjs'
+import { globalCliState, launchUpdate, reconcileDashboardUpdate, updateGlobalCli, updateRequest } from '../lib/update.mjs'
 import { releaseNotes } from '../lib/release-notes.mjs'
+import { dashboardNeedsRepair, dashboardStatus, disableDashboard, enableDashboard, runDashboardForeground } from '../lib/autostart.mjs'
 import { selectHarnesses } from '../lib/prompt.mjs'
 import { language, createTranslator, messages } from '../scripts/i18n.mjs'
 
@@ -76,7 +77,7 @@ function runInstall(options, { command = 'install', dryRun = false, quiet = fals
   if (!quiet) print(`${t('installed')}: ${t(status.installed ? 'yes' : 'no')}; ${t('configured')}: ${t(status.configured ? 'yes' : 'no')}`)
   for (const warning of status.pendingActivation) if (command !== 'install' || !plan.warnings.includes(warning)) (quiet ? console.error : print)(`${t('pending activation')}: ${t(warning)}`)
   if (status.pendingActivation.length || command === 'doctor' && !status.configured) process.exitCode = 2
-  return status
+  return { ...status, viable: plan.groups.every(group => group.conflicts.length === 0) }
 }
 
 try {
@@ -92,8 +93,20 @@ try {
   const packageRoot = fileURLToPath(new URL('..', import.meta.url))
   if (values.version) print(version)
   else if (values.help || positionals.length === 0) {
-    print(`Prumo ${version} — graph-foreman + PO First\n\nprumo install [--all | --claude|--kiro|--codex] [--lang en|pt-BR] [--dry-run] [--project <path>]\nprumo update [--dry-run] [--lang en|pt-BR] [--project <path>]\nprumo doctor --claude|--kiro|--codex [--lang en|pt-BR] [--project <path>]\nprumo restore <backup>\n`)
+    print(`Prumo ${version} — graph-foreman + PO First\n\nprumo install [--all | --claude|--kiro|--codex] [--lang en|pt-BR] [--dry-run] [--project <path>]\nprumo update [--dry-run] [--lang en|pt-BR] [--project <path>]\nprumo doctor --claude|--kiro|--codex [--lang en|pt-BR] [--project <path>]\nprumo dashboard [enable|disable|status]\nprumo restore <backup>\n`)
     print('Install opens a selection of detected environments; --all selects all without prompting')
+  } else if (positionals[0] === 'dashboard') {
+    if (positionals.length > 2 || ['claude', 'kiro', 'codex', 'all'].some(name => values[name]) || values.lang || values['dry-run'] || values.project?.length) throw new Error('Dashboard accepts only enable, disable or status')
+    const action = positionals[1]
+    if (!action) process.exitCode = runDashboardForeground()
+    else {
+      if (!['enable', 'disable', 'status'].includes(action)) throw new Error(`Unknown dashboard action: ${action}`)
+      const result = action === 'enable' ? await enableDashboard() : action === 'disable' ? await disableDashboard() : await dashboardStatus()
+      print(`dashboard: ${result.process}; ${result.registered ? 'registered' : 'not registered'}; ${result.enabled ? 'enabled' : result.disabled ? 'disabled' : 'not configured'}`)
+      print(`version: ${result.version ?? version}; port: ${result.port}; URL: ${result.url}`)
+      if (result.conflict) console.error(`[prumo] Port ${result.port} is used by another process`)
+      if (result.conflict || 'ok' in result && !result.ok) process.exitCode = 2
+    }
   } else if (['update', '_update'].includes(positionals[0])) {
     if (positionals.length !== 1 || ['claude', 'kiro', 'codex', 'all'].some(name => values[name])) throw new Error('Update automatically selects installed environments; do not select a harness')
     if (positionals[0] === 'update') {
@@ -132,6 +145,14 @@ try {
           }
         } catch (error) { console.error(`[prumo] ${t(error.message)}`); process.exitCode = 2 }
       }
+      const globalPackage = globalCliState(packageRoot).packageRoot ?? packageRoot
+      const dashboard = await reconcileDashboardUpdate({ dryRun: request.dryRun, dashboardOptions: { packageRoot: globalPackage } })
+      if (dashboard.action === 'restart' && request.dryRun) print('Would restart the enabled Prumo dashboard')
+      else if (dashboard.action === 'disabled' && request.dryRun) print('Dashboard remains disabled by user preference')
+      if (!dashboard.ok) {
+        console.error(`[prumo] Dashboard restart failed${dashboard.status.conflict ? `: port ${dashboard.status.port} is used by another process` : ''}`)
+        process.exitCode = 2
+      }
       if (quiet && !process.exitCode) {
         t = createTranslator(messages, lang)
         progress.success(t('Prumo updated successfully'), version)
@@ -158,6 +179,7 @@ try {
       })
       if (!allCurrent && !values.all && (process.stdin.isTTY && process.stdout.isTTY || !values['dry-run'])) harnesses = await selectHarnesses(harnesses, { t })
     }
+    let successfulHarnesses = 0
     if (command === 'install') {
       const current = []
       const pending = []
@@ -166,13 +188,17 @@ try {
         ;(status.installed && status.configured ? current : pending).push(harness)
       }
       if (current.length) print(color('32', t('Prumo v{0} is already installed in {1}', version, current.join(', '))))
+      successfulHarnesses = current.length
       harnesses = pending
     }
     const dryRun = values['dry-run'] ?? false
     const quiet = command === 'install' && !dryRun
+    const lifecycleInstall = command === 'install' && values.all === true && !selected.length && !values.lang && !values['dry-run'] && !values.project?.length &&
+      process.env.PRUMO_POSTINSTALL_LIFECYCLE === '1' && process.env.npm_lifecycle_event === 'postinstall' &&
+      resolve(process.env.npm_package_json ?? '') === join(packageRoot, 'package.json')
     const progress = progressUi(quiet)
     if (quiet) progress.update(10, t('Preparing Prumo installation'))
-    const global = command === 'install' ? globalCliState(packageRoot) : null
+    let global = command === 'install' ? lifecycleInstall ? { version, packageRoot } : globalCliState(packageRoot) : null
     if (command === 'install' && global.version !== version) {
       if (dryRun) print(t('Would install global Prumo CLI {0}', version))
       else {
@@ -181,18 +207,31 @@ try {
           progress.clear()
           throw new Error('Global Prumo CLI installation failed')
         }
+        global = globalCliState(packageRoot)
       }
     }
     for (const [index, harness] of harnesses.entries()) {
       try {
         if (quiet) progress.update(40 + Math.round(50 * (index + 1) / Math.max(harnesses.length, 1)), t('Installing {0}', harness))
-        runInstall({ ...options, harness }, { command, dryRun, quiet })
+        const status = runInstall({ ...options, harness }, { command, dryRun, quiet })
+        if (command === 'install' && (dryRun ? status.viable : status.installed && status.configured)) successfulHarnesses += 1
       } catch (error) {
         progress.clear()
         if (selected.length) throw error
         console.error(`[prumo] ${harness}: ${t(error.message)}`)
         process.exitCode = 2
       }
+    }
+    if (command === 'install') {
+      const dashboard = await reconcileDashboardInstall(successfulHarnesses, { dryRun, dashboardOptions: { packageRoot: global?.packageRoot ?? packageRoot } })
+      if (dashboard.action === 'enable') print(dryRun ? 'Would enable and start the Prumo dashboard' : `Dashboard enabled: ${dashboard.status.url}`)
+      else if (dashboard.action === 'restart') print(dryRun ? 'Would restart the enabled Prumo dashboard' : `Dashboard restarted: ${dashboard.status.url}`)
+      else if (dashboard.action === 'disabled') print('Dashboard remains disabled by user preference')
+      if (!dashboard.ok) process.exitCode = 2
+    } else {
+      const dashboard = await dashboardStatus()
+      print(`dashboard: ${dashboard.process}; ${dashboard.registered ? 'registered' : 'not registered'}; ${dashboard.enabled ? 'enabled' : dashboard.disabled ? 'disabled' : 'not configured'}`)
+      if (dashboardNeedsRepair(dashboard)) process.exitCode = 2
     }
     if (quiet && !process.exitCode) progress.success(t('Prumo installed successfully'), version)
     else progress.clear()

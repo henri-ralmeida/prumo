@@ -6,7 +6,7 @@ import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { planInstall, applyInstall, discoverInstallations } from '../lib/install.mjs'
-import { globalCliState, isGlobalCli, npmProcess, updateRequest } from '../lib/update.mjs'
+import { globalCliState, isGlobalCli, npmProcess, reconcileDashboardUpdate, updateRequest } from '../lib/update.mjs'
 import { inside } from '../scripts/storage.mjs'
 
 const source = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -86,5 +86,20 @@ test('update rejects malformed requests before applying installations', () => {
     read: () => JSON.stringify({ version: '1.0.7' }),
   })
   assert.equal(options.shell, undefined, 'npm must not receive shell:true')
-  assert.deepEqual(state, { running: false, version: '1.0.7' })
+  assert.deepEqual(state, { running: false, version: '1.0.7', packageRoot: join(source, '@henri-ralmeida', 'prumo') })
+})
+
+test('update restarts only an enabled dashboard and keeps dry-run inert', async () => {
+  const calls = []
+  const restart = async options => { calls.push(options); return { ok: true } }
+  const disabled = await reconcileDashboardUpdate({}, { status: async () => ({ enabled: false, disabled: true }), restart })
+  assert.equal(disabled.action, 'disabled')
+  const absent = await reconcileDashboardUpdate({}, { status: async () => ({ enabled: false, disabled: false }), restart })
+  assert.equal(absent.action, 'none')
+  const preview = await reconcileDashboardUpdate({ dryRun: true }, { status: async () => ({ enabled: true }), restart })
+  assert.equal(preview.action, 'restart')
+  assert.deepEqual(calls, [])
+  const result = await reconcileDashboardUpdate({ dashboardOptions: { packageRoot: '/global/prumo' } }, { status: async () => ({ enabled: true }), restart })
+  assert.equal(result.ok, true)
+  assert.deepEqual(calls, [{ packageRoot: '/global/prumo' }])
 })

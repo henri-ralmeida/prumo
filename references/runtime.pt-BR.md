@@ -2,7 +2,9 @@
 
 [English](runtime.md) · [Instalação](../README.pt-BR.md)
 
-O motor é uma CLI Node.js, não um serviço que chama modelos. O ambiente de IA dispara planejadores, executores e revisores; o motor registra planejamento, trabalho, dependências e evidências. O dashboard observa os mesmos arquivos. Com `--sync-plan`, ele delega a reconciliação ao motor.
+O motor é uma CLI Node.js, não um serviço que chama modelos. O ambiente de IA dispara planejadores, executores e revisores; o motor registra planejamento, trabalho, dependências e evidências. O dashboard observa os mesmos arquivos sem alterá-los.
+
+`npm install -g @henri-ralmeida/prumo` instala a CLI, a skill, o PO First e o serviço de dashboard do usuário. O `postinstall` global configura os ambientes suportados detectados; uma instalação npm local é inerte. Use `prumo install --all` quando os scripts do npm estavam desabilitados ou para reparar um novo ambiente. Instalação e atualização reiniciam o dashboard quando ele está habilitado e preservam a desativação explícita. O dashboard global é somente observador: apenas uma chamada explícita do orquestrador a `sync-plan` reconcilia um plano aprovado.
 
 ## Armazenamento
 
@@ -37,18 +39,24 @@ Cada execução usa `.specs/graph/<run>/state.json` e `events.ndjson`. `CURRENT`
 
 `requireReview` pode ser definido por tarefa ou plano; o padrão exige revisão. Desabilitar revisão não elimina a comprovação funcional. `maxAttempts` por tarefa define o limite de tentativas antes de escalar; o padrão é três. `tags` é uma lista opcional de classificações.
 
-## Descoberta e planejamento por tarefa
+## Descoberta e planejamento por fase
 
-Há dois níveis. O modo Plan/Spec usa todo o pedido para montar e aprovar o grafo global. Durante a
-execução, cada tarefa segue **discutir → planejar → executar → revisar**; a run não precisa permanecer
-no modo Plan. Depois que as dependências entregam, a conversa principal reaproveita o plano global e
-as entregas, pesquisa levemente a tarefa e sempre faz ao menos uma pergunta contextual.
+Há dois níveis. O modo Plan/Spec monta e aprova o grafo global. Runs novas com fases declaradas usam
+uma discussão visível e um planejador somente leitura por fase. O planejador produz um
+`task-plan-<id>.json` imutável e separado para cada tarefa alvo. Discussão e planejamento podem ocorrer
+antes das dependências; somente o DAG libera a execução. A conversa executa
+`begin-phase-discussion <fase>` antes do prompt, pesquisa a fase e sempre faz uma pergunta contextual.
 
 Use a caixa nativa de perguntas do Codex, Claude Code ou Kiro quando disponível; caso contrário, use
 um bloco estruturado na conversa principal. Reaproveite respostas atuais e faça rodadas adaptativas até
 fechar as áreas cinzentas que mudam comportamento, escopo, aceite ou execução. Ideias fora do escopo
 vão para `deferred`. A conversa principal grava um JSON de descoberta com pesquisa, perguntas e
 respostas reais, canal/rodada, cobertura PO First, decisões e motivo de encerramento.
+
+Runs antigas preservam os comandos por tarefa. A adoção de fase é explícita com
+`begin-phase-discussion <fase> --adopt-legacy`: o histórico terminal permanece intacto e todas as tarefas
+não terminais adotadas precisam estar antes da execução, sem rodada de tarefa aberta. Uma adoção insegura
+é recusada sem alterar estado ou eventos.
 
 A escolha depende das ferramentas expostas e permitidas na sessão principal. No Codex,
 `request_user_input_async` pode estar disponível fora do Plan; `request_user_input` mantém suas
@@ -64,22 +72,21 @@ Sem ferramenta nativa permitida, apresente **O que entendi**, **Campos cinzentos
 timeout, resposta vazia e sugestão pré-selecionada não são respostas: aguarde a resposta real antes
 de encerrar a descoberta. Essa seleção pertence à skill; o motor não cria uma interface nativa.
 
-`plan-task T1 --agent <planejador> --context <descoberta.json>` valida e persiste a descoberta
-atomicamente antes de entrar em `planning`; ausência de resposta mantém `ready_to_plan`. O comando
-acompanha o disparo real do subagente planejador. Ele consome a descoberta sem repetir perguntas,
-pesquisa em profundidade e escreve somente o artefato designado, sem implementar nem editar estado.
-Uma nova decisão material volta à descoberta principal e exige planejamento novo. O orquestrador confere o resultado e registra
-`finish-planning T1 --plan <plano-da-tarefa.json>`. Exemplo para um contrato com uma verificação:
+`finish-phase-discussion <fase> --context <descoberta.json>` exige o `roundId`, o `nonce` e uma resposta
+nova vinculada à rodada. `plan-phase <fase> --agent <planejador>` ocupa uma única vaga. O planejador
+consome a descoberta sem repetir perguntas, pesquisa todas as tarefas alvo e apenas escreve os artefatos.
+`finish-phase-planning <fase> --plan-dir <diretório>` valida o lote inteiro antes de gravar qualquer plano.
+Cada artefato inclui `phaseBinding` e lista dependências diretas incompletas em `unresolvedInputs`, com
+tarefa produtora, fase e evidência exigida. Exemplo da parte comum do contrato:
 
 O JSON de descoberta exige `research` com `source`/`findings`; `questions` com ao menos um
 `question`/`answer`, `round` positivo e `channel` igual a `native` ou `chat-fallback`; `coverage`
 com `problem`, `affected`, `outcome`, `currentBehavior`, `desiredBehavior`, `rules`, `exceptions`,
 `scope` e `acceptance`; pares resolvidos em `decisions`; textos em `deferred`; e `closure` explicando
 por que não restou área cinzenta relevante. Uma síntese pode cobrir vários campos, sem virar questionário.
-O motor calcula um SHA-256 de JSON canônico somente desses campos persistidos e liga o digest à rodada.
-Reenviar conteúdo idêntico durante `planning` não altera o estado nem cria rodada; conteúdo diferente
-encerra a rodada aberta como `superseded` e abre outra ligada ao novo digest. `finish-planning` copia o
-digest para o taskPlan e recusa descoberta alterada ou desatualizada.
+O motor calcula um SHA-256 canônico da descoberta e do recibo da discussão e liga o digest à rodada.
+Repetir `plan-phase` durante a mesma rodada não altera o estado. `finish-phase-planning` recusa um lote
+incompleto, alterado ou ligado a uma descoberta desatualizada.
 
 ```json
 {
@@ -92,22 +99,22 @@ digest para o taskPlan e recusa descoberta alterada ou desatualizada.
 ```
 
 `research` exige fonte e achados; `steps`, passos de execução; `verification`, critérios observáveis
-associados a **todos** os passos do contrato pelo índice numérico a partir de 1. Use `"inspection"`
+associados a **todas** as entradas de `task.validation` pelo índice numérico a partir de 1.
+`verification.check` não indexa `taskPlan.steps`. Use `"inspection"`
 somente quando o contrato aprovado for inspeção em texto. Esses três arrays não podem estar vazios.
 `decisions` contém pares `question`/`answer` resolvidos e pode ser vazio. `openQuestions` contém
 `question`, `blocking` booleano e `answer` opcional; também pode ser vazio. Pergunta bloqueante
 sem resposta impede concluir planejamento; não invente resposta nem omita seu efeito para liberar execução.
 
-O motor gera metadados de planejador, contexto, tentativa e tempo, salva `taskPlan` e preserva o
-histórico dos planejamentos. Ele verifica estrutura e atualidade registrada, não a verdade da pesquisa
-ou a identidade real do agente. O executor lê e reconfere o plano; o revisor independente avalia a
-entrega contra o objetivo aprovado e os critérios vigentes, podendo contestar um plano defeituoso.
-Planejamento não elimina erros nem substitui comprovação funcional por `echo` ou inspeção indevida.
+O motor salva cada `taskPlan` e seu histórico imutável. O escopo usa contratos, sem estado mutável das
+entregas. Mudança de contrato invalida a tarefa afetada e dependentes reais; descoberta compartilhada
+invalida planos não terminais da fase; `--plan-defect` invalida somente aquela tarefa. Achados comuns e
+conclusão de dependência não replanejam. No `start`, uma dependência `done` fornece a validação atual e
+uma `skipped` fornece dispensa explícita ligada ao motivo. O recibo não altera o plano e precisa permanecer
+igual durante revisão, validação e conclusão.
 
-Tarefas novas na 1.2.1 recebem `discoveryRequired: true` e `planningRequired: true`, inclusive as
-adicionadas a uma run antiga. Tarefas existentes sem `discoveryRequired` preservam o fluxo 1.2.0
-e o histórico; uma atualização
-não reinicia trabalho ativo nem obriga tarefas concluídas a planejar novamente.
+Runs persistidas no modo por tarefa continuam usando `begin-discussion`, `finish-discussion`, `plan-task`
+e `finish-planning`, com a semântica anterior de dependências concluídas.
 
 `maxParallel` limita o total de planejadores, executores e revisores ativos; `maxExecutors` limita
 execução. Planejar não consome tentativa de execução. Cada agente pode ocupar uma tarefa ativa.
@@ -151,7 +158,13 @@ Resolva `scripts/engine.mjs` a partir da skill instalada. Acrescente `--run <nom
 |---|---|
 | `init --plan <arquivo> --run <nome>` | Inicializa execução do plano aprovado |
 | `status`, `ready`, `graph`, `runs` | Consulta estado, trabalho pronto, JSON ou execuções |
-| `plan-task <tarefa> --agent <nome> --context <descoberta.json>` | Persiste descoberta e registra planejador após dependências entregues |
+| `begin-phase-discussion <fase> [--adopt-legacy]` | Persiste a discussão da fase antes da primeira pergunta; a opção adota uma fase legada segura |
+| `finish-phase-discussion <fase> --context <descoberta.json>` | Valida o recibo e as respostas da rodada atual |
+| `plan-phase <fase> --agent <nome>` | Registra o único planejador somente leitura da fase |
+| `finish-phase-planning <fase> --plan-dir <diretório>` | Valida e grava atomicamente um plano imutável por tarefa alvo |
+| `begin-discussion <tarefa> [--adopt-legacy]` | Persiste discussão ativa; a opção adota somente uma tarefa legada elegível |
+| `finish-discussion <tarefa> --context <descoberta.json>` | Valida respostas da rodada atual e libera o planejamento |
+| `plan-task <tarefa> --agent <nome>` | Registra o planejador após a discussão fechada |
 | `finish-planning <tarefa> --plan <artefato.json>` | Confere e registra o plano específico; libera execução se não houver pausa preservada |
 | `start <tarefa> --agent <nome>` | Registra executor e inicia tentativa |
 | `progress <tarefa> --step <índice> --agent <executor>` | Registra o passo atual do plano durante a execução, começando em 1 |
@@ -160,7 +173,7 @@ Resolva `scripts/engine.mjs` a partir da skill instalada. Acrescente `--run <nom
 | `validate <tarefa> --failed --evidence <texto>` | Registra reprovação |
 | `done <tarefa>` | Conclui com evidência válida da tentativa e revisor atuais |
 | `fail <tarefa> --reason <texto>` | Registra falha real da tentativa |
-| `retry <tarefa>` | Volta de failed para pending; tarefas novas precisam planejar novamente antes de start |
+| `retry <tarefa>` | Volta de failed para pending; reutiliza plano atual somente em correção limitada com contexto imutável e motivo de revisão válido |
 | `block <tarefa> --reason <texto>` | Pausa preservando a fase anterior |
 | `unblock <tarefa>` | Restaura a fase anterior, sem nova tentativa |
 | `unblock <tarefa> --reviewer <nome>` | Leva tentativa ativa pausada diretamente à revisão |
@@ -173,10 +186,9 @@ idempotente e uma tentativa nova reinicia em 1. Sem plano registrado, não se in
 Na revisão, `Revisão T4 [2/4]` acompanha os checks do contrato automaticamente, com início, resultado
 e indicação de reutilização quando aplicável. Falhas interrompem os próximos checks.
 
-A legenda segue o fluxo: aguardando → pronto para planejamento → discuss do orquestrador →
-em planejamento → pronto para executar → em execução → em revisão → validado → concluído.
-Discuss é uma etapa da conversa principal, representada por um círculo vazado; não cria outro
-agente ou estado do motor. As ferramentas de perguntas são escolhidas pelas capacidades e restrições
+A legenda segue o fluxo: aguardando → pronto para discussão → discussão do orquestrador →
+pronto para planejamento → em planejamento → pronto para executar → em execução → em revisão → validado → concluído.
+Discussão é um estado do motor conduzido na conversa principal; não cria outro agente. As ferramentas de perguntas são escolhidas pelas capacidades e restrições
 da sessão, incluindo perguntas nativas assíncronas quando disponíveis fora do modo Plan.
 | `refresh-contract <tarefa> --plan <arquivo-aprovado>` | Atualiza somente validação, modo e justificativa |
 | `sync-plan --plan <arquivo-aprovado>` | Acrescenta tarefas e reconcilia alterações permitidas |
@@ -191,8 +203,13 @@ Use `refresh-contract` para mudar somente o contrato aprovado de uma tarefa ativ
 
 Trabalho entregue pode seguir à revisão, que pode completar verificações faltantes. Não use fail/retry **somente** para atualizar contrato nem registre erro de orquestração como falha do executor. Um bloqueio solicitado permanece até uma decisão explícita de desbloqueio.
 
-Nas tarefas que exigem planejamento, mudanças na tarefa, dependências ou decisões globais podem invalidar a pesquisa; `retry` também
-exige pesquisa atual, preservando planos anteriores. Se o escopo de execução mudar durante running
+Nas tarefas que exigem planejamento, mudanças na tarefa, dependências ou decisões globais podem invalidar a pesquisa.
+Uma implementação reprovada pelo revisor pode reutilizar o plano aprovado somente para correção limitada,
+com motivo acionável, enquanto todo o contexto de planejamento continuar igual, incluindo revisões do
+contrato e do planejamento, descoberta, escopo e resultados das dependências. O engine registra a origem
+imutável do plano em `planSourceAttempt` e a tentativa imediatamente reprovada em `correctionOf`.
+Use `fail --plan-defect --reason "..."` quando o próprio plano estiver errado; esse retry exige nova
+discussão e planejamento, preservando planos anteriores. Se o escopo de execução mudar durante running
 ou reviewing, bloqueie, sincronize a mudança aprovada e dispare `plan-task` na tarefa bloqueada.
 `finish-planning` devolve a tarefa a **blocked**, mantendo fase anterior, motivo e tentativa aberta;
 `unblock` explícito retoma a mesma tentativa. Não invente fail/retry para replanejar. Recibos do escopo
@@ -211,7 +228,7 @@ Quando a entrega foi realmente reprovada e o contrato aprovado também mudou:
 1. Preserve a evidência e registre `fail <tarefa> --reason <critério-real-não-atendido>`.
 2. Edite o plano aprovado, substituindo critérios obsoletos. Use o editor existente, backup único e confira o diff e possíveis alterações concorrentes; não é obrigatório criar um script de adaptação.
 3. Rode `sync-plan --plan <arquivo-aprovado>` enquanto a tarefa está `failed`. Confira em `graph` o contrato, as dependências e os caminhos de escrita persistidos.
-4. Rode `retry <tarefa>`. Para tarefas que exigem planejamento, dispare `plan-task`, pesquise e registre `finish-planning`; depois use `start <tarefa> --agent <executor>` com o disparo real do executor.
+4. Rode `retry <tarefa>`, faça novo planejamento e só então use `start <tarefa> --agent <executor>`.
 
 Acrescente `--run <nome>` em cada chamada. `retry` não recarrega o plano; `refresh-contract` só muda validação e não registra reprovação. Se apenas faltam atualizar verificações da entrega correta, use refresh e revisão na mesma tentativa. Novos requisitos após conclusão exigem acompanhamento explícito.
 
@@ -220,18 +237,25 @@ Retome da fase persistida, sem repetir a sequência inteira. Se `plan-task`, `st
 ## Dashboard
 
 ```sh
-node <skill>/scripts/serve.mjs --sync-plan --lang pt-BR
+prumo dashboard status
+prumo dashboard enable
+# ou, em primeiro plano:
+prumo dashboard
 ```
 
-O endereço padrão é `http://localhost:4949`, restrito à máquina. `--port` escolhe outra porta e `--run` fixa uma execução. O seletor mostra workspaces centrais e o workspace legado selecionado. Porta ocupada não provoca encerramento de outro servidor.
+O endereço padrão é `http://localhost:4949`, restrito à máquina. O serviço global é somente leitura e mostra workspaces centrais conhecidos e projetos registrados. Para reconciliar um plano aprovado, o orquestrador chama `sync-plan` explicitamente no motor. Porta ocupada não provoca encerramento de outro processo.
+
+`prumo dashboard enable` inicia o servidor imediatamente e registra a inicialização para o usuário atual. No Windows, o Prumo tenta primeiro a tarefa ONLOGON `Prumo Dashboard` no Agendador de Tarefas. Se o Windows recusar ou não conseguir criar essa tarefa, uma única entrada oculta gerenciada pelo Prumo é criada automaticamente na pasta Inicializar do usuário atual, sem pedir acesso de administrador. O mecanismo escolhido persiste em consultas, reinícios, atualizações e reinstalações; `prumo dashboard status` o informa. `prumo dashboard disable` remove somente esse registro e encerra apenas um processo cujo comando absoluto completo do Node e do servidor foi comprovado.
 
 O painel apresenta estados, dependências, tentativas, evidências, eventos e tempos derivados. O idioma segue a preferência da instalação ou a escolha explícita de execução; não há seletor no navegador. Textos do usuário são escapados e não traduzidos. Os números não provam cobertura de testes, causas de defeitos ou regras de negócio.
 
 | Estado efetivo | Significado | Cor |
 |---|---|---|
 | `waiting` | Aguardando dependências | Cinza |
-| `ready_to_plan` | Pronto para planejamento | Azul |
-| `planning` | Em planejamento | Rosa |
+| `ready_for_discussion` | A fase precisa de descoberta atual; não exige dependências concluídas | Violeta |
+| `discussing` | A discussão persistida da fase está ativa na conversa principal | Violeta |
+| `ready_to_plan` | A discussão persistida terminou; o planejador pode começar antes das dependências | Azul |
+| `planning` | Um planejador somente leitura compõe planos separados para as tarefas da fase | Rosa |
 | `ready` | Pronto para executar; em tarefa legada, prontidão original | Verde-azulado |
 | `running` | Em execução | Âmbar |
 | `reviewing` | Em revisão | Ciano |
@@ -240,9 +264,12 @@ O painel apresenta estados, dependências, tentativas, evidências, eventos e te
 | `blocked` | Bloqueado | Roxo |
 | `skipped` | Pulado por decisão explícita | Cinza |
 
-`pending` é persistido; as prontidões são calculadas pelas dependências e pelo plano atual.
+`pending` é persistido na tarefa; as prontidões são calculadas pelas dependências e pelo plano atual.
+O fluxo da fase persiste `ready_for_discussion`, `discussing`, `ready_to_plan` e `planning`
+independentemente. Assim, discussão e planejamento podem estar ativos enquanto um card continua
+`waiting` pelas próprias entradas.
 O planejador aparece junto do orquestrador e do revisor, com conexões às tarefas em planejamento.
 Os detalhes mostram pesquisa, decisões, passos, verificações e perguntas. Resultados separam tempo
 de planejamento, execução e revisão; pausas ficam fora do tempo ativo de planejamento.
 
-Encerrar o dashboard não cancela trabalho. Instalar não reinicia dashboard ou agentes. Um processo já aberto passa a usar o código de servidor atualizado quando for reiniciado.
+Encerrar o dashboard não cancela trabalho. Instalação e atualização reiniciam o dashboard habilitado para carregar a versão instalada; a desativação explícita é preservada. Esses comandos não reiniciam agentes.
