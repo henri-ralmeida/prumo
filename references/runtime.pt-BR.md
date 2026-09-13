@@ -43,8 +43,11 @@ Cada execução usa `.specs/graph/<run>/state.json` e `events.ndjson`. `CURRENT`
 
 Há dois níveis. O modo Plan/Spec monta e aprova o grafo global. Runs novas com fases declaradas usam
 uma discussão visível e um planejador somente leitura por fase. O planejador produz um
-`task-plan-<id>.json` imutável e separado para cada tarefa alvo. Discussão e planejamento podem ocorrer
-antes das dependências; somente o DAG libera a execução. A conversa executa
+`task-plan-<id>.json` imutável e separado para cada tarefa alvo. As fases abrem na ordem declarada após
+todas as tarefas anteriores terminarem. Uma fase posterior só abre antes quando uma dependência direta
+ou transitiva de tarefa anterior não terminal chega a um membro dela; a fase produtora inteira é então
+discutida e planejada. Dependências das tarefas liberam a execução, não o planejamento da fase elegível.
+A conversa executa
 `begin-phase-discussion <fase>` antes do prompt, pesquisa a fase e sempre faz uma pergunta contextual.
 
 Use a caixa nativa de perguntas do Codex, Claude Code ou Kiro quando disponível; caso contrário, use
@@ -53,10 +56,12 @@ fechar as áreas cinzentas que mudam comportamento, escopo, aceite ou execução
 vão para `deferred`. A conversa principal grava um JSON de descoberta com pesquisa, perguntas e
 respostas reais, canal/rodada, cobertura PO First, decisões e motivo de encerramento.
 
-Runs antigas preservam os comandos por tarefa. A adoção de fase é explícita com
-`begin-phase-discussion <fase> --adopt-legacy`: o histórico terminal permanece intacto e todas as tarefas
-não terminais adotadas precisam estar antes da execução, sem rodada de tarefa aberta. Uma adoção insegura
-é recusada sem alterar estado ou eventos.
+Antes de continuar uma run antiga, a skill inspeciona cada contrato não terminal, normaliza validações
+obsoletas ou em prosa na fonte aprovada com evidência do repositório e executa `sync-plan` no run original.
+Ela não cria um run auxiliar nem migra apenas a tarefa bloqueada. A adoção de cada fase elegível é explícita
+com `begin-phase-discussion <fase> --adopt-legacy`: o histórico terminal permanece intacto e todas as
+tarefas não terminais adotadas precisam estar antes da execução, sem rodada de tarefa aberta. Uma adoção
+insegura é recusada sem alterar estado ou eventos.
 
 A escolha depende das ferramentas expostas e permitidas na sessão principal. No Codex,
 `request_user_input_async` pode estar disponível fora do Plan; `request_user_input` mantém suas

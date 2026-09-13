@@ -158,6 +158,28 @@ function phaseTargets(state, phaseId) {
     !(task.taskPlan?.phaseId === phaseId && hasCurrentTaskPlan(state, task)))
 }
 
+function reaches(tasks, from, to, seen = new Set()) {
+  if (from === to) return true
+  if (seen.has(from)) return false
+  seen.add(from)
+  return (tasks[from]?.deps ?? []).some(dep => reaches(tasks, dep, to, seen))
+}
+
+function phasePlanningBlockers(state, phaseId) {
+  const phases = state.plan.phases ?? []
+  const index = phases.findIndex(phase => phase.id === phaseId)
+  if (index <= 0) return []
+  const members = id => Object.values(state.tasks).filter(task => task.phase === id)
+  const earlier = phases.slice(0, index).filter(phase =>
+    members(phase.id).some(task => !['done', 'skipped'].includes(task.state)))
+  if (!earlier.length) return []
+  const targets = members(phaseId)
+  const requiredEarly = earlier.some(phase => members(phase.id)
+    .filter(task => !['done', 'skipped'].includes(task.state))
+    .some(task => targets.some(target => reaches(state.tasks, task.id, target.id))))
+  return requiredEarly ? [] : earlier.map(phase => phase.id)
+}
+
 function currentPhaseDiscussion(state, phase) {
   const round = phase?.discussionAttempts?.at(-1)
   const targets = round?.targets?.map(id => state.tasks[id]).filter(Boolean)
@@ -183,6 +205,7 @@ function derive(state) {
   for (const [id, t] of Object.entries(state.tasks)) {
     let effective = t.state
     let blockedBy = []
+    let planningBlockedBy = []
     const phase = state.phaseWorkflows?.[t.phase]
     if (t.state === 'pending') {
       blockedBy = t.deps.filter((d) => {
@@ -190,9 +213,16 @@ function derive(state) {
         return !dep || (dep.state !== 'done' && dep.state !== 'skipped')
       })
       const phaseAdopted = !(state.legacyPhaseAdoption && !phase?.adoptedLegacy)
-      effective = blockedBy.length ? 'waiting' : !phaseAdopted ? 'pending' : hasCurrentTaskPlan(state, t) ? 'ready' :
-        state.plan.planningMode === 'phase' ? (currentPhaseDiscussion(state, phase) ? 'ready_to_plan' : 'ready_for_discussion') :
-          t.discussionRequired && !currentDiscussion(state, t) ? 'ready_for_discussion' : 'ready_to_plan'
+      if (state.plan.planningMode === 'phase') {
+        planningBlockedBy = phasePlanningBlockers(state, t.phase)
+        effective = !phaseAdopted ? 'pending' : hasCurrentTaskPlan(state, t) ?
+          (blockedBy.length ? 'waiting' : 'ready') : planningBlockedBy.length ? 'waiting' :
+            (currentPhaseDiscussion(state, phase) ? 'ready_to_plan' : 'ready_for_discussion')
+      } else {
+        effective = blockedBy.length ? 'waiting' : !phaseAdopted ? 'pending' :
+          hasCurrentTaskPlan(state, t) ? 'ready' :
+            t.discussionRequired && !currentDiscussion(state, t) ? 'ready_for_discussion' : 'ready_to_plan'
+      }
     }
     const planningStatus = state.legacyPhaseAdoption && !phase?.adoptedLegacy ? 'awaiting_phase_adoption' : hasCurrentTaskPlan(state, t) ? 'planned' :
       phase?.state === 'discussing' ? 'phase_discussing' : phase?.state === 'planning' ? 'phase_planning' : 'awaiting_phase_plan'
@@ -203,7 +233,8 @@ function derive(state) {
         inputs.some(dep => dep.state === 'skipped') ? 'waived_input' : 'validated_input'
     }
     out[id] = { effective, blockedBy,
-      ...(state.plan.planningMode === 'phase' ? { planningStatus, ...(inputStatus ? { inputStatus } : {}) } : {}) }
+      ...(state.plan.planningMode === 'phase' ?
+        { planningStatus, ...(planningBlockedBy.length ? { planningBlockedBy } : {}), ...(inputStatus ? { inputStatus } : {}) } : {}) }
   }
   return out
 }

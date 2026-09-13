@@ -14,14 +14,15 @@ assert.equal(pkg.engines.node, '>=22')
 assert.equal(pkg.dependencies, undefined)
 const releaseNotes = JSON.parse(readFileSync(join(root, 'scripts', 'release-notes.json'), 'utf8'))
 assert.deepEqual(releaseNotes[pkg.version]?.en?.map(section => section.title), [
-  'Added — Automatic global dashboard',
-  'Improved — Responsive graph observer',
-  'Added — Phase-wide discussion and planning'
+  'Fixed — Sequential phase planning',
+  'Improved — Legacy run adoption'
 ])
 assert.equal(releaseNotes[pkg.version]?.['pt-BR'], undefined)
 for (const file of ['SKILL.md', 'README.md', 'README.pt-BR.md', 'CHANGELOG.md', 'LICENSE', 'references/po-first.md', 'references/runtime.md', 'references/runtime.pt-BR.md']) assert.ok(existsSync(join(root, file)), file)
 const skill = readFileSync(join(root, 'SKILL.md'), 'utf8')
 assert.match(skill, /^---\nname: prumo\n/)
+assert.match(skill, /Normalize every\s+nonterminal prose or obsolete validation/)
+assert.match(skill, /later phase cannot begin discussion or planning until every task in each earlier phase is\s+`done` or `skipped`/)
 assert.doesNotMatch(skill, /\u0000/)
 assert.match(readFileSync(join(root, 'LICENSE'), 'utf8'), /JrSantiaggo/)
 const html = readFileSync(join(root, 'scripts/dashboard.html'), 'utf8')

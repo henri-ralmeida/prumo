@@ -2,6 +2,12 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 1.3.1 — 2026-09-13
+
+- Enforce declared phase order for discussion and planning: a later phase opens only after earlier phases are terminal, except when it provides a direct or transitive dependency required by nonterminal earlier work.
+- Keep task dependencies from hiding the discussion and planning readiness of an eligible phase; they continue to gate executor dispatch after task plans exist.
+- Require the Prumo skill to normalize every nonterminal legacy contract in the approved source, synchronize the original run and adopt eligible phases in order instead of creating an auxiliary run or migrating only the blocked task.
+
 ## 1.3.0 — 2026-09-13
 
 - Start the read-only dashboard automatically after a global npm installation, with managed per-user startup on Windows, macOS and Linux and explicit `dashboard enable`, `disable` and `status` commands. Windows tries Task Scheduler first and falls back to one hidden current-user Startup entry when task creation is unavailable, without requiring administrator access.

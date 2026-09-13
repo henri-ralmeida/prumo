@@ -250,9 +250,8 @@ test('stale phase planning is superseded before a fresh discussion without parti
   assert.equal(recovered.tasks.A.taskPlan, undefined)
   assert.deepEqual(recovered.tasks.A.planningHistory, [])
 
-  f.ok('begin-phase-discussion', 'F2')
-  f.ok('finish-phase-discussion', 'F2', '--context', f.discovery('F2'))
-  f.ok('plan-phase', 'F2', '--agent', 'released-planner')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('plan-phase', 'F1', '--agent', 'released-planner')
 })
 
 test('sync-plan adding a phase member makes the previous discussion stale without invalidating current plans', t => {
@@ -331,7 +330,11 @@ test('legacy phases adopt sequentially without enabling or mutating another phas
     { id: 'B', phase: 'F2', title: 'Second phase task' },
   ], { planningMode: 'task' })
 
+  f.rejects(/F2 waits for prior phase completion: F1/, 'begin-phase-discussion', 'F2', '--adopt-legacy')
   f.ok('begin-phase-discussion', 'F1', '--adopt-legacy')
+  const initialSecond = JSON.parse(f.ok('graph').stdout).derived.B
+  assert.equal(initialSecond.effective, 'pending')
+  assert.deepEqual(initialSecond.planningBlockedBy, ['F1'])
   let current = f.state()
   assert.equal(current.plan.planningMode, 'phase')
   assert.equal(current.phaseWorkflows.F1.adoptedLegacy, true)
@@ -344,6 +347,10 @@ test('legacy phases adopt sequentially without enabling or mutating another phas
   f.ok('plan-phase', 'F1', '--agent', 'planner-f1')
   f.writeArtifacts('F1')
   f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  f.ok('start', 'A', '--agent', 'executor-f1')
+  f.ok('review', 'A', '--agent', 'reviewer-f1')
+  f.ok('validate', 'A', '--ok', '--evidence', 'first phase independently validated', '--cwd', f.project)
+  f.ok('done', 'A')
 
   const statePath = join(f.root, '.specs/graph/phase-negative/state.json')
   const beforeMissingOptIn = readFileSync(statePath, 'utf8'), eventsBeforeOptIn = f.events()
@@ -372,7 +379,7 @@ test('legacy phases adopt sequentially without enabling or mutating another phas
   f.ok('plan-phase', 'F2', '--agent', 'planner-f2')
   f.writeArtifacts('F2')
   f.ok('finish-phase-planning', 'F2', '--plan-dir', f.plans)
-  assert.equal(JSON.parse(f.ok('graph').stdout).derived.A.effective, 'ready')
+  assert.equal(JSON.parse(f.ok('graph').stdout).derived.A.effective, 'done')
   assert.equal(JSON.parse(f.ok('graph').stdout).derived.B.effective, 'ready')
 })
 
@@ -505,7 +512,10 @@ test('one phase discussion plans every member atomically while the DAG binds lat
   const unchanged = readFileSync(statePath, 'utf8')
   rejects(/task-plan-C|ENOENT/, 'finish-phase-planning', 'F1', '--plan-dir', plans)
   assert.equal(readFileSync(statePath, 'utf8'), unchanged, 'partial artifact batches do not mutate state')
-  assert.equal(JSON.parse(ok('graph').stdout).derived.A.effective, 'waiting')
+  assert.equal(JSON.parse(ok('graph').stdout).derived.A.effective, 'ready_to_plan')
+  const earlyProducer = JSON.parse(ok('graph').stdout).derived.B
+  assert.equal(earlyProducer.effective, 'ready_for_discussion')
+  assert.equal(earlyProducer.planningBlockedBy, undefined)
 
   // The producer may finish while the earlier phase planner is still working. Its progress
   // satisfies the captured unresolved input; it does not stale or rewrite that plan batch.

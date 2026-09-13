@@ -358,6 +358,25 @@ function phaseTargets(state, phaseId) {
     !(task.taskPlan?.phaseId === phaseId && hasCurrentTaskPlan(state, task)))
 }
 
+function phasePlanningBlockers(state, phaseId) {
+  const phases = state.plan.phases ?? []
+  const index = phases.findIndex(phase => phase.id === phaseId)
+  if (index <= 0) return []
+  const earlier = phases.slice(0, index).filter(phase =>
+    phaseMembers(state, phase.id).some(task => !['done', 'skipped'].includes(task.state)))
+  if (!earlier.length) return []
+  const targets = phaseMembers(state, phaseId)
+  const requiredEarly = earlier.some(phase => phaseMembers(state, phase.id)
+    .filter(task => !['done', 'skipped'].includes(task.state))
+    .some(task => targets.some(target => reaches(state.tasks, task.id, target.id))))
+  return requiredEarly ? [] : earlier.map(phase => phase.id)
+}
+
+function assertPhasePlanningOrder(state, phaseId) {
+  const blockers = phasePlanningBlockers(state, phaseId)
+  if (blockers.length) die(`${phaseId} waits for prior phase completion: ${blockers.join(', ')}`)
+}
+
 function phaseContext(state, phaseId, targets = phaseTargets(state, phaseId)) {
   return JSON.stringify([state.plan.name, state.plan.description, state.plan.planningRevision ?? 0, phaseId,
     targets.map(task => [task.id, phasePlanningContext(state, task)]).sort()])
@@ -406,6 +425,7 @@ export function derive(state) {
   for (const [id, t] of Object.entries(state.tasks)) {
     let effective = t.state
     let blockedBy = []
+    let planningBlockedBy = []
     const phase = state.phaseWorkflows?.[t.phase]
     if (t.state === 'pending') {
       blockedBy = t.deps.filter((d) => {
@@ -413,9 +433,16 @@ export function derive(state) {
         return !dep || (dep.state !== 'done' && dep.state !== 'skipped')
       })
       const phaseAdopted = !(state.legacyPhaseAdoption && !state.phaseWorkflows?.[t.phase]?.adoptedLegacy)
-      effective = blockedBy.length ? 'waiting' : !phaseAdopted ? 'pending' : hasCurrentTaskPlan(state, t) ? 'ready' :
-        state.plan.planningMode === 'phase' ? (currentPhaseDiscussion(state, phase) ? 'ready_to_plan' : 'ready_for_discussion') :
-          t.discussionRequired && !currentDiscussion(state, t) ? 'ready_for_discussion' : 'ready_to_plan'
+      if (state.plan.planningMode === 'phase') {
+        planningBlockedBy = phasePlanningBlockers(state, t.phase)
+        effective = !phaseAdopted ? 'pending' : hasCurrentTaskPlan(state, t) ?
+          (blockedBy.length ? 'waiting' : 'ready') : planningBlockedBy.length ? 'waiting' :
+            (currentPhaseDiscussion(state, phase) ? 'ready_to_plan' : 'ready_for_discussion')
+      } else {
+        effective = blockedBy.length ? 'waiting' : !phaseAdopted ? 'pending' :
+          hasCurrentTaskPlan(state, t) ? 'ready' :
+            t.discussionRequired && !currentDiscussion(state, t) ? 'ready_for_discussion' : 'ready_to_plan'
+      }
     }
     const planningStatus = state.legacyPhaseAdoption && !phase?.adoptedLegacy ? 'awaiting_phase_adoption' : hasCurrentTaskPlan(state, t) ? 'planned' :
       phase?.state === 'discussing' ? 'phase_discussing' : phase?.state === 'planning' ? 'phase_planning' : 'awaiting_phase_plan'
@@ -425,7 +452,8 @@ export function derive(state) {
       inputStatus = inputs.some(dep => !dep || !['done', 'skipped'].includes(dep.state)) ? 'unresolved_later_phase_input' :
         inputs.some(dep => dep.state === 'skipped') ? 'waived_input' : 'validated_input'
     }
-    out[id] = { ...t, effective, blockedBy, ...(state.plan.planningMode === 'phase' ? { planningStatus, ...(inputStatus ? { inputStatus } : {}) } : {}) }
+    out[id] = { ...t, effective, blockedBy, ...(state.plan.planningMode === 'phase' ?
+      { planningStatus, ...(planningBlockedBy.length ? { planningBlockedBy } : {}), ...(inputStatus ? { inputStatus } : {}) } : {}) }
   }
   return out
 }
@@ -667,6 +695,7 @@ const commands = {
     const phaseId = args._[0] ?? die('begin-phase-discussion <phase> [--adopt-legacy]')
     const state = loadState(name)
     if (!(state.plan.phases ?? []).some(phase => phase.id === phaseId)) die(`unknown phase "${phaseId}"`)
+    assertPhasePlanningOrder(state, phaseId)
     const members = phaseMembers(state, phaseId)
     const needsLegacyAdoption = state.plan.planningMode !== 'phase' ||
       (state.legacyPhaseAdoption && !state.phaseWorkflows?.[phaseId]?.adoptedLegacy)
@@ -756,6 +785,7 @@ const commands = {
     const phaseId = args._[0] ?? die('plan-phase <phase> --agent <name>')
     const agent = args.agent ?? die('plan-phase needs --agent <name>')
     const state = loadState(name), phase = getPhase(state, phaseId)
+    assertPhasePlanningOrder(state, phaseId)
     if (!currentPhaseDiscussion(state, phase)) die(`${phaseId} needs a completed current phase discussion`)
     const discussion = phase.discussionAttempts.at(-1)
     const targets = discussion.targets.map(id => getTask(state, id)).filter(task => !hasCurrentTaskPlan(state, task))
