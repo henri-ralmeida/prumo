@@ -2,6 +2,14 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 1.3.0 — 2026-09-13
+
+- Start the read-only dashboard automatically after a global npm installation, with managed per-user startup on Windows, macOS and Linux and explicit `dashboard enable`, `disable` and `status` commands. Windows tries Task Scheduler first and falls back to one hidden current-user Startup entry when task creation is unavailable, without requiring administrator access.
+- Discover registered Prumo workspaces without scanning the disk, expose `/api/health`, and preserve the dashboard as an observer that never synchronizes plans in global mode.
+- Make large graphs responsive with lifecycle filters, optional direct dependency context, adaptive density, fixed-size arrowheads and a collapsible details panel.
+- Discuss and plan once per phase. A read-only planner emits one immutable plan per task, records later-phase inputs and invalidates only plans affected by a material contract change.
+- Reuse an approved task plan for ordinary executor retries; require a new revision only for a confirmed plan defect or changed contract.
+
 ## 1.2.2 — 2026-09-12
 
 - Select discovery questions from the principal harness session's permitted native tools, including Codex asynchronous input and Claude Code AskUserQuestion, with structured conversational fallback for Kiro or other sessions without one. Require real answers before planning.
