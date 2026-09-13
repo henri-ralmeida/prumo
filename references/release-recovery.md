@@ -13,6 +13,7 @@ Commit dates are recovery dates where a commit had to be reconstructed.
 | 1.2.0 | Reconstruct commit `418fc3e` from the original planning tarball; restore original tests from recorded patches. Includes per-task planning and the selector/hub visual fixes. |
 | 1.2.1 | Reconstruct commit `8ddcfb0` with 1.2.0 as parent. Preserves original commit `81555bd` with corrected version labels; introduces discuss before planning. |
 | 1.2.2 | Retain the changes from `e5fe9cf` and complete release metadata: native question routing, ordered legend, colored counters and per-task progress. |
+| 1.3.0 | Deliver the global read-only dashboard, per-user autostart, responsive graph observer and phase-wide immutable task planning. |
 
 The original combined history is retained in branch `codex/release-history-before-recovery`.
 The original 1.3.1 target is retained as `recovery-original-v1.3.1`.
