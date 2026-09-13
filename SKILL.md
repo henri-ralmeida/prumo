@@ -115,10 +115,13 @@ dependencies, scope and history, then run `sync-plan` on the same run
 and inspect the persisted result. Do not create an auxiliary run to avoid adapting old tasks. Ask in the
 principal discussion only when a consequential contract meaning cannot be established from the repository.
 
-`sync-plan` adds new tasks, refreshes pending/failed/blocked contracts and preserves active/done history.
-Task removal is refused. Adopt a migrated task-scoped run one eligible phase at a time with
-`begin-phase-discussion <phase> --adopt-legacy`. An approved validation change for active work needs
-`refresh-contract`, not fail/retry. Always check the persisted task before review.
+`sync-plan` adds approved tasks, refreshes pending/failed/blocked contracts and preserves active/done
+history. Task removal is refused. A named task in the user's request is a hard scope boundary: its
+dependencies, prerequisites or internal deliverables are context, not permission to add tasks, plan
+siblings or dispatch more planners. Keep one discussion and one planner for that task unless the user
+explicitly approves a broader graph change. Otherwise, adopt a migrated task-scoped run one eligible phase
+at a time with `begin-phase-discussion <phase> --adopt-legacy`. An approved validation change for active
+work needs `refresh-contract`, not fail/retry. Always check the persisted task before review.
 
 On Windows, use PowerShell environment assignment ($env:PRUMO_ROOT) and quoted paths instead of POSIX shell syntax. Start background helpers hidden. Keep the actual working directory in the approved validation step; do not translate or rewrite its commands.
 
@@ -196,16 +199,21 @@ node $ENGINE plan-phase F2 --agent <planner>
 node $ENGINE finish-phase-planning F2 --plan-dir <artifact-directory>
 ```
 
-The planner writes `task-plan-<id>.json` for every targeted member. The engine validates the whole batch
+The planner writes `task-plan-<id>.json` for every targeted member. Never turn steps, evidence gaps,
+prerequisites or dependency outputs inside an explicitly selected task into separate graph tasks or
+planner assignments without explicit user approval. The engine validates the whole batch
 before recording any artifact. Each artifact is immutable and lists incomplete direct dependencies as
 unresolved inputs. A later producer's independently reviewed validation receipt, or an explicit skip waiver,
 satisfies that input at execution time without rewriting the plan. Contract changes stale only the affected
 plan and true downstream scopes; shared phase discovery stales nonterminal plans in that phase; a marked
 plan defect stales only that task.
 
-Existing task-scoped runs keep `begin-discussion`, `finish-discussion`, `plan-task` and `finish-planning`.
-Adopt one whole safe phase explicitly with `begin-phase-discussion <phase> --adopt-legacy`; terminal history
-is preserved and every adopted nonterminal member must still be pre-execution with no open round.
+Existing task-scoped runs use `begin-discussion`, `finish-discussion`, `plan-task` and
+`finish-planning` when the user explicitly selected one existing task or when legacy phase boundaries
+cannot be mapped without broadening scope. That path still receives current discovery and exactly one
+read-only planner. Otherwise adopt one whole safe phase explicitly with
+`begin-phase-discussion <phase> --adopt-legacy`; terminal history is preserved and every adopted
+nonterminal member must still be pre-execution with no open round.
 
 The engine hashes the validated discovery and issued receipt with canonical JSON and binds that digest to
 the planning round and final task plans. Repeating `plan-phase` while that round is active is a no-op.
@@ -389,12 +397,13 @@ Keep validation proportional to the approved task. A reviewer can run missing ve
 on delivered work in the current attempt. Existing artifacts help the review; an executor's
 report alone is still not approval.
 
-For a legacy graph-foreman run, adaptation is mandatory before new dispatch. Inspect each nonterminal
-task, translate old prose validation into current executable checks supported by repository evidence,
-update the approved source, and run `sync-plan` against the original run. Preserve IDs, dependency edges,
-phase membership, delivered history and existing attempts; never edit `state.json` or migrate only the
-currently blocked task. If work is already running or reviewing, keep the attempt and use
-`refresh-contract` below. If the old wording leaves a consequential meaning unresolved, settle only that
+For a legacy graph-foreman run, contract adaptation is mandatory before new dispatch. Inspect each
+nonterminal task, translate old prose validation into current executable checks supported by repository
+evidence, update the approved source, and run `sync-plan` against the original run. This graph-wide
+contract normalization does not authorize planning every task. Preserve IDs, dependency edges, phase
+membership, delivered history and existing attempts; never edit `state.json`. When the user selects one
+task, plan only that existing task and keep its internal work inside the one immutable task plan. If work
+is already running or reviewing, keep the attempt and use `refresh-contract` below. If the old wording leaves a consequential meaning unresolved, settle only that
 point in the principal discussion, then complete the migration instead of abandoning it.
 
 After adapting the approved plan, use:

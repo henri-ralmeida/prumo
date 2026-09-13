@@ -129,7 +129,7 @@ Não é necessário migrar os dados manualmente. Encerre sessões que estejam ca
 O backup informa o comando de reversão:
 
 ```sh
-bunx @henri-ralmeida/prumo@1.3.1 restore "<diretório-do-backup>"
+bunx @henri-ralmeida/prumo@1.3.2 restore "<diretório-do-backup>"
 ```
 
 A reversão recusa sobrescrever arquivos que você editou depois. Os planos continuam no estado atual: reverter uma instalação não deve apagar trabalho em andamento. Mantenha sua rotina de backup dos dados de negócio; o instalador não captura uma imagem consistente de todos os planos ativos.
@@ -140,9 +140,9 @@ O dashboard habilitado é reiniciado depois de instalação ou atualização par
 
 Apresente e aprove o plano global no modo Plan/Spec do ambiente de IA. Se esse modo bloquear escrita ou despacho de agentes, saia dele depois da aprovação. Então invoque `/prumo <plano-ou-execução>` no Claude Code ou Kiro, ou `$prumo` no Codex. O motor registra despachos; quem cria agentes é o ambiente. Sem suporte a planejadores dedicados, executores ou revisores independentes, o fluxo deve informar a limitação.
 
-Na **1.3.1**, há dois níveis de planejamento. O modo Plan/Spec global define e aprova o grafo. Cada fase então segue **discutir → planejar → executar → revisar**: primeiro o orquestrador registra a fase em discussão, pesquisa e faz ao menos uma pergunta contextual na conversa principal. Quando as áreas cinzentas relevantes estão fechadas, um planejador dedicado e somente leitura pesquisa o projeto e grava um `task-plan-<id>.json` separado e imutável para cada tarefa da fase. O planejador não edita arquivos do produto nem o estado do grafo.
+Na **1.3.2**, há dois níveis de planejamento. O modo Plan/Spec global define e aprova o grafo. Cada fase então segue **discutir → planejar → executar → revisar**: primeiro o orquestrador registra a fase em discussão, pesquisa e faz ao menos uma pergunta contextual na conversa principal. Quando as áreas cinzentas relevantes estão fechadas, um planejador dedicado e somente leitura pesquisa o projeto e grava um `task-plan-<id>.json` separado e imutável para cada tarefa da fase. O planejador não edita arquivos do produto nem o estado do grafo.
 
-As fases são discutidas e planejadas na ordem declarada; a próxima só abre quando todas as tarefas anteriores estiverem concluídas ou puladas. Uma fase produtora posterior pode abrir antes apenas quando uma tarefa anterior não terminal chega até ela por dependência direta ou transitiva. A fase produtora inteira é planejada uma vez, e sua evidência continua não resolvida até a validação independente. Dependências das tarefas bloqueiam executores, não a discussão ou o planejamento da fase elegível.
+As fases são discutidas e planejadas na ordem declarada; a próxima só abre quando todas as tarefas anteriores estiverem concluídas ou puladas. Uma fase produtora posterior pode abrir antes apenas quando uma tarefa anterior não terminal chega até ela por dependência direta ou transitiva. A fase produtora inteira é planejada uma vez, e sua evidência continua não resolvida até a validação independente. Dependências das tarefas bloqueiam executores, não a discussão ou o planejamento da fase elegível. Quando o usuário nomeia explicitamente uma tarefa existente, ela é o limite do planejamento: uma discussão, um planner e nenhuma tarefa auxiliar ou planejamento de irmãs sem aprovação explícita.
 
 Resolva `$ENGINE` como `scripts/engine.mjs` dentro da skill Prumo instalada. A passagem completa da fase é:
 
@@ -167,7 +167,7 @@ node "$ENGINE" review T1 --agent reviewer-T1
 
 A descoberta usa a caixa nativa de perguntas do ambiente quando disponível e um bloco estruturado na conversa principal quando não estiver. Ela registra pesquisa leve, respostas reais, cobertura PO First, decisões, ideias adiadas e o motivo de não restar área cinzenta relevante. O planejador a consome sem repetir a discussão. Mudanças materiais de escopo, contrato ou decisões compartilhadas da fase exigem nova discussão e planejamento do trabalho afetado; um defeito de plano marcado pelo revisor replaneja somente aquela tarefa. Achados comuns do executor e retries corretivos reutilizam o plano imutável quando ele continua correto e atual.
 
-Runs existentes no modo por tarefa preservam fluxo e histórico. Antes de continuá-los, a skill do Prumo inspeciona e normaliza todos os contratos legados não terminais na fonte aprovada, sincroniza o run original e adota as fases elegíveis em ordem com `begin-phase-discussion <fase> --adopt-legacy`. Ela não cria um segundo run para evitar a migração; adoção insegura é recusada de forma atômica. Consulte [artefato de planejamento por fase](references/runtime.pt-BR.md#descoberta-e-planejamento-por-fase) e [planos em andamento](references/runtime.pt-BR.md#planos-em-andamento).
+Runs existentes no modo por tarefa preservam fluxo e histórico. Antes de continuá-los, a skill do Prumo inspeciona e normaliza todos os contratos legados não terminais na fonte aprovada e sincroniza o run original. A migração de contratos não amplia o escopo do planejamento: uma tarefa escolhida explicitamente mantém um único planner por tarefa; nos demais casos, as fases elegíveis são adotadas em ordem com `begin-phase-discussion <fase> --adopt-legacy`. Ela não cria um segundo run para evitar a migração; adoção insegura é recusada de forma atômica. Consulte [artefato de planejamento por fase](references/runtime.pt-BR.md#descoberta-e-planejamento-por-fase) e [planos em andamento](references/runtime.pt-BR.md#planos-em-andamento).
 
 Para novos planos, selecione um workspace central. No PowerShell:
 

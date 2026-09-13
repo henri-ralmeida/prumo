@@ -308,7 +308,9 @@ one separately bound immutable `task-plan-<id>.json` per targeted task. Phases o
 after every earlier task is terminal. A later phase may open early only when a direct or transitive
 dependency from a nonterminal earlier task reaches one of its members; the whole provider phase is then
 discussed and planned. Task dependencies remain the sole execution authority and do not block planning
-inside an eligible phase. The conversation
+inside an eligible phase. An explicitly named existing task is a hard planning boundary: prerequisites,
+evidence gaps and internal deliverables remain inside its single task plan, and adding helper tasks or
+planning siblings requires explicit user approval. The conversation
 loads the global context and known dependency outputs, scouts the phase and asks at least one contextual question. It
 uses the host's native question UI when available or a structured text fallback in the same
 conversation. Follow-up rounds continue until behavior, scope, acceptance and execution have no
@@ -332,8 +334,9 @@ issues a `roundId` and `nonce`. The principal conversation writes discovery befo
 
 Before continuing a run created by an older engine, the skill must inspect every nonterminal contract,
 normalize obsolete or prose validation in the approved source using repository evidence, and `sync-plan`
-the original run. It must not create an auxiliary run or migrate only the currently blocked task. The run
-can then adopt each eligible phase with `begin-phase-discussion F1 --adopt-legacy`. Terminal history is
+the original run. This graph-wide contract migration does not authorize graph or planning expansion.
+When the user names one existing task, keep one task-scoped discussion and planner. Otherwise the run can
+adopt each eligible phase with `begin-phase-discussion F1 --adopt-legacy`. Terminal history is
 untouched; every adopted nonterminal member must be pre-execution and have no open task discussion or
 planning round. Unsafe adoption changes nothing.
 
