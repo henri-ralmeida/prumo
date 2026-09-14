@@ -2,6 +2,14 @@
 
 Observed checks, not a guarantee that every model, client configuration or operating system behaves identically.
 
+Release candidate end-to-end checks can be repeated with `npm pack`, `node scripts/package-smoke.mjs`,
+`npm pack @henri-ralmeida/prumo@1.0.8 --ignore-scripts`, and `node scripts/legacy-update-smoke.mjs`.
+The legacy check runs the published 1.0.8 updater against a local registry serving the candidate package;
+it preserves completed/skipped tasks and completes a migrated task through discussion, planning and independent review.
+`node --test test/autostart-process.test.mjs` uses a real Windows dashboard process and the generated Startup VBS
+in an isolated profile and port. Scheduler denial is simulated; the VBS is executed directly, without rebooting
+or logging out. This does not claim that a real Windows login or native agent session has been tested.
+
 Verificações observadas, não uma garantia de comportamento idêntico de todos os modelos, configurações de cliente ou sistemas operacionais.
 
 | Layer / Camada | Evidence / Evidência |

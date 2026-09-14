@@ -138,6 +138,8 @@ function saveState(name, state) {
 }
 
 function migrationStatus(state) {
+  if (Number(state.schemaVersion) > STATE_SCHEMA_VERSION)
+    die(`run uses newer schema v${state.schemaVersion}; update Prumo before opening it`)
   const nonterminal = Object.values(state.tasks ?? {}).filter(task => !['done', 'skipped'].includes(task.state))
   const missingMode = !['phase', 'task'].includes(state.plan?.planningMode)
   const mode = missingMode ? ((state.plan?.phases?.length ?? 0) ? 'phase' : 'task') : state.plan.planningMode

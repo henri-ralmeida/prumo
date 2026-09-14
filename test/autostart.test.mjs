@@ -109,7 +109,7 @@ test('Windows falls back to one hidden per-user Startup entry when task creation
   assert.equal(preference(f.home).mechanism, 'windows-startup')
   assert.equal(f.calls.filter(([file, args]) => file === 'schtasks' && args[0] === '/Create').length, 1)
   assert.deepEqual(spawned[0], [f.node, [f.script, '--global', '--port', '4949'], {
-    cwd: join(f.home, '.local', 'share', 'prumo'), detached: true, stdio: 'ignore', windowsHide: true,
+    cwd: join(f.home, '.local', 'share', 'prumo'), env: f.options.env, detached: true, stdio: 'ignore', windowsHide: true,
   }])
   assert.equal(existsSync(spawned[0][2].cwd), true)
   assert.match(readFileSync(startup, 'utf8'), /^CreateObject\("WScript\.Shell"\)\.Run """.*node\.exe"" "".*serve\.mjs"" ""--global"" ""--port"" ""4949""", 0, False\r?\n$/)
@@ -149,11 +149,11 @@ test('Windows Startup discovers a later login process and refuses similar foreig
       if (!running) throw new Error('stopped')
       return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0' }) }
     },
-    listProcessIds: () => [loginPid],
+    listProcessIds: script => { assert.equal(script, f.script); return [loginPid] },
     readProcessCommand(pid) {
       if (pid === 7700) throw new Error('previous session ended')
       return exact
-        ? { executable: f.node.toUpperCase(), commandLine: `"${f.node}" "${f.script}" "--global" "--port" "4949"` }
+        ? { executable: f.node.toUpperCase(), commandLine: `"${f.node}"  "${f.script}"\t"--global" "--port" "4949"` }
         : { executable: f.node, commandLine: `"${f.node}" "${f.script}" "--global" "--port" "4949" "--sync-plan"` }
     },
     kill(pid) { killed.push(pid); running = false },
@@ -365,7 +365,7 @@ test('Linux falls back to XDG, starts detached, and only stops a proven PID', as
   const desktop = join(f.home, '.config', 'autostart', 'prumo-dashboard.desktop')
   assert.ok(readFileSync(desktop, 'utf8').includes(`Exec="${f.node.replaceAll('\\', '\\\\')}" "${f.script.replaceAll('\\', '\\\\')}" "--global" "--port" "4949"`))
   assert.deepEqual(spawned, [[f.node, [f.script, '--global', '--port', '4949'], {
-    cwd: join(f.home, '.local', 'share', 'prumo'), detached: true, stdio: 'ignore', windowsHide: true,
+    cwd: join(f.home, '.local', 'share', 'prumo'), env: f.options.env, detached: true, stdio: 'ignore', windowsHide: true,
   }]])
   assert.equal(preference(f.home).pid, 4321)
   const reenabled = await enableDashboard(options)
