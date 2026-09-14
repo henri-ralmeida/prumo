@@ -10,10 +10,10 @@ test('current release has concise English update highlights with descriptive sub
   assert.deepEqual(notes.map(section => section.title), [
     'Fixed — Central workspace migration',
     'Fixed — Dashboard continuity',
-    'Improved — Readable phase layout',
+    'Improved — Responsive phase board',
     'Added — Direct migration command'
   ])
-  assert.ok(notes.flatMap(section => section.items).includes('Open long phase graphs at a readable width instead of shrinking every phase into one screen'))
+  assert.ok(notes.flatMap(section => section.items).includes('Open with the complete graph visible without manual zoom adjustments'))
   assert.ok(releaseNotes('1.3.2').flatMap(section => section.items).includes('Keep one discussion and one planner when the user names one task'))
   assert.ok(releaseNotes('1.3.1').flatMap(section => section.items).includes('Open phases in declared order after earlier work is terminal'))
   assert.ok(releaseNotes('1.3.0').flatMap(section => section.items).includes('Start the read-only dashboard after global npm installation'))

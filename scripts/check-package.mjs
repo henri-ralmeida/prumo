@@ -16,7 +16,7 @@ const releaseNotes = JSON.parse(readFileSync(join(root, 'scripts', 'release-note
 assert.deepEqual(releaseNotes[pkg.version]?.en?.map(section => section.title), [
   'Fixed — Central workspace migration',
   'Fixed — Dashboard continuity',
-  'Improved — Readable phase layout',
+  'Improved — Responsive phase board',
   'Added — Direct migration command'
 ])
 assert.equal(releaseNotes[pkg.version]?.['pt-BR'], undefined)

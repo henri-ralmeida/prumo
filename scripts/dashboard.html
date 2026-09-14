@@ -141,14 +141,14 @@
   .node.lit-self { border-color: var(--accent) !important;
                    box-shadow: 0 0 0 1px var(--accent), 0 0 18px rgba(252, 180, 0, .25); }
 
-  .node { position: absolute; width: 212px; height: 52px; background: var(--card);
+  .node { position: absolute; width: var(--node-w, 212px); height: var(--node-h, 52px); background: var(--card);
           border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px 6px 30px;
           cursor: pointer; transition: border-color .15s, opacity .18s; }
-  #canvas[data-density="compact"] .node { width: 202px; height: 48px; padding: 5px 8px 5px 27px; }
+  #canvas[data-density="compact"] .node { width: var(--node-w, 202px); height: var(--node-h, 48px); padding: 5px 8px 5px 27px; }
   #canvas[data-density="compact"] .node .dot { left: 8px; width: 12px; height: 12px; }
   #canvas[data-density="compact"] .node .id { font-size: 11px; }
   #canvas[data-density="compact"] .node .sub { font-size: 9px; }
-  #canvas[data-density="dense"] .node { width: 194px; height: 44px; padding: 5px 7px 5px 24px; }
+  #canvas[data-density="dense"] .node { width: var(--node-w, 194px); height: var(--node-h, 44px); padding: 5px 7px 5px 24px; }
   #canvas[data-density="dense"] .node .dot { left: 7px; width: 10px; height: 10px; font-size: 7px; }
   #canvas[data-density="dense"] .node .id { font-size: 10px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #canvas[data-density="dense"] .node .sub { font-size: 8.5px; }
@@ -586,17 +586,14 @@ function applyView() {
   if (POP) positionPop()
 }
 
-function fitView(readable = false) {
+function fitView() {
   if (RESULTS_OPEN) return backToGraph()
   const vp = $('#viewport').getBoundingClientRect()
   if (!CANVAS_W || !CANVAS_H) return
-  const widthFit = (vp.width - 56) / CANVAS_W
-  const fullFit = Math.min(widthFit, (vp.height - 56) / CANVAS_H, 1.25)
-  const readablePhase = readable && LAYOUT === 'phase' && CANVAS_H > vp.height - 56
-  const k = readablePhase ? Math.min(widthFit, 1) : fullFit
+  const k = Math.min((vp.width - 56) / CANVAS_W, (vp.height - 56) / CANVAS_H, 1.25)
   VIEW.k = Math.max(0.1, k)
   VIEW.x = (vp.width - CANVAS_W * VIEW.k) / 2
-  VIEW.y = readablePhase ? 28 : (vp.height - CANVAS_H * VIEW.k) / 2
+  VIEW.y = (vp.height - CANVAS_H * VIEW.k) / 2
   applyView()
 }
 
@@ -705,13 +702,20 @@ function lineage(id) {
 function layout(tasks, mode) {
   const ids = Object.keys(tasks)
   const density = ids.length <= 24 ? 'detailed' : ids.length <= 100 ? 'compact' : 'dense'
-  const metrics = DENSITY_METRICS[density]
-  const { nodeW, nodeH, gapX, gapY, lanePad } = metrics
-  const slotX = nodeW + gapX
+  const baseMetrics = DENSITY_METRICS[density]
+  const phases = STATE.plan.phases ?? []
+  const phaseIx = Object.fromEntries(phases.map((p, i) => [p.id, i]))
+  const usePhase = mode === 'phase' && phases.length > 0
+  const layoutMetrics = usePhase ? { ...baseMetrics, nodeH: 44, gapX: 16, gapY: 10 } : baseMetrics
+  const { nodeH, gapX, gapY, lanePad } = layoutMetrics
   const hubWidth = 3 * ORCH_W + 2 * 26 + 2 * PAD
   const viewportWidth = $('#viewport').getBoundingClientRect().width || innerWidth || hubWidth
   const w = Math.max(hubWidth, Math.floor(viewportWidth))
-  const capacity = Math.max(1, Math.floor((w - 2 * PAD + gapX) / slotX))
+  const readableNodeW = usePhase ? 150 : baseMetrics.nodeW
+  const capacity = Math.max(1, Math.floor((w - 2 * PAD + gapX) / (readableNodeW + gapX)))
+  const nodeW = usePhase ? Math.floor((w - 2 * PAD - (capacity - 1) * gapX) / capacity) : layoutMetrics.nodeW
+  const metrics = { ...layoutMetrics, nodeW }
+  const slotX = nodeW + gapX
   const depth = {}
   const d = (id, seen = new Set()) => {
     if (depth[id] !== undefined) return depth[id]
@@ -723,12 +727,9 @@ function layout(tasks, mode) {
   }
   Object.keys(tasks).forEach((id) => d(id))
 
-  const phases = STATE.plan.phases ?? []
-  const phaseIx = Object.fromEntries(phases.map((p, i) => [p.id, i]))
-  const usePhase = mode === 'phase' && phases.length > 0
   const rowOf = (t) => (usePhase ? phaseIx[t.phase] ?? phases.length : depth[t.id])
   const colOf = rowOf                       // "column" in the graph sense = a layer
-  const y0 = PAD + ORCH_H + ORCH_GAP        // the orchestrator sits above everything
+  const y0 = PAD + ORCH_H + (usePhase ? 38 : ORCH_GAP) // compact phases use the whole viewport
 
   const preds = {}, succs = {}
   ids.forEach((id) => { preds[id] = []; succs[id] = [] })
@@ -1023,6 +1024,8 @@ function render(s, events) {
   const { nodeW, nodeH } = metrics
   const canvas = $('#canvas')
   canvas.dataset.density = density
+  canvas.style.setProperty('--node-w', nodeW + 'px')
+  canvas.style.setProperty('--node-h', nodeH + 'px')
   canvas.style.width = w + 'px'
   canvas.style.height = h + 'px'
   CANVAS_W = w; CANVAS_H = h; LAST_POS = pos; LAST_METRICS = metrics
@@ -1266,7 +1269,7 @@ function render(s, events) {
   localize()
   applyFilter()
   applyFocus()
-  if (!fitted) { fitted = true; fitView(true) } else applyView()
+  if (!fitted) { fitted = true; fitView() } else applyView()
 }
 
 /** Filtering changes presentation only: every task keeps its original graph position. */

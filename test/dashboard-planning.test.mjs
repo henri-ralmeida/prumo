@@ -414,18 +414,18 @@ test('resize relayout preserves filter, dependency context, selection and view',
   assert.notDeepEqual(popPosition, { left: beforeAnchor.right + 14, top: beforeAnchor.top - 6 })
 })
 
-test('long phase boards open at a readable width while explicit fit still shows the full graph', () => {
+test('phase boards fill the canvas and open with the complete graph visible', () => {
   const ui = dashboard('en', 1000)
   ui.render(graphState(48, 8))
-  const initial = JSON.parse(ui.run('JSON.stringify({ view: VIEW, width: CANVAS_W, height: CANVAS_H })'))
+  const initial = JSON.parse(ui.run('JSON.stringify({ view: VIEW, width: CANVAS_W, height: CANVAS_H, metrics: LAST_METRICS, pos: LAST_POS })'))
   assert.ok(initial.height > 644)
-  assert.ok(Math.abs(initial.view.k - 0.944) < 0.001)
-  assert.equal(initial.view.y, 28)
-
-  ui.run('fitView()')
-  const fitted = JSON.parse(ui.run('JSON.stringify(VIEW)'))
-  assert.ok(fitted.k < initial.view.k)
-  assert.ok(fitted.y > 0)
+  assert.ok(initial.metrics.nodeW >= 150)
+  assert.ok(Math.max(...Object.values(initial.pos).map(point => point.x)) + initial.metrics.nodeW >= 900)
+  assert.ok(initial.view.k < 0.944)
+  assert.ok(initial.width * initial.view.k <= 944)
+  assert.ok(initial.height * initial.view.k <= 644)
+  assert.ok(initial.view.x >= 28)
+  assert.ok(initial.view.y >= 28)
 })
 
 test('legend follows the workflow and colored role counters and events show actual progress', () => {
