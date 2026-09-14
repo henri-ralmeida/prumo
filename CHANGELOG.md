@@ -2,6 +2,12 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 1.3.7 — 2026-09-14
+
+- Toggle the dashboard fit button between fitting the complete graph and a centered 100% view.
+- Recover Windows dashboard restart when its saved process identity is stale or process discovery trails dashboard readiness.
+- Wait for the previous dashboard to release its port and allow up to five seconds for startup before reporting failure.
+
 ## 1.3.6 — 2026-09-14
 
 - Preserve the configured isolated environment when starting the dashboard in the background.
