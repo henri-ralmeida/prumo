@@ -378,6 +378,15 @@ test('responsive layout selects density and sizes phase lanes from their cards',
     assert.ok(new Set(Object.values(result.pos).map(({ y }) => y)).size > 1, `${mode} wraps vertically`)
   }
 
+  const tallState = graphState(28, 23)
+  const tallTasks = Object.values(tallState.tasks)
+  tallTasks.slice(0, 6).forEach(task => { task.phase = 'P1' })
+  tallTasks.slice(6).forEach((task, index) => { task.phase = `P${index + 2}` })
+  const tallUi = dashboard('en', 1000)
+  const tallLayout = JSON.parse(tallUi.run("STATE = input; JSON.stringify(layout(STATE.tasks, 'phase'))", { input: tallState }))
+  assert.equal(tallLayout.capacity, 6, 'many phases must not force a six-card phase into one column')
+  assert.equal(new Set(tallTasks.slice(0, 6).map(task => tallLayout.pos[task.id].y)).size, 1)
+
   const state = graphState(206)
   const wide = dashboard('en', 1200)
   const narrow = dashboard('en', 700)
