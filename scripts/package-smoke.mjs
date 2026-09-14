@@ -1,6 +1,6 @@
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, realpathSync, readdirSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { resolve, join, dirname } from 'node:path'
+import { resolve, join, dirname, delimiter } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { spawnSync, fork } from 'node:child_process'
 import assert from 'node:assert/strict'
@@ -113,7 +113,7 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
     npm_config_cache: join(autoHome, 'npm-cache'), NODE_OPTIONS: `--import=${pathToFileURL(preload).href}` }
   delete autoEnv.CLAUDE_CONFIG_DIR
   for (const key of Object.keys(autoEnv)) if (/^path$/i.test(key)) delete autoEnv[key]
-  autoEnv.PATH = dirname(process.execPath)
+  autoEnv.PATH = [dirname(process.execPath), ...(process.platform === 'win32' ? [] : ['/usr/bin', '/bin'])].join(delimiter)
   mkdirSync(autoPackage, { recursive: true })
   writeFileSync(join(autoPackage, 'package.json'), JSON.stringify({ name, version: '1.2.2' }))
   run('npm', ['install', '--global', '--force', '--offline', '--no-audit', '--no-fund', archive], true, autoEnv)
