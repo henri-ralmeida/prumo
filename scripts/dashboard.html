@@ -586,14 +586,17 @@ function applyView() {
   if (POP) positionPop()
 }
 
-function fitView() {
+function fitView(readable = false) {
   if (RESULTS_OPEN) return backToGraph()
   const vp = $('#viewport').getBoundingClientRect()
   if (!CANVAS_W || !CANVAS_H) return
-  const k = Math.min((vp.width - 56) / CANVAS_W, (vp.height - 56) / CANVAS_H, 1.25)
+  const widthFit = (vp.width - 56) / CANVAS_W
+  const fullFit = Math.min(widthFit, (vp.height - 56) / CANVAS_H, 1.25)
+  const readablePhase = readable && LAYOUT === 'phase' && CANVAS_H > vp.height - 56
+  const k = readablePhase ? Math.min(widthFit, 1) : fullFit
   VIEW.k = Math.max(0.1, k)
   VIEW.x = (vp.width - CANVAS_W * VIEW.k) / 2
-  VIEW.y = (vp.height - CANVAS_H * VIEW.k) / 2
+  VIEW.y = readablePhase ? 28 : (vp.height - CANVAS_H * VIEW.k) / 2
   applyView()
 }
 
@@ -1263,7 +1266,7 @@ function render(s, events) {
   localize()
   applyFilter()
   applyFocus()
-  if (!fitted) { fitted = true; fitView() } else applyView()
+  if (!fitted) { fitted = true; fitView(true) } else applyView()
 }
 
 /** Filtering changes presentation only: every task keeps its original graph position. */
