@@ -56,4 +56,42 @@ test('only explicit static checks resume in an unchanged Git workspace', async t
 test('functional checks cannot be marked cacheable', () => {
   const task = { validation: [{ kind: 'functional', cacheable: true, run: 'node test.cjs', expect: 'behavior' }] }
   assert.throws(() => validationContract(task), /only static validation steps can be cacheable/)
+  assert.throws(() => validationContract({ validationMode: 'inspection', inspectionReason: 'fixture',
+    validation: [{ cachePaths: ['file.txt'], run: 'node check.cjs', expect: 'passes' }] }), /cachePaths requires cacheable/)
+  assert.throws(() => validationContract({ validationMode: 'inspection', inspectionReason: 'fixture',
+    validation: [{ cacheable: true, cachePaths: ['../outside'], run: 'node check.cjs', expect: 'passes' }] }), /safe relative paths/)
+})
+
+test('a corrective reviewer resumes unchanged path-scoped checks at the failed step', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'prumo-validation-retry-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const counters = join(root, 'counters')
+  mkdirSync(counters)
+  writeFileSync(join(root, 'stable.txt'), 'stable\n')
+  writeFileSync(join(root, 'changed.txt'), 'before\n')
+  writeFileSync(join(root, 'check.cjs'), `const fs=require('node:fs');const p=require('node:path');const [name,fail]=process.argv.slice(2);fs.appendFileSync(p.join(process.env.COUNTERS,name),'x');const marker=p.join(process.env.COUNTERS,name+'-failed');if(fail==='once'&&!fs.existsSync(marker)){fs.writeFileSync(marker,'1');process.exit(7)}\n`)
+  for (const args of [['init'], ['config', 'user.email', 'test@example.com'], ['config', 'user.name', 'Prumo Test'], ['add', '.'], ['commit', '-m', 'fixture']]) {
+    const result = spawnSync('git', args, { cwd: root, encoding: 'utf8', windowsHide: true })
+    assert.equal(result.status, 0, result.stdout + result.stderr)
+  }
+  const env = { COUNTERS: counters }
+  const task = {
+    attempts: [{}], contractRevision: 0, stateRevision: 0,
+    validationMode: 'inspection', inspectionReason: 'Fixture exercises deterministic static review steps.',
+    validations: [{ by: 'review', agent: 'reviewer-a' }],
+    validation: [
+      { kind: 'static', cacheable: true, cachePaths: ['stable.txt'], env, run: 'node check.cjs first', expect: 'passes' },
+      { kind: 'static', cacheable: true, cachePaths: ['changed.txt'], env, run: 'node check.cjs second once', expect: 'passes' },
+    ],
+  }
+  const first = { ...await runValidation(task, root), by: 'review', agent: 'reviewer-a', attempt: 1, evidence: 'first review' }
+  writeFileSync(join(root, 'changed.txt'), 'after\n')
+  task.attempts.push({ correctionOf: 1 })
+  task.validations.push({ by: 'review', agent: 'reviewer-b' })
+  const progress = []
+  const second = { ...await runValidation(task, root, first, event => progress.push(event)), by: 'review', agent: 'reviewer-b', attempt: 2, evidence: 'corrective review' }
+  assert.deepEqual(progress.map(event => [event.current, event.status]), [[1, 'reused'], [2, 'started'], [2, 'passed']])
+  assert.doesNotThrow(() => assertValidation(task, second))
+  assert.equal(readFileSync(join(counters, 'first'), 'utf8'), 'x')
+  assert.equal(readFileSync(join(counters, 'second'), 'utf8'), 'xx')
 })

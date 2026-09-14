@@ -1175,7 +1175,9 @@ const commands = {
     let error = null
     if (requestedOk) {
       try {
-        result = await runValidation(snapshot, args.cwd, snapshot.validations.at(-2), check => {
+        const previous = snapshot.validations.slice(0, -1).reverse().find(receipt =>
+          receipt.by === snapshot.validations.at(-1).by && receipt.checks?.length)
+        result = await runValidation(snapshot, args.cwd, previous, check => {
           withLock(name, () => {
             const current = getTask(loadState(name), id)
             if (current.validations.at(-1)?.token !== token || current.state !== snapshot.state ||
