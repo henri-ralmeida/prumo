@@ -1,4 +1,9 @@
 {
+  "1.3.4": {
+    "en": [
+      { "title": "Fixed — Complete update history", "items": ["Show every missed release when updating across multiple versions", "Use the oldest installed CLI or harness version as the update starting point"] }
+    ]
+  },
   "1.3.3": {
     "en": [
       { "title": "Improved — Step-level corrective review", "items": ["Resume at the first invalid review step after a corrective retry", "Reuse deterministic static checks only when their declared files are unchanged", "Always rerun functional checks"] }
@@ -68,6 +73,22 @@
           "Harness installation matrix"
         ]
       }
+    ]
+  },
+  "1.1.0": {
+    "en": [
+      { "title": "Improved — Installation and validation flow", "items": ["Improve installation progress and harness detection", "Add contract preflight, safe retry and resumable deterministic validation"] },
+      { "title": "Added — Update highlights and install commands", "items": ["Add English update highlights", "Document direct installation commands"] }
+    ]
+  },
+  "1.0.10": {
+    "en": [
+      { "title": "Added — Safe graph-foreman migration", "items": ["Migrate existing graph-foreman skills into Prumo after preserving custom files", "Verify written files and roll back conflicts while keeping run data in place"] }
+    ]
+  },
+  "1.0.9": {
+    "en": [
+      { "title": "Fixed — Global updates and Codex skill roots", "items": ["Install or update the global CLI through npx and bunx update flows", "Keep one personal Prumo skill root in Codex"] }
     ]
   }
 }

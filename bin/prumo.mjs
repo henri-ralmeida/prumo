@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { resolve, join } from 'node:path'
 import { planInstall, applyInstall, restoreInstall, installationStatus, discoverInstallations, detectHarnesses, reconcileDashboardInstall } from '../lib/install.mjs'
 import { globalCliState, launchUpdate, reconcileDashboardUpdate, updateGlobalCli, updateRequest } from '../lib/update.mjs'
-import { releaseNotes } from '../lib/release-notes.mjs'
+import { releaseHistory } from '../lib/release-notes.mjs'
 import { dashboardNeedsRepair, dashboardStatus, disableDashboard, enableDashboard, runDashboardForeground } from '../lib/autostart.mjs'
 import { selectHarnesses } from '../lib/prompt.mjs'
 import { language, createTranslator, messages } from '../scripts/i18n.mjs'
@@ -41,10 +41,14 @@ function progressUi(enabled, stream = process.stdout) {
   }
 }
 
-function printReleaseNotes(version) {
-  for (const section of releaseNotes(version)) {
-    console.log(color('1;36', section.title))
-    for (const item of section.items) console.log(`- ${item}`)
+function printReleaseNotes(fromVersions, version) {
+  const releases = releaseHistory(fromVersions, version)
+  for (const release of releases) {
+    if (releases.length > 1) console.log(`Prumo v${release.version}`)
+    for (const section of release.sections) {
+      console.log(color('1;36', section.title))
+      for (const item of section.items) console.log(`- ${item}`)
+    }
   }
 }
 
@@ -118,6 +122,7 @@ try {
       const request = updateRequest(process.env.PRUMO_UPDATE_REQUEST)
       const quiet = !request.dryRun
       const progress = progressUi(quiet)
+      const previousVersions = [globalCliState(packageRoot).version]
       progress.update(10, t('Preparing Prumo update'))
       if (request.updateCli) {
         if (request.dryRun) print(t('Would update global Prumo CLI to {0}', version))
@@ -132,7 +137,9 @@ try {
         try {
           const variants = new Map()
           for (const root of entry.roots) {
-            const saved = JSON.parse(readFileSync(join(root, 'prumo', '.prumo-install.json'), 'utf8')).lang
+            const marker = JSON.parse(readFileSync(join(root, 'prumo', '.prumo-install.json'), 'utf8'))
+            previousVersions.push(marker.version)
+            const saved = marker.lang
             const lang = request.lang ?? (['en', 'pt-BR'].includes(saved) ? saved : undefined)
             if (!variants.has(lang)) variants.set(lang, [])
             variants.get(lang).push(root)
@@ -156,7 +163,7 @@ try {
       if (quiet && !process.exitCode) {
         t = createTranslator(messages, lang)
         progress.success(t('Prumo updated successfully'), version)
-        printReleaseNotes(version)
+        printReleaseNotes(previousVersions, version)
       } else progress.clear()
     }
   } else if (positionals[0] === 'restore') {
