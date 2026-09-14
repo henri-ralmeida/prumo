@@ -39,6 +39,7 @@ try {
   run('npm', ['install', '--offline', '--no-audit', '--no-fund'])
   assert.equal(existsSync(join(home, '.local', 'share', 'prumo')), false, 'local postinstall must be inert')
   assert.match(run('npm', ['exec', '--offline', '--', 'prumo', '--version']), new RegExp(version.replaceAll('.', '\\.')))
+  assert.match(run('npm', ['exec', '--offline', '--', 'prumo', '--help']), /prumo migrate \[--check\] \[--run <name>\]/)
   assert.match(run('bun', ['x', '--no-install', 'prumo', '--version']), new RegExp(version.replaceAll('.', '\\.')))
   const requestFile = join(home, 'registry-requests')
   const failureFile = join(home, 'registry-failure')

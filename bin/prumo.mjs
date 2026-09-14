@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util'
+import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { resolve, join } from 'node:path'
@@ -89,6 +90,7 @@ try {
   const { values, positionals } = parseArgs({ allowPositionals: true, options: {
     claude: { type: 'boolean' }, kiro: { type: 'boolean' }, codex: { type: 'boolean' }, all: { type: 'boolean' },
     lang: { type: 'string' }, 'dry-run': { type: 'boolean' }, project: { type: 'string', multiple: true },
+    check: { type: 'boolean' }, run: { type: 'string' },
     help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'v' },
   } })
   const lang = language(values.lang)
@@ -97,7 +99,7 @@ try {
   const packageRoot = fileURLToPath(new URL('..', import.meta.url))
   if (values.version) print(version)
   else if (values.help || positionals.length === 0) {
-    print(`Prumo ${version} — graph-foreman + PO First\n\nprumo install [--all | --claude|--kiro|--codex] [--lang en|pt-BR] [--dry-run] [--project <path>]\nprumo update [--dry-run] [--lang en|pt-BR] [--project <path>]\nprumo doctor --claude|--kiro|--codex [--lang en|pt-BR] [--project <path>]\nprumo dashboard [enable|disable|status]\nprumo restore <backup>\n`)
+    print(`Prumo ${version} — graph-foreman + PO First\n\nprumo install [--all | --claude|--kiro|--codex] [--lang en|pt-BR] [--dry-run] [--project <path>]\nprumo update [--dry-run] [--lang en|pt-BR] [--project <path>]\nprumo migrate [--check] [--run <name>]\nprumo doctor --claude|--kiro|--codex [--lang en|pt-BR] [--project <path>]\nprumo dashboard [enable|disable|status]\nprumo restore <backup>\n`)
     print('Install opens a selection of detected environments; --all selects all without prompting')
   } else if (positionals[0] === 'dashboard') {
     if (positionals.length > 2 || ['claude', 'kiro', 'codex', 'all'].some(name => values[name]) || values.lang || values['dry-run'] || values.project?.length) throw new Error('Dashboard accepts only enable, disable or status')
@@ -166,6 +168,14 @@ try {
         printReleaseNotes(previousVersions, version)
       } else progress.clear()
     }
+  } else if (positionals[0] === 'migrate') {
+    if (positionals.length !== 1 || ['claude', 'kiro', 'codex', 'all'].some(name => values[name]) || values.lang || values['dry-run'] || values.project?.length) throw new Error('Migrate accepts only --check and --run <name>')
+    const engineArgs = [fileURLToPath(new URL('../scripts/engine.mjs', import.meta.url)), 'migrate']
+    if (values.check) engineArgs.push('--check')
+    if (values.run) engineArgs.push('--run', values.run)
+    const result = spawnSync(process.execPath, engineArgs, { cwd: process.cwd(), env: process.env, stdio: 'inherit', windowsHide: true })
+    if (result.error) throw result.error
+    process.exitCode = result.status ?? 1
   } else if (positionals[0] === 'restore') {
     if (!positionals[1] || positionals.length !== 2) throw new Error('Restore needs a backup directory')
     print(t('Restored {0} files; run data was not changed', restoreInstall(positionals[1])))
