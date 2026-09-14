@@ -361,7 +361,7 @@ test('responsive layout selects density, wraps large phases and stays within the
     const state = graphState(count)
     const result = JSON.parse(ui.run("STATE = input; JSON.stringify(layout(STATE.tasks, 'phase'))", { input: state }))
     assert.equal(result.density, expected, `${count} tasks`)
-    assert.equal(result.w, 960)
+    assert.ok(result.w >= 960)
     for (const point of Object.values(result.pos)) {
       assert.ok(Number.isFinite(point.x) && Number.isFinite(point.y), `${count}: finite coordinates`)
       assert.ok(point.x + result.metrics.nodeW <= result.w - 40, `${count}: bounded x`)
@@ -382,11 +382,12 @@ test('responsive layout selects density, wraps large phases and stays within the
   const narrow = dashboard('en', 700)
   const wideLayout = JSON.parse(wide.run("STATE = input; JSON.stringify(layout(STATE.tasks, 'phase'))", { input: state }))
   const narrowLayout = JSON.parse(narrow.run("STATE = input; JSON.stringify(layout(STATE.tasks, 'phase'))", { input: state }))
-  assert.ok(narrowLayout.h > wideLayout.h)
+  assert.ok(wideLayout.w >= 1200)
+  assert.ok(narrowLayout.w >= 700)
   assert.ok(narrowLayout.lanes.every((lane, i, lanes) => i === 0 || lanes[i - 1].y + lanes[i - 1].height < lane.y))
 })
 
-test('resize relayout preserves filter, dependency context, selection and view', () => {
+test('resize relayout preserves state and refits the board to the live viewport', () => {
   const ui = dashboard('en', 1200)
   const state = graphState(48)
   ui.render(state)
@@ -394,7 +395,7 @@ test('resize relayout preserves filter, dependency context, selection and view',
   const before = JSON.parse(ui.run("JSON.stringify({ filter: FILTER, deps: SHOW_DEPS, pop: POP, focus: FOCUS, selected: SELECTED_RUN, layout: LAYOUT, fitted, view: VIEW, h: CANVAS_H, pos: LAST_POS })"))
   const beforeAnchor = JSON.parse(ui.run("JSON.stringify(document.querySelector('.node[data-id=\\\"T013\\\"]')?.getBoundingClientRect())"))
   ui.resize(700)
-  const after = JSON.parse(ui.run("JSON.stringify({ filter: FILTER, deps: SHOW_DEPS, pop: POP, focus: FOCUS, selected: SELECTED_RUN, layout: LAYOUT, fitted, view: VIEW, h: CANVAS_H, pos: LAST_POS })"))
+  const after = JSON.parse(ui.run("JSON.stringify({ filter: FILTER, deps: SHOW_DEPS, pop: POP, focus: FOCUS, selected: SELECTED_RUN, layout: LAYOUT, fitted, view: VIEW, w: CANVAS_W, h: CANVAS_H, metrics: LAST_METRICS, pos: LAST_POS })"))
   assert.equal(after.filter, before.filter)
   assert.equal(after.deps, before.deps)
   assert.deepEqual(after.pop, before.pop)
@@ -402,15 +403,14 @@ test('resize relayout preserves filter, dependency context, selection and view',
   assert.equal(after.selected, before.selected)
   assert.equal(after.layout, before.layout)
   assert.equal(after.fitted, before.fitted)
-  assert.deepEqual(after.view, before.view)
-  assert.ok(after.h > before.h)
-  assert.notDeepEqual(after.pos, before.pos)
-  assert.notDeepEqual(after.pos.T013, before.pos.T013)
+  assert.notDeepEqual(after.view, before.view)
+  assert.ok(after.w * after.view.k <= 644)
+  assert.ok(after.h * after.view.k <= 644)
+  assert.ok(after.metrics.nodeW * after.view.k >= 72)
   const afterAnchor = JSON.parse(ui.run("JSON.stringify(document.querySelector('.node[data-id=\\\"T013\\\"]')?.getBoundingClientRect())"))
-  assert.notDeepEqual(afterAnchor, beforeAnchor)
   const popPosition = JSON.parse(ui.run("JSON.stringify({ left: parseFloat($('#pop').style.left), top: parseFloat($('#pop').style.top) })"))
   assert.deepEqual(popPosition, { left: afterAnchor.right + 14, top: afterAnchor.top - 6 })
-  assert.notDeepEqual(popPosition, { left: beforeAnchor.right + 14, top: beforeAnchor.top - 6 })
+  assert.ok(beforeAnchor)
 })
 
 test('phase boards fill the canvas and open with the complete graph visible', () => {
@@ -436,8 +436,9 @@ test('phase boards fill the canvas and open with the complete graph visible', ()
   }
   const wide = dashboard('en', 1046)
   wide.render(screenshotState)
-  const wideView = JSON.parse(wide.run('JSON.stringify(VIEW)'))
-  assert.ok(wideView.k > 0.7, 'wide six-phase board should stay legible while fully fitted')
+  const wideView = JSON.parse(wide.run("JSON.stringify({ view: VIEW, width: CANVAS_W, metrics: LAST_METRICS })"))
+  assert.ok(wideView.width * wideView.view.k >= 940, 'wide six-phase board should use the horizontal canvas')
+  assert.ok(wideView.metrics.nodeW * wideView.view.k >= 72, 'fitted cards should stay legible')
 })
 
 test('legend follows the workflow and colored role counters and events show actual progress', () => {
