@@ -49,8 +49,10 @@ test('update detects installed harnesses and custom paths, preserves preferences
   const updated = run(false)
   assert.equal(updated.status, 0, updated.stdout + updated.stderr)
   assert.match(updated.stdout, /Prumo updated successfully/)
-  assert.match(updated.stdout, /Improved — Step-level corrective review/)
-  assert.match(updated.stdout, /- Resume at the first invalid review step after a corrective retry/)
+  assert.match(updated.stdout, /Prumo v1\.0\.9/)
+  assert.match(updated.stdout, /Fixed — Global updates and Codex skill roots/)
+  assert.match(updated.stdout, new RegExp(`Prumo v${version.replaceAll('.', '\\.')}`))
+  assert.match(updated.stdout, /Fixed — Complete update history/)
   for (const marker of markers) {
     assert.equal(JSON.parse(read(marker)).version, version)
     assert.equal(read(join(dirname(marker), 'scripts', 'engine.mjs')), read(join(source, 'scripts', 'engine.mjs')))

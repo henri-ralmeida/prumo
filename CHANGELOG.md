@@ -2,6 +2,11 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 1.3.4 — 2026-09-14
+
+- Show every missed release note when `prumo update` crosses multiple versions.
+- Use the oldest installed CLI or harness version as the starting point so every updated environment receives its full change history.
+
 ## 1.3.3 — 2026-09-14
 
 - Resume corrective review at the first invalid validation step instead of repeating every earlier deterministic check.
