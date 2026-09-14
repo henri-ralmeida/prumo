@@ -336,7 +336,11 @@ new UI supplied by the engine.
 Before asking, the orchestrator runs `begin-phase-discussion F1`; the engine persists the phase as `discussing` and
 issues a `roundId` and `nonce`. The principal conversation writes discovery before dispatching a planner. Example:
 
-Before continuing a run created by an older engine, the skill must inspect every nonterminal contract,
+Before continuing a run created by an older engine, `migrate --check` reports structural compatibility.
+Every single-run engine command automatically migrates a safe pre-planning state, writes a versioned
+backup, enables missing gates and leaves every phase pending without opening a discussion. Terminal tasks
+stay unchanged; active work or prior attempts block conversion with a task-specific reason.
+The skill must still inspect every nonterminal contract,
 normalize obsolete or prose validation in the approved source using repository evidence, and `sync-plan`
 the original run. This graph-wide contract migration does not authorize graph or planning expansion.
 When the user names one existing task, keep one task-scoped discussion and planner. Otherwise the run can
@@ -478,6 +482,7 @@ PRUMO_HOME="${PRUMO_HOME:-$HOME/.local/share/prumo}"
 PRUMO_ROOT="$PRUMO_HOME/my-workspace"
 mkdir -p "$PRUMO_ROOT/.specs/graph/plans" && export PRUMO_ROOT
 node .claude/skills/prumo/scripts/engine.mjs init --plan "$PRUMO_ROOT/.specs/graph/plans/x.plan.json" --run x-01
+node .claude/skills/prumo/scripts/engine.mjs migrate --check          # read-only compatibility report
 node .claude/skills/prumo/scripts/engine.mjs ready                 # what can start now
 node .claude/skills/prumo/scripts/engine.mjs begin-phase-discussion F1 # use --adopt-legacy only for a safe old phase
 node .claude/skills/prumo/scripts/engine.mjs finish-phase-discussion F1 --context <discovery.json>

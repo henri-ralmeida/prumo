@@ -1,7 +1,8 @@
 {
   "1.3.4": {
     "en": [
-      { "title": "Fixed — Complete update history", "items": ["Show every missed release when updating across multiple versions", "Use the oldest installed CLI or harness version as the update starting point"] }
+      { "title": "Fixed — Complete update history", "items": ["Show every missed release when updating across multiple versions", "Use the oldest installed CLI or harness version as the update starting point"] },
+      { "title": "Added — Automatic legacy run migration", "items": ["Migrate safe pre-planning runs before engine commands and preserve terminal tasks", "Create a state backup without opening discussion or planning rounds", "Report active work that prevents a safe migration"] }
     ]
   },
   "1.3.3": {
