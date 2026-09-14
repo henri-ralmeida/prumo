@@ -534,7 +534,7 @@ function toggleSidebar() {
     history.replaceState({ ...state, [SIDEBAR_STORAGE_KEY]: SIDEBAR_COLLAPSED }, '')
   }
   applySidebar()
-  requestAnimationFrame(() => { if (STATE) render(STATE, EVENTS); positionPop() })
+  requestAnimationFrame(() => { if (STATE) { render(STATE, EVENTS); fitView() } positionPop() })
 }
 
 function apiUrl(path) {
@@ -709,13 +709,37 @@ function layout(tasks, mode) {
   const layoutMetrics = usePhase ? { ...baseMetrics, nodeH: 44, gapX: 16, gapY: 10 } : baseMetrics
   const { nodeH, gapX, gapY, lanePad } = layoutMetrics
   const hubWidth = 3 * ORCH_W + 2 * 26 + 2 * PAD
-  const viewportWidth = $('#viewport').getBoundingClientRect().width || innerWidth || hubWidth
-  const w = Math.max(hubWidth, Math.floor(viewportWidth))
-  // Pack phase cards horizontally before scaling: tall graphs otherwise shrink into
-  // a narrow strip and waste most of a wide monitor.
+  const viewport = $('#viewport').getBoundingClientRect()
+  const viewportWidth = viewport.width || innerWidth || hubWidth
+  const y0 = PAD + ORCH_H + (usePhase ? 38 : ORCH_GAP)
   const readableNodeW = usePhase ? 120 : baseMetrics.nodeW
-  const capacity = Math.max(1, Math.floor((w - 2 * PAD + gapX) / (readableNodeW + gapX)))
-  const nodeW = usePhase ? Math.floor((w - 2 * PAD - (capacity - 1) * gapX) / capacity) : layoutMetrics.nodeW
+  const phaseCounts = usePhase
+    ? phases.map((_, index) => ids.filter(id => phaseIx[tasks[id].phase] === index).length)
+    : []
+  const unphasedCount = usePhase ? ids.filter(id => phaseIx[tasks[id].phase] === undefined).length : 0
+  if (unphasedCount) phaseCounts.push(unphasedCount)
+  const maxCapacity = usePhase ? Math.max(1, ...phaseCounts) : 1
+  const phaseHeight = (columns) => y0 + phaseCounts.reduce((height, count) => {
+    const rows = Math.max(1, Math.ceil(count / columns))
+    return height + lanePad + rows * nodeH + (rows - 1) * gapY + 30
+  }, 0) + PAD
+  // Choose columns against both live dimensions. Cards may extend beyond the logical
+  // viewport; fitView scales that wider, shorter board back into the visible canvas.
+  let capacity = usePhase ? 1 : Math.max(1, Math.floor((viewportWidth - 2 * PAD + gapX) / (readableNodeW + gapX)))
+  if (usePhase) {
+    const availableW = Math.max(1, viewportWidth - 56)
+    const availableH = Math.max(1, (viewport.height || innerHeight) - 56)
+    for (let columns = 1; columns <= maxCapacity; columns++) {
+      const candidateW = Math.max(hubWidth, 2 * PAD + columns * readableNodeW + (columns - 1) * gapX)
+      const scale = Math.min(availableW / candidateW, availableH / phaseHeight(columns), 1.25)
+      if (readableNodeW * scale >= 72) capacity = columns
+    }
+  }
+  const naturalWidth = 2 * PAD + capacity * readableNodeW + (capacity - 1) * gapX
+  const w = Math.max(hubWidth, Math.floor(viewportWidth), naturalWidth)
+  const nodeW = usePhase
+    ? Math.floor((w - 2 * PAD - (capacity - 1) * gapX) / capacity)
+    : layoutMetrics.nodeW
   const metrics = { ...layoutMetrics, nodeW }
   const slotX = nodeW + gapX
   const depth = {}
@@ -731,7 +755,6 @@ function layout(tasks, mode) {
 
   const rowOf = (t) => (usePhase ? phaseIx[t.phase] ?? phases.length : depth[t.id])
   const colOf = rowOf                       // "column" in the graph sense = a layer
-  const y0 = PAD + ORCH_H + (usePhase ? 38 : ORCH_GAP) // compact phases use the whole viewport
 
   const preds = {}, succs = {}
   ids.forEach((id) => { preds[id] = []; succs[id] = [] })
@@ -1365,7 +1388,7 @@ addEventListener('resize', () => {
   if (resizeFrame != null) return
   resizeFrame = requestAnimationFrame(() => {
     resizeFrame = null
-    if (STATE) render(STATE, EVENTS)
+    if (STATE) { render(STATE, EVENTS); fitView() }
     positionPop()
   })
 })
