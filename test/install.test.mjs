@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, rmSync, cpSync, realpathSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, dirname, resolve } from 'node:path'
+import { join, dirname, resolve, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync, spawn } from 'node:child_process'
 import { setTimeout } from 'node:timers/promises'
@@ -122,6 +122,7 @@ test('automatic CLI installs only detected harnesses, preserves runs and backups
   put(legacy, 'original legacy skill')
   put(join(f.home, '.kiro', 'steering', 'existing.md'), 'Keep this instruction')
   const state = join(f.home, '.local', 'share', 'graph-foreman', 'work', '.specs', 'graph', 'active', 'state.json')
+  const migratedState = join(f.home, 'data', 'work', '.specs', 'graph', 'active', 'state.json')
   put(state, { state: 'blocked', attempts: [1], evidence: 'keep', contract: 'approved' })
   const before = read(state)
   const marker = harness => join(f.home, harness === 'codex' ? '.agents' : `.${harness}`, 'skills', 'prumo', '.prumo-install.json')
@@ -146,7 +147,8 @@ test('automatic CLI installs only detected harnesses, preserves runs and backups
   assert.match(doctor.stdout, /dashboard: .*; .*; disabled/)
   assert.equal(existsSync(marker('codex')), false)
   assert.equal(existsSync(join(f.home, '.codex')), false)
-  assert.equal(read(state), before)
+  assert.equal(read(migratedState), before)
+  assert.equal(existsSync(state), false)
   assert.equal(existsSync(legacy), false)
   const backups = join(f.home, '.local', 'share', 'prumo', 'backups')
   const count = readdirSync(backups).length
@@ -158,7 +160,7 @@ test('automatic CLI installs only detected harnesses, preserves runs and backups
   const explicit = cli(['install', '--codex'])
   assert.equal(explicit.status, 0, explicit.stdout + explicit.stderr)
   assert.ok(existsSync(marker('codex')))
-  assert.equal(read(state), before)
+  assert.equal(read(migratedState), before)
 })
 
 test('automatic CLI reports no detection and continues independent harnesses after a configuration conflict', t => {
@@ -286,6 +288,7 @@ test('overlay migrates the legacy skill, preserves run data and supports complet
   put(join(legacy, 'custom.bin'), 'custom bytes preserved')
   const central = join(f.home, '.local', 'share', 'graph-foreman')
   const root = join(central, 'work')
+  const migratedRoot = join(f.home, '.local', 'share', 'prumo', 'work')
   mkdirSync(root, { recursive: true })
   const planPath = join(root, 'approved.json')
   put(planPath, { name: 'legacy', tasks: [{ id: 'T1', title: 'Keep my scope', validationMode: 'inspection', inspectionReason: 'Documentation', validation: 'Inspect document' }] })
@@ -320,12 +323,17 @@ test('overlay migrates the legacy skill, preserves run data and supports complet
   }
   const eventsPath = join(root, '.specs', 'graph', 'legacy', 'events.ndjson')
   const before = [read(statePath), read(eventsPath), read(planPath)]
-  assert.ok(f.plan().data.some(data => data.root === root))
+  assert.ok(f.plan().data.some(data => data.source === root && data.root === migratedRoot))
   const result = f.install()
-  assert.deepEqual([read(statePath), read(eventsPath), read(planPath)], before)
+  const migratedState = join(migratedRoot, relative(root, statePath))
+  const migratedEvents = join(migratedRoot, relative(root, eventsPath))
+  const migratedPlan = join(migratedRoot, relative(root, planPath))
+  assert.deepEqual([read(migratedState), read(migratedEvents), read(migratedPlan)], before)
+  assert.equal(existsSync(root), false)
   assert.equal(existsSync(legacy), false)
   assert.equal(read(join(prumo, 'custom.bin')), 'custom bytes preserved')
-  const prumoCall = spawnSync(process.execPath, [join(prumo, 'scripts', 'engine.mjs'), 'graph'], { env, encoding: 'utf8' })
+  const migratedEnv = { ...env, PRUMO_HOME: dirname(migratedRoot), PRUMO_ROOT: migratedRoot }
+  const prumoCall = spawnSync(process.execPath, [join(prumo, 'scripts', 'engine.mjs'), 'graph'], { env: migratedEnv, encoding: 'utf8' })
   assert.equal(prumoCall.status, 0, prumoCall.stderr)
   const task = JSON.parse(prumoCall.stdout).tasks.T1
   assert.equal(task.state, 'blocked')
@@ -338,6 +346,25 @@ test('overlay migrates the legacy skill, preserves run data and supports complet
   assert.equal(read(join(legacy, 'custom.bin')), 'custom bytes preserved')
   assert.equal(existsSync(join(prumo, 'SKILL.md')), false)
   assert.deepEqual([read(statePath), read(eventsPath), read(planPath)], before)
+})
+
+test('central graph-foreman workspaces move to Prumo and restore without changing run bytes', t => {
+  const f = fixture(t)
+  const legacy = join(f.home, '.local', 'share', 'graph-foreman', 'work')
+  const migrated = join(f.home, '.local', 'share', 'prumo', 'work')
+  const relativeState = join('.specs', 'graph', 'run-1', 'state.json')
+  const relativeEvents = join('.specs', 'graph', 'run-1', 'events.ndjson')
+  put(join(legacy, relativeState), '{"state":"done","evidence":["kept"]}\n')
+  put(join(legacy, relativeEvents), '{"type":"done"}\n')
+  const before = [read(join(legacy, relativeState)), read(join(legacy, relativeEvents))]
+
+  const result = f.install()
+  assert.deepEqual([read(join(migrated, relativeState)), read(join(migrated, relativeEvents))], before)
+  assert.equal(existsSync(legacy), false)
+
+  restoreInstall(result.backup, { home: f.home, env: {} })
+  assert.deepEqual([read(join(legacy, relativeState)), read(join(legacy, relativeEvents))], before)
+  assert.equal(existsSync(join(migrated, relativeState)), false)
 })
 
 test('legacy migration blocks conflicting custom files without changing either skill', t => {

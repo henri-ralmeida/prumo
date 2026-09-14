@@ -58,19 +58,17 @@ ENGINE="<this skill's directory>/scripts/engine.mjs"    # e.g. .claude/skills/pr
 SERVE="<this skill's directory>/scripts/serve.mjs"
 ```
 
-Node.js 22+, no project dependencies to install. New run state **lives in a central workspace**. Existing legacy runs remain at their original paths, including project-local state. Reuse their existing GRAPH_ROOT / GRAPH_FOREMAN_HOME settings or select that same existing workspace; do not move or recreate its state. For new work, before every
+Node.js 22+, no project dependencies to install. New run state **lives in a central workspace**. Installation migrates central graph-foreman workspaces to Prumo byte-for-byte; existing project-local runs remain at their original paths. Before every
 engine or dashboard command, select one central workspace:
 
 ```bash
-DEFAULT_PRUMO_HOME="$HOME/.local/share/prumo"
-[ ! -d "$HOME/.local/share/graph-foreman" ] || DEFAULT_PRUMO_HOME="$HOME/.local/share/graph-foreman"
-PRUMO_HOME="${PRUMO_HOME:-${GRAPH_FOREMAN_HOME:-$DEFAULT_PRUMO_HOME}}"
+PRUMO_HOME="${PRUMO_HOME:-$HOME/.local/share/prumo}"
 PRUMO_ROOT="$PRUMO_HOME/<workspace>"
 mkdir -p "$PRUMO_ROOT/.specs/graph/plans"
 export PRUMO_HOME PRUMO_ROOT
 ```
 
-Local harnesses running as the same user share this central store. Preserve existing overrides and the legacy store; do not choose a different store per harness. These commands create missing directories. Access still depends on each harness's permissions; cloud sessions do not automatically share local files.
+Local harnesses running as the same user share this Prumo store. Preserve explicit compatibility overrides and do not choose a different store per harness. These commands create missing directories. Access still depends on each harness's permissions; cloud sessions do not automatically share local files.
 
 `<workspace>` groups related runs, for example `ai-memory-migration`. `PRUMO_ROOT` must be an
 existing child of `PRUMO_HOME` for new work; existing legacy workspaces are also accepted. When cwd is already

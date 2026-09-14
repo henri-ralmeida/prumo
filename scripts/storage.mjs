@@ -8,10 +8,15 @@ export function inside(parent, child) {
 }
 
 export function storageHome(env = process.env, home = homedir()) {
-  // Keep an existing installation's data in place. New installations use Prumo.
+  if (env.PRUMO_HOME) return resolve(env.PRUMO_HOME)
+  if (env.GRAPH_FOREMAN_HOME) return resolve(env.GRAPH_FOREMAN_HOME)
+  const current = join(home, '.local', 'share', 'prumo')
   const legacy = join(home, '.local', 'share', 'graph-foreman')
-  return resolve(env.PRUMO_HOME ?? env.GRAPH_FOREMAN_HOME ??
-    (existsSync(legacy) ? legacy : join(home, '.local', 'share', 'prumo')))
+  const hasGraphs = path => {
+    try { return readdirSync(path, { withFileTypes: true }).some(entry => entry.isDirectory() && existsSync(join(path, entry.name, '.specs', 'graph'))) }
+    catch { return false }
+  }
+  return resolve(hasGraphs(current) || !hasGraphs(legacy) ? current : legacy)
 }
 
 export function findRoot(env = process.env, cwd = process.cwd(), home = homedir()) {

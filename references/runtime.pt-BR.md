@@ -8,7 +8,7 @@ O motor é uma CLI Node.js, não um serviço que chama modelos. O ambiente de IA
 
 ## Armazenamento
 
-Selecione `PRUMO_ROOT` como workspace existente dentro de `PRUMO_HOME`. Novos planos ficam no armazenamento central. `GRAPH_ROOT` e `GRAPH_FOREMAN_HOME` continuam aceitos; um workspace legado contendo `.specs/graph` também é aceito no local original.
+Selecione `PRUMO_ROOT` como workspace existente dentro de `PRUMO_HOME`. Novos planos ficam em `~/.local/share/prumo`; a instalação migra para lá os workspaces centrais do graph-foreman conferindo cada arquivo. `GRAPH_ROOT` e `GRAPH_FOREMAN_HOME` continuam aceitos como compatibilidade explícita; um workspace legado dentro de projeto também é aceito no local original.
 
 Cada execução usa `.specs/graph/<run>/state.json` e `events.ndjson`. `CURRENT` seleciona a execução padrão. Use `--run <nome>` em toda chamada quando houver várias execuções. Nomes aceitam letras, números, ponto, hífen e sublinhado, sem ponto inicial ou separadores de caminho.
 

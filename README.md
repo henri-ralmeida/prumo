@@ -121,8 +121,8 @@ Omit `--all` to choose with checkboxes, or use `--claude`, `--kiro` or `--codex`
 No manual data migration is required. Finish sessions that are actively loading files from the graph-foreman skill before installing; the installer never kills processes. It checks standard locations, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, supplied projects and ancestors of the current directory.
 
 - Installs Prumo under the same skills root, copies non-product legacy files when they do not conflict, verifies the installed files and then removes the graph-foreman skill directory.
-- Keeps run data in its original location, including project-local `.specs/graph` and the old central store. Installation never runs engine commands or changes contracts, states, attempts, evidence or history.
-- Takes complete backups of affected installations and configuration before writing. Live plan data is outside this transaction and is never rolled back with the installation.
+- Moves central legacy workspaces from `~/.local/share/graph-foreman` to `~/.local/share/prumo`, byte-checks every file and removes each legacy source only after its destination is complete. Project-local `.specs/graph` stays in place. Contracts, states, attempts, evidence and history remain unchanged.
+- Takes complete backups of every affected installation, configuration and central legacy workspace before writing. A failed or concurrent workspace change is rolled back or reported as a conflict.
 - Applies independent groups separately. Conflicting custom files, invalid configuration, linked paths or busy files block only their affected group. The installer does not kill processes to release files.
 - Verifies written bytes and rolls back a failed group before reporting success. Concurrent changes are detected.
 
@@ -172,9 +172,7 @@ Existing task-scoped runs retain their lifecycle and history. Before continuing 
 For new work, select a central workspace. On macOS/Linux:
 
 ```sh
-DEFAULT_PRUMO_HOME="$HOME/.local/share/prumo"
-[ ! -d "$HOME/.local/share/graph-foreman" ] || DEFAULT_PRUMO_HOME="$HOME/.local/share/graph-foreman"
-export PRUMO_HOME="${PRUMO_HOME:-${GRAPH_FOREMAN_HOME:-$DEFAULT_PRUMO_HOME}}"
+export PRUMO_HOME="${PRUMO_HOME:-$HOME/.local/share/prumo}"
 export PRUMO_ROOT="$PRUMO_HOME/my-workspace"
 mkdir -p "$PRUMO_ROOT"
 ```
@@ -183,18 +181,14 @@ On PowerShell:
 
 ```powershell
 $prumoDefault = Join-Path $HOME '.local/share/prumo'
-$prumoLegacy = Join-Path $HOME '.local/share/graph-foreman'
-if (Test-Path -LiteralPath $prumoLegacy) { $prumoDefault = $prumoLegacy }
-if (-not $env:PRUMO_HOME) {
-  $env:PRUMO_HOME = if ($env:GRAPH_FOREMAN_HOME) { $env:GRAPH_FOREMAN_HOME } else { $prumoDefault }
-}
+if (-not $env:PRUMO_HOME) { $env:PRUMO_HOME = $prumoDefault }
 $env:PRUMO_ROOT = Join-Path $env:PRUMO_HOME 'my-workspace'
 New-Item -ItemType Directory -Force -Path $env:PRUMO_ROOT | Out-Null
 ```
 
-For existing plans, preserve their original workspace. `GRAPH_ROOT` and `GRAPH_FOREMAN_HOME` remain supported; explicitly set `PRUMO_*` variables take precedence. Without an explicit setting, an existing legacy central store is reused. Otherwise new installations use `~/.local/share/prumo`.
+Project-local plans preserve their original workspace. `GRAPH_ROOT` and `GRAPH_FOREMAN_HOME` remain supported as explicit compatibility overrides. Without an override, installation migrates the old central store and all new plans use `~/.local/share/prumo`.
 
-Local harnesses running as the same user share this central store. Preserve existing overrides and the legacy store; do not choose a different store per harness. These commands create missing directories. Access still depends on each harness's permissions; cloud sessions do not automatically share local files.
+Local harnesses running as the same user share the Prumo central store. These commands create missing directories. Access still depends on each harness's permissions; cloud sessions do not automatically share local files.
 
 Scripts are under `scripts/` beside the installed skill. Resolve paths from that skill, not from the project directory. See the [engine reference](references/runtime.md) for commands, contracts and states.
 

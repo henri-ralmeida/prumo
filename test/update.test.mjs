@@ -41,6 +41,7 @@ test('update detects installed harnesses and custom paths, preserves preferences
   for (const marker of markers) { const value = JSON.parse(read(marker)); value.version = '0.0.9'; put(marker, value); put(join(dirname(marker), 'scripts', 'engine.mjs'), '// older installed engine\n') }
   const env = { ...process.env, HOME: home, USERPROFILE: home, CODEX_HOME: join(home, '.codex'), CLAUDE_CONFIG_DIR: join(home, '.claude'), PRUMO_HOME: join(home, 'data'), PRUMO_LANG: 'en' }
   delete env.GRAPH_ROOT; delete env.PRUMO_ROOT; delete env.GRAPH_FOREMAN_HOME
+  put(join(home, '.local', 'share', 'prumo', 'dashboard.json'), { enabled: false, mechanism: process.platform === 'win32' ? 'schtasks' : process.platform === 'darwin' ? 'launchd' : 'xdg' })
   const run = dryRun => spawnSync(process.execPath, [join(source, 'bin', 'prumo.mjs'), '_update'], { cwd, env: { ...env, PRUMO_UPDATE_REQUEST: JSON.stringify({ dryRun, cwd, projects: [], updateCli: false }) }, encoding: 'utf8', timeout: 120000, windowsHide: true })
   const before = markers.map(read)
   const preview = run(true)
@@ -91,13 +92,18 @@ test('update rejects malformed requests before applying installations', () => {
   assert.deepEqual(state, { running: false, version: '1.0.7', packageRoot: join(source, '@henri-ralmeida', 'prumo') })
 })
 
-test('update restarts only an enabled dashboard and keeps dry-run inert', async () => {
+test('update preserves dashboard preference and adopts a running unconfigured legacy dashboard', async () => {
   const calls = []
   const restart = async options => { calls.push(options); return { ok: true } }
+  const enable = async options => { calls.push({ enable: options }); return { ok: true } }
   const disabled = await reconcileDashboardUpdate({}, { status: async () => ({ enabled: false, disabled: true }), restart })
   assert.equal(disabled.action, 'disabled')
   const absent = await reconcileDashboardUpdate({}, { status: async () => ({ enabled: false, disabled: false }), restart })
   assert.equal(absent.action, 'none')
+  const adopted = await reconcileDashboardUpdate({ before: { enabled: false, disabled: false, process: 'running' }, dashboardOptions: { packageRoot: '/global/prumo' } }, { status: async () => ({ enabled: false, disabled: false }), enable, restart })
+  assert.equal(adopted.action, 'enable')
+  assert.deepEqual(calls, [{ enable: { packageRoot: '/global/prumo' } }])
+  calls.length = 0
   const preview = await reconcileDashboardUpdate({ dryRun: true }, { status: async () => ({ enabled: true }), restart })
   assert.equal(preview.action, 'restart')
   assert.deepEqual(calls, [])
