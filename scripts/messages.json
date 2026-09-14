@@ -22,6 +22,7 @@
   "yes": "sim",
   "no": "não",
   "Existing data stays in place: {0}": "Os dados existentes permanecem no lugar: {0}",
+  "Migrate existing data: {0} -> {1}": "Migrar dados existentes: {0} -> {1}",
   "Backup: {0}": "Backup: {0}",
   "Dry run: no files changed": "Prévia: nenhum arquivo alterado",
   "Open a new session to load Prumo and PO First": "Abra uma nova sessão para carregar Prumo e PO First",

@@ -121,8 +121,8 @@ Omita `--all` para escolher pelas caixas de seleção, ou use `--claude`, `--kir
 Não é necessário migrar os dados manualmente. Encerre sessões que estejam carregando arquivos da skill graph-foreman antes de instalar; o instalador nunca encerra processos. Ele detecta os locais padrão, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, projetos informados e ancestrais do diretório atual.
 
 - Instala Prumo na mesma raiz de skills, copia arquivos adicionais da instalação legada quando não há conflito, confere a instalação e depois remove a pasta da skill graph-foreman.
-- Preserva os dados das runs no lugar, incluindo `.specs/graph` dentro de projetos e o armazenamento central antigo. Instalar não executa comandos do motor nem modifica contratos, estados, tentativas, evidências ou histórico.
-- Faz backup completo das instalações e configurações afetadas antes de escrever. Dados vivos dos planos ficam fora da transação e não são revertidos junto com a instalação.
+- Move workspaces centrais legados de `~/.local/share/graph-foreman` para `~/.local/share/prumo`, confere cada arquivo e só remove cada origem após completar o destino. `.specs/graph` dentro de projetos permanece no lugar. Contratos, estados, tentativas, evidências e histórico não mudam.
+- Faz backup completo de cada instalação, configuração e workspace central legado afetado antes de escrever. Uma falha ou alteração concorrente no workspace é revertida ou informada como conflito.
 - Aplica cada conjunto separadamente. Arquivos personalizados conflitantes, configuração inválida, caminho vinculado ou arquivo ocupado impedem somente aquele conjunto. O instalador não encerra processos.
 - Confere os bytes gravados e reverte o conjunto antes de informar sucesso em caso de falha. Alterações concorrentes são detectadas.
 
@@ -173,11 +173,7 @@ Para novos planos, selecione um workspace central. No PowerShell:
 
 ```powershell
 $prumoDefault = Join-Path $HOME '.local/share/prumo'
-$prumoLegacy = Join-Path $HOME '.local/share/graph-foreman'
-if (Test-Path -LiteralPath $prumoLegacy) { $prumoDefault = $prumoLegacy }
-if (-not $env:PRUMO_HOME) {
-  $env:PRUMO_HOME = if ($env:GRAPH_FOREMAN_HOME) { $env:GRAPH_FOREMAN_HOME } else { $prumoDefault }
-}
+if (-not $env:PRUMO_HOME) { $env:PRUMO_HOME = $prumoDefault }
 $env:PRUMO_ROOT = Join-Path $env:PRUMO_HOME 'meu-workspace'
 New-Item -ItemType Directory -Force -Path $env:PRUMO_ROOT | Out-Null
 ```
@@ -185,16 +181,14 @@ New-Item -ItemType Directory -Force -Path $env:PRUMO_ROOT | Out-Null
 No macOS/Linux:
 
 ```sh
-DEFAULT_PRUMO_HOME="$HOME/.local/share/prumo"
-[ ! -d "$HOME/.local/share/graph-foreman" ] || DEFAULT_PRUMO_HOME="$HOME/.local/share/graph-foreman"
-export PRUMO_HOME="${PRUMO_HOME:-${GRAPH_FOREMAN_HOME:-$DEFAULT_PRUMO_HOME}}"
+export PRUMO_HOME="${PRUMO_HOME:-$HOME/.local/share/prumo}"
 export PRUMO_ROOT="$PRUMO_HOME/meu-workspace"
 mkdir -p "$PRUMO_ROOT"
 ```
 
-Nos planos existentes, preserve o workspace original. `GRAPH_ROOT` e `GRAPH_FOREMAN_HOME` continuam aceitos; as variáveis `PRUMO_*` têm precedência quando definidas. Sem configuração explícita, o armazenamento central legado existente é reutilizado. Nos demais casos, novos planos usam `~/.local/share/prumo`.
+Planos locais preservam o workspace original. `GRAPH_ROOT` e `GRAPH_FOREMAN_HOME` continuam aceitos como compatibilidade explícita. Sem sobrescrever o caminho, a instalação migra o armazenamento central antigo e todos os planos novos usam `~/.local/share/prumo`.
 
-Claude Code, Kiro e Codex locais, executados pelo mesmo usuário, compartilham essa pasta. Os comandos criam as pastas ausentes. Preserve os caminhos existentes e use as mesmas configurações nos três ambientes. O acesso depende das permissões de cada ambiente; sessões na nuvem não compartilham automaticamente os arquivos locais.
+Claude Code, Kiro e Codex locais, executados pelo mesmo usuário, compartilham a pasta central do Prumo. Os comandos criam as pastas ausentes. O acesso depende das permissões de cada ambiente; sessões na nuvem não compartilham automaticamente os arquivos locais.
 
 Os scripts ficam em `scripts/`, junto da skill. Resolva caminhos a partir dela. Consulte a [referência do motor](references/runtime.pt-BR.md) para comandos, contratos e estados.
 

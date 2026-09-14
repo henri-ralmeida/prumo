@@ -63,7 +63,7 @@ function runInstall(options, { command = 'install', dryRun = false, quiet = fals
       for (const error of group.conflicts) print(`  ${t('conflict')}: ${t(error)}`)
       if (!group.changes.length && !group.conflicts.length) print('  ' + t('unchanged'))
     }
-    for (const data of plan.data) print(t('Existing data stays in place: {0}', data.root))
+    for (const data of plan.data) print(data.action === 'migrate' ? t('Migrate existing data: {0} -> {1}', data.source, data.root) : t('Existing data stays in place: {0}', data.root))
     for (const warning of plan.warnings) print(`${t('pending activation')}: ${t(warning)}`)
     const result = applyInstall(plan, { dryRun })
     if (result.backup) print(t('Backup: {0}', result.backup))
@@ -125,6 +125,7 @@ try {
       const quiet = !request.dryRun
       const progress = progressUi(quiet)
       const previousVersions = [globalCliState(packageRoot).version]
+      const dashboardBefore = await dashboardStatus()
       progress.update(10, t('Preparing Prumo update'))
       if (request.updateCli) {
         if (request.dryRun) print(t('Would update global Prumo CLI to {0}', version))
@@ -155,7 +156,8 @@ try {
         } catch (error) { console.error(`[prumo] ${t(error.message)}`); process.exitCode = 2 }
       }
       const globalPackage = globalCliState(packageRoot).packageRoot ?? packageRoot
-      const dashboard = await reconcileDashboardUpdate({ dryRun: request.dryRun, dashboardOptions: { packageRoot: globalPackage } })
+      const dashboard = await reconcileDashboardUpdate({ dryRun: request.dryRun, before: dashboardBefore, dashboardOptions: { packageRoot: globalPackage } })
+      if (dashboard.action === 'enable' && request.dryRun) print('Would enable and start the Prumo dashboard')
       if (dashboard.action === 'restart' && request.dryRun) print('Would restart the enabled Prumo dashboard')
       else if (dashboard.action === 'disabled' && request.dryRun) print('Dashboard remains disabled by user preference')
       if (!dashboard.ok) {

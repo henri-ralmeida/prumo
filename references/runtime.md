@@ -95,7 +95,7 @@ the skill is the DISCIPLINE. Neither replaces the other.
 | `dashboard.html` | Live view: DAG laid out as phase swimlanes (toggle to dep-depth layering), animated dep edges, lineage highlight on hover, task details in a popover beside the node (long hover peeks, click pins; side panel = run state + logs only), working/validated sub-state per running task, orchestrator heartbeat, event flashes, retries, event log. Plus a **results** tab (`r`) deriving what the run cost — see below. |
 
 New state lives in `~/.local/share/prumo/<workspace>/.specs/graph/<run>/`, outside project
-repositories. An existing central graph-foreman storage directory is reused automatically.
+repositories. Installation migrates central graph-foreman workspaces there byte-for-byte.
 `PRUMO_HOME` overrides that base; `GRAPH_FOREMAN_HOME` remains supported. Set `PRUMO_ROOT`
 (or legacy `GRAPH_ROOT`) to an existing workspace before running commands. Existing
 project-local `.specs/graph` storage remains usable in place; new project-local storage is
