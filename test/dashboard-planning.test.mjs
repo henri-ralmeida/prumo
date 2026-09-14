@@ -355,13 +355,14 @@ test('filter controls expose every state and localize labels and dependency togg
   }
 })
 
-test('responsive layout selects density, wraps large phases and stays within the viewport', () => {
+test('responsive layout selects density and sizes phase lanes from their cards', () => {
   for (const [count, expected] of [[6, 'detailed'], [24, 'detailed'], [25, 'compact'], [48, 'compact'], [100, 'compact'], [101, 'dense'], [206, 'dense']]) {
     const ui = dashboard('en', 960)
     const state = graphState(count)
     const result = JSON.parse(ui.run("STATE = input; JSON.stringify(layout(STATE.tasks, 'phase'))", { input: state }))
     assert.equal(result.density, expected, `${count} tasks`)
-    assert.ok(result.w >= 960)
+    const cardDrivenWidth = Math.max(636, 80 + result.capacity * result.metrics.nodeW + (result.capacity - 1) * 16)
+    assert.equal(result.w, cardDrivenWidth)
     for (const point of Object.values(result.pos)) {
       assert.ok(Number.isFinite(point.x) && Number.isFinite(point.y), `${count}: finite coordinates`)
       assert.ok(point.x + result.metrics.nodeW <= result.w - 40, `${count}: bounded x`)
@@ -382,8 +383,8 @@ test('responsive layout selects density, wraps large phases and stays within the
   const narrow = dashboard('en', 700)
   const wideLayout = JSON.parse(wide.run("STATE = input; JSON.stringify(layout(STATE.tasks, 'phase'))", { input: state }))
   const narrowLayout = JSON.parse(narrow.run("STATE = input; JSON.stringify(layout(STATE.tasks, 'phase'))", { input: state }))
-  assert.ok(wideLayout.w >= 1200)
-  assert.ok(narrowLayout.w >= 700)
+  assert.ok(wideLayout.capacity >= narrowLayout.capacity)
+  assert.ok(wideLayout.w >= narrowLayout.w)
   assert.ok(narrowLayout.lanes.every((lane, i, lanes) => i === 0 || lanes[i - 1].y + lanes[i - 1].height < lane.y))
 })
 
@@ -413,14 +414,14 @@ test('resize relayout preserves state and refits the board to the live viewport'
   assert.ok(beforeAnchor)
 })
 
-test('phase boards fill the canvas and open with the complete graph visible', () => {
+test('phase boards expand for their cards and open with the complete graph visible', () => {
   const ui = dashboard('en', 1000)
   ui.render(graphState(48, 8))
   const initial = JSON.parse(ui.run('JSON.stringify({ view: VIEW, width: CANVAS_W, height: CANVAS_H, metrics: LAST_METRICS, pos: LAST_POS })'))
   assert.ok(initial.height > 644)
   assert.ok(initial.metrics.nodeW >= 120)
   assert.ok(initial.metrics.nodeW < 202)
-  assert.ok(Math.max(...Object.values(initial.pos).map(point => point.x)) + initial.metrics.nodeW >= 900)
+  assert.equal(Math.max(...Object.values(initial.pos).map(point => point.x)) + initial.metrics.nodeW, initial.width - 40)
   assert.ok(initial.view.k < 0.944)
   assert.ok(initial.width * initial.view.k <= 944)
   assert.ok(initial.height * initial.view.k <= 644)
@@ -437,7 +438,8 @@ test('phase boards fill the canvas and open with the complete graph visible', ()
   const wide = dashboard('en', 1046)
   wide.render(screenshotState)
   const wideView = JSON.parse(wide.run("JSON.stringify({ view: VIEW, width: CANVAS_W, metrics: LAST_METRICS })"))
-  assert.ok(wideView.width * wideView.view.k >= 940, 'wide six-phase board should use the horizontal canvas')
+  const cardCapacity = wide.run("layout(STATE.tasks, 'phase').capacity")
+  assert.equal(wideView.width, Math.max(636, 80 + wideView.metrics.nodeW * cardCapacity + 16 * (cardCapacity - 1)))
   assert.ok(wideView.metrics.nodeW * wideView.view.k >= 72, 'fitted cards should stay legible')
 })
 
