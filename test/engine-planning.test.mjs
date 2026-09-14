@@ -234,6 +234,20 @@ test('legacy runs migrate into phase planning without opening work or changing t
   assert.equal(existsSync(join(f.root, '.specs/graph/phase-negative/state.pre-migrate-v1.json')), true)
 })
 
+test('migration refuses newer state schemas without downgrading or writing backups', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Future task' }])
+  const future = f.state()
+  future.schemaVersion = 999
+  f.save(future)
+  const statePath = join(f.root, '.specs/graph/phase-negative/state.json')
+  const before = readFileSync(statePath, 'utf8'), events = f.events()
+  f.rejects(/newer.*schema|schema.*newer/, 'migrate')
+  f.rejects(/newer.*schema|schema.*newer/, 'status')
+  assert.equal(readFileSync(statePath, 'utf8'), before)
+  assert.equal(f.events(), events)
+  assert.equal(existsSync(join(f.root, '.specs/graph/phase-negative/state.pre-migrate-v1.json')), false)
+})
+
 test('automatic migration refuses active legacy work and preserves its state', t => {
   const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Active legacy task' }])
   const legacy = f.state()

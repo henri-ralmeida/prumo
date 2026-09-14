@@ -17,6 +17,7 @@ const globalExecutable = process.platform === 'win32' ? join(globalPrefix, 'prum
 mkdirSync(join(cwd, '.git'), { recursive: true })
 writeFileSync(join(cwd, 'package.json'), JSON.stringify({ name: 'prumo-package-smoke', private: true, dependencies: { [name]: `file:${archive.replace(/\\/g, '/')}` } }))
 const env = { ...process.env, HOME: home, USERPROFILE: home, CODEX_HOME: join(home, '.codex'), CLAUDE_CONFIG_DIR: join(home, '.claude'), PRUMO_HOME: join(home, 'data'), PRUMO_LANG: 'en',
+  APPDATA: join(home, 'AppData', 'Roaming'), LOCALAPPDATA: join(home, 'AppData', 'Local'),
   npm_config_cache: join(home, 'npm-cache'), npm_config_userconfig: join(home, 'npmrc'), npm_config_prefix: globalPrefix, BUN_INSTALL_CACHE_DIR: join(home, 'bun-cache') }
 delete env.PRUMO_ROOT
 delete env.GRAPH_ROOT
@@ -110,6 +111,7 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
 }
 `)
   const autoEnv = { ...env, HOME: autoHome, USERPROFILE: autoHome, CODEX_HOME: join(autoHome, '.codex'),
+    APPDATA: join(autoHome, 'AppData', 'Roaming'), LOCALAPPDATA: join(autoHome, 'AppData', 'Local'),
     PRUMO_HOME: join(autoHome, 'data'), npm_config_prefix: autoPrefix,
     npm_config_cache: join(autoHome, 'npm-cache'), NODE_OPTIONS: `--import=${pathToFileURL(preload).href}` }
   delete autoEnv.CLAUDE_CONFIG_DIR
