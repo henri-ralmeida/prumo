@@ -711,7 +711,9 @@ function layout(tasks, mode) {
   const hubWidth = 3 * ORCH_W + 2 * 26 + 2 * PAD
   const viewportWidth = $('#viewport').getBoundingClientRect().width || innerWidth || hubWidth
   const w = Math.max(hubWidth, Math.floor(viewportWidth))
-  const readableNodeW = usePhase ? 150 : baseMetrics.nodeW
+  // Pack phase cards horizontally before scaling: tall graphs otherwise shrink into
+  // a narrow strip and waste most of a wide monitor.
+  const readableNodeW = usePhase ? 120 : baseMetrics.nodeW
   const capacity = Math.max(1, Math.floor((w - 2 * PAD + gapX) / (readableNodeW + gapX)))
   const nodeW = usePhase ? Math.floor((w - 2 * PAD - (capacity - 1) * gapX) / capacity) : layoutMetrics.nodeW
   const metrics = { ...layoutMetrics, nodeW }

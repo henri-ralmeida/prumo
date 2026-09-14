@@ -406,7 +406,6 @@ test('resize relayout preserves filter, dependency context, selection and view',
   assert.ok(after.h > before.h)
   assert.notDeepEqual(after.pos, before.pos)
   assert.notDeepEqual(after.pos.T013, before.pos.T013)
-  assert.ok(after.pos.T013.y > before.pos.T013.y)
   const afterAnchor = JSON.parse(ui.run("JSON.stringify(document.querySelector('.node[data-id=\\\"T013\\\"]')?.getBoundingClientRect())"))
   assert.notDeepEqual(afterAnchor, beforeAnchor)
   const popPosition = JSON.parse(ui.run("JSON.stringify({ left: parseFloat($('#pop').style.left), top: parseFloat($('#pop').style.top) })"))
@@ -419,13 +418,26 @@ test('phase boards fill the canvas and open with the complete graph visible', ()
   ui.render(graphState(48, 8))
   const initial = JSON.parse(ui.run('JSON.stringify({ view: VIEW, width: CANVAS_W, height: CANVAS_H, metrics: LAST_METRICS, pos: LAST_POS })'))
   assert.ok(initial.height > 644)
-  assert.ok(initial.metrics.nodeW >= 150)
+  assert.ok(initial.metrics.nodeW >= 120)
+  assert.ok(initial.metrics.nodeW < 202)
   assert.ok(Math.max(...Object.values(initial.pos).map(point => point.x)) + initial.metrics.nodeW >= 900)
   assert.ok(initial.view.k < 0.944)
   assert.ok(initial.width * initial.view.k <= 944)
   assert.ok(initial.height * initial.view.k <= 644)
   assert.ok(initial.view.x >= 28)
   assert.ok(initial.view.y >= 28)
+
+  const screenshotState = graphState(25, 6)
+  const screenshotTasks = Object.values(screenshotState.tasks)
+  let offset = 0
+  for (const [phaseIndex, size] of [4, 3, 3, 11, 2, 2].entries()) {
+    screenshotTasks.slice(offset, offset + size).forEach(task => { task.phase = `P${phaseIndex + 1}` })
+    offset += size
+  }
+  const wide = dashboard('en', 1046)
+  wide.render(screenshotState)
+  const wideView = JSON.parse(wide.run('JSON.stringify(VIEW)'))
+  assert.ok(wideView.k > 0.7, 'wide six-phase board should stay legible while fully fitted')
 })
 
 test('legend follows the workflow and colored role counters and events show actual progress', () => {
