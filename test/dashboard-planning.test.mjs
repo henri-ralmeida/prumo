@@ -28,7 +28,7 @@ const discovery = {
 function dashboard(lang = 'en', width = 1000, session = new Map(), navigation = { state: null, urls: [] }) {
   const nodes = new Map(), cards = [], paths = []
   const windowListeners = new Map()
-  let viewportWidth = width, animationFrame = null
+  let viewportWidth = width, viewportHeight = 700, animationFrame = null
   const element = (initialClasses = []) => {
     const classes = new Set(initialClasses)
     const attributes = new Map()
@@ -113,7 +113,7 @@ function dashboard(lang = 'en', width = 1000, session = new Map(), navigation = 
             })
           }
           if (selector === '#viewport') node.getBoundingClientRect = () =>
-            ({ width: viewportWidth, height: 700, left: 0, right: viewportWidth, top: 0 })
+            ({ width: viewportWidth, height: viewportHeight, left: 0, right: viewportWidth, top: 0 })
           nodes.set(selector, node)
         }
         return nodes.get(selector)
@@ -153,9 +153,11 @@ function dashboard(lang = 'en', width = 1000, session = new Map(), navigation = 
     nodes, labels, cards, paths,
     run(code, values = {}) { Object.assign(context, values); return runInContext(code, context) },
     render(state, events = []) { this.run('STATE = input; render(STATE, inputEvents)', { input: state, inputEvents: events }) },
-    resize(nextWidth) {
+    resize(nextWidth, nextHeight = viewportHeight) {
       viewportWidth = nextWidth
+      viewportHeight = nextHeight
       context.innerWidth = nextWidth + 330
+      context.innerHeight = nextHeight + 100
       for (const listener of windowListeners.get('resize') ?? []) listener()
       const callback = animationFrame
       animationFrame = null
@@ -246,6 +248,30 @@ test('dashboard observes phase discussion, phase planning and per-task input rea
   }
   assert.doesNotMatch(html, /fetch\([^)]*begin-phase|onclick="[^"]*phase-(?:discussion|planning)/,
     'phase workflow remains observer-only')
+})
+
+test('summary counts include discussion and legacy pending tasks', () => {
+  const tasks = { A: task('A'), B: task('B', 'discussing'), C: task('C'), D: task('D', 'done') }
+  const derived = Object.fromEntries(Object.entries({ A: 'ready_for_discussion', B: 'discussing', C: 'pending', D: 'done' })
+    .map(([id, effective]) => [id, { effective, blockedBy: [] }]))
+  for (const lang of ['en', 'pt-BR']) {
+    const ui = dashboard(lang)
+    ui.render({ run: 'summary', plan: { phases: [] }, tasks, derived })
+    const summary = ui.nodes.get('#counts').innerHTML
+    assert.equal([...summary.matchAll(/<b>(\d+)<\/b>/g)].reduce((sum, match) => sum + Number(match[1]), 0), 4)
+    for (const state of ['ready_for_discussion', 'discussing', 'pending']) {
+      assert.ok(summary.includes(ui.run('statusLabel(value)', { value: state })))
+    }
+    assert.doesNotMatch(summary, /color:undefined/)
+  }
+})
+
+test('height-only resize keeps the entire board inside the viewport', () => {
+  const ui = dashboard('en', 1000)
+  ui.render(graphState(48, 8))
+  ui.resize(1000, 350)
+  assert.ok(ui.run('CANVAS_H * VIEW.k') <= 294)
+  assert.ok(ui.run('VIEW.y') >= 0)
 })
 
 test('dashboard keeps an unadopted legacy phase pending until explicit adoption', () => {
