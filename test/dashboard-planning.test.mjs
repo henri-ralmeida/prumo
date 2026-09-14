@@ -486,6 +486,7 @@ test('legend follows the workflow and colored role counters and events show actu
 test('visual polish keeps fixed arrows, full card labels and a controllable responsive sidebar', () => {
   assert.match(html, /markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse"/)
   assert.match(html, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\*, \*::before, \*::after[\s\S]*animation: none !important/)
+  assert.match(html, /\.phase-task-state \{ display: inline;/)
   const sectionOrder = ['data-i18n="Legend"', 'id="parTitle"', 'data-i18n="Selected task"', 'data-i18n="Failures &amp; retries"', 'data-i18n="Event log"']
   assert.deepEqual(sectionOrder.map((part) => html.indexOf(part)), [...sectionOrder.map((part) => html.indexOf(part))].sort((a, b) => a - b))
 
