@@ -719,24 +719,11 @@ function layout(tasks, mode) {
   const unphasedCount = usePhase ? ids.filter(id => phaseIx[tasks[id].phase] === undefined).length : 0
   if (unphasedCount) phaseCounts.push(unphasedCount)
   const maxCapacity = usePhase ? Math.max(1, ...phaseCounts) : 1
-  const phaseHeight = (columns) => y0 + phaseCounts.reduce((height, count) => {
-    const rows = Math.max(1, Math.ceil(count / columns))
-    return height + lanePad + rows * nodeH + (rows - 1) * gapY + 30
-  }, 0) + PAD
-  // Choose columns against both live dimensions. Cards may extend beyond the logical
-  // viewport; fitView scales that wider, shorter board back into the visible canvas.
+  // Horizontal space decides phase columns. The number of phases affects only height,
+  // so a tall plan cannot force task cards into one vertical stack.
   const availableW = Math.max(1, viewportWidth - 56)
-  const availableH = Math.max(1, (viewport.height || innerHeight) - 56)
-  let capacity = usePhase ? 1 : Math.max(1, Math.floor((viewportWidth - 2 * PAD + gapX) / (readableNodeW + gapX)))
-  if (usePhase) {
-    for (let columns = 1; columns <= maxCapacity; columns++) {
-      const candidateHeight = phaseHeight(columns)
-      const contentWidth = 2 * PAD + columns * readableNodeW + (columns - 1) * gapX
-      const candidateWidth = Math.max(hubWidth, contentWidth)
-      const scale = Math.min(availableW / candidateWidth, availableH / candidateHeight, 1.25)
-      if (readableNodeW * scale >= 68) capacity = columns
-    }
-  }
+  const viewportCapacity = Math.max(1, Math.floor((availableW - 2 * PAD + gapX) / (readableNodeW + gapX)))
+  const capacity = usePhase ? Math.min(maxCapacity, viewportCapacity) : viewportCapacity
   const naturalWidth = 2 * PAD + capacity * readableNodeW + (capacity - 1) * gapX
   const w = Math.max(hubWidth, naturalWidth)
   const nodeW = usePhase ? readableNodeW : layoutMetrics.nodeW
