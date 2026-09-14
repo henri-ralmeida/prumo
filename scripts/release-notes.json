@@ -3,7 +3,7 @@
     "en": [
       { "title": "Fixed — Central workspace migration", "items": ["Move central graph-foreman workspaces to the Prumo store after byte verification", "Preserve project-local runs and roll back conflicting or concurrent changes", "Keep an empty Windows-locked legacy directory from reverting a completed data migration"] },
       { "title": "Fixed — Dashboard continuity", "items": ["Adopt a running legacy dashboard that has no saved startup preference", "Preserve explicit dashboard opt-out during installation and update"] },
-      { "title": "Improved — Readable phase layout", "items": ["Open long phase graphs at a readable width instead of shrinking every phase into one screen", "Keep explicit Fit available to show the complete graph"] },
+      { "title": "Improved — Responsive phase board", "items": ["Size phase cards and columns from the available canvas", "Open with the complete graph visible without manual zoom adjustments"] },
       { "title": "Added — Direct migration command", "items": ["Expose prumo migrate and prumo migrate --check in the main CLI help", "Forward optional run selection to the installed migration engine"] }
     ]
   },
