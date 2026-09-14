@@ -414,6 +414,20 @@ test('resize relayout preserves filter, dependency context, selection and view',
   assert.notDeepEqual(popPosition, { left: beforeAnchor.right + 14, top: beforeAnchor.top - 6 })
 })
 
+test('long phase boards open at a readable width while explicit fit still shows the full graph', () => {
+  const ui = dashboard('en', 1000)
+  ui.render(graphState(48, 8))
+  const initial = JSON.parse(ui.run('JSON.stringify({ view: VIEW, width: CANVAS_W, height: CANVAS_H })'))
+  assert.ok(initial.height > 644)
+  assert.ok(Math.abs(initial.view.k - 0.944) < 0.001)
+  assert.equal(initial.view.y, 28)
+
+  ui.run('fitView()')
+  const fitted = JSON.parse(ui.run('JSON.stringify(VIEW)'))
+  assert.ok(fitted.k < initial.view.k)
+  assert.ok(fitted.y > 0)
+})
+
 test('legend follows the workflow and colored role counters and events show actual progress', () => {
   const legend = html.match(/<div class="legend">([\s\S]*?)<\/div>/)[1]
   const order = [...legend.matchAll(/data-i18n="([^"]+)"/g)].map(m => m[1])

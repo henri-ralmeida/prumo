@@ -8,10 +8,12 @@ const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.u
 test('current release has concise English update highlights with descriptive subtitles', () => {
   const notes = releaseNotes(version)
   assert.deepEqual(notes.map(section => section.title), [
-    'Fixed — Complete update history',
-    'Added — Automatic legacy run migration'
+    'Fixed — Central workspace migration',
+    'Fixed — Dashboard continuity',
+    'Improved — Readable phase layout',
+    'Added — Direct migration command'
   ])
-  assert.ok(notes.flatMap(section => section.items).includes('Show every missed release when updating across multiple versions'))
+  assert.ok(notes.flatMap(section => section.items).includes('Open long phase graphs at a readable width instead of shrinking every phase into one screen'))
   assert.ok(releaseNotes('1.3.2').flatMap(section => section.items).includes('Keep one discussion and one planner when the user names one task'))
   assert.ok(releaseNotes('1.3.1').flatMap(section => section.items).includes('Open phases in declared order after earlier work is terminal'))
   assert.ok(releaseNotes('1.3.0').flatMap(section => section.items).includes('Start the read-only dashboard after global npm installation'))
