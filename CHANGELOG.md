@@ -2,6 +2,13 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 1.3.6 — 2026-09-14
+
+- Preserve the configured isolated environment when starting the dashboard in the background.
+- Recognize Windows Startup dashboard processes despite harmless command-line spacing and filter candidates before exact ownership checks.
+- Bound Windows process queries and refuse to downgrade runs written by a newer state schema.
+- Verify clean npm/Bun installation, published 1.0.8 upgrade, legacy workspace migration, merged-task preservation and real Windows Startup restart end to end.
+
 ## 1.3.5 — 2026-09-14
 
 - Move central graph-foreman workspaces to `~/.local/share/prumo` only after copying and byte-checking every file; preserve project-local runs and roll back conflicts.
