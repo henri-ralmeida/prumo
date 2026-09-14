@@ -374,8 +374,10 @@ Review the actual diff before accepting the exception. Do not use inspection for
 runtime behavior, missing tools, unavailable environments, or a failing test. Those need an
 actionable rejection or a blocked task. `requireReview: false` never waives functional checks.
 
-The reviewer must inspect the full behavioral path and the relevance of the tests, not only
-the changed lines. Browser/API workflows need checks that exercise that workflow at the
+The first reviewer must inspect the full behavioral path and the relevance of the tests, not only
+the changed lines. On a bounded corrective retry, the next reviewer inspects the rejection, changed
+paths and remaining checks, and may trust current step receipts that the engine explicitly reuses.
+Browser/API workflows need checks that exercise that workflow at the
 appropriate layer; a pure helper test cannot prove a user journey. Keep tests scoped to the
 task and add a final integration check when separate tasks must work together.
 
@@ -385,8 +387,11 @@ their output and exit codes; inspect those receipts before `done`. Avoid logging
 Do not mutate the reviewed code while checks run; rerun validation if it changes afterward.
 All steps rerun by default. Mark only deterministic `static` steps as `cacheable: true`; Prumo
 may reuse their passing result within the same attempt and task state when the contract and Git
-workspace are unchanged. Functional steps always run. The engine checks execution, not the
-semantic truth of `expect` or the declared `kind`.
+workspace are unchanged. Add safe relative `cachePaths` when that static check covers an isolated
+set of files: after a corrective retry, the next reviewer resumes at the first failed or invalidated
+step and reuses earlier passing receipts only while those declared paths are byte-for-byte unchanged.
+Functional steps always run, and unscoped static steps restart on a new attempt. The engine checks
+execution, not the semantic truth of `expect` or the declared `kind`.
 Never label lint as functional to satisfy the gate. Shell commands execute with the caller's
 permissions; the approved plan is not permission for unrelated or destructive side effects.
 

@@ -14,7 +14,7 @@ assert.equal(pkg.engines.node, '>=22')
 assert.equal(pkg.dependencies, undefined)
 const releaseNotes = JSON.parse(readFileSync(join(root, 'scripts', 'release-notes.json'), 'utf8'))
 assert.deepEqual(releaseNotes[pkg.version]?.en?.map(section => section.title), [
-  'Fixed — Explicit task scope'
+  'Improved — Step-level corrective review'
 ])
 assert.equal(releaseNotes[pkg.version]?.['pt-BR'], undefined)
 for (const file of ['SKILL.md', 'README.md', 'README.pt-BR.md', 'CHANGELOG.md', 'LICENSE', 'references/po-first.md', 'references/runtime.md', 'references/runtime.pt-BR.md']) assert.ok(existsSync(join(root, file)), file)
@@ -24,6 +24,7 @@ assert.match(skill, /Normalize every\s+nonterminal prose or obsolete validation/
 assert.match(skill, /later phase cannot begin discussion or planning until every task in each earlier phase is\s+`done` or `skipped`/)
 assert.match(skill, /A named task in the user's request is a hard scope boundary/)
 assert.match(skill, /keep its internal work inside the one immutable task plan/)
+assert.match(skill, /cachePaths/)
 assert.doesNotMatch(skill, /\u0000/)
 assert.match(readFileSync(join(root, 'LICENSE'), 'utf8'), /JrSantiaggo/)
 const html = readFileSync(join(root, 'scripts/dashboard.html'), 'utf8')

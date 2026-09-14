@@ -1,8 +1,8 @@
 import { log } from './i18n.mjs'
 import { spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { isAbsolute } from 'node:path'
-import { statSync } from 'node:fs'
+import { isAbsolute, resolve } from 'node:path'
+import { existsSync, statSync } from 'node:fs'
 
 const nonempty = (value) => typeof value === 'string' && value.trim().length > 0
 const insist = (condition, message) => { if (!condition) throw new Error(message) }
@@ -61,6 +61,12 @@ export function validationContract(task) {
     insist(['static', 'functional'].includes(step.kind ?? 'static'), 'step kind must be static or functional')
     if (step.cacheable !== undefined) insist(typeof step.cacheable === 'boolean', 'cacheable must be true or false')
     if (step.cacheable) insist((step.kind ?? 'static') === 'static', 'only static validation steps can be cacheable')
+    if (step.cachePaths !== undefined) {
+      insist(step.cacheable === true, 'cachePaths requires cacheable: true')
+      insist(Array.isArray(step.cachePaths) && step.cachePaths.length > 0 && step.cachePaths.every(path =>
+        nonempty(path) && !isAbsolute(path) && !path.split(/[\\/]/).includes('..') && !path.includes('\0')),
+      'cachePaths must be a nonempty array of safe relative paths')
+    }
     if (step.expectedExitCodes !== undefined)
       insist(Array.isArray(step.expectedExitCodes) && step.expectedExitCodes.length > 0 &&
         step.expectedExitCodes.every((code) => Number.isInteger(code) && code >= 0 && code <= 255),
@@ -304,10 +310,25 @@ function execute(run, options, timeoutMs) {
   })
 }
 
-function workspaceRevision(directory) {
+function workspaceRevision(directory, paths) {
   const options = { encoding: 'utf8', windowsHide: true, timeout: 10000, maxBuffer: 16 * 1024 * 1024 }
   const git = (...args) => spawnSync('git', ['-C', directory, ...args], options)
   const root = git('rev-parse', '--show-toplevel')
+  if (paths) {
+    const files = git('ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', ...paths)
+    if (root.status !== 0 || root.error || files.status !== 0 || files.error) return null
+    const hash = createHash('sha256').update(root.stdout.trim()).update('\0').update(JSON.stringify(paths))
+    for (const file of files.stdout.split('\0').filter(Boolean).sort()) {
+      hash.update('\0').update(file).update('\0')
+      if (!existsSync(resolve(directory, file))) hash.update('missing')
+      else {
+        const blob = git('hash-object', '--', file)
+        if (blob.status !== 0 || blob.error) return null
+        hash.update(blob.stdout.trim())
+      }
+    }
+    return hash.digest('hex')
+  }
   const head = git('rev-parse', 'HEAD')
   const diff = git('diff', '--binary', '--no-ext-diff', 'HEAD', '--')
   const untracked = git('ls-files', '--others', '--exclude-standard', '-z')
@@ -337,18 +358,20 @@ export async function runValidation(task, cwd, previousReceipt = null, onCheck =
   const checks = []
   const directories = validationDirectories(task, cwd)
   for (const [index, step] of contract.steps.entries()) {
-    const revision = step.cacheable ? workspaceRevision(directories[index]) : null
+    const revision = step.cacheable ? workspaceRevision(directories[index], step.cachePaths) : null
     const prior = previousReceipt?.checks?.[index]
+    const current = task.validations?.at(-1)
+    const sameAttempt = previousReceipt?.attempt === task.attempts?.length && previousReceipt?.agent === current?.agent
+    const correctiveRetry = step.cachePaths && task.attempts?.at(-1)?.correctionOf === previousReceipt?.attempt &&
+      previousReceipt?.by === 'review' && current?.by === 'review'
     if (revision && previousReceipt?.contract === contract.key &&
         (previousReceipt.contractRevision ?? 0) === (task.contractRevision ?? 0) &&
-        previousReceipt.attempt === task.attempts?.length &&
         (previousReceipt.stateRevision ?? 0) === (task.stateRevision ?? 0) &&
-        previousReceipt.by === task.validations?.at(-1)?.by &&
-        previousReceipt.agent === task.validations?.at(-1)?.agent &&
+        previousReceipt.by === current?.by && (sameAttempt || correctiveRetry) &&
         prior?.workspaceRevision === revision && passed(step, prior)) {
       checks.push({ ...prior, reusedAt: new Date().toISOString() })
       onCheck({ current: index + 1, total: contract.steps.length, kind: step.kind ?? 'static', status: 'reused' })
-      log(`[prumo] reused check ${index + 1}/${contract.steps.length} (static, unchanged workspace)`)
+      log(`[prumo] reused check ${index + 1}/${contract.steps.length} (static, unchanged ${step.cachePaths ? 'declared paths' : 'workspace'})`)
       continue
     }
     const timeoutMs = step.timeoutMs ?? 600000

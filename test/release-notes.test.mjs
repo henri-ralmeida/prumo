@@ -8,9 +8,10 @@ const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.u
 test('current release has concise English update highlights with descriptive subtitles', () => {
   const notes = releaseNotes(version)
   assert.deepEqual(notes.map(section => section.title), [
-    'Fixed — Explicit task scope'
+    'Improved — Step-level corrective review'
   ])
-  assert.ok(notes.flatMap(section => section.items).includes('Keep one discussion and one planner when the user names one task'))
+  assert.ok(notes.flatMap(section => section.items).includes('Resume at the first invalid review step after a corrective retry'))
+  assert.ok(releaseNotes('1.3.2').flatMap(section => section.items).includes('Keep one discussion and one planner when the user names one task'))
   assert.ok(releaseNotes('1.3.1').flatMap(section => section.items).includes('Open phases in declared order after earlier work is terminal'))
   assert.ok(releaseNotes('1.3.0').flatMap(section => section.items).includes('Start the read-only dashboard after global npm installation'))
   assert.ok(releaseNotes('1.2.2').flatMap(section => section.items).includes('Select permitted question tools from the current harness session'))

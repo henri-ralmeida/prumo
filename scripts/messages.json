@@ -212,6 +212,8 @@
   "step kind must be static or functional": "kind do passo deve ser static ou functional",
   "cacheable must be true or false": "cacheable deve ser true ou false",
   "only static validation steps can be cacheable": "somente passos de validação static podem usar cacheable",
+  "cachePaths requires cacheable: true": "cachePaths exige cacheable: true",
+  "cachePaths must be a nonempty array of safe relative paths": "cachePaths deve ser uma lista não vazia de caminhos relativos seguros",
   "expectedExitCodes must be a nonempty array of integer process exit codes from 0 to 255": "expectedExitCodes deve ser uma lista não vazia de códigos de saída inteiros entre 0 e 255",
   "env must map environment variable names to string values": "env deve mapear nomes de variáveis de ambiente para valores de texto",
   "shell must be an executable name or path": "shell deve ser o nome ou caminho de um executável",

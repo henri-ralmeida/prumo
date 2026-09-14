@@ -129,7 +129,7 @@ Não é necessário migrar os dados manualmente. Encerre sessões que estejam ca
 O backup informa o comando de reversão:
 
 ```sh
-bunx @henri-ralmeida/prumo@1.3.2 restore "<diretório-do-backup>"
+bunx @henri-ralmeida/prumo@1.3.3 restore "<diretório-do-backup>"
 ```
 
 A reversão recusa sobrescrever arquivos que você editou depois. Os planos continuam no estado atual: reverter uma instalação não deve apagar trabalho em andamento. Mantenha sua rotina de backup dos dados de negócio; o instalador não captura uma imagem consistente de todos os planos ativos.
@@ -207,6 +207,8 @@ Documentação e outras tarefas sem efeito de execução podem usar `validationM
 Atualizar um contrato aprovado não exige inventar falha ou nova tentativa. `refresh-contract` preserva trabalho e estado, inclusive bloqueios, e invalida recibos antigos. Desbloquear e retomar são decisões separadas; instalar não faz nenhuma delas.
 
 Mantenha contexto e requisitos substituídos nos documentos aprovados e no histórico, critérios vigentes em `expect` e provas reais em `run`. Cada critério funcional precisa de evidência relevante; um rótulo funcional não comprova a tarefa inteira. Após reprovação real **com** mudança aprovada do contrato: registre a falha, edite o plano, rode `sync-plan` enquanto está failed, confira a definição persistida e siga com `retry`, planejamento exigido e `start` junto dos disparos reais dos agentes. Consulte [reprovação e alteração de contrato](references/runtime.pt-BR.md#reprovação-real-com-alteração-aprovada-do-contrato). Após interrupções, retome da fase registrada; não invente tentativas por um disparo que não aconteceu.
+
+Revisões corretivas retomam na primeira etapa inválida quando as verificações estáticas determinísticas anteriores declaram `cacheable: true` e `cachePaths` relativos seguros. O Prumo reutiliza esses recibos somente enquanto os arquivos declarados permanecem iguais. Verificações funcionais sempre executam novamente.
 
 ## Idiomas e compatibilidade
 

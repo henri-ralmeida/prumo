@@ -136,7 +136,7 @@ and a valid validation contract; phase planning refines each task's execution wi
 | `title`         | string                        | required  | What this task delivers, one line                                                             |
 | `phase`         | string                        | —         | Id of a `phases[]` entry; groups the task in status and dashboard swimlanes                   |
 | `deps`          | string[]                      | `[]`      | Task ids that must be `done`/`skipped` first — the ENTIRE scheduling model                    |
-| `validation`    | string \| {run, expect, kind, cacheable?, cwd?, env?, shell?, expectedExitCodes?, timeoutMs?}[]    | `""`      | What must be TRUE before done. Prose, or structured steps (see below)                         |
+| `validation`    | string \| {run, expect, kind, cacheable?, cachePaths?, cwd?, env?, shell?, expectedExitCodes?, timeoutMs?}[]    | `""`      | What must be TRUE before done. Prose, or structured steps (see below)                         |
 | `validationMode` | "functional" \| "inspection" | "functional" | Behavioral checks required unless this is a justified non-runtime inspection. |
 | `inspectionReason` | string | — | Required for inspection; explain why runtime behavior is unaffected. |
 | `touches`       | string[]                      | `[]`      | Path prefixes the task writes; `init` refuses parallel tasks with overlapping paths           |
@@ -189,7 +189,11 @@ under cmd.exe. Values must be strings; do not put secrets in plans or evidence.
 Steps run in order and stop on the first failure. A `static` step may declare `cacheable: true`;
 during another validation in the same attempt and task state, Prumo reuses its passing result
 only when the contract and Git HEAD/worktree snapshot are unchanged. Functional steps always
-run. Without an explicit cacheable marker, every step runs again.
+run. Without an explicit cacheable marker, every step runs again. A cacheable static step may also
+declare nonempty relative `cachePaths`. On a corrective retry with the same contract and task state,
+the next reviewer reuses that passing step when the current contents under those paths match its
+receipt, then resumes at the first failed or changed step. Functional and unscoped static checks
+always restart on a new attempt.
 
 Each step defaults to a 10-minute deadline. `timeoutMs` accepts 0–2147483647 milliseconds;
 0 explicitly disables the deadline. Choose a suitable limit before an approved long check.

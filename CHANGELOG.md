@@ -2,6 +2,12 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 1.3.3 — 2026-09-14
+
+- Resume corrective review at the first invalid validation step instead of repeating every earlier deterministic check.
+- Add opt-in `cachePaths` to `cacheable` static steps, allowing a later reviewer to reuse prior passing receipts only when those declared files are unchanged.
+- Keep functional checks and any static check without a safe path scope non-reusable across attempts.
+
 ## 1.3.2 — 2026-09-13
 
 - Treat an explicitly named task as a hard planning boundary: use one discussion and one planner, and keep its prerequisites, evidence gaps and internal deliverables inside that task plan.

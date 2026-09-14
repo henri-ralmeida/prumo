@@ -131,6 +131,34 @@ test('event progress counts executor plan steps and actual reviewer checks per a
   assert.equal(log().at(-1).attempt, 2)
 })
 
+test('corrective review reuses earlier path-scoped receipts through the engine', t => {
+  const steps = [
+    { kind: 'static', cacheable: true, cachePaths: ['stable.txt', 'step.cjs'], run: 'node step.cjs first', expect: 'passes' },
+    { kind: 'static', cacheable: true, cachePaths: ['changed.txt', 'step.cjs'], run: 'node step.cjs second once', expect: 'passes' },
+  ]
+  const f = fixture(t, [{ id: 'T1', title: 'Corrective review', validationMode: 'inspection',
+    inspectionReason: 'Fixture exercises deterministic static review steps.', validation: steps }])
+  writeFileSync(join(f.project, 'stable.txt'), 'stable\n')
+  writeFileSync(join(f.project, 'changed.txt'), 'before\n')
+  writeFileSync(join(f.project, 'step.cjs'), `const fs=require('node:fs');const [name,fail]=process.argv.slice(2);fs.appendFileSync(name+'.count','x');if(fail==='once'&&!fs.existsSync(name+'.failed')){fs.writeFileSync(name+'.failed','1');process.exit(7)}\n`)
+  spawnSync('git', ['init'], { cwd: f.project, encoding: 'utf8', windowsHide: true })
+  spawnSync('git', ['add', '.'], { cwd: f.project, encoding: 'utf8', windowsHide: true })
+  f.planTask()
+  f.ok('start', 'T1', '--agent', 'executor-a')
+  f.ok('review', 'T1', '--agent', 'reviewer-a')
+  f.rejected(/validation check 2\/2/, 'validate', 'T1', '--ok', '--evidence', 'first review', '--cwd', f.project)
+  f.ok('fail', 'T1', '--reason', 'review: second check failed')
+  f.ok('retry', 'T1')
+  f.ok('start', 'T1', '--agent', 'executor-b')
+  writeFileSync(join(f.project, 'changed.txt'), 'after\n')
+  f.ok('review', 'T1', '--agent', 'reviewer-b')
+  f.ok('validate', 'T1', '--ok', '--evidence', 'corrective review', '--cwd', f.project)
+  const checks = f.events().trim().split('\n').map(JSON.parse).filter(event => event.type === 'task_check' && event.attempt === 2)
+  assert.deepEqual(checks.map(event => [event.current, event.status]), [[1, 'reused'], [2, 'started'], [2, 'passed']])
+  assert.equal(readFileSync(join(f.project, 'first.count'), 'utf8'), 'x')
+  assert.equal(readFileSync(join(f.project, 'second.count'), 'utf8'), 'xx')
+})
+
 test('new tasks require researched planning before execution and still require independent behavioral review', t => {
   const f = fixture(t, [{ id: 'T1', title: 'Delivery estimate' }, { id: 'T2', title: 'Dependent delivery', deps: ['T1'] }])
   assert.equal(f.graph().derived.T1.effective, 'ready_for_discussion')

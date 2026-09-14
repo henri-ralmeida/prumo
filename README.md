@@ -129,7 +129,7 @@ No manual data migration is required. Finish sessions that are actively loading 
 The backup includes a restore command:
 
 ```sh
-bunx @henri-ralmeida/prumo@1.3.2 restore "<backup-directory>"
+bunx @henri-ralmeida/prumo@1.3.3 restore "<backup-directory>"
 ```
 
 Restore refuses to overwrite files edited since installation. Plans keep their current state: reverting an installation must not erase ongoing work. Maintain your own business-data backups; the installer does not take a consistent snapshot of every live plan.
@@ -207,6 +207,8 @@ Documentation and other tasks without runtime impact can use `validationMode: "i
 An approved contract update does not require inventing a failure or another attempt. `refresh-contract` preserves work and state, including blocks, while invalidating old receipts. Unblocking and resuming are separate decisions; installation does neither.
 
 Keep background and superseded requirements in approved context/history, current criteria in `expect`, and real checks in `run`. Every functional criterion needs relevant evidence; one functional label does not prove the entire task. After a real rejection **and** an approved contract change, record the failure, edit the plan, `sync-plan` while failed, inspect the persisted definition, then `retry`, required task planning and `start` with actual agent dispatches. See [rejection and contract changes](references/runtime.md#rejection-with-an-approved-contract-change). Resume from the recorded phase after interruptions; do not manufacture attempts for a dispatch that never happened.
+
+Corrective reviews resume at the first invalid step when earlier deterministic static checks declare `cacheable: true` and safe relative `cachePaths`. Prumo reuses those receipts only while the declared files remain unchanged. Functional checks always run again.
 
 ## Languages and compatibility
 
