@@ -171,6 +171,42 @@ test('Windows Startup discovers a later login process and refuses similar foreig
   assert.equal(disabled.registered, false, 'the managed entry is removed even when process ownership is not proven')
 })
 
+test('Windows restart recovers a stale saved script and waits for the old process to stop', async t => {
+  let running = false
+  let pendingStop = false
+  let nextPid = 7700
+  let desiredSearches = 0
+  const killed = [], searches = []
+  const f = fixture(t, 'win32', {
+    env: { APPDATA: join(tmpdir(), `Prumo stale ${process.pid}-${Date.now()}`) },
+    exec: (file, args) => ({ status: file === 'schtasks' && args[0] === '/Create' ? 1 : 0, stdout: '' }),
+    spawn: () => { running = true; return { pid: nextPid++ } },
+    fetch: async () => {
+      if (!running) throw new Error('stopped')
+      return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0' }) }
+    },
+    listProcessIds: script => {
+      searches.push(script)
+      return script === f.script && ++desiredSearches > 1 ? [8800] : []
+    },
+    readProcessCommand: pid => ({ executable: f.node, commandLine: `"${f.node}" "${f.script}" "--global" "--port" "4949"` }),
+    kill(pid) { killed.push(pid); pendingStop = true },
+    delay: async () => { if (pendingStop) { running = false; pendingStop = false } },
+  })
+  t.after(() => rmSync(f.options.env.APPDATA, { recursive: true, force: true }))
+  await enableDashboard(f.options)
+  writeFileSync(join(f.home, '.local/share/prumo/dashboard.json'), JSON.stringify({
+    enabled: true, mechanism: 'windows-startup', pid: null, node: f.node, script: join(f.home, 'old', 'serve.mjs'),
+  }))
+  running = true
+  const result = await restartDashboard(f.options)
+  assert.equal(result.ok, true, JSON.stringify(result))
+  assert.ok(searches.includes(f.script))
+  assert.ok(killed.includes(8800))
+  assert.equal(preference(f.home).script, f.script)
+  assert.ok(preference(f.home).pid >= 7700)
+})
+
 test('Windows Startup reports incomplete setup when its per-user registration cannot be written', async t => {
   const blocked = join(tmpdir(), `Prumo blocked APPDATA ${process.pid}-${Date.now()}`)
   writeFileSync(blocked, 'not a directory')
