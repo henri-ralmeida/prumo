@@ -166,6 +166,7 @@ Resolva `scripts/engine.mjs` a partir da skill instalada. Acrescente `--run <nom
 | Comando após `node <ENGINE>` | Efeito |
 |---|---|
 | `init --plan <arquivo> --run <nome>` | Inicializa execução do plano aprovado |
+| `migrate [--check]` | Migra com backup o schema legado seguro; `--check` apenas diagnostica |
 | `status`, `ready`, `graph`, `runs` | Consulta estado, trabalho pronto, JSON ou execuções |
 | `begin-phase-discussion <fase> [--adopt-legacy]` | Persiste a discussão da fase antes da primeira pergunta; a opção adota uma fase legada segura |
 | `finish-phase-discussion <fase> --context <descoberta.json>` | Valida o recibo e as respostas da rodada atual |

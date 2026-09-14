@@ -6,6 +6,9 @@ Historical tag and commit corrections are documented in [Release history recover
 
 - Show every missed release note when `prumo update` crosses multiple versions.
 - Use the oldest installed CLI or harness version as the starting point so every updated environment receives its full change history.
+- Add a versioned, idempotent state migration that runs before engine commands, backs up legacy state and enables discussion and planning gates without opening a round.
+- Preserve `done` and `skipped` tasks byte-for-byte and refuse migration when active work or attempts make structural conversion unsafe.
+- Add `migrate --check` for a read-only compatibility check and mark affected runs in `runs` output.
 
 ## 1.3.3 — 2026-09-14
 

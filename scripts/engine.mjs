@@ -30,6 +30,7 @@
  * Usage (ENGINE = path to this file, wherever the skill is installed):
  *   node $ENGINE init --plan <plan.json> --run <name>
  *   node $ENGINE sync-plan --plan <plan.json> [--run <name>]
+ *   node $ENGINE migrate [--check] [--run <name>]
  *   node $ENGINE status|ready|graph [--run <name>]
  *   node $ENGINE begin-phase-discussion <phase> [--adopt-legacy]
  *   node $ENGINE finish-phase-discussion <phase> --context <discovery.json>
@@ -73,6 +74,7 @@ const CURRENT_FILE = join(GRAPH_DIR, 'CURRENT')
 const MAX_ATTEMPTS_SOFT = 3
 const DEFAULT_MAX_PARALLEL = 4
 const DEFAULT_MAX_EXECUTORS = 3   // the 4th slot is RESERVED for review
+const STATE_SCHEMA_VERSION = 1
 const TASK_CONTRACT_FIELDS = ['phase', 'title', 'deps', 'validation', 'validationMode', 'inspectionReason', 'requireReview', 'maxAttempts', 'tags', 'touches']
 const LOCK_WAIT_MS = 5000         // how long a command waits for the run's lock
 const LOCK_STALE_MS = 30000       // a lock older than this belonged to a process that died
@@ -133,6 +135,70 @@ function saveState(name, state) {
   state.updatedAt = new Date().toISOString()
   const dir = runDir(name)
   writeAtomicState(join(dir, 'state.json'), JSON.stringify(state, null, 2))
+}
+
+function migrationStatus(state) {
+  const nonterminal = Object.values(state.tasks ?? {}).filter(task => !['done', 'skipped'].includes(task.state))
+  const missingMode = !['phase', 'task'].includes(state.plan?.planningMode)
+  const mode = missingMode ? ((state.plan?.phases?.length ?? 0) ? 'phase' : 'task') : state.plan.planningMode
+  const missingWorkflows = mode === 'phase' && (state.plan?.phases ?? []).some(phase => !state.phaseWorkflows?.[phase.id])
+  const structural = missingMode || missingWorkflows
+  const blockers = []
+  if (structural) {
+    for (const task of nonterminal) {
+      const reasons = []
+      if (!['pending', 'failed'].includes(task.state)) reasons.push(`state ${task.state}`)
+      if (task.attempts?.length) reasons.push(`${task.attempts.length} execution attempt(s)`)
+      if (task.discussionAttempts?.some(round => !round.endedAt)) reasons.push('open discussion')
+      if (task.planningAttempts?.some(round => !round.endedAt)) reasons.push('open planning')
+      if (reasons.length) blockers.push(`${task.id}: ${reasons.join(', ')}`)
+    }
+    for (const phase of Object.values(state.phaseWorkflows ?? {})) {
+      if (phase.discussionAttempts?.some(round => !round.endedAt)) blockers.push(`${phase.id}: open phase discussion`)
+      if (phase.planningAttempts?.some(round => !round.endedAt)) blockers.push(`${phase.id}: open phase planning`)
+    }
+  }
+  return { needed: state.schemaVersion !== STATE_SCHEMA_VERSION || structural, structural, mode, blockers }
+}
+
+function migrateState(name, { check = false, quiet = false } = {}) {
+  const state = loadState(name)
+  const status = migrationStatus(state)
+  if (check) {
+    log(status.needed ? `[prumo] run "${name}" needs schema migration to v${STATE_SCHEMA_VERSION}` :
+      `[prumo] run "${name}" already uses schema v${STATE_SCHEMA_VERSION}`)
+    if (status.blockers.length) log(`[prumo] migration blocked by ${status.blockers.join('; ')}`)
+    return status
+  }
+  if (!status.needed) return status
+  if (status.blockers.length) die(`run "${name}" needs migration, blocked by ${status.blockers.join('; ')}`)
+  const dir = runDir(name)
+  const backup = join(dir, `state.pre-migrate-v${STATE_SCHEMA_VERSION}.json`)
+  if (!existsSync(backup)) copyFileSync(join(dir, 'state.json'), backup)
+  const adoptingLegacy = !['phase', 'task'].includes(state.plan.planningMode)
+  state.schemaVersion = STATE_SCHEMA_VERSION
+  state.plan.planningMode = status.mode
+  if (status.mode === 'phase') {
+    state.phaseWorkflows ??= {}
+    for (const phase of state.plan.phases ?? []) {
+      state.phaseWorkflows[phase.id] ??= { id: phase.id, title: phase.title, state: 'pending', discussionAttempts: [], planningAttempts: [], planningHistory: [] }
+      if (adoptingLegacy) state.phaseWorkflows[phase.id].adoptedLegacy = true
+    }
+    if (adoptingLegacy) delete state.legacyPhaseAdoption
+  }
+  for (const task of Object.values(state.tasks)) {
+    if (!adoptingLegacy || ['done', 'skipped'].includes(task.state)) continue
+    task.discussionRequired = true
+    task.discoveryRequired = true
+    task.planningRequired = true
+    task.discussionAttempts ??= []
+    task.planningAttempts ??= []
+    task.planningHistory ??= []
+  }
+  saveState(name, state)
+  emit(name, 'schema_migrate', null, { schemaVersion: STATE_SCHEMA_VERSION, planningMode: status.mode })
+  if (!quiet) log(`[prumo] run "${name}" migrated to schema v${STATE_SCHEMA_VERSION}; backup: ${backup}`)
+  return { ...status, migrated: true, backup }
 }
 
 /* Every mutating command is a read-modify-write of state.json from its OWN short-lived
@@ -515,6 +581,7 @@ const commands = {
       die(`run "${name}" already exists (use --force to overwrite)`)
     mkdirSync(dir, { recursive: true })
     const state = {
+      schemaVersion: STATE_SCHEMA_VERSION,
       run: name,
       plan: {
         name: plan.name,
@@ -543,6 +610,10 @@ const commands = {
         `${state.plan.maxExecutors} executors + 1 review slot (cap ${state.plan.maxParallel})` +
         `${state.plan.requireReview ? ', review REQUIRED before done' : ''} — set as CURRENT`,
     )
+  },
+
+  migrate() {
+    return migrateState(runName(), { check: args.check === true })
   },
 
   'sync-plan'() {
@@ -636,7 +707,8 @@ const commands = {
       if (!existsSync(join(GRAPH_DIR, d, 'state.json'))) continue
       const s = loadState(d)
       const p = progress(s)
-      log(`${d}  ${p.done}/${p.total} done  (updated ${s.updatedAt})`)
+      const migration = migrationStatus(s)
+      log(`${d}  ${p.done}/${p.total} done  (updated ${s.updatedAt})${migration.needed ? '  [migration required]' : ''}`)
     }
   },
 
@@ -1407,5 +1479,10 @@ if (!cmd || !commands[cmd]) {
    takes the run's lock for its whole read-modify-write; validate locks its state updates
    separately so command execution cannot outlive the short lock lease. */
 const READ_ONLY = new Set(['runs', 'status', 'ready', 'graph'])
-if (READ_ONLY.has(cmd) || cmd === 'validate') await commands[cmd]()
+if (!['init', 'runs', 'migrate'].includes(cmd)) {
+  const name = runName()
+  if (migrationStatus(loadState(name)).needed) withLock(name, () => migrateState(name, { quiet: true }))
+}
+if (cmd === 'migrate' && args.check !== true) withLock(runName(), commands[cmd])
+else if (READ_ONLY.has(cmd) || cmd === 'validate' || cmd === 'migrate') await commands[cmd]()
 else withLock(cmd === 'init' ? (args.run ?? die('init needs --run <name>')) : runName(), commands[cmd])

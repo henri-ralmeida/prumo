@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -199,6 +199,56 @@ function phaseFixture(t, tasks, { planningMode = 'phase' } = {}) {
   ok('init', '--plan', planPath, '--run', 'phase-negative')
   return { root, project, plans, plan, planPath, ok, rejects, state, save, events, discovery, writeArtifacts }
 }
+
+test('legacy runs migrate into phase planning without opening work or changing terminal tasks', t => {
+  const f = phaseFixture(t, [
+    { id: 'A', phase: 'F1', title: 'Completed legacy task' },
+    { id: 'B', phase: 'F2', title: 'Pending legacy task' },
+  ])
+  const legacy = f.state()
+  legacy.tasks.A.state = 'done'
+  const completed = structuredClone(legacy.tasks.A)
+  delete legacy.schemaVersion
+  delete legacy.plan.planningMode
+  delete legacy.phaseWorkflows
+  for (const field of ['discussionRequired', 'discoveryRequired', 'planningRequired', 'discussionAttempts', 'planningAttempts', 'planningHistory']) delete legacy.tasks.B[field]
+  f.save(legacy)
+  const statePath = join(f.root, '.specs/graph/phase-negative/state.json')
+  const before = readFileSync(statePath, 'utf8')
+
+  assert.match(f.ok('migrate', '--check').stdout, /needs schema migration/)
+  assert.equal(readFileSync(statePath, 'utf8'), before)
+  assert.match(f.ok('migrate').stdout, /migrated to schema v1/)
+
+  const migrated = f.state()
+  assert.equal(migrated.schemaVersion, 1)
+  assert.equal(migrated.plan.planningMode, 'phase')
+  assert.deepEqual(migrated.tasks.A, completed)
+  assert.equal(migrated.tasks.B.discussionRequired, true)
+  assert.equal(migrated.tasks.B.discoveryRequired, true)
+  assert.equal(migrated.tasks.B.planningRequired, true)
+  assert.equal(migrated.phaseWorkflows.F1.adoptedLegacy, true)
+  assert.equal(migrated.phaseWorkflows.F2.adoptedLegacy, true)
+  assert.equal(migrated.phaseWorkflows.F2.state, 'pending')
+  assert.equal(migrated.phaseWorkflows.F2.discussionAttempts.length, 0)
+  assert.equal(existsSync(join(f.root, '.specs/graph/phase-negative/state.pre-migrate-v1.json')), true)
+})
+
+test('automatic migration refuses active legacy work and preserves its state', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Active legacy task' }])
+  const legacy = f.state()
+  delete legacy.schemaVersion
+  delete legacy.plan.planningMode
+  delete legacy.phaseWorkflows
+  legacy.tasks.A.state = 'running'
+  legacy.tasks.A.attempts = [{ n: 1, agent: 'legacy-executor' }]
+  for (const field of ['discussionRequired', 'discoveryRequired', 'planningRequired']) delete legacy.tasks.A[field]
+  f.save(legacy)
+  const statePath = join(f.root, '.specs/graph/phase-negative/state.json')
+  const before = readFileSync(statePath, 'utf8')
+  f.rejects(/needs migration, blocked by A: state running, 1 execution attempt/, 'status')
+  assert.equal(readFileSync(statePath, 'utf8'), before)
+})
 
 test('material sync invalidates a completed phase discussion before planner dispatch', t => {
   const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Original' }])

@@ -8,7 +8,8 @@ const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.u
 test('current release has concise English update highlights with descriptive subtitles', () => {
   const notes = releaseNotes(version)
   assert.deepEqual(notes.map(section => section.title), [
-    'Fixed — Complete update history'
+    'Fixed — Complete update history',
+    'Added — Automatic legacy run migration'
   ])
   assert.ok(notes.flatMap(section => section.items).includes('Show every missed release when updating across multiple versions'))
   assert.ok(releaseNotes('1.3.2').flatMap(section => section.items).includes('Keep one discussion and one planner when the user names one task'))
