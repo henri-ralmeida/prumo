@@ -732,19 +732,16 @@ function layout(tasks, mode) {
     for (let columns = 1; columns <= maxCapacity; columns++) {
       const candidateHeight = phaseHeight(columns)
       const contentWidth = 2 * PAD + columns * readableNodeW + (columns - 1) * gapX
-      const candidateWidth = Math.max(hubWidth, contentWidth, candidateHeight * availableW / availableH)
+      const candidateWidth = Math.max(hubWidth, contentWidth)
       const scale = Math.min(availableW / candidateWidth, availableH / candidateHeight, 1.25)
       if (readableNodeW * scale >= 68) capacity = columns
     }
   }
   const naturalWidth = 2 * PAD + capacity * readableNodeW + (capacity - 1) * gapX
-  const aspectWidth = usePhase ? phaseHeight(capacity) * availableW / availableH : 0
-  const w = Math.max(hubWidth, Math.floor(viewportWidth), naturalWidth, Math.ceil(aspectWidth))
+  const w = Math.max(hubWidth, naturalWidth)
   const nodeW = usePhase ? readableNodeW : layoutMetrics.nodeW
   const metrics = { ...layoutMetrics, nodeW }
-  const slotX = usePhase && capacity > 1
-    ? (w - 2 * PAD - nodeW) / (capacity - 1)
-    : nodeW + gapX
+  const slotX = nodeW + gapX
   const depth = {}
   const d = (id, seen = new Set()) => {
     if (depth[id] !== undefined) return depth[id]

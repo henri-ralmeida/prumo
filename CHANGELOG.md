@@ -7,7 +7,7 @@ Historical tag and commit corrections are documented in [Release history recover
 - Move central graph-foreman workspaces to `~/.local/share/prumo` only after copying and byte-checking every file; preserve project-local runs and roll back conflicts.
 - Treat a Windows-locked but empty legacy directory as completed data migration, while refusing cleanup if any file remains.
 - Adopt a running legacy dashboard without a saved preference during update and preserve explicit opt-out.
-- Size phase cards and columns from the available canvas so the complete graph opens in view without manual zoom adjustments.
+- Choose phase columns from the available canvas, but grow each phase lane only as far as its task cards require.
 - Expose `prumo migrate [--check] [--run <name>]` through the main CLI.
 
 ## 1.3.4 — 2026-09-14
