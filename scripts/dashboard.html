@@ -618,6 +618,7 @@ const statusLabel = (state) => tr(({ ready_for_discussion: 'ready for discussion
 const taskRole = (state) => ({ discussing: 'orchestrator', planning: 'planner', running: 'executor', reviewing: 'reviewer' })[state]
 const cardLabel = (state) => statusLabel(state) + (taskRole(state) ? ' · ' + tr(taskRole(state)) : '')
 const phaseTaskLabel = (task) => {
+  if (['done', 'skipped'].includes(task.state)) return ''
   const derived = STATE.derived?.[task.id]
   const key = derived?.inputStatus ?? derived?.planningStatus
   return key ? tr(({ phase_discussing: 'phase discussion', phase_planning: 'phase planning', awaiting_phase_plan: 'awaiting phase plan',

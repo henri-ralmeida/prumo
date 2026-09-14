@@ -430,6 +430,7 @@ test('legacy phases adopt sequentially without enabling or mutating another phas
   f.writeArtifacts('F2')
   f.ok('finish-phase-planning', 'F2', '--plan-dir', f.plans)
   assert.equal(JSON.parse(f.ok('graph').stdout).derived.A.effective, 'done')
+  assert.equal(JSON.parse(f.ok('graph').stdout).derived.A.planningStatus, undefined)
   assert.equal(JSON.parse(f.ok('graph').stdout).derived.B.effective, 'ready')
 })
 

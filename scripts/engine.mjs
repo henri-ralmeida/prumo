@@ -518,7 +518,8 @@ export function derive(state) {
       inputStatus = inputs.some(dep => !dep || !['done', 'skipped'].includes(dep.state)) ? 'unresolved_later_phase_input' :
         inputs.some(dep => dep.state === 'skipped') ? 'waived_input' : 'validated_input'
     }
-    out[id] = { ...t, effective, blockedBy, ...(state.plan.planningMode === 'phase' ?
+    const showPlanningStatus = state.plan.planningMode === 'phase' && !['done', 'skipped'].includes(t.state)
+    out[id] = { ...t, effective, blockedBy, ...(showPlanningStatus ?
       { planningStatus, ...(planningBlockedBy.length ? { planningBlockedBy } : {}), ...(inputStatus ? { inputStatus } : {}) } : {}) }
   }
   return out

@@ -128,6 +128,11 @@ test('dashboard selects legacy and central data without writes or translation of
   assert.match(await page.text(), /"pt-BR"/)
   assert.equal((await (await get('/api/events')).json()).events[0].reason, 'done')
   for (const [file, content] of files) assert.equal(readFileSync(file, 'utf8'), content)
+  const planningPath = join(root, '.specs', 'graph', 'planning-demo', 'state.json')
+  const terminal = JSON.parse(readFileSync(planningPath, 'utf8'))
+  terminal.tasks.EXEC.state = 'done'
+  writeFileSync(planningPath, JSON.stringify(terminal))
+  assert.equal((await (await get('/api/state?root=work&run=planning-demo')).json()).derived.EXEC.planningStatus, undefined)
 })
 
 test('global dashboard discovers only known roots, stays read-only, and refreshes without restart', async t => {
