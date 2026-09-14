@@ -1028,10 +1028,10 @@ function render(s, events) {
   const list = Object.values(tasks)
   const by = {}
   for (const t of list) by[eff(t.id)] = (by[eff(t.id)] ?? 0) + 1
-  $('#counts').innerHTML = ['ready_to_plan', 'planning', 'ready', 'running', 'reviewing', 'waiting', 'blocked', 'failed', 'done', 'skipped']
+  $('#counts').innerHTML = ['pending', 'ready_for_discussion', 'discussing', 'ready_to_plan', 'planning', 'ready', 'running', 'reviewing', 'waiting', 'blocked', 'failed', 'done', 'skipped']
     .filter((k) => by[k]).map((k) => k === 'blocked'
       ? `<span class="ask"><span data-i18n="✋ waiting on you">✋ waiting on you</span> <b>${by[k]}</b></span>`
-      : `<span style="color:${ST_COLOR[k]}">${esc(statusLabel(k))} <b>${by[k]}</b></span>`).join('')
+      : `<span style="color:${ST_COLOR[k] ?? 'var(--dim)'}">${esc(statusLabel(k))} <b>${by[k]}</b></span>`).join('')
 
   const { pos, w, h, usePhase, lanes, density, metrics } = layout(tasks, LAYOUT)
   const { nodeW, nodeH } = metrics
@@ -1365,14 +1365,16 @@ function positionPop() {
 }
 let resizeFrame = null
 let viewportWidth = $('#viewport').getBoundingClientRect().width
+let viewportHeight = $('#viewport').getBoundingClientRect().height
 addEventListener('resize', () => {
   if (!SIDEBAR_MANUAL) {
     SIDEBAR_COLLAPSED = innerWidth <= SIDEBAR_BREAKPOINT
     applySidebar()
   }
-  const nextWidth = $('#viewport').getBoundingClientRect().width
-  if (nextWidth === viewportWidth) { positionPop(); return }
+  const { width: nextWidth, height: nextHeight } = $('#viewport').getBoundingClientRect()
+  if (nextWidth === viewportWidth && nextHeight === viewportHeight) { positionPop(); return }
   viewportWidth = nextWidth
+  viewportHeight = nextHeight
   if (resizeFrame != null) return
   resizeFrame = requestAnimationFrame(() => {
     resizeFrame = null
