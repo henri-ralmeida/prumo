@@ -96,7 +96,8 @@ the skill is the DISCIPLINE. Neither replaces the other.
 
 New state lives in `~/.local/share/prumo/<workspace>/.specs/graph/<run>/`, outside project
 repositories. Installation migrates central graph-foreman workspaces there byte-for-byte.
-`PRUMO_HOME` overrides that base; `GRAPH_FOREMAN_HOME` remains supported. Set `PRUMO_ROOT`
+`PRUMO_HOME` overrides that base; `GRAPH_FOREMAN_HOME` only locates legacy data for discovery and migration.
+Stale root references follow a migrated central workspace once its old graph is absent and the new graph exists. Set `PRUMO_ROOT`
 (or legacy `GRAPH_ROOT`) to an existing workspace before running commands. Existing
 project-local `.specs/graph` storage remains usable in place; new project-local storage is
 not created. When cwd is inside an existing workspace, the root may be omitted.
@@ -308,11 +309,11 @@ an opt-out field in the source plan.
 
 Planning has two levels. Global Plan/Spec mode defines and approves the graph. New plans with declared
 phases use one visible principal-chat discussion and one read-only planner per phase. The planner emits
-one separately bound immutable `task-plan-<id>.json` per targeted task. Phases open in declared order
-after every earlier task is terminal. A later phase may open early only when a direct or transitive
-dependency from a nonterminal earlier task reaches one of its members; the whole provider phase is then
-discussed and planned. Task dependencies remain the sole execution authority and do not block planning
-inside an eligible phase. An explicitly named existing task is a hard planning boundary: prerequisites,
+one separately bound immutable `task-plan-<id>.json` per targeted task. A phase opens only when every
+external dependency of every unfinished member is `done` or `skipped`. One blocked member holds the
+entire phase. Internal dependencies gate execution, not planning. Independent phases can be discussed
+and planned in parallel when the user chooses them, regardless of their declared order. Never move tasks
+between phases or remove dependencies to bypass a blocker. An explicitly named existing task is a hard planning boundary: prerequisites,
 evidence gaps and internal deliverables remain inside its single task plan, and adding helper tasks or
 planning siblings requires explicit user approval. The conversation
 loads the global context and known dependency outputs, scouts the phase and asks at least one contextual question. It
@@ -431,10 +432,11 @@ An unrelated listener on port 4949 is never terminated.
 
 ### Effective states
 
-Task `pending` is stored; task readiness is derived from phase order, current planning and dependencies.
-Before a task has a current phase plan, dependencies do not hide its eligible discussion or planning state.
-After planning, incomplete task inputs produce `waiting`. Ineligible later phases include
-`planningBlockedBy` with the earlier nonterminal phase IDs.
+Task `pending` is stored; task readiness is derived from current planning and dependencies.
+Before a task has a current phase plan, any unfinished external dependency of any unfinished member
+blocks discussion and planning for the entire phase. Internal dependencies only gate execution.
+After planning, incomplete task inputs produce `waiting`. Blocked phases include
+`planningBlockedBy` with the external dependency phase IDs (or task IDs for unphased/missing dependencies).
 
 | Effective state | Meaning | Dashboard color |
 | --- | --- | --- |

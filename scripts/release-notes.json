@@ -1,4 +1,11 @@
 {
+  "1.3.8": {
+    "en": [
+      { "title": "Fixed — Dependency-aware phase planning", "items": ["Allow user-selected independent phases to be planned concurrently", "Block the whole phase when any unfinished member has an unfinished external dependency", "Show the blocking dependency phase in the CLI and dashboard"] },
+      { "title": "Fixed — Canonical Prumo storage", "items": ["Keep new central runs in the Prumo store even when legacy settings remain", "Follow stale central root references after verified graph-foreman migration"] },
+      { "title": "Improved — Approved graph integrity", "items": ["Tell agents to preserve phase assignments and dependencies instead of rewriting the graph to bypass blockers"] }
+    ]
+  },
   "1.3.7": {
     "en": [
       { "title": "Fixed — Reliable dashboard restart", "items": ["Recover stale or delayed Windows process identity during update", "Wait for the previous process to stop before starting its replacement", "Allow slower Windows startup without reporting a false failure"] },

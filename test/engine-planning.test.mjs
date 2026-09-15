@@ -200,6 +200,46 @@ function phaseFixture(t, tasks, { planningMode = 'phase' } = {}) {
   return { root, project, plans, plan, planPath, ok, rejects, state, save, events, discovery, writeArtifacts }
 }
 
+test('independent phases plan concurrently by explicit choice without moving tasks', t => {
+  const f = phaseFixture(t, [
+    { id: 'A', phase: 'F1', title: 'First phase' },
+    { id: 'B', phase: 'F2', title: 'Independent phase' },
+    { id: 'C', phase: 'F2', title: 'Internal dependency', deps: ['B'] },
+  ])
+  const source = readFileSync(f.planPath, 'utf8')
+  const derived = JSON.parse(f.ok('graph').stdout).derived
+  for (const id of ['A', 'B', 'C']) assert.equal(derived[id].effective, 'ready_for_discussion')
+  f.ok('begin-phase-discussion', 'F2')
+  assert.equal(f.state().phaseWorkflows.F1.discussionAttempts.length, 0, 'eligibility does not open other phases')
+  f.ok('finish-phase-discussion', 'F2', '--context', f.discovery('F2'))
+  f.ok('plan-phase', 'F2', '--agent', 'planner-f2')
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('plan-phase', 'F1', '--agent', 'planner-f1')
+  for (const id of ['F1', 'F2']) assert.equal(f.state().phaseWorkflows[id].state, 'planning')
+  assert.equal(f.state().tasks.B.phase, 'F2')
+  assert.deepEqual(f.state().tasks.C.deps, ['B'])
+  assert.equal(readFileSync(f.planPath, 'utf8'), source)
+})
+
+test('one external dependency blocks every member until its producer is terminal', t => {
+  const f = phaseFixture(t, [
+    { id: 'A', phase: 'F1', title: 'Producer', touches: ['src/shared'] },
+    { id: 'B', phase: 'F2', title: 'Dependent member', touches: ['src/shared'], deps: ['A'] },
+    { id: 'C', phase: 'F2', title: 'Independent member' },
+  ])
+  for (const state of ['pending', 'running', 'failed', 'blocked', 'done', 'skipped']) {
+    const current = f.state(); current.tasks.A.state = state; f.save(current)
+    const derived = JSON.parse(f.ok('graph').stdout).derived
+    const terminal = ['done', 'skipped'].includes(state)
+    for (const id of ['B', 'C']) {
+      assert.equal(derived[id].effective, terminal ? 'ready_for_discussion' : 'waiting', `${state}: ${id}`)
+      assert.deepEqual(derived[id].planningBlockedBy, terminal ? undefined : ['F1'])
+    }
+    if (!terminal) f.rejects(/F2 waits for external dependencies: F1/, 'begin-phase-discussion', 'F2')
+  }
+})
+
 test('legacy runs migrate into phase planning without opening work or changing terminal tasks', t => {
   const f = phaseFixture(t, [
     { id: 'A', phase: 'F1', title: 'Completed legacy task' },
@@ -388,13 +428,13 @@ test('legacy phase adoption refuses an open task workflow anywhere without mutat
   assert.equal(f.events(), events)
 })
 
-test('legacy phases adopt sequentially without enabling or mutating another phase', t => {
+test('legacy phase adoption waits for external dependencies without mutating another phase', t => {
   const f = phaseFixture(t, [
     { id: 'A', phase: 'F1', title: 'First phase task' },
-    { id: 'B', phase: 'F2', title: 'Second phase task' },
+    { id: 'B', phase: 'F2', title: 'Second phase task', deps: ['A'] },
   ], { planningMode: 'task' })
 
-  f.rejects(/F2 waits for prior phase completion: F1/, 'begin-phase-discussion', 'F2', '--adopt-legacy')
+  f.rejects(/F2 waits for external dependencies: F1/, 'begin-phase-discussion', 'F2', '--adopt-legacy')
   f.ok('begin-phase-discussion', 'F1', '--adopt-legacy')
   const initialSecond = JSON.parse(f.ok('graph').stdout).derived.B
   assert.equal(initialSecond.effective, 'pending')
@@ -560,6 +600,16 @@ test('one phase discussion plans every member atomically while the DAG binds lat
 
   ok('init', '--plan', planPath, '--run', 'phase')
   assert.equal(state().plan.planningMode, 'phase')
+  const blocked = JSON.parse(ok('graph').stdout).derived
+  assert.equal(blocked.A.effective, 'waiting')
+  assert.equal(blocked.C.effective, 'waiting', 'one external dependency blocks the whole phase')
+  assert.equal(blocked.B.effective, 'ready_for_discussion', 'phase numbering does not block a provider')
+  rejects(/F1 waits for external dependencies: F2/, 'begin-phase-discussion', 'F1')
+  discussAndPlan('F2', 'producer-planner')
+  ok('start', 'B', '--agent', 'producer-executor')
+  ok('review', 'B', '--agent', 'producer-reviewer')
+  ok('validate', 'B', '--ok', '--evidence', 'producer output independently validated', '--cwd', project)
+  ok('done', 'B')
   ok('begin-phase-discussion', 'F1')
   assert.deepEqual(state().phaseWorkflows.F1.discussionAttempts.at(-1).targets, ['A', 'C'])
   const wrongPath = discovery('F1'), wrong = JSON.parse(readFileSync(wrongPath, 'utf8'))
@@ -572,23 +622,11 @@ test('one phase discussion plans every member atomically while the DAG binds lat
   rejects(/already has planner/, 'plan-phase', 'F1', '--agent', 'second-planner')
   const before = state(), round = before.phaseWorkflows.F1.planningAttempts.at(-1)
   const binding = { phaseId: 'F1', discussionRoundId: round.discussionRoundId, plannerRound: round.n }
-  writeFileSync(join(plans, 'task-plan-A.json'), JSON.stringify(artifact('A', binding,
-    [{ task: 'B', phase: 'F2', requiredEvidence: 'validated producer output' }])))
+  writeFileSync(join(plans, 'task-plan-A.json'), JSON.stringify(artifact('A', binding)))
   const unchanged = readFileSync(statePath, 'utf8')
   rejects(/task-plan-C|ENOENT/, 'finish-phase-planning', 'F1', '--plan-dir', plans)
   assert.equal(readFileSync(statePath, 'utf8'), unchanged, 'partial artifact batches do not mutate state')
   assert.equal(JSON.parse(ok('graph').stdout).derived.A.effective, 'ready_to_plan')
-  const earlyProducer = JSON.parse(ok('graph').stdout).derived.B
-  assert.equal(earlyProducer.effective, 'ready_for_discussion')
-  assert.equal(earlyProducer.planningBlockedBy, undefined)
-
-  // The producer may finish while the earlier phase planner is still working. Its progress
-  // satisfies the captured unresolved input; it does not stale or rewrite that plan batch.
-  discussAndPlan('F2', 'producer-planner')
-  ok('start', 'B', '--agent', 'producer-executor')
-  ok('review', 'B', '--agent', 'producer-reviewer')
-  ok('validate', 'B', '--ok', '--evidence', 'producer output independently validated', '--cwd', project)
-  ok('done', 'B')
   writeFileSync(join(plans, 'task-plan-C.json'), JSON.stringify(artifact('C', binding)))
   ok('finish-phase-planning', 'F1', '--plan-dir', plans)
   const planned = state()

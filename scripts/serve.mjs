@@ -158,26 +158,18 @@ function phaseTargets(state, phaseId) {
     !(task.taskPlan?.phaseId === phaseId && hasCurrentTaskPlan(state, task)))
 }
 
-function reaches(tasks, from, to, seen = new Set()) {
-  if (from === to) return true
-  if (seen.has(from)) return false
-  seen.add(from)
-  return (tasks[from]?.deps ?? []).some(dep => reaches(tasks, dep, to, seen))
-}
-
 function phasePlanningBlockers(state, phaseId) {
-  const phases = state.plan.phases ?? []
-  const index = phases.findIndex(phase => phase.id === phaseId)
-  if (index <= 0) return []
-  const members = id => Object.values(state.tasks).filter(task => task.phase === id)
-  const earlier = phases.slice(0, index).filter(phase =>
-    members(phase.id).some(task => !['done', 'skipped'].includes(task.state)))
-  if (!earlier.length) return []
-  const targets = members(phaseId)
-  const requiredEarly = earlier.some(phase => members(phase.id)
-    .filter(task => !['done', 'skipped'].includes(task.state))
-    .some(task => targets.some(target => reaches(state.tasks, task.id, target.id))))
-  return requiredEarly ? [] : earlier.map(phase => phase.id)
+  const blockers = new Set()
+  for (const task of Object.values(state.tasks).filter(task => task.phase === phaseId)) {
+    if (['done', 'skipped'].includes(task.state)) continue
+    for (const id of task.deps ?? []) {
+      const dep = state.tasks[id]
+      if (dep?.phase !== phaseId && !['done', 'skipped'].includes(dep?.state)) {
+        blockers.add(dep?.phase ?? id)
+      }
+    }
+  }
+  return [...blockers]
 }
 
 function currentPhaseDiscussion(state, phase) {

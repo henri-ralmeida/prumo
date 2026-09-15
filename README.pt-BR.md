@@ -129,7 +129,7 @@ Não é necessário migrar os dados manualmente. Encerre sessões que estejam ca
 O backup informa o comando de reversão:
 
 ```sh
-bunx @henri-ralmeida/prumo@1.3.7 restore "<diretório-do-backup>"
+bunx @henri-ralmeida/prumo@1.3.8 restore "<diretório-do-backup>"
 ```
 
 A reversão recusa sobrescrever arquivos que você editou depois. Os planos continuam no estado atual: reverter uma instalação não deve apagar trabalho em andamento. Mantenha sua rotina de backup dos dados de negócio; o instalador não captura uma imagem consistente de todos os planos ativos.
@@ -142,7 +142,7 @@ Apresente e aprove o plano global no modo Plan/Spec do ambiente de IA. Se esse m
 
 Na **1.3.2**, há dois níveis de planejamento. O modo Plan/Spec global define e aprova o grafo. Cada fase então segue **discutir → planejar → executar → revisar**: primeiro o orquestrador registra a fase em discussão, pesquisa e faz ao menos uma pergunta contextual na conversa principal. Quando as áreas cinzentas relevantes estão fechadas, um planejador dedicado e somente leitura pesquisa o projeto e grava um `task-plan-<id>.json` separado e imutável para cada tarefa da fase. O planejador não edita arquivos do produto nem o estado do grafo.
 
-As fases são discutidas e planejadas na ordem declarada; a próxima só abre quando todas as tarefas anteriores estiverem concluídas ou puladas. Uma fase produtora posterior pode abrir antes apenas quando uma tarefa anterior não terminal chega até ela por dependência direta ou transitiva. A fase produtora inteira é planejada uma vez, e sua evidência continua não resolvida até a validação independente. Dependências das tarefas bloqueiam executores, não a discussão ou o planejamento da fase elegível. Quando o usuário nomeia explicitamente uma tarefa existente, ela é o limite do planejamento: uma discussão, um planner e nenhuma tarefa auxiliar ou planejamento de irmãs sem aprovação explícita.
+Uma fase fica disponível para discussão e planejamento somente quando todas as dependências externas de todos os membros não concluídos estão concluídas ou puladas. Um membro bloqueado segura a fase inteira; dependências internas bloqueiam apenas execução. O usuário pode escolher fases independentes para planejar em paralelo, independentemente da numeração. Preserve o grafo aprovado em vez de mover tarefas ou remover dependências para contornar bloqueios. Quando o usuário nomeia explicitamente uma tarefa existente, ela é o limite do planejamento: uma discussão, um planner e nenhuma tarefa auxiliar ou planejamento de irmãs sem aprovação explícita.
 
 Resolva `$ENGINE` como `scripts/engine.mjs` dentro da skill Prumo instalada. A passagem completa da fase é:
 
@@ -186,7 +186,7 @@ export PRUMO_ROOT="$PRUMO_HOME/meu-workspace"
 mkdir -p "$PRUMO_ROOT"
 ```
 
-Planos locais preservam o workspace original. `GRAPH_ROOT` e `GRAPH_FOREMAN_HOME` continuam aceitos como compatibilidade explícita. Sem sobrescrever o caminho, a instalação migra o armazenamento central antigo e todos os planos novos usam `~/.local/share/prumo`.
+Planos locais preservam o workspace original. `GRAPH_FOREMAN_HOME` localiza dados antigos para descoberta e migração; não escolhe o destino de planos novos. O armazenamento padrão é `~/.local/share/prumo`, configurável por `PRUMO_HOME`. Referências antigas em `GRAPH_ROOT`/`PRUMO_ROOT` acompanham um workspace central migrado quando o grafo antigo já não existe e o novo está presente.
 
 Claude Code, Kiro e Codex locais, executados pelo mesmo usuário, compartilham a pasta central do Prumo. Os comandos criam as pastas ausentes. O acesso depende das permissões de cada ambiente; sessões na nuvem não compartilham automaticamente os arquivos locais.
 

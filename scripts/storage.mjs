@@ -9,14 +9,7 @@ export function inside(parent, child) {
 
 export function storageHome(env = process.env, home = homedir()) {
   if (env.PRUMO_HOME) return resolve(env.PRUMO_HOME)
-  if (env.GRAPH_FOREMAN_HOME) return resolve(env.GRAPH_FOREMAN_HOME)
-  const current = join(home, '.local', 'share', 'prumo')
-  const legacy = join(home, '.local', 'share', 'graph-foreman')
-  const hasGraphs = path => {
-    try { return readdirSync(path, { withFileTypes: true }).some(entry => entry.isDirectory() && existsSync(join(path, entry.name, '.specs', 'graph'))) }
-    catch { return false }
-  }
-  return resolve(hasGraphs(current) || !hasGraphs(legacy) ? current : legacy)
+  return resolve(join(home, '.local', 'share', 'prumo'))
 }
 
 export function findRoot(env = process.env, cwd = process.cwd(), home = homedir()) {
@@ -24,6 +17,10 @@ export function findRoot(env = process.env, cwd = process.cwd(), home = homedir(
   const explicit = env.PRUMO_ROOT ?? env.GRAPH_ROOT
   if (explicit) {
     const root = resolve(explicit)
+    // Old sessions retain GRAPH_ROOT/PRUMO_ROOT after a verified installation move.
+    const legacy = resolve(env.GRAPH_FOREMAN_HOME ?? join(home, '.local', 'share', 'graph-foreman'))
+    const migrated = join(central, basename(root))
+    if (!existsSync(join(root, '.specs', 'graph')) && dirname(root) === legacy && existsSync(join(migrated, '.specs', 'graph'))) return migrated
     if (!existsSync(root)) throw new Error(`PRUMO_ROOT points to "${root}", which does not exist`)
     if (dirname(root) === central || existsSync(join(root, '.specs', 'graph'))) return root
     throw new Error(`PRUMO_ROOT must be a central workspace inside "${central}" or an existing legacy workspace`)

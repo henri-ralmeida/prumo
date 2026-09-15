@@ -2,6 +2,13 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 1.3.8 — 2026-09-15
+
+- Allow user-selected independent phases to enter discussion and planning concurrently, regardless of phase numbering.
+- Block an entire phase while any unfinished member has an unfinished external dependency, and show the blocking phase in the CLI and dashboard.
+- Tell agents to preserve approved phase assignments and dependencies instead of rewriting the graph to bypass planning blockers.
+- Keep new central runs in `~/.local/share/prumo` and follow stale central root references after verified graph-foreman migration.
+
 ## 1.3.7 — 2026-09-14
 
 - Toggle the dashboard fit button between fitting the complete graph and a centered 100% view.

@@ -43,10 +43,11 @@ Cada execução usa `.specs/graph/<run>/state.json` e `events.ndjson`. `CURRENT`
 
 Há dois níveis. O modo Plan/Spec monta e aprova o grafo global. Runs novas com fases declaradas usam
 uma discussão visível e um planejador somente leitura por fase. O planejador produz um
-`task-plan-<id>.json` imutável e separado para cada tarefa alvo. As fases abrem na ordem declarada após
-todas as tarefas anteriores terminarem. Uma fase posterior só abre antes quando uma dependência direta
-ou transitiva de tarefa anterior não terminal chega a um membro dela; a fase produtora inteira é então
-discutida e planejada. Dependências das tarefas liberam a execução, não o planejamento da fase elegível.
+`task-plan-<id>.json` imutável e separado para cada tarefa alvo. Uma fase só abre quando todas as
+dependências externas de todos os membros não concluídos estão `done` ou `skipped`. Um membro bloqueado
+segura a fase inteira. Dependências internas à fase bloqueiam execução, não planejamento. O usuário pode
+escolher fases independentes para discutir e planejar em paralelo, independentemente da numeração.
+Não mova tarefas de fase nem remova dependências para contornar bloqueios.
 Uma tarefa existente nomeada explicitamente é um limite rígido: pré-requisitos, lacunas de evidência e
 entregas internas permanecem em seu único plano; criar tarefas auxiliares ou planejar irmãs exige aprovação.
 A conversa executa

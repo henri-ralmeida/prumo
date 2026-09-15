@@ -358,9 +358,18 @@ test('central graph-foreman workspaces move to Prumo and restore without changin
   put(join(legacy, relativeEvents), '{"type":"done"}\n')
   const before = [read(join(legacy, relativeState)), read(join(legacy, relativeEvents))]
 
+  assert.equal(storageHome({}, f.home), dirname(migrated), 'new storage never falls back to the legacy store')
+  assert.equal(storageHome({ GRAPH_FOREMAN_HOME: dirname(legacy) }, f.home), dirname(migrated))
+
   const result = f.install()
   assert.deepEqual([read(join(migrated, relativeState)), read(join(migrated, relativeEvents))], before)
   assert.equal(existsSync(legacy), false)
+  for (const rootKey of ['GRAPH_ROOT', 'PRUMO_ROOT']) {
+    assert.equal(findRoot({ [rootKey]: legacy, GRAPH_FOREMAN_HOME: dirname(legacy) }, f.cwd, f.home), migrated)
+  }
+  mkdirSync(legacy, { recursive: true })
+  assert.equal(findRoot({ GRAPH_ROOT: legacy }, f.cwd, f.home), migrated, 'an empty locked legacy directory must not hide migrated runs')
+  assert.throws(() => findRoot({ GRAPH_ROOT: join(dirname(legacy), 'missing') }, f.cwd, f.home), /does not exist/)
 
   restoreInstall(result.backup, { home: f.home, env: {} })
   assert.deepEqual([read(join(legacy, relativeState)), read(join(legacy, relativeEvents))], before)
