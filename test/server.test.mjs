@@ -33,7 +33,7 @@ test('dashboard selects legacy and central data without writes or translation of
     phases: ['PLAN', 'ACTIVE', 'EXEC', 'WAIT'].map(id => ({ id: `F_${id}`, title: id })),
     tasks: ['PLAN', 'ACTIVE', 'EXEC', 'WAIT'].map(id => ({
     phase: `F_${id}`,
-    id, title: id, deps: id === 'PLAN' ? ['ACTIVE'] : id === 'ACTIVE' ? ['EXEC'] : id === 'WAIT' ? ['PLAN'] : [], validationMode: 'inspection',
+    id, title: id, deps: id === 'WAIT' ? ['PLAN'] : [], validationMode: 'inspection',
     inspectionReason: 'Server fixture contains no runtime changes', validation: 'Inspect fixture states',
   })) }))
   const command = (...args) => execFileSync(process.execPath, [engine, ...args], { cwd: root, env: environment, windowsHide: true, encoding: 'utf8' })
@@ -117,6 +117,11 @@ test('dashboard selects legacy and central data without writes or translation of
   assert.deepEqual(Object.fromEntries(Object.entries(planned.derived).map(([id, task]) => [id, task.planningStatus])),
     { PLAN: 'phase_discussing', ACTIVE: 'phase_planning', EXEC: 'planned', WAIT: 'awaiting_phase_plan' })
   assert.equal(planned.derived.WAIT.inputStatus, 'unresolved_later_phase_input')
+  assert.deepEqual(planned.derived.WAIT.planningBlockedBy, ['F_PLAN'])
+  const engineDerived = JSON.parse(command('graph', '--run', 'planning-demo')).derived
+  for (const [id, fields] of Object.entries(planned.derived)) {
+    for (const [key, value] of Object.entries(fields)) assert.deepEqual(value, engineDerived[id][key], `${id}.${key}: dashboard and engine agree`)
+  }
   assert.equal(planned.tasks.EXEC.taskPlan.research[0].findings, 'Fixture states confirmed')
   assert.equal(planned.phaseWorkflows.F_ACTIVE.state, 'planning')
   assert.equal(planned.phaseWorkflows.F_ACTIVE.planner, 'planner-active')

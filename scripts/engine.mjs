@@ -7,7 +7,7 @@
  * The orchestrator (a human or an agent) drives it through this CLI; the dashboard
  * (serve.mjs) only READS the same state — it is observability, never a second brain.
  *
- * State lives under ~/.local/share/graph-foreman/<workspace>/.specs/graph/<run>/:
+ * State lives under ~/.local/share/prumo/<workspace>/.specs/graph/<run>/:
  *   state.json     — the single source of truth (plan snapshot + per-task state)
  *   events.ndjson  — append-only history of every transition (feeds the dashboard log)
  *
@@ -427,22 +427,22 @@ function phaseTargets(state, phaseId) {
 }
 
 function phasePlanningBlockers(state, phaseId) {
-  const phases = state.plan.phases ?? []
-  const index = phases.findIndex(phase => phase.id === phaseId)
-  if (index <= 0) return []
-  const earlier = phases.slice(0, index).filter(phase =>
-    phaseMembers(state, phase.id).some(task => !['done', 'skipped'].includes(task.state)))
-  if (!earlier.length) return []
-  const targets = phaseMembers(state, phaseId)
-  const requiredEarly = earlier.some(phase => phaseMembers(state, phase.id)
-    .filter(task => !['done', 'skipped'].includes(task.state))
-    .some(task => targets.some(target => reaches(state.tasks, task.id, target.id))))
-  return requiredEarly ? [] : earlier.map(phase => phase.id)
+  const blockers = new Set()
+  for (const task of phaseMembers(state, phaseId)) {
+    if (['done', 'skipped'].includes(task.state)) continue
+    for (const id of task.deps ?? []) {
+      const dep = state.tasks[id]
+      if (dep?.phase !== phaseId && !['done', 'skipped'].includes(dep?.state)) {
+        blockers.add(dep?.phase ?? id)
+      }
+    }
+  }
+  return [...blockers]
 }
 
 function assertPhasePlanningOrder(state, phaseId) {
   const blockers = phasePlanningBlockers(state, phaseId)
-  if (blockers.length) die(`${phaseId} waits for prior phase completion: ${blockers.join(', ')}`)
+  if (blockers.length) die(`${phaseId} waits for external dependencies: ${blockers.join(', ')}. Keep the approved phases; complete their dependency tasks first.`)
 }
 
 function phaseContext(state, phaseId, targets = phaseTargets(state, phaseId)) {
@@ -728,7 +728,7 @@ const commands = {
         t.state === 'planning' ? `  @${t.planner} (${tr('planning')})` :
         t.state === 'reviewing' ? `  @${t.reviewer} (review)` : t.agent ? `  @${t.agent}` : ''
       const attempts = t.attempts.length > 1 ? `  (attempt ${t.attempts.length})` : ''
-      const wait = t.effective === 'waiting' ? `  ← ${t.blockedBy.join(',')}` : ''
+      const wait = t.effective === 'waiting' ? `  ← ${(t.planningBlockedBy ?? t.blockedBy).join(',')}` : ''
       console.log(`  ${t.id.padEnd(width)}  ${tr(t.effective).padEnd(8)}${agent}${attempts}${wait}`)
     }
     for (const phase of state.plan.phases) {

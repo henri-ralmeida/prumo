@@ -176,6 +176,17 @@ function graphState(count, phaseCount = 4) {
     derived: Object.fromEntries(Object.keys(tasks).map((id) => [id, { effective: tasks[id].state, blockedBy: [] }])) }
 }
 
+test('waiting cards identify the blocking phase even without their own task dependencies', () => {
+  for (const lang of ['en', 'pt-BR']) {
+    const ui = dashboard(lang)
+    const state = graphState(1, 1)
+    state.tasks.T001.state = 'pending'
+    state.derived.T001 = { effective: 'waiting', blockedBy: [], planningBlockedBy: ['F2'] }
+    ui.render(state)
+    assert.match(ui.nodes.get('#nodes').innerHTML, /← F2/)
+  }
+})
+
 test('dashboard renders separate planning queues, active planner hub and execution readiness in both languages', () => {
   const tasks = {
     P: task('P', 'pending', { planningRequired: true }),

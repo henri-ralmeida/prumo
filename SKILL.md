@@ -80,7 +80,7 @@ inside a central workspace, `PRUMO_ROOT` may be omitted. Never add `.specs/` to 
 Plans live in `$PRUMO_ROOT/.specs/graph/plans/<name>.plan.json`. Translation is mechanical;
 three fields carry judgment:
 
-- **`deps` orders execution.** Phase discussion and planning may happen before dependencies finish;
+- **`deps` orders execution and external phase inputs.** Internal phase dependencies may finish after planning;
   a task becomes ready to execute only with a current task plan and every dep `done` or `skipped`. Anything that must not run in parallel is a dep chain — migrations serialize
   because each depends on the last, not because the engine knows what a migration is. A dep
   added "to be safe" costs parallelism; one omitted hands two agents the same file.
@@ -92,6 +92,13 @@ three fields carry judgment:
 - **`touches` lists the path prefixes the task writes.** `init` refuses two parallel tasks with
   overlapping paths, catching the collision while it is still a planning mistake. Optional;
   omitting it leaves the dep chain as the only guard.
+
+Missing `touches` means unknown write scope, not proof that work is independent. Inspect `ready`,
+the task dependencies and the phase planning blockers before describing a task as runnable.
+Never move tasks into an earlier phase, remove dependencies, disable planning gates or change
+configuration merely to make the dashboard show readiness. Preserve the approved graph and explain
+the blocker. A user-approved scheduling change must update the source plan coherently and pass
+`sync-plan`; a failed synchronization is not permission to edit persisted state directly.
 
 A task is **isolated in space, ordered in time**.
 
@@ -160,12 +167,13 @@ node $ENGINE done T4
 ### Two planning levels
 
 Global Plan/Spec mode defines and approves the graph. For new phased runs, each phase follows
-**one discussion → one read-only planner → separate immutable plans per task**. Process phases in declared
-order: a later phase cannot begin discussion or planning until every task in each earlier phase is
-`done` or `skipped`. The only exception is a later phase reached through a direct or transitive dependency
-of a nonterminal earlier task; discuss and plan that whole provider phase early, while its evidence remains
-an unresolved input until independently validated. Member dependencies never delay their own phase
-discussion or planning; the task DAG decides when each executor can start.
+**one discussion → one read-only planner → separate immutable plans per task**. A phase can begin discussion
+or planning only when every external dependency of every unfinished member is `done` or `skipped`.
+One blocked member blocks the whole phase, including members without dependencies. Internal dependencies
+within the same phase gate execution, not phase planning. Phase numbering alone never blocks independent
+phases. The user chooses which eligible phases to plan, including multiple phases in parallel; eligibility
+does not authorize opening all phases automatically. Keep the approved phase assignments and dependency
+chains. Overlapping `touches` must be resolved through the approved dependency graph, not by moving tasks.
 
 Before dispatching the planner, the orchestrator runs an agnostic discovery protocol in the principal
 Codex, Claude Code or Kiro conversation. Load the global plan, settled decisions and dependency outputs;

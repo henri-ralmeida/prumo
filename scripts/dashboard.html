@@ -1080,7 +1080,8 @@ function render(s, events) {
     const badge = sub2 === 'validated' ? ' <span class="vbadge ok"><span data-i18n="✓ validated">✓ validated</span></span>'
       : sub2 === 'valfail' ? ` <span class="vbadge bad"><span data-i18n="${e === 'reviewing' ? '✗ rejected' : '✗ rework'}">${e === 'reviewing' ? '✗ rejected' : '✗ rework'}</span></span>` : ''
     const phaseLabel = phaseTaskLabel(t)
-    const sub = `<span class="${active ? 'ag' : ''}">${esc(cardLabel(e))}</span>${active && !badge ? working : badge}${e === 'waiting' ? ` ← ${esc(s.derived[t.id].blockedBy.join(','))}` : ''}${phaseLabel ? `<span class="phase-task-state">${esc(phaseLabel)}</span>` : ''}`
+    const waitingOn = (s.derived[t.id].planningBlockedBy ?? s.derived[t.id].blockedBy ?? []).join(',')
+    const sub = `<span class="${active ? 'ag' : ''}">${esc(cardLabel(e))}</span>${active && !badge ? working : badge}${e === 'waiting' ? ` ← ${esc(waitingOn)}` : ''}${phaseLabel ? `<span class="phase-task-state">${esc(phaseLabel)}</span>` : ''}`
     const retry = t.attempts.length > 1 ? ` ↻${t.attempts.length}` : ''
     const run = t.attempts.at(-1)
     const clock = e === 'planning' ? t.planningAttempts?.at(-1)?.startedAt : e === 'reviewing' ? run?.reviewStartedAt : e === 'running' ? run?.startedAt : null
