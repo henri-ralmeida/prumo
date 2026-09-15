@@ -2,6 +2,31 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 1.3.9 — 2026-09-15
+
+### Fixed — Persistent Windows dashboard
+
+- Launch the Windows Startup fallback with the configured environment and a stable working directory.
+- Resolve and persist the actual server PID across activation, login and restart, accepting equivalent Windows path spelling while verifying process ownership.
+- Bound process discovery and include the actual startup or restart error in CLI failures.
+
+### Fixed — Dashboard failure recovery
+
+- Keep healthy runs accessible when another graph directory is damaged or an update temporarily removes the dashboard page.
+- Keep workspace auto-sync alive across incomplete state writes and retry synchronization failures.
+- Report the version loaded at process startup instead of reading a newer package version into an older running process.
+
+### Fixed — Complete harness updates
+
+- Report invalid installation markers, continue updating independent harnesses and refuse to report overall success after a partial failure.
+- Treat empty configuration and storage variables as unset, avoiding a false migration conflict with the current directory.
+
+### Fixed — Dashboard filters and zoom
+
+- Show matching tasks across all phases, compact empty lanes and include direct dependencies only when requested.
+- Reveal a filtered-out task when opening its details from another panel.
+- Preserve zoom and pan when opening or closing the legend.
+
 ## 1.3.8 — 2026-09-15
 
 - Allow user-selected independent phases to enter discussion and planning concurrently, regardless of phase numbering.

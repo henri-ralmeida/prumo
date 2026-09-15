@@ -463,6 +463,22 @@ test('saved language persists during a subsequent install or doctor without --la
   assert.equal(installationStatus(again).configured, true)
 })
 
+test('empty directory settings use the canonical defaults instead of the current directory', t => {
+  for (const harness of ['claude', 'kiro', 'codex']) {
+    const f = fixture(t, harness)
+    const env = { PRUMO_HOME: '', GRAPH_FOREMAN_HOME: '', CLAUDE_CONFIG_DIR: '', CODEX_HOME: '', KIRO_HOME: '' }
+    const plan = f.plan({ env })
+    assert.equal(plan.config, f.config)
+    assert.equal(storageHome(env, f.home), join(f.home, '.local/share/prumo'))
+    assert.ok(plan.groups.every(group => !group.conflicts.length))
+    assert.ok(applyInstall(plan).groups.every(group => group.status !== 'conflict'))
+    const migrated = join(f.home, '.local/share/prumo/work')
+    put(join(migrated, '.specs/graph/CURRENT'), 'example')
+    const old = join(f.home, '.local/share/graph-foreman/work')
+    assert.equal(findRoot({ ...env, PRUMO_ROOT: '', GRAPH_ROOT: old }, f.cwd, f.home), migrated)
+  }
+})
+
 test('rollback restores committed files when a later write fails; subsequent edits are protected', t => {
   const f = fixture(t)
   const first = join(f.home, 'first')

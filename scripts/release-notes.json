@@ -1,4 +1,12 @@
 {
+  "1.3.9": {
+    "en": [
+      { "title": "Fixed — Persistent Windows dashboard", "items": ["Start the Windows fallback through its registered Startup launcher with the configured environment", "Resolve and save the real server process after activation and update restart", "Bound process discovery and report the actual restart failure"] },
+      { "title": "Fixed — Dashboard failure recovery", "items": ["Keep serving healthy runs when a workspace or an update file is temporarily unreadable", "Recover auto-sync after incomplete state writes or failed synchronization", "Report the loaded server version until the process actually restarts"] },
+      { "title": "Fixed — Complete harness updates", "items": ["Report damaged installation markers without silently skipping an installed harness", "Continue independent harness updates while reporting partial failure", "Treat empty storage settings as unset instead of migrating the current directory"] },
+      { "title": "Fixed — Dashboard filters and zoom", "items": ["Show matching cards across every phase and compact empty lanes", "Reveal filtered-out tasks when opening their details", "Preserve zoom and pan when toggling the legend"] }
+    ]
+  },
   "1.3.8": {
     "en": [
       { "title": "Fixed — Dependency-aware phase planning", "items": ["Allow user-selected independent phases to be planned concurrently", "Block the whole phase when any unfinished member has an unfinished external dependency", "Show the blocking dependency phase in the CLI and dashboard"] },

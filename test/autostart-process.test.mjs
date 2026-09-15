@@ -20,13 +20,21 @@ test('Windows Startup launches and restarts a real isolated dashboard process', 
   writeFileSync(script, `process.argv[process.argv.indexOf('--port') + 1] = '${port}';\nawait import(${JSON.stringify(new URL('../scripts/serve.mjs', import.meta.url).href)});\n`)
   const env = { ...process.env, HOME: home, USERPROFILE: home, PRUMO_HOME: join(home, 'data'),
     APPDATA: join(home, 'AppData/Roaming'), PRUMO_ROOT: '', GRAPH_ROOT: '', GRAPH_FOREMAN_HOME: '', PRUMO_LANG: 'en' }
-  const options = { home, script, packageRoot: fileURLToPath(new URL('..', import.meta.url)), env,
+  // Exercise the default launcher with an existing fallback registration, no injected exec.
+  const preferencePath = join(home, '.local/share/prumo/dashboard.json')
+  mkdirSync(join(home, '.local/share/prumo'), { recursive: true })
+  writeFileSync(preferencePath, JSON.stringify({ enabled: true, mechanism: 'windows-startup' }))
+  const options = { home, script: script.replaceAll('\\', '/'), packageRoot: fileURLToPath(new URL('..', import.meta.url)), env,
     readinessAttempts: 100, readinessInterval: 50,
-    // Only registration denial is simulated. Process launch, ownership, HTTP and restart are real.
-    exec: () => ({ status: 5, stdout: '', stderr: 'isolated scheduler denial' }),
     fetch: (url, init) => fetch(String(url).replace(':4949/', `:${port}/`), init),
     portAvailable: async () => true }
   const pids = new Set()
+  // Track even a process whose ownership registration fails, so failures cannot leak it.
+  options.fetch = async (url, init) => {
+    const response = await fetch(String(url).replace(':4949/', `:${port}/`), init)
+    if (response.ok) { const body = await response.clone().json(); if (body.pid) pids.add(body.pid) }
+    return response
+  }
   t.after(() => {
     for (const pid of pids) try { process.kill(pid) } catch {}
     assert.ok(home.startsWith(join(tmpdir(), 'prumo startup process-')))
@@ -51,13 +59,24 @@ test('Windows Startup launches and restarts a real isolated dashboard process', 
   assert.notEqual(preference().pid, firstPid)
   assert.equal((await (await fetch(`http://127.0.0.1:${port}/api/runs`)).json()).runs.length, 1)
   // Invoke the exact per-user login entry without rebooting or touching the real Startup folder.
-  process.kill(preference().pid)
-  await setTimeout(100)
+  const stoppedPid = preference().pid
+  process.kill(stoppedPid)
+  let stopped = false
+  for (let attempt = 0; attempt < 100 && !stopped; attempt++) {
+    try { await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(500) }) }
+    catch { stopped = true }
+    if (!stopped) await setTimeout(50)
+  }
+  assert.equal(stopped, true, 'wait for the previous server to release its port before simulating login')
   const entry = join(env.APPDATA, 'Microsoft/Windows/Start Menu/Programs/Startup/Prumo Dashboard.vbs')
   execFileSync('cscript.exe', ['//B', '//Nologo', entry], { env, windowsHide: true, timeout: 10000 })
   let loginReady = false
   for (let attempt = 0; attempt < 100 && !loginReady; attempt++) {
-    try { loginReady = (await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(500) })).ok } catch {}
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(500) })
+      const body = await response.json()
+      if (body.pid && body.pid !== stoppedPid) { pids.add(body.pid); loginReady = response.ok }
+    } catch {}
     if (!loginReady) await setTimeout(50)
   }
   assert.equal(loginReady, true, 'the login entry itself must launch the dashboard before enable repairs anything')

@@ -92,6 +92,40 @@ test('update rejects malformed requests before applying installations', () => {
   assert.deepEqual(state, { running: false, version: '1.0.7', packageRoot: join(source, '@henri-ralmeida', 'prumo') })
 })
 
+test('update reports a corrupt harness marker and still updates the other installed harnesses', t => {
+  const home = mkdtempSync(join(realpathSync(tmpdir()), 'prumo-partial-update-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
+  const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CONFIG_DIR: join(home, '.claude'),
+    KIRO_HOME: join(home, '.kiro'), CODEX_HOME: join(home, '.codex'), PRUMO_HOME: join(home, 'data'),
+    GRAPH_ROOT: '', PRUMO_ROOT: '', GRAPH_FOREMAN_HOME: '', PRUMO_LANG: 'en' }
+  const markers = []
+  for (const harness of ['claude', 'kiro', 'codex']) {
+    const plan = planInstall({ harness, home, cwd: home, env })
+    assert.ok(applyInstall(plan).groups.every(g => g.status !== 'conflict'))
+    const marker = join(plan.groups.find(g => g.name.startsWith('skill:')).snapshots[0], '.prumo-install.json')
+    markers.push(marker)
+    put(marker, { ...JSON.parse(read(marker)), version: '1.0.8' })
+    put(join(dirname(marker), 'scripts/engine.mjs'), '// old version')
+  }
+  put(markers[0], '{broken marker')
+  put(join(home, '.local/share/prumo/dashboard.json'), { enabled: false, mechanism: process.platform === 'win32' ? 'schtasks' : process.platform === 'darwin' ? 'launchd' : 'xdg' })
+  const result = spawnSync(process.execPath, [join(source, 'bin/prumo.mjs'), '_update'], {
+    cwd: home, env: { ...env, PRUMO_UPDATE_REQUEST: JSON.stringify({ dryRun: false, cwd: home, projects: [], updateCli: false }) },
+    encoding: 'utf8', windowsHide: true, timeout: 120000,
+  })
+  assert.equal(result.status, 2, result.stdout + result.stderr)
+  assert.match(result.stderr, /Invalid Prumo installation marker.*claude/)
+  assert.doesNotMatch(result.stdout, /Prumo updated successfully/)
+  assert.equal(read(markers[0]), '{broken marker')
+  for (const marker of markers.slice(1)) {
+    assert.equal(JSON.parse(read(marker)).version, version)
+    assert.equal(read(join(dirname(marker), 'scripts/engine.mjs')), read(join(source, 'scripts/engine.mjs')))
+  }
+  rmSync(markers[0])
+  assert.throws(() => discoverInstallations({ home, cwd: home, env }), /Invalid Prumo installation marker/,
+    'a missing marker in a registered installation must not silently remove that harness either')
+})
+
 test('update preserves dashboard preference and adopts a running unconfigured legacy dashboard', async () => {
   const calls = []
   const restart = async options => { calls.push(options); return { ok: true } }
