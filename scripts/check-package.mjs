@@ -14,9 +14,7 @@ assert.equal(pkg.engines.node, '>=22')
 assert.equal(pkg.dependencies, undefined)
 const releaseNotes = JSON.parse(readFileSync(join(root, 'scripts', 'release-notes.json'), 'utf8'))
 assert.deepEqual(releaseNotes[pkg.version]?.en?.map(section => section.title), [
-  'Fixed — Dependency-aware phase planning',
-  'Fixed — Canonical Prumo storage',
-  'Improved — Approved graph integrity'
+    'Fixed — Persistent Windows dashboard', 'Fixed — Dashboard failure recovery', 'Fixed — Complete harness updates', 'Fixed — Dashboard filters and zoom'
 ])
 assert.equal(releaseNotes[pkg.version]?.['pt-BR'], undefined)
 for (const file of ['SKILL.md', 'README.md', 'README.pt-BR.md', 'CHANGELOG.md', 'LICENSE', 'references/po-first.md', 'references/runtime.md', 'references/runtime.pt-BR.md']) assert.ok(existsSync(join(root, file)), file)

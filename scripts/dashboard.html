@@ -535,7 +535,13 @@ function toggleSidebar() {
     history.replaceState({ ...state, [SIDEBAR_STORAGE_KEY]: SIDEBAR_COLLAPSED }, '')
   }
   applySidebar()
-  requestAnimationFrame(() => { if (STATE) { render(STATE, EVENTS); fitView() } positionPop() })
+  requestAnimationFrame(() => {
+    const viewport = $('#viewport').getBoundingClientRect()
+    viewportWidth = viewport.width
+    viewportHeight = viewport.height
+    if (STATE) render(STATE, EVENTS)
+    positionPop()
+  })
 }
 
 function apiUrl(path) {
@@ -692,7 +698,7 @@ function setFilter(filter) {
   FOCUS = null
   try { localStorage.setItem('graphFilter', FILTER) } catch { /* private mode */ }
   applyFilter(true)
-  applyFocus()
+  if (STATE) { render(STATE, EVENTS); fitView() }
 }
 
 function toggleDependencies() {
@@ -700,7 +706,7 @@ function toggleDependencies() {
   FOCUS = null
   try { localStorage.setItem('graphDependencies', String(SHOW_DEPS)) } catch { /* private mode */ }
   applyFilter(true)
-  applyFocus()
+  if (STATE) { render(STATE, EVENTS); fitView() }
 }
 
 /** Transitive ancestors + descendants of a node — what "related to what" means here. */
@@ -718,7 +724,7 @@ function lineage(id) {
 /** Bands are PHASES by default — that is how the plan was authored. `depth` mode keeps
  *  longest-path layering. Barycentre sweeps preserve the useful dependency-aware order;
  *  each band then wraps that order to the available viewport width. */
-function layout(tasks, mode) {
+function layout(tasks, mode, hideEmpty = false) {
   const ids = Object.keys(tasks)
   const density = ids.length <= 24 ? 'detailed' : ids.length <= 100 ? 'compact' : 'dense'
   const baseMetrics = DENSITY_METRICS[density]
@@ -750,6 +756,7 @@ function layout(tasks, mode) {
   const slotX = nodeW + gapX
   const depth = {}
   const d = (id, seen = new Set()) => {
+    if (!tasks[id]) return 0
     if (depth[id] !== undefined) return depth[id]
     if (seen.has(id)) return 0
     seen.add(id)
@@ -802,7 +809,7 @@ function layout(tasks, mode) {
     }
   }
   const pos = {}
-  const groupKeys = usePhase
+  const groupKeys = usePhase && !hideEmpty
     ? Array.from({ length: Math.max(phases.length, (colKeys.at(-1) ?? -1) + 1) }, (_, i) => i)
     : colKeys
   const lanes = []
@@ -1051,7 +1058,9 @@ function render(s, events) {
       ? `<span class="ask"><span data-i18n="✋ waiting on you">✋ waiting on you</span> <b>${by[k]}</b></span>`
       : `<span style="color:${ST_COLOR[k] ?? 'var(--dim)'}">${esc(statusLabel(k))} <b>${by[k]}</b></span>`).join('')
 
-  const { pos, w, h, usePhase, lanes, density, metrics } = layout(tasks, LAYOUT)
+  const { allowed } = filterSets(tasks)
+  const visibleTasks = Object.fromEntries(Object.entries(tasks).filter(([id]) => allowed.has(id)))
+  const { pos, w, h, usePhase, lanes, density, metrics } = layout(visibleTasks, LAYOUT, FILTER !== 'all')
   const { nodeW, nodeH } = metrics
   const canvas = $('#canvas')
   canvas.dataset.density = density
@@ -1071,7 +1080,7 @@ function render(s, events) {
 
   // nodes — a running task also tells WHERE it is in the loop: agent still working
   // (typing dots + orbit), validation failed (rework), or validated and awaiting `done`
-  $('#nodes').innerHTML = list.map((t) => {
+  $('#nodes').innerHTML = list.filter(t => allowed.has(t.id)).map((t) => {
     const e = eff(t.id)
     const p = pos[t.id]
     const sub2 = subState(t)
@@ -1196,6 +1205,7 @@ function render(s, events) {
     ? tr('planning {0}: {1}', planningNow.length, planningNow.map((t) => t.id).join(', ')) : tr('idle')
   for (const t of planningNow) {
     const b = pos[t.id]
+    if (!b) continue
     const x1 = px + ORCH_W / 2, y1 = PAD + ORCH_H
     const x2 = b.x + nodeW / 2, y2 = b.y - 4
     const bend = Math.max(30, (y2 - y1) * 0.45)
@@ -1299,12 +1309,12 @@ function render(s, events) {
   }
 
   localize()
-  applyFilter()
+  applyFilter(true)
   applyFocus()
   if (!fitted) { fitted = true; fitView() } else applyView()
 }
 
-/** Filtering changes presentation only: every task keeps its original graph position. */
+/** Filter the view, never the persisted task graph or its run-wide counters. */
 function applyFilter(closeExcluded = false) {
   if (!STATE) return
   const { matches, allowed } = filterSets(STATE.tasks)
@@ -1615,6 +1625,8 @@ function jumpTo(id) {
 function openPop(id, pinned) {
   if (suppressClick) { suppressClick = false; return }
   if (drag?.moved) return
+  if (!STATE?.tasks[id]) return
+  if (!filterSets(STATE.tasks).allowed.has(id)) setFilter('all')
   clearTimeout(dwellTimer)
   clearTimeout(closeTimer)
   POP = { id, pinned: pinned || (POP?.id === id && POP.pinned) }

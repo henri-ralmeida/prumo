@@ -153,6 +153,12 @@ function dashboard(lang = 'en', width = 1000, session = new Map(), navigation = 
     nodes, labels, cards, paths,
     run(code, values = {}) { Object.assign(context, values); return runInContext(code, context) },
     render(state, events = []) { this.run('STATE = input; render(STATE, inputEvents)', { input: state, inputEvents: events }) },
+    flushFrame(nextWidth = viewportWidth) {
+      viewportWidth = nextWidth
+      const callback = animationFrame
+      animationFrame = null
+      callback?.()
+    },
     resize(nextWidth, nextHeight = viewportHeight) {
       viewportWidth = nextWidth
       viewportHeight = nextHeight
@@ -324,7 +330,7 @@ test('status filters use effective state and add only direct dependency context'
     { inputFilter: filter, inputDeps: deps })
   const card = (id) => ui.cards.find((node) => node.dataset.id === id)
   const edge = (from, to) => ui.paths.find((path) => path.dataset.from === from && path.dataset.to === to)
-  const hidden = (from, to) => edge(from, to).classList.contains('filter-hidden')
+  const hidden = (from, to) => !edge(from, to) || edge(from, to).classList.contains('filter-hidden')
   const expected = {
     done: ['A'], incomplete: ['B', 'C', 'D', 'E', 'F', 'K', 'L', 'P', 'R', 'U'], waiting: ['C'],
     ready_to_plan: ['P'], planning: ['L'], ready: ['E'], running: ['B'], reviewing: ['R'],
@@ -338,11 +344,11 @@ test('status filters use effective state and add only direct dependency context'
   assert.equal(ui.cards.length, Object.keys(tasks).length)
   for (const endpoints of [['A', 'B'], ['B', 'C'], ['C', 'D'], ['__orch', 'B'], ['__plan', 'L'], ['R', '__rev']])
     assert.ok(edge(...endpoints), endpoints.join(' → '))
-  const positions = Object.fromEntries(ui.cards.map((node) => [node.dataset.id, [node.style.left, node.style.top]]))
+  const originalState = JSON.stringify(state)
 
   ui.run("setFilter('running')")
   assert.equal(card('B').classList.contains('filtered-out'), false)
-  assert.equal(card('A').classList.contains('filtered-out'), true)
+  assert.equal(card('A'), undefined)
   assert.equal(ui.nodes.get('#depsBtn').textContent, 'dependencies off')
   assert.equal(ui.nodes.get('#depsBtn').getAttribute('aria-pressed'), 'false')
   assert.equal(ui.nodes.get('#filterCount').textContent, 'filter results 1/12')
@@ -359,18 +365,18 @@ test('status filters use effective state and add only direct dependency context'
   assert.equal(ui.nodes.get('#depsBtn').textContent, 'dependencies on')
   assert.equal(ui.nodes.get('#depsBtn').getAttribute('aria-pressed'), 'true')
   for (const id of ['A', 'B', 'C']) assert.equal(card(id).classList.contains('filtered-out'), false, id)
-  assert.equal(card('D').classList.contains('filtered-out'), true)
+  assert.equal(card('D'), undefined)
   assert.equal(hidden('A', 'B'), false)
   assert.equal(hidden('B', 'C'), false)
   assert.equal(hidden('C', 'D'), true)
-  assert.deepEqual(Object.fromEntries(ui.cards.map((node) => [node.dataset.id, [node.style.left, node.style.top]])), positions)
+  assert.equal(JSON.stringify(state), originalState, 'filtering must not rewrite any task or dependency')
 
   ui.run("FOCUS = 'B'; applyFocus()")
   assert.deepEqual(ui.cards.filter((node) => node.classList.contains('lit')).map((node) => node.dataset.id).sort(), ['A', 'B', 'C'])
   assert.equal(card('B').classList.contains('lit-self'), true)
   assert.equal(edge('A', 'B').classList.contains('lit'), true)
   assert.equal(edge('B', 'C').classList.contains('lit'), true)
-  assert.equal(edge('C', 'D').classList.contains('lit'), false)
+  assert.equal(edge('C', 'D'), undefined)
 
   ui.run("setFilter('planning')")
   assert.equal(hidden('__plan', 'L'), false)
@@ -378,6 +384,13 @@ test('status filters use effective state and add only direct dependency context'
   ui.run("setFilter('reviewing')")
   assert.equal(hidden('R', '__rev'), false)
   assert.equal(hidden('__plan', 'L'), true)
+  ui.run("openTask('R')")
+  const completed = structuredClone(state)
+  completed.tasks.R.status = 'done'
+  completed.derived.R.effective = 'done'
+  ui.render(completed)
+  assert.equal(ui.run('POP'), null, 'live status changes close details when the card leaves the filter')
+  assert.equal(card('R'), undefined)
 })
 
 test('filter controls expose every state and localize labels and dependency toggle', () => {
@@ -389,6 +402,44 @@ test('filter controls expose every state and localize labels and dependency togg
     for (const label of labels) assert.ok(ui.labels.some((node) => node.textContent === label), `${lang}: ${label}`)
     assert.equal(ui.nodes.get('#depsBtn').textContent, lang === 'en' ? 'dependencies off' : 'dependências desligadas')
     assert.equal(ui.nodes.get('#filterCount').textContent, lang === 'en' ? 'filter results 0/0' : 'resultado do filtro 0/0')
+  }
+})
+
+test('filters compact matching tasks from distant phases and restore the full graph', () => {
+  const ui = dashboard('pt-BR')
+  const tasks = { A: task('A', 'pending', { phase: 'F0' }), B: task('B', 'pending', { phase: 'F1', deps: ['A'] }),
+    C: task('C', 'pending', { phase: 'F7' }) }
+  const state = { run: 'phase-filter', plan: { phases: Array.from({ length: 8 }, (_, i) => ({ id: `F${i}`, title: `Phase ${i}` })) }, tasks,
+    derived: { A: { effective: 'ready_for_discussion' }, B: { effective: 'waiting', blockedBy: ['A'] }, C: { effective: 'ready_for_discussion' } } }
+  ui.render(state)
+  const fullHeight = ui.run('CANVAS_H')
+  ui.run("setFilter('ready_for_discussion')")
+  assert.deepEqual(ui.cards.map(card => card.dataset.id), ['A', 'C'])
+  assert.match(ui.nodes.get('#lanes').innerHTML, /F0/)
+  assert.match(ui.nodes.get('#lanes').innerHTML, /F7/)
+  assert.doesNotMatch(ui.nodes.get('#lanes').innerHTML, /F1|F6/)
+  assert.ok(ui.run('CANVAS_H') < fullHeight)
+  ui.run("setFilter('waiting')")
+  assert.deepEqual(ui.cards.map(card => card.dataset.id), ['B'])
+  ui.run("setFilter('done')")
+  assert.equal(ui.cards.length, 0)
+  assert.equal(ui.nodes.get('#lanes').innerHTML, '')
+  ui.run("setFilter('all')")
+  assert.deepEqual(ui.cards.map(card => card.dataset.id), ['A', 'B', 'C'])
+})
+
+test('opening and closing the legend preserves fit, actual and manual zoom', () => {
+  for (const setup of ['', 'toggleFitView()', 'zoomAt(100, 100, 1.4)']) {
+    const ui = dashboard('en', 1000)
+    ui.render(graphState(30))
+    if (setup) ui.run(setup)
+    const before = ui.run('JSON.stringify({ view: VIEW, mode: VIEW_MODE })')
+    ui.run('toggleSidebar()')
+    ui.flushFrame(1330)
+    assert.equal(ui.run('JSON.stringify({ view: VIEW, mode: VIEW_MODE })'), before)
+    ui.run('toggleSidebar()')
+    ui.flushFrame(1000)
+    assert.equal(ui.run('JSON.stringify({ view: VIEW, mode: VIEW_MODE })'), before)
   }
 })
 
@@ -439,6 +490,7 @@ test('resize relayout preserves state and refits the board to the live viewport'
   const state = graphState(48)
   ui.render(state)
   ui.run("setFilter('running'); toggleDependencies(); openTask('T013'); FOCUS = 'T013'; SELECTED_RUN = 'fixture-48'; Object.assign(VIEW, { x: 91, y: -37, k: .8 })")
+  assert.equal(ui.run('FILTER'), 'all', 'opening a filtered-out task reveals its card and popover anchor')
   const before = JSON.parse(ui.run("JSON.stringify({ filter: FILTER, deps: SHOW_DEPS, pop: POP, focus: FOCUS, selected: SELECTED_RUN, layout: LAYOUT, fitted, view: VIEW, h: CANVAS_H, pos: LAST_POS })"))
   const beforeAnchor = JSON.parse(ui.run("JSON.stringify(document.querySelector('.node[data-id=\\\"T013\\\"]')?.getBoundingClientRect())"))
   ui.resize(700)

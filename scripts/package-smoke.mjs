@@ -75,6 +75,11 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
   const originalSpawn = childProcess.spawn
   childProcess.execFileSync = (file, args, options) => {
     const name = String(file).toLowerCase()
+    if (name === 'wscript.exe') {
+      appendFileSync(${JSON.stringify(autoEvents)}, JSON.stringify(['wscript', args, options?.cwd]) + '\\n')
+      running = true
+      return ''
+    }
     if (name.endsWith('powershell.exe') && args.at(-1).includes("Name = 'node.exe'")) return '49490'
     if (name.endsWith('powershell.exe') && args.at(-1).includes('ProcessId = 49490')) {
       const script = join(dirname(process.argv[1]), '..', 'scripts', 'serve.mjs')
@@ -105,7 +110,7 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
   })
   globalThis.fetch = async () => {
     if (!running) throw new Error('stopped')
-    return { ok: true, json: async () => ({ product: 'prumo', version: '1.3.0', mode: 'global', readOnly: true }) }
+    return { ok: true, json: async () => ({ product: 'prumo', version: ${JSON.stringify(version)}, mode: 'global', readOnly: true }) }
   }
   syncBuiltinESMExports()
 }
@@ -113,6 +118,7 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
   const autoEnv = { ...env, HOME: autoHome, USERPROFILE: autoHome, CODEX_HOME: join(autoHome, '.codex'),
     APPDATA: join(autoHome, 'AppData', 'Roaming'), LOCALAPPDATA: join(autoHome, 'AppData', 'Local'),
     PRUMO_HOME: join(autoHome, 'data'), npm_config_prefix: autoPrefix,
+    npm_config_allow_scripts: name,
     npm_config_cache: join(autoHome, 'npm-cache'), NODE_OPTIONS: `--import=${pathToFileURL(preload).href}` }
   delete autoEnv.CLAUDE_CONFIG_DIR
   for (const key of Object.keys(autoEnv)) if (/^path$/i.test(key)) delete autoEnv[key]
@@ -123,11 +129,11 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
   assert.ok(existsSync(join(autoHome, '.agents', 'skills', 'prumo', 'SKILL.md')), 'global postinstall configures the detected harness')
   assert.equal(JSON.parse(readFileSync(join(autoHome, '.local', 'share', 'prumo', 'dashboard.json'), 'utf8')).enabled, true)
   const startupCalls = readFileSync(autoEvents, 'utf8')
-  assert.ok(process.platform === 'win32' ? startupCalls.includes('"spawn"') :
+  assert.ok(process.platform === 'win32' ? startupCalls.includes('"wscript"') :
     process.platform === 'darwin' ? startupCalls.includes('kickstart') : startupCalls.includes('enable","--now'))
   if (process.platform === 'win32') {
-    const detached = startupCalls.trim().split('\n').map(line => JSON.parse(line)).find(call => call[0] === 'spawn')
-    assert.equal(detached?.[3], join(autoHome, '.local', 'share', 'prumo'), 'detached dashboard uses stable user data cwd')
+    const launcher = startupCalls.trim().split('\n').map(line => JSON.parse(line)).find(call => call[0] === 'wscript')
+    assert.equal(launcher?.[2], join(autoHome, '.local', 'share', 'prumo'), 'dashboard launcher uses stable user data cwd')
   }
   assert.equal(JSON.parse(readFileSync(join(autoPackage, 'package.json'), 'utf8')).version, version)
   mkdirSync(join(home, '.local', 'share', 'prumo'), { recursive: true })

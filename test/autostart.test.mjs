@@ -75,7 +75,6 @@ test('Windows falls back to one hidden per-user Startup entry when task creation
   let running = false
   let nextPid = 4300
   let currentPid = null
-  const spawned = []
   const killed = []
   const appData = join(tmpdir(), `Prumo Roaming ${process.pid}-${Date.now()}`)
   const f = fixture(t, 'win32', {
@@ -84,13 +83,8 @@ test('Windows falls back to one hidden per-user Startup entry when task creation
       f.calls.push([file, args])
       if (file === 'schtasks' && args[0] === '/Query') return { status: 1, stdout: '' }
       if (file === 'schtasks' && args[0] === '/Create') return { status: 5, stderr: 'localized denial' }
+      if (file === 'wscript.exe') { running = true; currentPid = ++nextPid }
       return { status: 0, stdout: '' }
-    },
-    spawn(file, args, settings) {
-      spawned.push([file, args, settings])
-      running = true
-      currentPid = ++nextPid
-      return { pid: currentPid }
     },
     fetch: async () => {
       if (!running) throw new Error('stopped')
@@ -108,20 +102,18 @@ test('Windows falls back to one hidden per-user Startup entry when task creation
   assert.equal(enabled.mechanism, 'windows-startup')
   assert.equal(preference(f.home).mechanism, 'windows-startup')
   assert.equal(f.calls.filter(([file, args]) => file === 'schtasks' && args[0] === '/Create').length, 1)
-  assert.deepEqual(spawned[0], [f.node, [f.script, '--global', '--port', '4949'], {
-    cwd: join(f.home, '.local', 'share', 'prumo'), env: f.options.env, detached: true, stdio: 'ignore', windowsHide: true,
-  }])
-  assert.equal(existsSync(spawned[0][2].cwd), true)
+  assert.equal(existsSync(join(f.home, '.local', 'share', 'prumo')), true)
+  assert.deepEqual(f.calls.find(([file]) => file === 'wscript.exe'), ['wscript.exe', ['//B', '//Nologo', startup]])
   assert.match(readFileSync(startup, 'utf8'), /^CreateObject\("WScript\.Shell"\)\.Run """.*node\.exe"" "".*serve\.mjs"" ""--global"" ""--port"" ""4949""", 0, False\r?\n$/)
 
   assert.equal((await dashboardStatus(f.options)).registered, true)
   assert.equal((await enableDashboard(f.options)).ok, true)
-  assert.equal(spawned.length, 1, 're-enable honors the persisted fallback and reuses its process')
+  assert.equal(f.calls.filter(([file]) => file === 'wscript.exe').length, 1, 're-enable honors the persisted fallback and reuses its process')
   assert.equal(f.calls.filter(([file, args]) => file === 'schtasks' && args[0] === '/Create').length, 1)
 
   const restarted = await restartDashboard(f.options)
   assert.equal(restarted.ok, true)
-  assert.equal(spawned.length, 2)
+  assert.equal(f.calls.filter(([file]) => file === 'wscript.exe').length, 2)
   assert.deepEqual(killed, [4301])
 
   const disabled = await disableDashboard(f.options)
@@ -153,7 +145,7 @@ test('Windows Startup discovers a later login process and refuses similar foreig
     readProcessCommand(pid) {
       if (pid === 7700) throw new Error('previous session ended')
       return exact
-        ? { executable: f.node.toUpperCase(), commandLine: `"${f.node}"  "${f.script}"\t"--global" "--port" "4949"` }
+        ? { executable: f.node.toUpperCase(), commandLine: `"${f.node}"  "${f.script.replaceAll('\\', '/')}"\t"--global" "--port" "4949"` }
         : { executable: f.node, commandLine: `"${f.node}" "${f.script}" "--global" "--port" "4949" "--sync-plan"` }
     },
     kill(pid) { killed.push(pid); running = false },
@@ -179,8 +171,10 @@ test('Windows restart recovers a stale saved script and waits for the old proces
   const killed = [], searches = []
   const f = fixture(t, 'win32', {
     env: { APPDATA: join(tmpdir(), `Prumo stale ${process.pid}-${Date.now()}`) },
-    exec: (file, args) => ({ status: file === 'schtasks' && args[0] === '/Create' ? 1 : 0, stdout: '' }),
-    spawn: () => { running = true; return { pid: nextPid++ } },
+    exec: (file, args) => {
+      if (file === 'wscript.exe') running = true
+      return { status: file === 'schtasks' && args[0] === '/Create' ? 1 : 0, stdout: '' }
+    },
     fetch: async () => {
       if (!running) throw new Error('stopped')
       return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0' }) }
@@ -204,7 +198,7 @@ test('Windows restart recovers a stale saved script and waits for the old proces
   assert.ok(searches.includes(f.script))
   assert.ok(killed.includes(8800))
   assert.equal(preference(f.home).script, f.script)
-  assert.ok(preference(f.home).pid >= 7700)
+  assert.equal(preference(f.home).pid, 8800)
 })
 
 test('Windows Startup reports incomplete setup when its per-user registration cannot be written', async t => {
@@ -246,16 +240,40 @@ test('restart replaces an enabled registration without losing its preference', a
   assert.equal(f.calls.slice(count).some(([, args]) => ['/Create', '/Run'].includes(args[0])), false)
 })
 
+test('adopting an older running dashboard restarts it before claiming activation succeeded', async t => {
+  let running = true
+  let liveVersion = '1.2.0'
+  let registered = false
+  const f = fixture(t, 'win32', {
+    fetch: async () => {
+      if (!running) throw new Error('stopped')
+      return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: liveVersion }) }
+    },
+    exec(file, args) {
+      f.calls.push([file, args])
+      if (args[0] === '/Query') return { status: registered ? 0 : 1 }
+      if (args[0] === '/Create') registered = true
+      if (args[0] === '/End') running = false
+      if (args[0] === '/Run') { running = true; liveVersion = '1.3.0' }
+      return { status: 0 }
+    },
+  })
+  const enabled = await enableDashboard(f.options)
+  assert.equal(enabled.ok, true)
+  assert.equal(enabled.version, '1.3.0')
+  assert.equal(f.calls.filter(([, args]) => args[0] === '/Run').length, 1)
+})
+
 test('Windows restart switches to Startup when replacing its scheduler task becomes unavailable', async t => {
   let task = false
   let running = false
   let denyCreate = false
-  const spawned = []
   const appData = join(tmpdir(), `Prumo Restart ${process.pid}-${Date.now()}`)
   const f = fixture(t, 'win32', {
     env: { APPDATA: appData },
     exec(file, args) {
       f.calls.push([file, args])
+      if (file === 'wscript.exe') { running = true; return { status: 0, stdout: '' } }
       if (file !== 'schtasks') return { status: 0, stdout: '' }
       if (args[0] === '/Query') return { status: task ? 0 : 1, stdout: '' }
       if (args[0] === '/Create') {
@@ -267,12 +285,12 @@ test('Windows restart switches to Startup when replacing its scheduler task beco
       if (args[0] === '/Delete') task = false
       return { status: 0, stdout: '' }
     },
-    spawn(file, args) { spawned.push([file, args]); running = true; return { pid: 5500 } },
     fetch: async () => {
       if (!running) throw new Error('stopped')
       return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0' }) }
     },
     readProcessCommand: () => [f.node, f.script, '--global', '--port', '4949'],
+    listProcessIds: () => running ? [5500] : [],
   })
   t.after(() => rmSync(appData, { recursive: true, force: true }))
 
@@ -283,7 +301,7 @@ test('Windows restart switches to Startup when replacing its scheduler task beco
   assert.equal(restarted.mechanism, 'windows-startup')
   assert.equal(preference(f.home).mechanism, 'windows-startup')
   assert.equal(task, false)
-  assert.deepEqual(spawned, [[f.node, [f.script, '--global', '--port', '4949']]])
+  assert.equal(f.calls.filter(([file]) => file === 'wscript.exe').length, 1)
 })
 
 test('Windows restart reports scheduler denial plus unproven Startup ownership', async t => {

@@ -62,8 +62,10 @@ function catalog() {
   let selected = GLOBAL ? null : { root: roots.find(candidate => candidate.path === ROOT), run: currentRun() }
   let newest = -1
   for (const root of roots) {
-    if (!existsSync(root.graphDir)) continue
-    for (const entry of readdirSync(root.graphDir, { withFileTypes: true })) {
+    let entries
+    try { entries = readdirSync(root.graphDir, { withFileTypes: true }) }
+    catch { warnings.push(`Could not read graph directory: ${root.graphDir}`); continue }
+    for (const entry of entries) {
       if (!entry.isDirectory() || !safeRun(entry.name)) continue
       const statePath = join(root.graphDir, entry.name, 'state.json')
       if (!existsSync(statePath)) continue
@@ -131,7 +133,6 @@ function syncPlanIfChanged() {
   if (!planPath || !existsSync(planPath)) return
   const signature = `${run}:${planPath}:${statSync(planPath).mtimeMs}`
   if (signature === lastPlanSignature || planSyncing) return
-  lastPlanSignature = signature
   planSyncing = true
   execFile(
     process.execPath,
@@ -140,6 +141,7 @@ function syncPlanIfChanged() {
     (error, stdout, stderr) => {
       planSyncing = false
       if (error) return errorLog(`[prumo] auto-sync failed: ${(stderr || stdout || error.message).trim()}`)
+      lastPlanSignature = signature
       const message = stdout.trim()
       if (message && !message.includes('already matches plan')) log(message)
     },
@@ -147,8 +149,12 @@ function syncPlanIfChanged() {
 }
 
 if (SYNC_PLAN) {
-  syncPlanIfChanged()
-  setInterval(syncPlanIfChanged, 1000)
+  const sync = () => {
+    try { syncPlanIfChanged() }
+    catch (error) { errorLog(`[prumo] auto-sync failed: ${error.message}`) }
+  }
+  sync()
+  setInterval(sync, 1000)
 }
 
 /** Same derivation the engine uses — duplicated on purpose so this stays dependency-free
@@ -233,8 +239,9 @@ function derive(state) {
 }
 
 function json(res, code, body) {
+  const content = JSON.stringify(body)
   res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
-  res.end(JSON.stringify(body))
+  res.end(content)
 }
 
 function productVersion() {
@@ -247,6 +254,7 @@ function productVersion() {
   return 'unknown'
 }
 
+const VERSION = productVersion()
 const EMPTY_STATE = { plan: { name: '', phases: [] }, tasks: {}, derived: {}, empty: true }
 
 const server = createServer((req, res) => {
@@ -255,7 +263,7 @@ const server = createServer((req, res) => {
 
   if (url.pathname === '/api/runs') return json(res, 200, listRuns())
   if (url.pathname === '/api/health') return json(res, 200, {
-    product: 'prumo', version: productVersion(), mode: GLOBAL ? 'global' : 'workspace',
+    product: 'prumo', version: VERSION, pid: process.pid, mode: GLOBAL ? 'global' : 'workspace',
     readOnly: true, host: '127.0.0.1', port: server.address().port,
   })
 
@@ -286,6 +294,7 @@ const server = createServer((req, res) => {
   }
 
   if (url.pathname === '/' || url.pathname === '/index.html') {
+    const page = localizeDashboard(readFileSync(join(HERE, 'dashboard.html'), 'utf8'), language(flag('lang', undefined)))
     res.writeHead(200, {
       'Content-Type': 'text/html; charset=utf-8',
       'Cache-Control': 'no-store',
@@ -298,19 +307,22 @@ const server = createServer((req, res) => {
         "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; " +
         "connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'",
     })
-    return res.end(localizeDashboard(readFileSync(join(HERE, 'dashboard.html'), 'utf8'), language(flag('lang', undefined))))
+    return res.end(page)
   }
 
   res.writeHead(404)
   res.end(tr('not found'))
   /* A corrupt state.json (or a mid-write read) must cost one response, never the process. */
   } catch (e) {
-    json(res, 500, { error: String(e?.message ?? e) })
+    if (res.headersSent) res.destroy()
+    else json(res, 500, { error: String(e?.message ?? e) })
   }
 /* Loopback ONLY: this is a read-only dashboard for the dev's own browser. Binding every
  * interface would expose run state to the local network for no benefit. */
 }).listen(PORT, '127.0.0.1', () => {
-  const selected = GLOBAL ? catalog().current : currentRun()
+  let selected
+  try { selected = GLOBAL ? catalog().current : currentRun() }
+  catch (error) { errorLog(`[prumo] Could not read current run: ${error.message}`) }
   log(
     `[prumo] dashboard on http://localhost:${server.address().port} (run: ${selected ?? '—'}, ` +
       `auto-sync: ${SYNC_PLAN ? 'on' : 'off'})`,
