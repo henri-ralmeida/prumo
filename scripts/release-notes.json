@@ -1,4 +1,9 @@
 {
+  "1.3.10": {
+    "en": [
+      { "title": "Improved — Assertive next steps", "items": ["Give one to three concrete suggestions in priority order when a next action is useful", "Add a fourth suggestion only to prevent critical failure, loss or blockage", "Omit suggestion blocks when no useful next action exists"] }
+    ]
+  },
   "1.3.9": {
     "en": [
       { "title": "Fixed — Persistent Windows dashboard", "items": ["Start the Windows fallback through its registered Startup launcher with the configured environment", "Resolve and save the real server process after activation and update restart", "Bound process discovery and report the actual restart failure"] },
