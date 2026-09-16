@@ -8,7 +8,7 @@ const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.u
 test('current release has concise English update highlights with descriptive subtitles', () => {
   const notes = releaseNotes(version)
   assert.deepEqual(notes.map(section => section.title), [
-    'Fixed — Persistent Windows dashboard', 'Fixed — Dashboard failure recovery', 'Fixed — Complete harness updates', 'Fixed — Dashboard filters and zoom'
+    'Fixed — Persistent Windows dashboard', 'Fixed — Dashboard failure recovery', 'Fixed — Complete harness updates', 'Fixed — Dashboard filters and zoom', 'Fixed — Legacy workspace migration', 'Fixed — Interrupted update history'
   ])
   assert.ok(notes.flatMap(section => section.items).includes('Resolve and save the real server process after activation and update restart'))
   assert.ok(releaseNotes('1.3.2').flatMap(section => section.items).includes('Keep one discussion and one planner when the user names one task'))
@@ -22,6 +22,8 @@ test('current release has concise English update highlights with descriptive sub
 })
 
 test('update history includes every missed release from the oldest installation', () => {
+  assert.deepEqual(releaseHistory(['1.0.2'], '1.0.9').map(release => release.version),
+    ['1.0.3', '1.0.4', '1.0.5', '1.0.6', '1.0.7', '1.0.8', '1.0.9'])
   const history = releaseHistory(['1.2.2', '1.0.8'], version)
   assert.equal(history[0].version, '1.0.9')
   assert.deepEqual(history.slice(0, 3).map(release => release.version), ['1.0.9', '1.0.10', '1.1.0'])

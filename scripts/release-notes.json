@@ -4,7 +4,9 @@
       { "title": "Fixed — Persistent Windows dashboard", "items": ["Start the Windows fallback through its registered Startup launcher with the configured environment", "Resolve and save the real server process after activation and update restart", "Bound process discovery and report the actual restart failure"] },
       { "title": "Fixed — Dashboard failure recovery", "items": ["Keep serving healthy runs when a workspace or an update file is temporarily unreadable", "Recover auto-sync after incomplete state writes or failed synchronization", "Report the loaded server version until the process actually restarts"] },
       { "title": "Fixed — Complete harness updates", "items": ["Report damaged installation markers without silently skipping an installed harness", "Continue independent harness updates while reporting partial failure", "Treat empty storage settings as unset instead of migrating the current directory"] },
-      { "title": "Fixed — Dashboard filters and zoom", "items": ["Show matching cards across every phase and compact empty lanes", "Reveal filtered-out tasks when opening their details", "Preserve zoom and pan when toggling the legend"] }
+      { "title": "Fixed — Dashboard filters and zoom", "items": ["Show matching cards across every phase and compact empty lanes", "Reveal filtered-out tasks when opening their details", "Preserve zoom and pan when toggling the legend"] },
+      { "title": "Fixed — Legacy workspace migration", "items": ["Preserve dependency links and junctions without touching external targets", "Resume active legacy attempts while safely deferring structural migration", "Verify updates from every published npm version"] },
+      { "title": "Fixed — Interrupted update history", "items": ["Show release notes and installed CLI version after partial failures", "Retain missed release history until the whole update succeeds", "Report shared migration failures only once"] }
     ]
   },
   "1.3.8": {
@@ -126,5 +128,30 @@
     "en": [
       { "title": "Fixed — Global updates and Codex skill roots", "items": ["Install or update the global CLI through npx and bunx update flows", "Keep one personal Prumo skill root in Codex"] }
     ]
-  }
+  },
+  "1.0.8": { "en": [
+    { "title": "Fixed — Windows update progress", "items": ["Clear stale progress labels and use portable ASCII bar segments", "Show the installed version after a successful update and suppress successful npm runner notices"] },
+    { "title": "Fixed — GitHub Actions runtime", "items": ["Replace deprecated Node.js 20 action runtimes with Node.js 24"] }
+  ] },
+  "1.0.7": { "en": [
+    { "title": "Fixed — Windows npm execution", "items": ["Remove DEP0190 by invoking cmd.exe explicitly instead of shell:true"] },
+    { "title": "Improved — Concise and repeatable updates", "items": ["Show phase progress while preserving actionable failures and detailed previews", "Avoid rewriting complete same-version installations or creating redundant backups"] }
+  ] },
+  "1.0.6": { "en": [
+    { "title": "Added — Persistent global CLI", "items": ["Persist the global prumo command and update it together with installed harness adapters"] },
+    { "title": "Fixed — Dashboard run switching", "items": ["Ignore stale responses when selecting another run and remove duplicate empty-state borders"] }
+  ] },
+  "1.0.5": { "en": [
+    { "title": "Improved — Evidence and corrective retry", "items": ["Separate approved context, current acceptance criteria and executable proof", "Synchronize approved contract changes before retry while retaining failures and independent evidence", "Recover interrupted dispatch in the existing attempt"] }
+  ] },
+  "1.0.4": { "en": [
+    { "title": "Added — Interactive harness selection", "items": ["Select detected Claude Code, Kiro and Codex environments interactively or with install --all"] },
+    { "title": "Improved — Regional language defaults", "items": ["Select the initial language from the system region and preserve explicit choices", "Use the installation language in the dashboard"] }
+  ] },
+  "1.0.3": { "en": [
+    { "title": "Improved — Prumo branding and workspace guidance", "items": ["Standardize the displayed Prumo name while preserving command and data compatibility", "Clarify shared workspace setup and preserve explicit storage paths"] }
+  ] },
+  "1.0.2": { "en": [
+    { "title": "Added — npm distribution and automatic updates", "items": ["Publish @henri-ralmeida/prumo and add prumo update", "Detect installed environments and custom paths while preserving language, backups and rollback"] }
+  ] }
 }

@@ -24,6 +24,7 @@ jobs:
       - run: npm run check
       - run: npm pack
       - run: node scripts/package-smoke.mjs
+      - run: node scripts/published-update-smoke.mjs
       - uses: actions/upload-artifact@v6
         if: always()
         with:

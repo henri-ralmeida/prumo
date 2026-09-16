@@ -2,7 +2,7 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
-## 1.3.9 — 2026-09-15
+## 1.3.9 — 2026-09-16
 
 ### Fixed — Persistent Windows dashboard
 
@@ -26,6 +26,19 @@ Historical tag and commit corrections are documented in [Release history recover
 - Show matching tasks across all phases, compact empty lanes and include direct dependencies only when requested.
 - Reveal a filtered-out task when opening its details from another panel.
 - Preserve zoom and pan when opening or closing the legend.
+
+### Fixed — Legacy workspace migration
+
+- Preserve dependency links and Windows junctions, rebase internal targets and leave external targets untouched, with verified backup and rollback.
+- Keep active legacy attempts resumable through independent review while structural migration is deferred; block new work until migration is safe.
+- Exercise every version published on npm through its real updater, including merged history and in-flight work.
+
+### Fixed — Interrupted update history
+
+- Show release notes and the installed CLI version even when migration or activation remains incomplete.
+- Retain the original update version until every installation succeeds, so retrying cannot lose missed release notes.
+- Include the original npm releases in the update catalog, covering upgrades from 1.0.2 onward.
+- Report each shared migration failure once across installed harnesses.
 
 ## 1.3.8 — 2026-09-15
 

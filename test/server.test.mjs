@@ -110,7 +110,8 @@ test('dashboard selects legacy and central data without writes or translation of
   const selected = await (await get('/api/state?root=work&run=demo')).json()
   assert.equal(selected.tasks.T1.title, 'done')
   assert.equal(selected.derived.T1.effective, 'blocked')
-  assert.equal(selected.derived.LEGACY.effective, 'ready')
+  assert.equal(selected.derived.LEGACY.effective, 'pending')
+  assert.equal(selected.derived.LEGACY.planningStatus, 'awaiting_migration')
   const planned = await (await get('/api/state?root=work&run=planning-demo')).json()
   assert.deepEqual(Object.fromEntries(Object.entries(planned.derived).map(([id, task]) => [id, task.effective])),
     { PLAN: 'ready_for_discussion', ACTIVE: 'ready_to_plan', EXEC: 'ready', WAIT: 'waiting' })

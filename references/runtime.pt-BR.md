@@ -61,6 +61,12 @@ respostas reais, canal/rodada, cobertura PO First, decisões e motivo de encerra
 
 Antes de continuar uma run antiga, a skill inspeciona cada contrato não terminal, normaliza validações
 obsoletas ou em prosa na fonte aprovada com evidência do repositório e executa `sync-plan` no run original.
+Tentativas legadas em andamento adiam a migração estrutural, mas podem ser retomadas, revisadas e
+concluídas. O status continua disponível; novas tarefas ficam bloqueadas até a migração ser segura.
+Use `sync-plan` para sincronizar contratos corrigidos sem apagar histórico. Não remova tentativas nem
+pule trabalho real para contornar bloqueios. Links de dependências e junctions são preservados na
+mudança de pasta: destinos internos acompanham o workspace e destinos externos não são alterados.
+
 Essa migração do contrato inteiro não autoriza ampliar o grafo ou o planejamento. Quando o usuário nomeia
 uma tarefa existente, mantenha uma discussão e um planner somente para ela. Nos demais casos, a adoção de
 cada fase elegível é explícita com `begin-phase-discussion <fase> --adopt-legacy`: o histórico terminal permanece intacto e todas as
