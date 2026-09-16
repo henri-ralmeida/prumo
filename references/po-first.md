@@ -50,6 +50,6 @@ Check that the audience can understand and verify the result at the requested le
 
 ## Useful next steps
 
-End substantive responses with Suggestions (Sugestões in Portuguese), containing only useful actions, at most six. Do not add filler or a suggestions block to trivial confirmations.
+End substantive responses that warrant a next action with Suggestions (Sugestões in Portuguese). Give one to three concrete recommendations in priority order. Add a fourth only when it is critical to prevent material failure, loss or blockage. Never include an empty Suggestions section. Omit it for trivial confirmations and genuinely complete responses with no useful next action.
 
-Derive next steps from the real state of the work. Prioritize decisions that unblock progress, pending verification and useful ways to inspect the result. Do not leave already requested and authorized work as a suggestion. Do not invent transitions, identifiers, validations or approvals, or impose a fixed workflow merely as a writing preference.
+Recommend the best action assertively instead of presenting a vague menu. Derive every suggestion from the real state of the work. Prioritize actions that unblock progress, pending verification and useful ways to inspect the result. Do not leave already requested and authorized work as a suggestion. Do not invent transitions, identifiers, validations or approvals, or impose a fixed workflow merely as a writing preference.

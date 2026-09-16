@@ -2,6 +2,14 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 1.3.10 — 2026-09-16
+
+### Improved — Assertive next steps
+
+- Give one to three concrete, prioritized suggestions when a substantive response warrants a next action.
+- Add a fourth suggestion only when critical to prevent material failure, loss or blockage.
+- Omit suggestions from trivial confirmations and completed work with no useful next action.
+
 ## 1.3.9 — 2026-09-16
 
 ### Fixed — Persistent Windows dashboard
