@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, rmSync, cpSync, realpathSync, chmodSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, rmSync, cpSync, realpathSync, chmodSync, symlinkSync, lstatSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname, resolve, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -389,6 +389,55 @@ test('legacy migration blocks conflicting custom files without changing either s
   assert.equal(result.groups.find(item => item.name === group.name).status, 'conflict')
   assert.equal(read(legacy), 'legacy value')
   assert.equal(read(destination), 'Prumo value')
+})
+
+test('workspace migration preserves dependency junctions, cycles and external targets and can restore them', t => {
+  const f = fixture(t)
+  const legacy = join(f.home, '.local/share/graph-foreman/retro-pass-ultimate')
+  const destination = join(f.home, '.local/share/prumo/retro-pass-ultimate')
+  put(join(legacy, '.specs/graph/run/state.json'), '{"history":"keep"}')
+  put(join(legacy, 'attempt4/source/packages/desktop/value.txt'), 'internal')
+  const external = join(f.home, 'external')
+  put(join(external, 'value.txt'), 'external')
+  const nodeModules = 'attempt4/source/node_modules/@retro-pass'
+  mkdirSync(join(legacy, nodeModules), { recursive: true })
+  symlinkSync(join(legacy, 'attempt4/source/packages/desktop'), join(legacy, nodeModules, 'desktop'), 'junction')
+  symlinkSync(external, join(legacy, nodeModules, 'external'), 'junction')
+  symlinkSync(legacy, join(legacy, 'self'), 'junction')
+  const result = f.install()
+  assert.equal(existsSync(legacy), false)
+  assert.equal(read(join(destination, nodeModules, 'desktop/value.txt')), 'internal')
+  assert.equal(read(join(destination, nodeModules, 'external/value.txt')), 'external')
+  assert.equal(realpathSync(join(destination, 'self')), realpathSync(destination))
+  assert.equal(lstatSync(join(destination, nodeModules, 'desktop')).isSymbolicLink(), true)
+  assert.equal(f.install().backup, null, 'repeated migration is inert')
+  restoreInstall(result.backup, { home: f.home, env: {} })
+  assert.equal(read(join(legacy, nodeModules, 'desktop/value.txt')), 'internal')
+  assert.equal(realpathSync(join(legacy, 'self')), realpathSync(legacy))
+  assert.equal(read(join(external, 'value.txt')), 'external')
+})
+
+test('workspace link conflicts and concurrent retargeting preserve the original run and external data', t => {
+  const f = fixture(t)
+  const legacy = join(f.home, '.local/share/graph-foreman/work')
+  const destination = join(f.home, '.local/share/prumo/work')
+  put(join(legacy, '.specs/graph/run/state.json'), 'run bytes')
+  const first = join(f.home, 'first'), second = join(f.home, 'second')
+  put(join(first, 'sentinel'), 'first'); put(join(second, 'sentinel'), 'second')
+  symlinkSync(first, join(legacy, 'dependency'), 'junction')
+  mkdirSync(destination, { recursive: true })
+  symlinkSync(second, join(destination, 'dependency'), 'junction')
+  assert.ok(f.plan().groups.find(g => g.name === 'workspace:work').conflicts.length)
+  unlinkSync(join(destination, 'dependency'))
+  const plan = f.plan()
+  unlinkSync(join(legacy, 'dependency'))
+  symlinkSync(second, join(legacy, 'dependency'), 'junction')
+  const result = applyInstall(plan)
+  assert.equal(result.groups.find(g => g.name === 'workspace:work').status, 'conflict')
+  assert.equal(read(join(legacy, '.specs/graph/run/state.json')), 'run bytes')
+  assert.equal(existsSync(join(destination, '.specs/graph/run/state.json')), false)
+  assert.equal(read(join(first, 'sentinel')), 'first')
+  assert.equal(read(join(second, 'sentinel')), 'second')
 })
 
 test('configuration preserves unrelated settings and uses effective Codex override', t => {

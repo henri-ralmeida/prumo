@@ -200,6 +200,7 @@ function currentDiscussion(state, task) {
 
 function derive(state) {
   const out = {}
+  const migrationPending = !['phase', 'task'].includes(state.plan?.planningMode)
   for (const [id, t] of Object.entries(state.tasks)) {
     let effective = t.state
     let blockedBy = []
@@ -234,6 +235,8 @@ function derive(state) {
     out[id] = { effective, blockedBy,
       ...(showPlanningStatus ?
         { planningStatus, ...(planningBlockedBy.length ? { planningBlockedBy } : {}), ...(inputStatus ? { inputStatus } : {}) } : {}) }
+    if (migrationPending && t.state === 'pending' && !t.attempts?.length)
+      Object.assign(out[id], { effective: 'pending', planningStatus: 'awaiting_migration' })
   }
   return out
 }

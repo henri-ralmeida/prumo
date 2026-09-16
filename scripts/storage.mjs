@@ -7,6 +7,12 @@ export function inside(parent, child) {
   return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
 }
 
+// Finish already-started legacy work before changing its planning lifecycle.
+export function legacyExecutionPending(state) {
+  return !['phase', 'task'].includes(state.plan?.planningMode) && Object.values(state.tasks ?? {}).some(task =>
+    !['done', 'skipped'].includes(task.state) && (task.attempts?.length || !['pending', 'failed'].includes(task.state)))
+}
+
 export function storageHome(env = process.env, home = homedir()) {
   if (env.PRUMO_HOME) return resolve(env.PRUMO_HOME)
   return resolve(join(home, '.local', 'share', 'prumo'))

@@ -116,8 +116,11 @@ The global dashboard only observes; it never synchronizes a plan. Before resumin
 `node $ENGINE migrate --check --run <name>` when you need a read-only compatibility report. Every
 single-run engine command automatically applies a safe, versioned structural migration first, creates
 `state.pre-migrate-v<schema>.json`, enables missing discussion and planning gates, and opens no rounds.
-It preserves terminal tasks. If active work or prior attempts make migration unsafe, the command stops
-and names each blocker instead of silently bypassing planning. Before `init`, `sync-plan` or resuming
+It preserves terminal tasks. Active legacy work defers structural migration: status remains readable,
+and already-started attempts can resume, retry and finish through independent review. New tasks remain
+blocked and visibly await migration. Explicit `migrate` still names unsafe blockers; do not clear attempts,
+skip real work or rewrite history to bypass them. Synchronize corrected contracts with `sync-plan` while
+finishing existing work; automatic migration resumes once the blockers are terminal. Before `init`, `sync-plan` or resuming
 an existing run, inspect the approved source and persisted graph for legacy contracts. Normalize every
 nonterminal prose or obsolete validation into the current executable validation schema using repository
 evidence, restore declared phase order and membership from the approved plan structure, preserve task IDs,

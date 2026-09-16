@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util'
 import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, renameSync, rmSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
-import { resolve, join } from 'node:path'
+import { resolve, join, dirname } from 'node:path'
 import { planInstall, applyInstall, restoreInstall, installationStatus, discoverInstallations, detectHarnesses, reconcileDashboardInstall } from '../lib/install.mjs'
 import { globalCliState, launchUpdate, reconcileDashboardUpdate, updateGlobalCli, updateRequest } from '../lib/update.mjs'
 import { releaseHistory } from '../lib/release-notes.mjs'
@@ -53,7 +54,7 @@ function printReleaseNotes(fromVersions, version) {
   }
 }
 
-function runInstall(options, { command = 'install', dryRun = false, quiet = false } = {}) {
+function runInstall(options, { command = 'install', dryRun = false, quiet = false, reported = new Set() } = {}) {
   const plan = planInstall(options)
   t = createTranslator(messages, plan.lang)
   if (command === 'install' && !quiet) {
@@ -74,13 +75,19 @@ function runInstall(options, { command = 'install', dryRun = false, quiet = fals
   } else if (command === 'install') {
     const result = applyInstall(plan, { dryRun })
     for (const group of result.groups.filter(group => group.status === 'conflict')) {
-      console.error(`[prumo] ${group.name}: ${group.errors.map(error => t(error)).join('; ') || t('conflict')}`)
+      for (const error of group.errors) if (!reported.has(error)) {
+        console.error(`[prumo] ${group.name}: ${t(error)}`)
+        reported.add(error)
+      }
     }
     if (result.groups.some(group => group.status === 'conflict')) process.exitCode = 2
   }
   const status = installationStatus(command === 'install' && !dryRun ? planInstall(options) : plan)
   if (!quiet) print(`${t('installed')}: ${t(status.installed ? 'yes' : 'no')}; ${t('configured')}: ${t(status.configured ? 'yes' : 'no')}`)
-  for (const warning of status.pendingActivation) if (command !== 'install' || !plan.warnings.includes(warning)) (quiet ? console.error : print)(`${t('pending activation')}: ${t(warning)}`)
+  for (const warning of status.pendingActivation) if (!reported.has(warning) && (command !== 'install' || !plan.warnings.includes(warning))) {
+    (quiet ? console.error : print)(`${t('pending activation')}: ${t(warning)}`)
+    reported.add(warning)
+  }
   if (status.pendingActivation.length || command === 'doctor' && !status.configured) process.exitCode = 2
   return { ...status, viable: plan.groups.every(group => group.conflicts.length === 0) }
 }
@@ -130,6 +137,18 @@ try {
         console.error(`[prumo] ${error.message}`)
         process.exitCode = 2
       } })
+      const checkpoint = join(homedir(), '.local/share/prumo/update-pending.json')
+      try { previousVersions.push(...JSON.parse(readFileSync(checkpoint, 'utf8')).fromVersions) } catch { /* no unfinished update */ }
+      for (const entry of installed) for (const root of entry.roots) {
+        previousVersions.push(JSON.parse(readFileSync(join(root, 'prumo/.prumo-install.json'), 'utf8').replace(/^\uFEFF/, '')).version)
+      }
+      if (!request.dryRun) {
+        mkdirSync(dirname(checkpoint), { recursive: true })
+        const temporary = `${checkpoint}.${process.pid}.tmp`
+        writeFileSync(temporary, JSON.stringify({ fromVersions: [...new Set(previousVersions.filter(value => typeof value === 'string'))], toVersion: version }))
+        renameSync(temporary, checkpoint)
+      }
+      const reported = new Set()
       progress.update(10, t('Preparing Prumo update'))
       if (request.updateCli) {
         if (request.dryRun) print(t('Would update global Prumo CLI to {0}', version))
@@ -154,7 +173,7 @@ try {
             t = createTranslator(messages, language(lang))
             if (!quiet) print(t('Updating {0} with Prumo {1}', entry.harness, version))
             else progress.update(45 + Math.round(45 * (index + 1) / Math.max(installed.length, 1)), t('Updating {0}', entry.harness))
-            runInstall({ harness: entry.harness, configRoot: entry.config, skillRoots: roots, onlyInstalled: true, cwd: request.cwd, projects: entry.projects, lang }, { dryRun: request.dryRun, quiet })
+            runInstall({ harness: entry.harness, configRoot: entry.config, skillRoots: roots, onlyInstalled: true, cwd: request.cwd, projects: entry.projects, lang }, { dryRun: request.dryRun, quiet, reported })
           }
         } catch (error) { console.error(`[prumo] ${t(error.message)}`); process.exitCode = 2 }
       }
@@ -171,7 +190,15 @@ try {
         t = createTranslator(messages, lang)
         progress.success(t('Prumo updated successfully'), version)
         printReleaseNotes(previousVersions, version)
-      } else progress.clear()
+        rmSync(checkpoint, { force: true })
+      } else {
+        progress.clear()
+        if (quiet) {
+          print('Update incomplete; resolve the reported issues and run prumo update again')
+          print(`Prumo v${globalCliState(packageRoot).version ?? version}`)
+          printReleaseNotes(previousVersions, version)
+        }
+      }
     }
   } else if (positionals[0] === 'migrate') {
     if (positionals.length !== 1 || ['claude', 'kiro', 'codex', 'all'].some(name => values[name]) || values.lang || values['dry-run'] || values.project?.length) throw new Error('Migrate accepts only --check and --run <name>')

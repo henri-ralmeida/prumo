@@ -422,5 +422,8 @@
   "validated input": "entrada validada",
   "waived input": "entrada dispensada",
   "planned": "planejada",
-  "Phase plan": "Plano da fase"
+  "Phase plan": "Plano da fase",
+  "Update incomplete; resolve the reported issues and run prumo update again": "Atualização incompleta; resolva as pendências informadas e execute prumo update novamente",
+  "Migration deferred: finish or resume started legacy tasks before planning new work": "Migração adiada: conclua ou retome as tarefas legadas já iniciadas antes de planejar novos trabalhos",
+  "awaiting run migration": "aguardando migração do plano"
 }

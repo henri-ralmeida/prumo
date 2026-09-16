@@ -64,7 +64,7 @@ import { runValidation, assertValidation, validationContract, validationDirector
   phasePlanningContext, phaseRequiredInputs, assertPhaseTaskPlan, executionInputReceipt } from './validation.mjs'
 import { dirname, join, resolve } from 'node:path'
 
-import { findRoot } from './storage.mjs'
+import { findRoot, legacyExecutionPending } from './storage.mjs'
 import { log, errorLog, tr } from './i18n.mjs'
 
 let ROOT
@@ -490,6 +490,7 @@ function assertCurrentExecutionInputs(state, task) {
 /** Derived view: effective state per task (ready is computed, never stored). */
 export function derive(state) {
   const out = {}
+  const migrationPending = !['phase', 'task'].includes(state.plan?.planningMode)
   for (const [id, t] of Object.entries(state.tasks)) {
     let effective = t.state
     let blockedBy = []
@@ -523,6 +524,8 @@ export function derive(state) {
     const showPlanningStatus = state.plan.planningMode === 'phase' && !['done', 'skipped'].includes(t.state)
     out[id] = { ...t, effective, blockedBy, ...(showPlanningStatus ?
       { planningStatus, ...(planningBlockedBy.length ? { planningBlockedBy } : {}), ...(inputStatus ? { inputStatus } : {}) } : {}) }
+    if (migrationPending && t.state === 'pending' && !t.attempts?.length)
+      Object.assign(out[id], { effective: 'pending', planningStatus: 'awaiting_migration' })
   }
   return out
 }
@@ -1484,7 +1487,16 @@ if (!cmd || !commands[cmd]) {
 const READ_ONLY = new Set(['runs', 'status', 'ready', 'graph'])
 if (!['init', 'runs', 'migrate'].includes(cmd)) {
   const name = runName()
-  if (migrationStatus(loadState(name)).needed) withLock(name, () => migrateState(name, { quiet: true }))
+  if (migrationStatus(loadState(name)).needed) withLock(name, () => {
+    const state = loadState(name)
+    if (!migrationStatus(state).needed) return
+    const task = state.tasks[args._[0]]
+    const resume = task?.state === 'blocked' && cmd === 'unblock' ||
+      task?.attempts?.length && ['start', 'review', 'validate', 'done', 'fail', 'retry', 'block', 'unblock', 'note', 'amend-validation'].includes(cmd)
+    if (legacyExecutionPending(state) && (READ_ONLY.has(cmd) || resume || ['skip', 'sync-plan'].includes(cmd))) {
+      errorLog('[prumo] Migration deferred: finish or resume started legacy tasks before planning new work')
+    } else migrateState(name, { quiet: true })
+  })
 }
 if (cmd === 'migrate' && args.check !== true) withLock(runName(), commands[cmd])
 else if (READ_ONLY.has(cmd) || cmd === 'validate' || cmd === 'migrate') await commands[cmd]()

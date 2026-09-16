@@ -341,6 +341,11 @@ Before continuing a run created by an older engine, `migrate --check` reports st
 Every single-run engine command automatically migrates a safe pre-planning state, writes a versioned
 backup, enables missing gates and leaves every phase pending without opening a discussion. Terminal tasks
 stay unchanged; active work or prior attempts block conversion with a task-specific reason.
+During this deferral, read-only commands and continuation of already-started attempts remain available,
+including independent review and retry. New tasks cannot start. `sync-plan` can repair approved contracts
+without rewriting active or terminal history. Once existing attempts finish, automatic migration proceeds.
+Workspace relocation preserves dependency links without traversing their targets; internal absolute links
+follow the new workspace location, and external targets remain untouched.
 The skill must still inspect every nonterminal contract,
 normalize obsolete or prose validation in the approved source using repository evidence, and `sync-plan`
 the original run. This graph-wide contract migration does not authorize graph or planning expansion.

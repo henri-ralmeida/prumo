@@ -116,6 +116,9 @@ test('update reports a corrupt harness marker and still updates the other instal
   assert.equal(result.status, 2, result.stdout + result.stderr)
   assert.match(result.stderr, /Invalid Prumo installation marker.*claude/)
   assert.doesNotMatch(result.stdout, /Prumo updated successfully/)
+  assert.match(result.stdout, /Update incomplete/)
+  assert.match(result.stdout, /Prumo v1\.0\.9/)
+  assert.ok(existsSync(join(home, '.local/share/prumo/update-pending.json')))
   assert.equal(read(markers[0]), '{broken marker')
   for (const marker of markers.slice(1)) {
     assert.equal(JSON.parse(read(marker)).version, version)
@@ -124,6 +127,31 @@ test('update reports a corrupt harness marker and still updates the other instal
   rmSync(markers[0])
   assert.throws(() => discoverInstallations({ home, cwd: home, env }), /Invalid Prumo installation marker/,
     'a missing marker in a registered installation must not silently remove that harness either')
+  put(markers[0], { product: 'prumo', harness: 'claude', version, lang: 'en' })
+  const retried = spawnSync(process.execPath, [join(source, 'bin/prumo.mjs'), '_update'], {
+    cwd: home, env: { ...env, PRUMO_UPDATE_REQUEST: JSON.stringify({ dryRun: false, cwd: home, projects: [], updateCli: false }) },
+    encoding: 'utf8', windowsHide: true, timeout: 120000,
+  })
+  assert.equal(retried.status, 0, retried.stdout + retried.stderr)
+  assert.match(retried.stdout, /Prumo v1\.0\.9/, 'retry keeps missed history even after every marker advanced')
+  assert.equal(existsSync(join(home, '.local/share/prumo/update-pending.json')), false)
+  const legacyState = join(home, '.local/share/graph-foreman/conflict/.specs/graph/run/state.json')
+  const destinationState = join(home, 'data/conflict/.specs/graph/run/state.json')
+  put(legacyState, '{"original":true}')
+  put(destinationState, '{"different":true}')
+  for (const marker of markers) put(marker, { ...JSON.parse(read(marker)), version: '1.3.8' })
+  const conflict = spawnSync(process.execPath, [join(source, 'bin/prumo.mjs'), '_update'], {
+    cwd: home, env: { ...env, PRUMO_UPDATE_REQUEST: JSON.stringify({ dryRun: false, cwd: home, projects: [], updateCli: false }) },
+    encoding: 'utf8', windowsHide: true, timeout: 120000,
+  })
+  assert.equal(conflict.status, 2)
+  assert.equal(conflict.stderr.split('Legacy workspace conflicts with Prumo destination').length - 1, 1,
+    'the same workspace conflict is reported once across all three harnesses')
+  assert.match(conflict.stdout, /Update incomplete/)
+  assert.ok(conflict.stdout.includes(`Prumo v${version}`))
+  assert.match(conflict.stdout, /Fixed — Legacy workspace migration/)
+  assert.equal(read(legacyState), '{"original":true}')
+  assert.equal(read(destinationState), '{"different":true}')
 })
 
 test('update preserves dashboard preference and adopts a running unconfigured legacy dashboard', async () => {

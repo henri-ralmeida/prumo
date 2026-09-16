@@ -288,20 +288,61 @@ test('migration refuses newer state schemas without downgrading or writing backu
   assert.equal(existsSync(join(f.root, '.specs/graph/phase-negative/state.pre-migrate-v1.json')), false)
 })
 
-test('automatic migration refuses active legacy work and preserves its state', t => {
-  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Active legacy task' }])
+test('legacy work can finish independently reviewed before automatic migration admits new tasks', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Active legacy task' }, { id: 'B', phase: 'F2', title: 'New work' }])
   const legacy = f.state()
   delete legacy.schemaVersion
   delete legacy.plan.planningMode
   delete legacy.phaseWorkflows
   legacy.tasks.A.state = 'running'
   legacy.tasks.A.attempts = [{ n: 1, agent: 'legacy-executor' }]
+  Object.assign(legacy.tasks.A, { agent: 'legacy-executor', validationMode: 'inspection', inspectionReason: 'Inspect fixture documentation', validation: 'Documentation inspected' })
+  Object.assign(f.plan.tasks[0], { validationMode: 'inspection', inspectionReason: 'Inspect fixture documentation', validation: 'Documentation inspected' })
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
   for (const field of ['discussionRequired', 'discoveryRequired', 'planningRequired']) delete legacy.tasks.A[field]
   f.save(legacy)
   const statePath = join(f.root, '.specs/graph/phase-negative/state.json')
   const before = readFileSync(statePath, 'utf8')
-  f.rejects(/needs migration, blocked by A: state running, 1 execution attempt/, 'status')
+  assert.match(f.ok('status').stderr, /Migration deferred/)
   assert.equal(readFileSync(statePath, 'utf8'), before)
+  f.rejects(/needs migration, blocked by A/, 'migrate')
+  f.rejects(/needs migration, blocked by A/, 'start', 'B', '--agent', 'new-worker')
+  const graph = JSON.parse(f.ok('graph').stdout)
+  assert.equal(graph.derived.B.effective, 'pending')
+  assert.equal(graph.derived.B.planningStatus, 'awaiting_migration')
+  f.ok('block', 'A', '--reason', 'Waiting for an existing input')
+  f.ok('unblock', 'A')
+  f.ok('fail', 'A', '--reason', 'Transient execution failure')
+  f.ok('retry', 'A')
+  f.ok('start', 'A', '--agent', 'legacy-executor')
+  f.rejects(/independent|executor/, 'review', 'A', '--agent', 'legacy-executor')
+  f.ok('review', 'A', '--agent', 'independent-reviewer')
+  f.ok('validate', 'A', '--ok', '--evidence', 'Fixture document inspected')
+  f.ok('done', 'A')
+  const completed = f.state().tasks.A
+  f.ok('status')
+  assert.equal(f.state().plan.planningMode, 'phase')
+  assert.deepEqual(f.state().tasks.A, completed)
+  assert.equal(f.state().tasks.A.attempts.length, 2)
+  assert.equal(f.state().tasks.A.attempts[0].result, 'failed')
+})
+
+test('an unstarted legacy human block can be lifted before safe migration', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Awaiting human input' }])
+  const legacy = f.state()
+  delete legacy.schemaVersion
+  delete legacy.plan.planningMode
+  delete legacy.phaseWorkflows
+  legacy.tasks.A.state = 'blocked'
+  legacy.tasks.A.stateBeforeBlock = 'pending'
+  f.save(legacy)
+  f.rejects(/blocked by A/, 'migrate')
+  f.ok('unblock', 'A')
+  assert.equal(f.state().tasks.A.state, 'pending')
+  f.ok('status')
+  assert.equal(f.state().schemaVersion, 1)
+  assert.equal(f.state().tasks.A.attempts.length, 0)
+  assert.equal(f.state().phaseWorkflows.F1.state, 'pending')
 })
 
 test('material sync invalidates a completed phase discussion before planner dispatch', t => {
