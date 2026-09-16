@@ -8,9 +8,11 @@ const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.u
 test('current release has concise English update highlights with descriptive subtitles', () => {
   const notes = releaseNotes(version)
   assert.deepEqual(notes.map(section => section.title), [
-    'Improved — Assertive next steps'
+    'Fixed — Filtered graph context',
+    'Fixed — Safe candidate updates',
+    'Fixed — macOS path aliases'
   ])
-  assert.ok(notes.flatMap(section => section.items).includes('Give one to three concrete suggestions in priority order when a next action is useful'))
+  assert.ok(notes.flatMap(section => section.items).includes('Keep every task and phase visible while dimming cards outside the selected filter'))
   assert.ok(releaseNotes('1.3.2').flatMap(section => section.items).includes('Keep one discussion and one planner when the user names one task'))
   assert.ok(releaseNotes('1.3.1').flatMap(section => section.items).includes('Open phases in declared order after earlier work is terminal'))
   assert.ok(releaseNotes('1.3.0').flatMap(section => section.items).includes('Start the read-only dashboard after global npm installation'))

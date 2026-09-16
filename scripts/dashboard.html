@@ -136,7 +136,6 @@
   /* ---- lineage focus: hover/selection dims everything outside the chain */
   .focus svg#edges path:not(.lit) { opacity: .07; animation: none; }
   .focus .node:not(.lit) { opacity: .16; }
-  .node.filtered-out, .focus .node.filtered-out { opacity: .08; pointer-events: none; }
   svg#edges path.filter-hidden { display: none; }
   .node.lit-self { border-color: var(--accent) !important;
                    box-shadow: 0 0 0 1px var(--accent), 0 0 18px rgba(252, 180, 0, .25); }
@@ -195,6 +194,8 @@
   .ask { color: var(--blocked); font-weight: 600; }
   .node[data-st="skipped"] { opacity: .38; }
   .node[data-st="skipped"] .dot { background: var(--skipped); }
+  /* Filter state comes after task-state opacity so excluded cards always look disabled. */
+  .node.filtered-out, .focus .node.filtered-out { opacity: .12; pointer-events: none; }
 
   /* ---- subagent at work: orbiting ring on the dot + typing dots beside the agent name */
   .node[data-st="running"] .dot::before { content: ''; position: absolute; inset: -5px; border-radius: 50%;
@@ -699,7 +700,7 @@ function setFilter(filter) {
   FOCUS = null
   try { localStorage.setItem('graphFilter', FILTER) } catch { /* private mode */ }
   applyFilter(true)
-  if (STATE) { render(STATE, EVENTS); fitView() }
+  applyFocus()
 }
 
 function toggleDependencies() {
@@ -707,7 +708,7 @@ function toggleDependencies() {
   FOCUS = null
   try { localStorage.setItem('graphDependencies', String(SHOW_DEPS)) } catch { /* private mode */ }
   applyFilter(true)
-  if (STATE) { render(STATE, EVENTS); fitView() }
+  applyFocus()
 }
 
 /** Transitive ancestors + descendants of a node — what "related to what" means here. */
@@ -725,7 +726,7 @@ function lineage(id) {
 /** Bands are PHASES by default — that is how the plan was authored. `depth` mode keeps
  *  longest-path layering. Barycentre sweeps preserve the useful dependency-aware order;
  *  each band then wraps that order to the available viewport width. */
-function layout(tasks, mode, hideEmpty = false) {
+function layout(tasks, mode) {
   const ids = Object.keys(tasks)
   const density = ids.length <= 24 ? 'detailed' : ids.length <= 100 ? 'compact' : 'dense'
   const baseMetrics = DENSITY_METRICS[density]
@@ -810,7 +811,7 @@ function layout(tasks, mode, hideEmpty = false) {
     }
   }
   const pos = {}
-  const groupKeys = usePhase && !hideEmpty
+  const groupKeys = usePhase
     ? Array.from({ length: Math.max(phases.length, (colKeys.at(-1) ?? -1) + 1) }, (_, i) => i)
     : colKeys
   const lanes = []
@@ -1059,9 +1060,7 @@ function render(s, events) {
       ? `<span class="ask"><span data-i18n="✋ waiting on you">✋ waiting on you</span> <b>${by[k]}</b></span>`
       : `<span style="color:${ST_COLOR[k] ?? 'var(--dim)'}">${esc(statusLabel(k))} <b>${by[k]}</b></span>`).join('')
 
-  const { allowed } = filterSets(tasks)
-  const visibleTasks = Object.fromEntries(Object.entries(tasks).filter(([id]) => allowed.has(id)))
-  const { pos, w, h, usePhase, lanes, density, metrics } = layout(visibleTasks, LAYOUT, FILTER !== 'all')
+  const { pos, w, h, usePhase, lanes, density, metrics } = layout(tasks, LAYOUT)
   const { nodeW, nodeH } = metrics
   const canvas = $('#canvas')
   canvas.dataset.density = density
@@ -1081,7 +1080,7 @@ function render(s, events) {
 
   // nodes — a running task also tells WHERE it is in the loop: agent still working
   // (typing dots + orbit), validation failed (rework), or validated and awaiting `done`
-  $('#nodes').innerHTML = list.filter(t => allowed.has(t.id)).map((t) => {
+  $('#nodes').innerHTML = list.map((t) => {
     const e = eff(t.id)
     const p = pos[t.id]
     const sub2 = subState(t)

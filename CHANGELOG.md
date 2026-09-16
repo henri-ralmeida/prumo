@@ -2,6 +2,23 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 1.3.11 — 2026-09-17
+
+### Fixed — Filtered graph context
+
+- Keep every task and phase visible while dimming and disabling cards outside the selected filter.
+- Preserve graph positions, zoom and canvas size when filters or dependency context change.
+- Keep only matching tasks and their requested dependency context interactive.
+
+### Fixed — Safe candidate updates
+
+- Refuse to replace a locally installed newer candidate with an older npm `latest` release.
+- Allow longer Windows cleanup retries after the isolated npm updater exits.
+
+### Fixed — macOS path aliases
+
+- Canonicalize the user home before checking linked installation paths, accepting macOS `/var` to `/private/var` aliases without weakening protection for linked skill directories.
+
 ## 1.3.10 — 2026-09-16
 
 ### Improved — Assertive next steps
