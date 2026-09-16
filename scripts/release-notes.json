@@ -1,4 +1,11 @@
 {
+  "1.3.11": {
+    "en": [
+      { "title": "Fixed — Filtered graph context", "items": ["Keep every task and phase visible while dimming cards outside the selected filter", "Disable nonmatching cards while preserving requested dependency context", "Preserve graph positions, zoom and canvas size when filters change"] },
+      { "title": "Fixed — Safe candidate updates", "items": ["Refuse to downgrade a locally installed newer candidate to an older npm latest release", "Retry isolated updater cleanup longer on Windows"] },
+      { "title": "Fixed — macOS path aliases", "items": ["Accept the macOS /var to /private/var home alias without allowing linked skill directories"] }
+    ]
+  },
   "1.3.10": {
     "en": [
       { "title": "Improved — Assertive next steps", "items": ["Give one to three concrete suggestions in priority order when a next action is useful", "Add a fourth suggestion only to prevent critical failure, loss or blockage", "Omit suggestion blocks when no useful next action exists"] }

@@ -115,6 +115,21 @@ test('Codex uses one personal skill root while preserving a legacy installation'
   assert.deepEqual(f.plan().groups.filter(group => group.name.startsWith('skill:')).map(group => group.name), [`skill:${f.skillRoot}`])
 })
 
+test('installation accepts a home reached through an operating-system path alias', t => {
+  if (process.platform === 'win32') return t.skip('POSIX path aliases resolve differently from Windows junctions')
+  const base = mkdtempSync(join(realpathSync(tmpdir()), 'prumo-home-alias-'))
+  t.after(() => rmSync(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
+  const home = join(base, 'home')
+  const alias = join(base, 'alias')
+  mkdirSync(join(home, '.claude'), { recursive: true })
+  symlinkSync(home, alias, process.platform === 'win32' ? 'junction' : 'dir')
+  const plan = planInstall({ harness: 'claude', home: alias, cwd: home, env: {}, lang: 'en' })
+  assert.equal(plan.home, realpathSync(home))
+  assert.ok(plan.groups.every(group => group.conflicts.length === 0), JSON.stringify(plan.groups))
+  assert.ok(applyInstall(plan).groups.every(group => group.status !== 'conflict'))
+  assert.ok(existsSync(join(home, '.claude', 'skills', 'prumo', 'SKILL.md')))
+})
+
 test('automatic CLI installs only detected harnesses, preserves runs and backups, and keeps explicit selection', t => {
   const f = fixture(t)
   const cli = isolatedCli(f)

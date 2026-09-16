@@ -6,7 +6,7 @@ import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { planInstall, applyInstall, discoverInstallations } from '../lib/install.mjs'
-import { globalCliState, isGlobalCli, npmProcess, reconcileDashboardUpdate, updateRequest } from '../lib/update.mjs'
+import { assertUpdateVersion, globalCliState, isGlobalCli, npmLatestVersion, npmProcess, reconcileDashboardUpdate, updateRequest } from '../lib/update.mjs'
 import { inside } from '../scripts/storage.mjs'
 
 const source = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -74,11 +74,15 @@ test('update detects installed harnesses and custom paths, preserves preferences
 })
 
 test('update rejects malformed requests before applying installations', () => {
-  for (const value of [undefined, '{}', 'null', JSON.stringify({ dryRun: true, cwd: '.', projects: [] }), JSON.stringify({ dryRun: true, cwd: source, projects: [], lang: 'invalid' })]) assert.throws(() => updateRequest(value))
+  for (const value of [undefined, '{}', 'null', JSON.stringify({ dryRun: true, cwd: '.', projects: [] }), JSON.stringify({ dryRun: true, cwd: source, projects: [], lang: 'invalid' }), JSON.stringify({ dryRun: true, cwd: source, projects: [], sourceVersion: 'next' })]) assert.throws(() => updateRequest(value))
   assert.equal(updateRequest(JSON.stringify({ dryRun: false, cwd: source, projects: [] })).updateCli, true, 'legacy callers update the global CLI')
   assert.equal(updateRequest(JSON.stringify({ dryRun: false, cwd: source, projects: [], updateCli: false })).updateCli, false)
   assert.equal(isGlobalCli(join(source, 'package'), { platform: 'linux', run: () => ({ status: 0, stdout: source }) }), true)
   assert.equal(isGlobalCli(source, { platform: 'linux', run: () => ({ status: 0, stdout: join(source, 'elsewhere') }) }), false)
+  assert.equal(npmLatestVersion({ platform: 'linux', run: () => ({ status: 0, stdout: '"1.3.10"' }) }), '1.3.10')
+  assert.equal(npmLatestVersion({ platform: 'linux', run: () => ({ status: 0, stdout: '["1.3.10"]' }) }), '1.3.10')
+  assert.throws(() => assertUpdateVersion('1.3.11', '1.3.10'), /refused to prevent downgrade/)
+  assert.doesNotThrow(() => assertUpdateVersion('1.3.10', '1.3.11'))
   const windows = npmProcess(['root', '--global'], { platform: 'win32', env: { ComSpec: 'C:\\Windows\\System32\\cmd.exe' } })
   assert.equal(windows.command, 'C:\\Windows\\System32\\cmd.exe')
   assert.deepEqual(windows.args, ['/d', '/s', '/c', 'npm', 'root', '--global'])
@@ -90,6 +94,20 @@ test('update rejects malformed requests before applying installations', () => {
   })
   assert.equal(options.shell, undefined, 'npm must not receive shell:true')
   assert.deepEqual(state, { running: false, version: '1.0.7', packageRoot: join(source, '@henri-ralmeida', 'prumo') })
+})
+
+test('update refuses to replace a newer local candidate with npm latest', t => {
+  const base = realpathSync(tmpdir())
+  const home = mkdtempSync(join(base, 'prumo-update-downgrade-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
+  const newer = `${Number(version.split('.')[0]) + 1}.0.0`
+  const result = spawnSync(process.execPath, [join(source, 'bin/prumo.mjs'), '_update'], {
+    cwd: home,
+    env: { ...process.env, HOME: home, USERPROFILE: home, PRUMO_UPDATE_REQUEST: JSON.stringify({ dryRun: false, cwd: home, projects: [], updateCli: false, sourceVersion: newer }) },
+    encoding: 'utf8', windowsHide: true, timeout: 30000,
+  })
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, new RegExp(`Installed Prumo ${newer.replaceAll('.', '\\.')} is newer than npm latest`))
 })
 
 test('update reports a corrupt harness marker and still updates the other installed harnesses', t => {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync, cpSync, symlinkSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync, fork } from 'node:child_process'
 
@@ -12,7 +12,7 @@ const fromVersion = process.argv[2] ?? '1.0.8'
 assert.match(fromVersion, /^\d+\.\d+\.\d+$/)
 const archive = process.argv[3] ?? join(repo, `henri-ralmeida-prumo-${fromVersion}.tgz`)
 const phaseEra = Number(fromVersion.split('.')[1]) >= 3
-const home = mkdtempSync(join(tmpdir(), 'prumo-legacy-smoke-'))
+const home = realpathSync(mkdtempSync(join(tmpdir(), 'prumo-legacy-smoke-')))
 const project = join(home, 'project'), prefix = join(home, 'npm-global')
 const installed = join(prefix, process.platform === 'win32' ? 'node_modules' : 'lib/node_modules', '@henri-ralmeida/prumo')
 const cli = join(installed, 'bin/prumo.mjs'), engine = join(installed, 'scripts/engine.mjs')
@@ -211,6 +211,7 @@ try {
 } finally {
   if (registry && registry.exitCode === null && registry.signalCode === null) { const closed = new Promise(resolve => registry.once('exit', resolve)); registry.kill(); await closed }
   put(join(repo, `.test-output/legacy-update-${fromVersion}.json`), evidence)
-  assert.ok(home.startsWith(join(tmpdir(), 'prumo-legacy-smoke-')))
+  assert.equal(dirname(home), realpathSync(tmpdir()))
+  assert.ok(basename(home).startsWith('prumo-legacy-smoke-'))
   rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 }

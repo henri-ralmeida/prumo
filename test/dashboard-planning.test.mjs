@@ -311,6 +311,8 @@ test('dashboard keeps an unadopted legacy phase pending until explicit adoption'
 })
 
 test('status filters use effective state and add only direct dependency context', () => {
+  assert.ok(html.indexOf('.node.filtered-out') > html.indexOf('.node[data-st="skipped"]'),
+    'filter opacity must override every task-state opacity')
   const tasks = {
     A: task('A', 'done'),
     B: task('B', 'pending', { deps: ['A'] }),
@@ -348,7 +350,7 @@ test('status filters use effective state and add only direct dependency context'
 
   ui.run("setFilter('running')")
   assert.equal(card('B').classList.contains('filtered-out'), false)
-  assert.equal(card('A'), undefined)
+  assert.equal(card('A').classList.contains('filtered-out'), true)
   assert.equal(ui.nodes.get('#depsBtn').textContent, 'dependencies off')
   assert.equal(ui.nodes.get('#depsBtn').getAttribute('aria-pressed'), 'false')
   assert.equal(ui.nodes.get('#filterCount').textContent, 'filter results 1/12')
@@ -365,7 +367,7 @@ test('status filters use effective state and add only direct dependency context'
   assert.equal(ui.nodes.get('#depsBtn').textContent, 'dependencies on')
   assert.equal(ui.nodes.get('#depsBtn').getAttribute('aria-pressed'), 'true')
   for (const id of ['A', 'B', 'C']) assert.equal(card(id).classList.contains('filtered-out'), false, id)
-  assert.equal(card('D'), undefined)
+  assert.equal(card('D').classList.contains('filtered-out'), true)
   assert.equal(hidden('A', 'B'), false)
   assert.equal(hidden('B', 'C'), false)
   assert.equal(hidden('C', 'D'), true)
@@ -376,7 +378,7 @@ test('status filters use effective state and add only direct dependency context'
   assert.equal(card('B').classList.contains('lit-self'), true)
   assert.equal(edge('A', 'B').classList.contains('lit'), true)
   assert.equal(edge('B', 'C').classList.contains('lit'), true)
-  assert.equal(edge('C', 'D'), undefined)
+  assert.equal(edge('C', 'D').classList.contains('filter-hidden'), true)
 
   ui.run("setFilter('planning')")
   assert.equal(hidden('__plan', 'L'), false)
@@ -390,7 +392,7 @@ test('status filters use effective state and add only direct dependency context'
   completed.derived.R.effective = 'done'
   ui.render(completed)
   assert.equal(ui.run('POP'), null, 'live status changes close details when the card leaves the filter')
-  assert.equal(card('R'), undefined)
+  assert.equal(card('R').classList.contains('filtered-out'), true)
 })
 
 test('filter controls expose every state and localize labels and dependency toggle', () => {
@@ -405,7 +407,7 @@ test('filter controls expose every state and localize labels and dependency togg
   }
 })
 
-test('filters compact matching tasks from distant phases and restore the full graph', () => {
+test('filters preserve the full graph and disable nonmatching cards', () => {
   const ui = dashboard('pt-BR')
   const tasks = { A: task('A', 'pending', { phase: 'F0' }), B: task('B', 'pending', { phase: 'F1', deps: ['A'] }),
     C: task('C', 'pending', { phase: 'F7' }) }
@@ -414,18 +416,22 @@ test('filters compact matching tasks from distant phases and restore the full gr
   ui.render(state)
   const fullHeight = ui.run('CANVAS_H')
   ui.run("setFilter('ready_for_discussion')")
-  assert.deepEqual(ui.cards.map(card => card.dataset.id), ['A', 'C'])
+  assert.deepEqual(ui.cards.map(card => card.dataset.id), ['A', 'B', 'C'])
+  assert.equal(ui.cards.find(card => card.dataset.id === 'B').classList.contains('filtered-out'), true)
   assert.match(ui.nodes.get('#lanes').innerHTML, /F0/)
   assert.match(ui.nodes.get('#lanes').innerHTML, /F7/)
-  assert.doesNotMatch(ui.nodes.get('#lanes').innerHTML, /F1|F6/)
-  assert.ok(ui.run('CANVAS_H') < fullHeight)
+  assert.match(ui.nodes.get('#lanes').innerHTML, /F1|F6/)
+  assert.equal(ui.run('CANVAS_H'), fullHeight)
   ui.run("setFilter('waiting')")
-  assert.deepEqual(ui.cards.map(card => card.dataset.id), ['B'])
+  assert.equal(ui.cards.find(card => card.dataset.id === 'B').classList.contains('filtered-out'), false)
+  assert.equal(ui.cards.find(card => card.dataset.id === 'A').classList.contains('filtered-out'), true)
   ui.run("setFilter('done')")
-  assert.equal(ui.cards.length, 0)
-  assert.equal(ui.nodes.get('#lanes').innerHTML, '')
+  assert.equal(ui.cards.length, 3)
+  assert.equal(ui.cards.every(card => card.classList.contains('filtered-out')), true)
+  assert.notEqual(ui.nodes.get('#lanes').innerHTML, '')
   ui.run("setFilter('all')")
   assert.deepEqual(ui.cards.map(card => card.dataset.id), ['A', 'B', 'C'])
+  assert.equal(ui.cards.some(card => card.classList.contains('filtered-out')), false)
 })
 
 test('opening and closing the legend preserves fit, actual and manual zoom', () => {
