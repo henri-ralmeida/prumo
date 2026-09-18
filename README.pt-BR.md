@@ -71,7 +71,7 @@ bunx @henri-ralmeida/prumo@latest doctor --claude --lang pt-BR
 | Kiro | `/prumo` | Steering permanente e recursos explícitos dos agentes JSON encontrados |
 | Codex | `$prumo` / seletor de skills | Bloco no arquivo global de instruções efetivamente carregado |
 
-PO First vale também fora do Prumo. Prioriza resultado, regras, escopo, decisões e evidência; não depende de outras skills pessoais. No Claude, as instruções de programação permanecem habilitadas no estilo.
+PO First vale também fora do Prumo. Prioriza resultado, regras, escopo, decisões e evidência; não depende de outras skills pessoais. Ele liga cada critério material a evidência atual, pede uma contraprova independente contra o maior risco aplicável e encerra a investigação quando os critérios relevantes estão cobertos. O relato final começa pelo resultado observável. **Sugestões** aparecem apenas quando existe uma próxima ação útil: de uma a três em ordem de prioridade, com uma quarta somente para evitar falha, perda ou bloqueio crítico. No Claude, as instruções de programação permanecem habilitadas no estilo.
 
 Abra uma nova sessão depois de instalar. `doctor` distingue arquivos instalados, configuração concluída e condições pendentes. Configurações locais, skills explicitamente desabilitadas e agentes Markdown que exigem conferência da herança são informados; o instalador não promete sobrepor políticas do ambiente. Inspeção de arquivos não comprova o comportamento de um modelo.
 
@@ -84,7 +84,7 @@ prumo dashboard disable
 prumo dashboard
 ```
 
-`status` informa registro, processo, versão, porta, URL e o mecanismo de inicialização escolhido. `enable` registra a inicialização para o usuário atual e inicia o servidor imediatamente: no Windows, tenta primeiro o Agendador de Tarefas; se a tarefa do usuário não puder ser criada, o Prumo usa automaticamente uma única entrada oculta na pasta Inicializar do usuário atual, sem pedir acesso de administrador. O macOS usa um LaunchAgent, e o Linux usa um serviço systemd do usuário com fallback XDG. Reinstalações e atualizações preservam o mecanismo escolhido. `disable` encerra um processo Prumo identificado com exatidão e remove somente o registro gerenciado; essa escolha sobrevive a reinstalações e atualizações. `prumo dashboard` sem complemento executa o servidor em primeiro plano.
+`status` informa registro, processo, versão, porta, URL e o mecanismo de inicialização escolhido. `enable` registra a inicialização para o usuário atual e inicia o servidor imediatamente: no Windows, tenta primeiro o Agendador de Tarefas; se a tarefa do usuário não puder ser criada, o Prumo usa automaticamente uma única entrada oculta na pasta Inicializar do usuário atual, sem pedir acesso de administrador. O macOS usa um LaunchAgent, e o Linux usa um serviço systemd do usuário com fallback XDG. Reinstalações e atualizações preservam o mecanismo escolhido. Um reinício espera o processo gerenciado anterior liberar a porta, repõe um registro ausente sem duplicar um dashboard ativo verificado e registra o fallback criado na pasta Inicializar mesmo se o reinício falhar depois, para que `disable` consiga removê-lo. `disable` encerra um processo Prumo identificado com exatidão e remove somente o registro gerenciado; essa escolha sobrevive a reinstalações e atualizações. `prumo dashboard` sem complemento executa o servidor em primeiro plano.
 
 O servidor escuta somente em `127.0.0.1:4949` e é somente leitura. Ele descobre workspaces centrais conhecidos e projetos registrados em `installations.json`, escolhe a run atual modificada mais recentemente, percebe novas runs sem reiniciar e mostra estado vazio quando nenhuma existe. Ele não executa tarefas, edita o estado do grafo, sincroniza planos nem varre o disco.
 
@@ -105,6 +105,8 @@ prumo update
 
 Atualizações normais mostram uma barra colorida e compacta de progresso por etapas em terminais interativos e terminam com `Prumo atualizado com sucesso`, seguido da versão instalada em `Prumo v<versão>`. Use `prumo update --dry-run` para ver a prévia detalhada de arquivos e conflitos. O instalador registra ambientes e caminhos personalizados em `~/.local/share/prumo/installations.json`. A atualização também reconhece marcadores existentes do Prumo nos locais padrão e nos projetos informados com `--project`. Preserva o idioma de cada instalação, salvo uso de `--lang`, e reutiliza os backups e o tratamento de conflitos da instalação. Ambientes que contêm somente graph-foreman ficam fora da atualização. Não retoma planos nem cria tentativas. Após `prumo update` concluir, `prumo -v` mostra a versão publicada usada na atualização.
 
+A atualização confere o conteúdo instalado, não apenas a versão salva. Ela reaplica arquivos quando uma cópia gerenciada diverge, uma ativação anterior continua pendente ou a CLI global está ausente. Um marcador de instalação danificado só é recuperado quando aquele ambiente/caminho exato está registrado e um backup do Prumo contém o original conferido byte a byte; caso contrário, a instalação continua pendente para reparo explícito. Uma atualização interrompida preserva seu checkpoint e as notas de versões perdidas até todos os conjuntos concluírem. Uma CLI global mais nova que o `latest` do npm nunca é rebaixada.
+
 Executar `install` novamente é seguro. Ambientes completos na mesma versão são informados como já instalados, sem regravar arquivos nem criar backup. Instalações antigas, incompletas ou alteradas seguem as verificações normais de prévia, backup e conflito.
 
 ## Instalação sobre graph-foreman
@@ -121,26 +123,37 @@ Omita `--all` para escolher pelas caixas de seleção, ou use `--claude`, `--kir
 Não é necessário migrar os dados manualmente. Encerre sessões que estejam carregando arquivos da skill graph-foreman antes de instalar; o instalador nunca encerra processos. Ele detecta os locais padrão, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, projetos informados e ancestrais do diretório atual.
 
 - Instala Prumo na mesma raiz de skills, copia arquivos adicionais da instalação legada quando não há conflito, confere a instalação e depois remove a pasta da skill graph-foreman.
-- Move workspaces centrais legados de `~/.local/share/graph-foreman` para `~/.local/share/prumo`, confere cada arquivo e só remove cada origem após completar o destino. `.specs/graph` dentro de projetos permanece no lugar. Contratos, estados, tentativas, evidências e histórico não mudam.
-- Faz backup completo de cada instalação, configuração e workspace central legado afetado antes de escrever. Uma falha ou alteração concorrente no workspace é revertida ou informada como conflito.
+- Move somente dados centrais duráveis de `~/.local/share/graph-foreman` para `~/.local/share/prumo`: estado do grafo, backups salvos do grafo e arquivos de plano ou handoff no topo. `.specs/graph` dentro de projetos permanece no lugar. Diretórios gerados de execução, cópias de dependências e saídas de build só são apagados depois de conferir o destino durável. Contratos, estados, tentativas, evidências e histórico não mudam.
+- Mantém um original recuperável proporcional aos dados duráveis do plano, detecta alterações concorrentes e desfaz uma realocação se uma etapa posterior da instalação falhar. Links internos entre dados duráveis acompanham o destino; alvos externos não mudam. Um link para pasta vazia que não pode ser recriada adia a migração antes de alterar a origem.
 - Aplica cada conjunto separadamente. Arquivos personalizados conflitantes, configuração inválida, caminho vinculado ou arquivo ocupado impedem somente aquele conjunto. O instalador não encerra processos.
 - Confere os bytes gravados e reverte o conjunto antes de informar sucesso em caso de falha. Alterações concorrentes são detectadas.
 
 O backup informa o comando de reversão:
 
 ```sh
-bunx @henri-ralmeida/prumo@1.3.8 restore "<diretório-do-backup>"
+prumo restore "<diretório-do-backup>"
 ```
 
 A reversão recusa sobrescrever arquivos que você editou depois. Os planos continuam no estado atual: reverter uma instalação não deve apagar trabalho em andamento. Mantenha sua rotina de backup dos dados de negócio; o instalador não captura uma imagem consistente de todos os planos ativos.
 
 O dashboard habilitado é reiniciado depois de instalação ou atualização para servir a versão instalada. Um dashboard desabilitado permanece desabilitado.
 
+### Migrar uma run existente
+
+Depois de atualizar o Prumo, execute a migração pela CLI instalada:
+
+```sh
+prumo migrate --check --run <nome-da-run>
+prumo migrate --run <nome-da-run>
+```
+
+`--check` é somente leitura e informa os campos estruturais e contratos que precisam de migração. `migrate` atualiza uma run legada segura no próprio lugar, cria o backup versionado `state.pre-migrate-v<schema>.json`, preserva ids, dependências, evidências, tentativas e todas as tarefas `done`/`skipped`, e deixa fases adotadas pendentes sem abrir discussão ou planejamento. O comando é idempotente. Trabalho ativo ou rodada aberta que torne a conversão insegura adia a migração e informa o bloqueio. Os comandos do motor também tentam a mesma migração automaticamente quando for segura; altere a fonte aprovada e use `sync-plan` para mudanças de contrato em vez de editar `state.json`.
+
 ## Executar um plano
 
 Apresente e aprove o plano global no modo Plan/Spec do ambiente de IA. Se esse modo bloquear escrita ou despacho de agentes, saia dele depois da aprovação. Então invoque `/prumo <plano-ou-execução>` no Claude Code ou Kiro, ou `$prumo` no Codex. O motor registra despachos; quem cria agentes é o ambiente. Sem suporte a planejadores dedicados, executores ou revisores independentes, o fluxo deve informar a limitação.
 
-Na **1.3.2**, há dois níveis de planejamento. O modo Plan/Spec global define e aprova o grafo. Cada fase então segue **discutir → planejar → executar → revisar**: primeiro o orquestrador registra a fase em discussão, pesquisa e faz ao menos uma pergunta contextual na conversa principal. Quando as áreas cinzentas relevantes estão fechadas, um planejador dedicado e somente leitura pesquisa o projeto e grava um `task-plan-<id>.json` separado e imutável para cada tarefa da fase. O planejador não edita arquivos do produto nem o estado do grafo.
+O fluxo atual tem dois níveis de planejamento. O modo Plan/Spec global define e aprova o grafo. Cada fase então segue **discutir → planejar → executar → revisar**: primeiro o orquestrador registra a fase em discussão, pesquisa e faz ao menos uma pergunta contextual na conversa principal. Quando as áreas cinzentas relevantes estão fechadas, um planejador dedicado e somente leitura pesquisa o projeto e grava um `task-plan-<id>.json` separado e imutável para cada tarefa da fase. O planejador não edita arquivos do produto nem o estado do grafo.
 
 Uma fase fica disponível para discussão e planejamento somente quando todas as dependências externas de todos os membros não concluídos estão concluídas ou puladas. Um membro bloqueado segura a fase inteira; dependências internas bloqueiam apenas execução. O usuário pode escolher fases independentes para planejar em paralelo, independentemente da numeração. Preserve o grafo aprovado em vez de mover tarefas ou remover dependências para contornar bloqueios. Quando o usuário nomeia explicitamente uma tarefa existente, ela é o limite do planejamento: uma discussão, um planner e nenhuma tarefa auxiliar ou planejamento de irmãs sem aprovação explícita.
 
@@ -224,4 +237,4 @@ npm pack
 
 Ao editar traduções: `node scripts/build-dashboard.mjs --write`. O dashboard incorpora o catálogo para funcionar em servidores antigos sem novas rotas de arquivos.
 
-Prumo é um fork do graph-foreman de **JrSantiaggo**, com histórico e [licença MIT](LICENSE) preservados. As alterações estão documentadas no [changelog](CHANGELOG.md).
+Prumo é baseado no graph-foreman de **JrSantiaggo**, com histórico original e [licença MIT](LICENSE) preservados em seu repositório independente. As alterações estão documentadas no [changelog](CHANGELOG.md).

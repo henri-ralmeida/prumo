@@ -6,9 +6,11 @@ O motor é uma CLI Node.js, não um serviço que chama modelos. O ambiente de IA
 
 `npm install -g @henri-ralmeida/prumo` instala a CLI, a skill, o PO First e o serviço de dashboard do usuário. O `postinstall` global configura os ambientes suportados detectados; uma instalação npm local é inerte. Use `prumo install --all` quando os scripts do npm estavam desabilitados ou para reparar um novo ambiente. Instalação e atualização reiniciam o dashboard quando ele está habilitado e preservam a desativação explícita. O dashboard global é somente observador: apenas uma chamada explícita do orquestrador a `sync-plan` reconcilia um plano aprovado.
 
+`prumo update` atualiza a CLI, a skill, os dois READMEs, as referências, os scripts e a configuração PO First em todas as instalações registradas do Claude Code, Kiro e Codex. Ele compara o conteúdo gerenciado, retoma ativação pendente e nunca rebaixa uma CLI global mais nova que o `latest` do npm. Um marcador danificado só é recuperado para seu ambiente/caminho exato registrado e a partir de um backup Prumo conferido byte a byte.
+
 ## Armazenamento
 
-Selecione `PRUMO_ROOT` como workspace existente dentro de `PRUMO_HOME`. Novos planos ficam em `~/.local/share/prumo`; a instalação migra para lá os workspaces centrais do graph-foreman conferindo cada arquivo. `GRAPH_ROOT` e `GRAPH_FOREMAN_HOME` continuam aceitos como compatibilidade explícita; um workspace legado dentro de projeto também é aceito no local original.
+Selecione `PRUMO_ROOT` como workspace existente dentro de `PRUMO_HOME`. Novos planos ficam em `~/.local/share/prumo`; a instalação migra para lá os dados centrais duráveis do graph-foreman: estado do grafo, backups salvos do grafo e arquivos de plano ou handoff no topo. Diretórios gerados de execução, cópias de dependências e saídas de build só são removidos depois de conferir o destino durável. `GRAPH_ROOT` e `GRAPH_FOREMAN_HOME` continuam aceitos como compatibilidade explícita; um workspace legado dentro de projeto também é aceito no local original.
 
 Cada execução usa `.specs/graph/<run>/state.json` e `events.ndjson`. `CURRENT` seleciona a execução padrão. Use `--run <nome>` em toda chamada quando houver várias execuções. Nomes aceitam letras, números, ponto, hífen e sublinhado, sem ponto inicial ou separadores de caminho.
 
@@ -190,11 +192,11 @@ Resolva `scripts/engine.mjs` a partir da skill instalada. Acrescente `--run <nom
 | `validate <tarefa> --failed --evidence <texto>` | Registra reprovação |
 | `done <tarefa>` | Conclui com evidência válida da tentativa e revisor atuais |
 | `fail <tarefa> --reason <texto>` | Registra falha real da tentativa |
-| `retry <tarefa>` | Volta de failed para pending; reutiliza plano atual somente em correção limitada com contexto imutável e motivo de revisão válido |
+| `retry <tarefa>` | Volta de failed para pending; reutiliza plano atual somente em correção limitada com contexto imutável da tarefa e do plano global e motivo de revisão válido |
 | `block <tarefa> --reason <texto>` | Pausa preservando a fase anterior |
 | `unblock <tarefa>` | Restaura a fase anterior, sem nova tentativa |
 | `unblock <tarefa> --reviewer <nome>` | Leva tentativa ativa pausada diretamente à revisão |
-| `skip <tarefa> --reason <texto>` | Pula por decisão explícita |
+| `skip <tarefa> --reason <texto>` | Pula uma vez por decisão explícita não vazia; uma tentativa ativa termina como skipped sem inventar recibo de validação |
 | `note <tarefa> --text <texto>` | Acrescenta nota ao histórico |
 
 O histórico mostra `Executando T4 [2/4]` a partir dos passos de `taskPlan.steps`, conforme o executor
@@ -247,7 +249,7 @@ Quando a entrega foi realmente reprovada e o contrato aprovado também mudou:
 3. Rode `sync-plan --plan <arquivo-aprovado>` enquanto a tarefa está `failed`. Confira em `graph` o contrato, as dependências e os caminhos de escrita persistidos.
 4. Rode `retry <tarefa>`, faça novo planejamento e só então use `start <tarefa> --agent <executor>`.
 
-Acrescente `--run <nome>` em cada chamada. `retry` não recarrega o plano; `refresh-contract` só muda validação e não registra reprovação. Se apenas faltam atualizar verificações da entrega correta, use refresh e revisão na mesma tentativa. Novos requisitos após conclusão exigem acompanhamento explícito.
+Acrescente `--run <nome>` em cada chamada. `retry` não recarrega o plano e recusa contrato divergente ou mudança ainda não sincronizada nas decisões globais `name`, `description` e `requireReview`; `refresh-contract` só muda validação e não registra reprovação. Se apenas faltam atualizar verificações da entrega correta, use refresh e revisão na mesma tentativa. Novos requisitos após conclusão exigem acompanhamento explícito.
 
 Retome da fase persistida, sem repetir a sequência inteira. Se `plan-task`, `start` ou `review` foi registrado, mas o agente não foi disparado, complete o disparo na mesma rodada/tentativa quando autorizado. Confirme o agente real. Se o disparo está indisponível ou o usuário pausou, registre bloqueio pelo motivo de orquestração. Um nome no estado não prova execução. Corrija relatos com notas e preserve tentativas anteriores.
 

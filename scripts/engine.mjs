@@ -1468,8 +1468,8 @@ const commands = {
     const id = args._[0] ?? die('skip <task> --reason "<text>"')
     const state = loadState(name)
     const t = getTask(state, id)
-    if (t.state === 'done') die(`${id} already done`)
-    const reason = args.reason ?? ''
+    if (['done', 'skipped'].includes(t.state)) die(`${id} is already terminal`)
+    const reason = typeof args.reason === 'string' && args.reason.trim() ? args.reason.trim() : die('skip requires --reason <text>')
     if (t.state === 'planning') closePlanning(t, 'skipped')
     if (t.state === 'discussing') closeDiscussion(t, 'skipped')
     t.state = 'skipped'

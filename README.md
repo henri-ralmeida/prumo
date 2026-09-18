@@ -71,7 +71,7 @@ bunx @henri-ralmeida/prumo@latest doctor --claude --lang en
 | Kiro | `/prumo` | Always-included steering and explicit resources in discovered JSON agents |
 | Codex | `$prumo` / skill picker | Managed block in the effective global instructions file |
 
-PO First also applies outside Prumo. It prioritizes outcomes, rules, scope, decisions and evidence without requiring other personal skills. Claude's coding instructions stay enabled in the output style.
+PO First also applies outside Prumo. It prioritizes outcomes, rules, scope, decisions and evidence without requiring other personal skills. It maps every material criterion to current evidence, asks for one independently derived counterexample against the highest applicable risk, and stops when the material criteria are covered. Final reports lead with the observable result. **Suggestions** appear only when a useful next action exists: one to three in priority order, with a fourth only to prevent a critical failure, loss or blockage. Claude's coding instructions stay enabled in the output style.
 
 Open a new session after installation. `doctor` distinguishes installed files, completed configuration and pending activation conditions. Local overrides, explicitly disabled skills and Markdown agents needing an inheritance check are reported; installation does not override harness policies. Filesystem inspection is not proof of model behavior.
 
@@ -84,7 +84,7 @@ prumo dashboard disable
 prumo dashboard
 ```
 
-`status` reports registration, process, version, port, URL and the selected startup mechanism. `enable` registers startup for the current user and starts the server immediately: Task Scheduler is tried first on Windows; if its per-user task cannot be created, Prumo automatically uses one hidden entry in the current user's Startup folder without requesting administrator access. macOS uses a LaunchAgent, and Linux uses a user systemd service with XDG autostart fallback. Reinstalls and updates keep the selected mechanism. `disable` stops an exactly identified Prumo process and removes only its managed registration; this choice survives reinstall and update. The bare `prumo dashboard` command runs the server in the foreground.
+`status` reports registration, process, version, port, URL and the selected startup mechanism. `enable` registers startup for the current user and starts the server immediately: Task Scheduler is tried first on Windows; if its per-user task cannot be created, Prumo automatically uses one hidden entry in the current user's Startup folder without requesting administrator access. macOS uses a LaunchAgent, and Linux uses a user systemd service with XDG autostart fallback. Reinstalls and updates keep the selected mechanism. A restart waits for the previous managed process to release the port, replaces a missing registration without duplicating a verified running dashboard, and records a created Startup fallback even when the restart later fails so `disable` can remove it. `disable` stops an exactly identified Prumo process and removes only its managed registration; this choice survives reinstall and update. The bare `prumo dashboard` command runs the server in the foreground.
 
 The server listens only on `127.0.0.1:4949` and is read-only. It discovers known central workspaces and projects recorded in `installations.json`, selects the most recently modified current run, notices new runs without restart and shows an empty state when none exist. It does not execute tasks, edit graph state, synchronize plans or scan the disk.
 
@@ -105,6 +105,8 @@ prumo update
 
 Normal updates show a compact colored progress bar in interactive terminals and finish with `Prumo updated successfully`, followed by the installed `Prumo v<version>`. Use `prumo update --dry-run` for the detailed file and conflict preview. The installer records installed environments and custom paths in `~/.local/share/prumo/installations.json`. Update also recognizes existing Prumo markers in standard locations and projects supplied with `--project`. It preserves each installation's language unless `--lang` is supplied, uses the same backups and conflict handling as installation, and skips environments containing only graph-foreman. It never resumes plans or creates attempts. After a successful `prumo update`, `prumo -v` reports the published version used for the update.
 
+An update verifies the installed payload, not only its saved version. It reapplies files when a managed copy differs, a previous activation is pending or the global CLI is missing. A damaged installation marker is recovered only when that exact harness/path is registered and a Prumo backup contains a byte-verified original; otherwise the installation remains pending for explicit repair. An interrupted update retains its checkpoint and missed release notes until every group completes. A global CLI newer than npm `latest` is never downgraded.
+
 Running `install` again is safe. Complete same-version environments are reported as already installed and are not rewritten or backed up. Older, incomplete or changed installations follow the normal preview, backup and conflict checks.
 
 ## Installing over graph-foreman
@@ -121,26 +123,37 @@ Omit `--all` to choose with checkboxes, or use `--claude`, `--kiro` or `--codex`
 No manual data migration is required. Finish sessions that are actively loading files from the graph-foreman skill before installing; the installer never kills processes. It checks standard locations, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, supplied projects and ancestors of the current directory.
 
 - Installs Prumo under the same skills root, copies non-product legacy files when they do not conflict, verifies the installed files and then removes the graph-foreman skill directory.
-- Moves central legacy workspaces from `~/.local/share/graph-foreman` to `~/.local/share/prumo`, byte-checks every file and removes each legacy source only after its destination is complete. Project-local `.specs/graph` stays in place. Contracts, states, attempts, evidence and history remain unchanged.
-- Takes complete backups of every affected installation, configuration and central legacy workspace before writing. A failed or concurrent workspace change is rolled back or reported as a conflict.
+- Moves only durable central data from `~/.local/share/graph-foreman` to `~/.local/share/prumo`: graph state, saved graph backups and top-level plan or handoff files. Project-local `.specs/graph` stays in place. Generated execution directories, dependency copies and build outputs are deleted only after the durable destination is verified. Contracts, states, attempts, evidence and history remain unchanged.
+- Keeps a recoverable original proportional to the durable plan data, detects concurrent workspace changes, and rolls back a relocation when a later installation step fails. Internal links between durable data follow the destination; external targets remain untouched. A link to an empty directory that cannot be recreated defers migration before changing the source.
 - Applies independent groups separately. Conflicting custom files, invalid configuration, linked paths or busy files block only their affected group. The installer does not kill processes to release files.
 - Verifies written bytes and rolls back a failed group before reporting success. Concurrent changes are detected.
 
 The backup includes a restore command:
 
 ```sh
-bunx @henri-ralmeida/prumo@1.3.8 restore "<backup-directory>"
+prumo restore "<backup-directory>"
 ```
 
 Restore refuses to overwrite files edited since installation. Plans keep their current state: reverting an installation must not erase ongoing work. Maintain your own business-data backups; the installer does not take a consistent snapshot of every live plan.
 
 An enabled dashboard is restarted after installation or update so it serves the installed version. A disabled dashboard remains disabled.
 
+### Migrate an existing run
+
+Run migration from the installed CLI after updating Prumo:
+
+```sh
+prumo migrate --check --run <run-name>
+prumo migrate --run <run-name>
+```
+
+`--check` is read-only and reports the structural fields and contracts that need migration. `migrate` upgrades a safe legacy run in place, creates a versioned `state.pre-migrate-v<schema>.json` backup, preserves task ids, dependencies, evidence, attempts and every `done`/`skipped` task, and leaves adopted phases pending without opening discussion or planning. It is idempotent. Active work or an open round that makes conversion unsafe defers migration and names the blocker. Engine commands also attempt the same migration automatically when it is safe; change the approved source and use `sync-plan` for contract changes rather than editing `state.json`.
+
 ## Run an approved plan
 
 Present and approve the global plan in Plan/Spec mode in your AI harness. If that mode blocks writes or agent dispatch, leave it after approval. Then invoke `/prumo <plan-or-run>` in Claude Code or Kiro, or `$prumo` in Codex. The engine records dispatches; the harness creates agents. If dedicated planners, executors or independent reviewers are unavailable, the workflow must report that limitation.
 
-In **1.3.2**, planning has two levels. Global Plan/Spec mode defines and approves the graph. Each phase then follows **discuss → plan → execute → review**: the orchestrator first records the phase as discussing, researches it and asks at least one contextual question in the principal conversation. When consequential gray areas are closed, one dedicated read-only planner searches and reads the current project, then writes one separate immutable `task-plan-<id>.json` for every task in that phase. The planner does not edit product files or graph state.
+The current workflow has two planning levels. Global Plan/Spec mode defines and approves the graph. Each phase then follows **discuss → plan → execute → review**: the orchestrator first records the phase as discussing, researches it and asks at least one contextual question in the principal conversation. When consequential gray areas are closed, one dedicated read-only planner searches and reads the current project, then writes one separate immutable `task-plan-<id>.json` for every task in that phase. The planner does not edit product files or graph state.
 
 A phase becomes eligible for discussion and planning only when every external dependency of every unfinished member is done or skipped. One blocked member holds the entire phase; internal dependencies gate execution only. Independent phases can be planned in parallel when the user chooses them, regardless of numbering. Preserve the approved graph instead of moving tasks or removing dependencies to bypass a blocker. When the user explicitly names one existing task, that task is the planning boundary: one discussion, one planner and no helper tasks or sibling planning without explicit approval.
 
@@ -224,4 +237,4 @@ npm pack
 
 After changing translations, run `node scripts/build-dashboard.mjs --write`. The dashboard embeds its catalog so already-running legacy servers need no new asset routes.
 
-Prumo is a fork of graph-foreman by **JrSantiaggo**, preserving its history and [MIT license](LICENSE). Prumo and PO First additions are described in the [changelog](CHANGELOG.md).
+Prumo is based on graph-foreman by **JrSantiaggo**, preserving the original history and [MIT license](LICENSE) in its independent repository. Prumo and PO First additions are described in the [changelog](CHANGELOG.md).

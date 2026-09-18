@@ -2,6 +2,20 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 1.3.16 — 2026-09-18
+
+### Improved — Complete installed guidance
+
+- Document recoverable updates, safe run migration, transactional graph-foreman storage migration and dashboard restart ownership in English and Brazilian Portuguese.
+- Explain the current PO First evidence, counterexample and prioritized-suggestion rules in both installation guides.
+- Install and update both READMEs, the skill and runtime references consistently across Claude Code, Kiro and Codex.
+
+### Fixed — Immutable skip decisions
+
+- Require a nonempty reason when explicitly skipping work.
+- Close an active delivery attempt as skipped without creating a validation receipt.
+- Refuse to rewrite tasks that are already done or skipped.
+
 ## 1.3.15 — 2026-09-18
 
 ### Fixed — Recoverable updates

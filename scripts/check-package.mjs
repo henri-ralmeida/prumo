@@ -14,10 +14,8 @@ assert.equal(pkg.engines.node, '>=22')
 assert.equal(pkg.dependencies, undefined)
 const releaseNotes = JSON.parse(readFileSync(join(root, 'scripts', 'release-notes.json'), 'utf8'))
 assert.deepEqual(releaseNotes[pkg.version]?.en?.map(section => section.title), [
-    'Fixed — Recoverable updates',
-    'Fixed — Transactional legacy migration',
-    'Fixed — Dashboard restart ownership',
-    'Fixed — Task history consistency'
+    'Improved — Complete installed guidance',
+    'Fixed — Immutable skip decisions'
 ])
 assert.equal(releaseNotes[pkg.version]?.['pt-BR'], undefined)
 for (const file of ['SKILL.md', 'README.md', 'README.pt-BR.md', 'CHANGELOG.md', 'LICENSE', 'references/po-first.md', 'references/runtime.md', 'references/runtime.pt-BR.md']) assert.ok(existsSync(join(root, file)), file)
@@ -30,6 +28,8 @@ assert.match(skill, /keep its internal work inside the one immutable task plan/)
 assert.match(skill, /cachePaths/)
 assert.match(skill, /one focused counterexample for the highest-risk applicable/)
 assert.match(skill, /Once every applicable criterion has current evidence/)
+assert.match(readFileSync(join(root, 'README.md'), 'utf8'), /prumo migrate --check/)
+assert.match(readFileSync(join(root, 'README.pt-BR.md'), 'utf8'), /prumo migrate --check/)
 const poFirst = readFileSync(join(root, 'references', 'po-first.md'), 'utf8')
 assert.match(poFirst, /Stop investigating when every material criterion has current evidence/)
 assert.match(poFirst, /Judge suggestions by their usefulness/)
