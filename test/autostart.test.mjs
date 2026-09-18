@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { dashboardHealth, dashboardNeedsRepair, dashboardStatus, disableDashboard, enableDashboard, restartDashboard, runDashboardForeground } from '../lib/autostart.mjs'
@@ -43,6 +43,28 @@ function fixture(t, platform, extra = {}) {
 }
 
 const preference = home => JSON.parse(readFileSync(join(home, '.local', 'share', 'prumo', 'dashboard.json'), 'utf8'))
+
+test('disable remove o Startup criado por um restart que falhou na identificação do processo', async t => {
+  const f = fixture(t, 'win32', {
+    fetch: async () => ({ ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0' }) }),
+    exec: () => ({ status: 1, stderr: 'Access denied' }),
+    kill: () => assert.fail('Não pode encerrar processo sem identidade comprovada'),
+  })
+  f.options.env.APPDATA = join(f.home, 'AppData')
+  const data = join(f.home, '.local/share/prumo')
+  mkdirSync(data, { recursive: true })
+  writeFileSync(join(data, 'dashboard.json'), JSON.stringify({ enabled: true, mechanism: 'schtasks', node: f.node, script: f.script }))
+  const startup = join(f.options.env.APPDATA, 'Microsoft/Windows/Start Menu/Programs/Startup/Prumo Dashboard.vbs')
+  const restarted = await restartDashboard(f.options)
+  assert.equal(restarted.ok, false)
+  assert.match(restarted.error, /ownership verification failed/)
+  assert.ok(existsSync(startup))
+  assert.equal(preference(f.home).mechanism, 'windows-startup')
+  const disabled = await disableDashboard(f.options)
+  assert.equal(existsSync(startup), false)
+  assert.equal(preference(f.home).enabled, false)
+  assert.equal(disabled.ok, false, 'O processo desconhecido continua ativo e deve ser informado')
+})
 
 test('doctor policy distinguishes opt-out from missing, stopped and conflicting services', () => {
   assert.equal(dashboardNeedsRepair({ disabled: true, registered: false, process: 'stopped', conflict: false }), false)
@@ -238,6 +260,97 @@ test('restart replaces an enabled registration without losing its preference', a
   const skipped = await restartDashboard(f.options)
   assert.equal(skipped.skipped, true)
   assert.equal(f.calls.slice(count).some(([, args]) => ['/Create', '/Run'].includes(args[0])), false)
+})
+
+test('enable restarts a stale service that starts after the initial health probe', async t => {
+  let running = false
+  let liveVersion = '1.2.0'
+  const f = fixture(t, 'linux', {
+    fetch: async () => {
+      if (!running) throw new Error('stopped')
+      return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: liveVersion }) }
+    },
+    exec(file, args) {
+      f.calls.push([file, args])
+      const command = args.join(' ')
+      if (file === 'systemctl' && command === '--user enable --now prumo-dashboard.service') running = true
+      if (file === 'systemctl' && command === '--user restart prumo-dashboard.service') {
+        running = true
+        liveVersion = '1.3.0'
+      }
+      return { status: 0, stdout: '' }
+    },
+  })
+
+  const result = await enableDashboard(f.options)
+  assert.equal(result.ok, true, JSON.stringify(result))
+  assert.equal(result.version, '1.3.0')
+  assert.ok(f.calls.some(([file, args]) => file === 'systemctl' && args.join(' ') === '--user restart prumo-dashboard.service'))
+})
+
+test('Windows restart waits for the scheduled process to release the port', async t => {
+  let task = false
+  let running = true
+  let stopping = false
+  let ranAfterStop = false
+  const f = fixture(t, 'win32', {
+    fetch: async () => {
+      if (!running) throw new Error('stopped')
+      return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0' }) }
+    },
+    exec(file, args) {
+      f.calls.push([file, args])
+      if (file !== 'schtasks') return { status: 0, stdout: '' }
+      if (args[0] === '/Query') return { status: task ? 0 : 1, stdout: '' }
+      if (args[0] === '/Create') task = true
+      if (args[0] === '/End') stopping = true
+      if (args[0] === '/Run') {
+        ranAfterStop = !running
+        running = true
+      }
+      return { status: 0, stdout: '' }
+    },
+    delay: async () => {
+      if (stopping) {
+        running = false
+        stopping = false
+      }
+    },
+  })
+
+  await enableDashboard(f.options)
+  const result = await restartDashboard(f.options)
+  assert.equal(result.ok, true, JSON.stringify(result))
+  assert.equal(ranAfterStop, true)
+})
+
+test('Windows restart replaces a missing scheduler entry without duplicating the live process', async t => {
+  let task = false
+  let running = true
+  let liveVersion = '1.2.0'
+  const killed = []
+  const f = fixture(t, 'win32', {
+    fetch: async () => {
+      if (!running) throw new Error('stopped')
+      return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: liveVersion, pid: 5432 }) }
+    },
+    exec(file, args) {
+      f.calls.push([file, args])
+      if (file !== 'schtasks') return { status: 0, stdout: '' }
+      if (args[0] === '/Query') return { status: task ? 0 : 1, stdout: '' }
+      if (args[0] === '/Create') task = true
+      if (args[0] === '/Run') { running = true; liveVersion = '1.3.0' }
+      return { status: 0, stdout: '' }
+    },
+    readProcessCommand: () => ({ executable: f.node, commandLine: `"${f.node}" "${f.script}" "--global" "--port" "4949"` }),
+    kill(pid) { killed.push(pid); running = false },
+  })
+
+  await enableDashboard(f.options)
+  task = false
+  const result = await restartDashboard(f.options)
+  assert.equal(result.ok, true, JSON.stringify(result))
+  assert.deepEqual(killed, [5432])
 })
 
 test('adopting an older running dashboard restarts it before claiming activation succeeded', async t => {

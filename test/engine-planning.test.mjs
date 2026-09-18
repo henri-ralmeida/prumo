@@ -9,14 +9,14 @@ import { fileURLToPath } from 'node:url'
 const engine = resolve(dirname(fileURLToPath(import.meta.url)), '../scripts/engine.mjs')
 const validation = [{ kind: 'functional', run: 'node check.cjs', expect: 'delivery behavior passes' }]
 
-function fixture(t, dependent = false) {
+function fixture(t, dependent = false, { requireReview = true } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'prumo-corrective-retry-'))
   t.after(() => rmSync(home, { recursive: true, force: true }))
   const root = join(home, 'workspace'), project = join(home, 'project')
   mkdirSync(root); mkdirSync(project)
   writeFileSync(join(project, 'check.cjs'), "require('node:assert/strict').equal(1, 1)\n")
   const planPath = join(root, 'plan.json')
-  writeFileSync(planPath, JSON.stringify({ name: 'Corrective retry', tasks: [
+  writeFileSync(planPath, JSON.stringify({ name: 'Corrective retry', requireReview, tasks: [
     ...(dependent ? [{ id: 'T0', title: 'Dependency', validation }] : []),
     { id: 'T1', title: 'Delivery', deps: dependent ? ['T0'] : [], validation },
   ] }))
@@ -71,6 +71,42 @@ test('bounded reviewer correction reuses the immutable approved plan and reason'
   f.ok('review', 'T1', '--agent', 'reviewer-2')
   f.ok('validate', 'T1', '--ok', '--evidence', 'reviewed correction', '--cwd', f.project)
   f.ok('done', 'T1')
+})
+
+test('skip encerra tentativa ativa sem inventar recibo de validação', t => {
+  for (const phase of ['running', 'reviewing', 'blocked']) {
+    const f = fixture(t)
+    f.ok('start', 'T1', '--agent', 'executor-1')
+    if (phase === 'reviewing') f.ok('review', 'T1', '--agent', 'reviewer-1')
+    if (phase === 'blocked') f.ok('block', 'T1', '--reason', 'Pause before cancellation')
+    const before = f.state().tasks.T1
+    f.ok('skip', 'T1', '--reason', 'Approved cancellation')
+    const task = f.state().tasks.T1
+    const attempt = task.attempts.at(-1)
+    assert.equal(task.state, 'skipped')
+    assert.equal(task.skipReason, 'Approved cancellation')
+    assert.equal(task.validations.length, before.validations.length)
+    assert.equal(attempt.result, 'skipped')
+    assert.equal(attempt.reason, 'Approved cancellation')
+    assert.ok(attempt.endedAt)
+    assert.ok(attempt.endedAt >= attempt.startedAt)
+    f.ok('skip', 'T1', '--reason', 'Second decision')
+    assert.deepEqual(f.state().tasks.T1.attempts, task.attempts)
+    assert.equal(f.state().tasks.T1.skipReason, 'Second decision')
+  }
+})
+
+test('retry recusa mudança global aprovada antes de mutar a tarefa falha', t => {
+  const f = fixture(t, false, { requireReview: false })
+  const plan = JSON.parse(readFileSync(f.planPath, 'utf8'))
+  f.ok('start', 'T1', '--agent', 'executor-1')
+  f.ok('review', 'T1', '--agent', 'reviewer-1')
+  f.ok('fail', 'T1', '--reason', 'The reviewed implementation needs correction')
+  plan.requireReview = true
+  writeFileSync(f.planPath, JSON.stringify(plan))
+  const before = f.state()
+  f.rejects(/global plan decisions differ.*requireReview.*sync-plan/, 'retry', 'T1')
+  assert.deepEqual(f.state(), before)
 })
 
 test('retry requires new planning when the validation contract changes after failure', t => {

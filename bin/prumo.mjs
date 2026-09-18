@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util'
 import { spawnSync } from 'node:child_process'
-import { readFileSync, writeFileSync, mkdirSync, renameSync, rmSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, renameSync, rmSync, existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { resolve, join, dirname } from 'node:path'
-import { planInstall, applyInstall, restoreInstall, installationStatus, discoverInstallations, detectHarnesses, reconcileDashboardInstall } from '../lib/install.mjs'
+import { planInstall, applyInstall, restoreInstall, installationStatus, discoverInstallations, detectHarnesses, reconcileDashboardInstall, readInstallationMarker } from '../lib/install.mjs'
 import { assertUpdateVersion, globalCliState, launchUpdate, reconcileDashboardUpdate, updateGlobalCli, updateRequest } from '../lib/update.mjs'
 import { releaseHistory } from '../lib/release-notes.mjs'
 import { dashboardNeedsRepair, dashboardStatus, disableDashboard, enableDashboard, runDashboardForeground } from '../lib/autostart.mjs'
@@ -123,7 +123,8 @@ try {
   } else if (['update', '_update'].includes(positionals[0])) {
     if (positionals.length !== 1 || ['claude', 'kiro', 'codex', 'all'].some(name => values[name])) throw new Error('Update automatically selects installed environments; do not select a harness')
     if (positionals[0] === 'update') {
-      const request = { dryRun: values['dry-run'] ?? false, lang: values.lang, projects: (values.project ?? []).map(path => resolve(path)), cwd: process.cwd(), updateCli: true, sourceVersion: version, globalVersion: globalCliState(packageRoot).version }
+      const pendingUpdate = existsSync(join(homedir(), '.local/share/prumo/update-pending.json'))
+      const request = { dryRun: values['dry-run'] ?? false, lang: values.lang, projects: (values.project ?? []).map(path => resolve(path)), cwd: process.cwd(), updateCli: true, sourceVersion: version, globalVersion: globalCliState(packageRoot).version, pendingUpdate }
       const code = await launchUpdate(request, { onCurrent: current => print(t('Prumo is already up to date'), `v${current}`) })
       if (code === null) print('No Prumo installations found; install an environment first')
       else process.exitCode = code
@@ -141,7 +142,7 @@ try {
       const checkpoint = join(homedir(), '.local/share/prumo/update-pending.json')
       try { previousVersions.push(...JSON.parse(readFileSync(checkpoint, 'utf8')).fromVersions) } catch { /* no unfinished update */ }
       for (const entry of installed) for (const root of entry.roots) {
-        previousVersions.push(JSON.parse(readFileSync(join(root, 'prumo/.prumo-install.json'), 'utf8').replace(/^\uFEFF/, '')).version)
+        previousVersions.push(readInstallationMarker(root, { harness: entry.harness }).version)
       }
       if (!request.dryRun) {
         mkdirSync(dirname(checkpoint), { recursive: true })
@@ -163,7 +164,7 @@ try {
         try {
           const variants = new Map()
           for (const root of entry.roots) {
-            const marker = JSON.parse(readFileSync(join(root, 'prumo', '.prumo-install.json'), 'utf8').replace(/^\uFEFF/, ''))
+            const marker = readInstallationMarker(root, { harness: entry.harness })
             previousVersions.push(marker.version)
             const saved = marker.lang
             const lang = request.lang ?? (['en', 'pt-BR'].includes(saved) ? saved : undefined)

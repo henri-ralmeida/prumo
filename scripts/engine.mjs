@@ -76,6 +76,7 @@ const DEFAULT_MAX_PARALLEL = 4
 const DEFAULT_MAX_EXECUTORS = 3   // the 4th slot is RESERVED for review
 const STATE_SCHEMA_VERSION = 1
 const TASK_CONTRACT_FIELDS = ['phase', 'title', 'deps', 'validation', 'validationMode', 'inspectionReason', 'requireReview', 'maxAttempts', 'tags', 'touches']
+const GLOBAL_PLAN_FIELDS = ['name', 'description', 'requireReview']
 const LOCK_WAIT_MS = 5000         // how long a command waits for the run's lock
 const LOCK_STALE_MS = 30000       // a lock older than this belonged to a process that died
 
@@ -379,6 +380,14 @@ function taskFromPlan(t) {
     attempts: [],
     validations: [],
     notes: [],
+  }
+}
+
+function globalPlanValues(plan) {
+  return {
+    name: plan.name,
+    description: plan.description ?? '',
+    requireReview: plan.requireReview !== false,
   }
 }
 
@@ -1351,11 +1360,16 @@ const commands = {
     if (t.state !== 'failed') die(`${id} is ${t.state}, not failed`)
     if (state.plan.source && existsSync(state.plan.source)) {
       const { plan } = readPlan(state.plan.source, state)
+      const currentGlobal = globalPlanValues(state.plan)
+      const approvedGlobal = globalPlanValues(plan)
+      const globalChanges = GLOBAL_PLAN_FIELDS.filter(field => JSON.stringify(currentGlobal[field]) !== JSON.stringify(approvedGlobal[field]))
       const approved = plan.tasks.find((candidate) => candidate.id === id)
       if (!approved) die(`approved plan no longer contains ${id} — inspect it before retry`)
       const next = taskFromPlan(approved)
       const changed = TASK_CONTRACT_FIELDS.filter((field) => JSON.stringify(t[field]) !== JSON.stringify(next[field]))
       if (changed.length) die(`${id} contract differs from the approved plan (${changed.join(', ')}) — run sync-plan and inspect the persisted contract before retry`)
+      if (globalChanges.length)
+        die(`${id} global plan decisions differ from the approved plan (${globalChanges.join(', ')}) — run sync-plan and inspect the persisted plan before retry`)
     }
     const cap = t.maxAttempts ?? MAX_ATTEMPTS_SOFT
     if (t.attempts.length >= cap && !args.force)
@@ -1455,13 +1469,20 @@ const commands = {
     const state = loadState(name)
     const t = getTask(state, id)
     if (t.state === 'done') die(`${id} already done`)
+    const reason = args.reason ?? ''
     if (t.state === 'planning') closePlanning(t, 'skipped')
     if (t.state === 'discussing') closeDiscussion(t, 'skipped')
     t.state = 'skipped'
-    t.skipReason = args.reason ?? ''
+    t.skipReason = reason
+    const attempt = t.attempts?.at(-1)
+    if (attempt && !attempt.endedAt && !attempt.result) {
+      attempt.endedAt = new Date().toISOString()
+      attempt.result = 'skipped'
+      attempt.reason = reason
+    }
     saveState(name, state)
-    emit(name, 'task_skip', id, { reason: args.reason ?? '' })
-    log(`[prumo] ${id} skipped: ${args.reason ?? ''}`)
+    emit(name, 'task_skip', id, { reason })
+    log(`[prumo] ${id} skipped: ${reason}`)
   },
 
   note() {

@@ -8,10 +8,12 @@ const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.u
 test('current release has concise English update highlights with descriptive subtitles', () => {
   const notes = releaseNotes(version)
   assert.deepEqual(notes.map(section => section.title), [
-    'Fixed — Minimal legacy migration',
-    'Improved — Fast first update'
+    'Fixed — Recoverable updates',
+    'Fixed — Transactional legacy migration',
+    'Fixed — Dashboard restart ownership',
+    'Fixed — Task history consistency'
   ])
-  assert.ok(notes.flatMap(section => section.items).includes('Run the shared migration once instead of repeating it for Claude Code, Kiro and Codex'))
+  assert.ok(notes.flatMap(section => section.items).includes('Refuse to downgrade a newer global CLI to an older npm latest release'))
   assert.ok(releaseNotes('1.3.11').flatMap(section => section.items).includes('Keep every task and phase visible while dimming cards outside the selected filter'))
   assert.ok(releaseNotes('1.3.2').flatMap(section => section.items).includes('Keep one discussion and one planner when the user names one task'))
   assert.ok(releaseNotes('1.3.1').flatMap(section => section.items).includes('Open phases in declared order after earlier work is terminal'))

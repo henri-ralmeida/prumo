@@ -1,4 +1,12 @@
 {
+  "1.3.15": {
+    "en": [
+      { "title": "Fixed — Recoverable updates", "items": ["Recover damaged installation markers only from registered, byte-verified backups", "Reapply updates when managed files differ or activation remains pending", "Refuse to downgrade a newer global CLI to an older npm latest release"] },
+      { "title": "Fixed — Transactional legacy migration", "items": ["Detect concurrent changes and restore relocated state after later failures", "Preserve durable internal links across migration and restore", "Refuse unrecoverable empty-directory links before changing the legacy source"] },
+      { "title": "Fixed — Dashboard restart ownership", "items": ["Wait for the previous Windows dashboard to release its port", "Avoid duplicate managed processes when the scheduler entry is missing", "Remove a Startup fallback correctly after an interrupted restart"] },
+      { "title": "Fixed — Task history consistency", "items": ["Close an active attempt when its task is explicitly skipped", "Require sync-plan before retry when global plan decisions changed"] }
+    ]
+  },
   "1.3.14": {
     "en": [
       { "title": "Fixed — Minimal legacy migration", "items": ["Move only graph state, graph backups and top-level plan or handoff files into Prumo storage", "Delete generated execution directories, dependency copies and build outputs after state verification", "Run the shared migration once instead of repeating it for Claude Code, Kiro and Codex"] },
