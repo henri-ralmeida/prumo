@@ -29,6 +29,7 @@ test('update exits before npm only when Claude, Kiro and Codex are all already l
   const current = await launchUpdate(request, {
     discover: () => installations, latestVersion: () => version,
     onCurrent: value => { reported = value }, run: () => { throw new Error('npm must not run') }, filesCurrent: () => true,
+    status: async () => ({ enabled: true, process: 'running', registered: true, version }),
   })
   assert.equal(current, 0)
   assert.equal(reported, version)
@@ -58,6 +59,34 @@ test('update exits before npm only when Claude, Kiro and Codex are all already l
     discover: () => installations, latestVersion: () => version, run: runUpdater, filesCurrent: () => true,
   })
   assert.equal(launched, 3, 'a pending checkpoint must prevent the current-version shortcut')
+})
+
+test('update na versão atual recupera dashboard parado e respeita prévia e desativação', async t => {
+  const home = mkdtempSync(join(realpathSync(tmpdir()), 'prumo-dashboard-current-'))
+  t.after(() => rmSync(home, { recursive: true, force: true }))
+  const root = join(home, 'skills')
+  put(join(root, 'prumo/.prumo-install.json'), { product: 'prumo', harness: 'claude', version })
+  const request = { dryRun: false, cwd: home, projects: [], sourceVersion: version, globalVersion: version }
+  let repairs = 0, current = 0
+  const notices = []
+  const deps = {
+    discover: () => [{ harness: 'claude', roots: [root] }], latestVersion: () => version,
+    filesCurrent: () => true, run: () => assert.fail('Não deve baixar ou reescrever o pacote atual'),
+    status: async () => ({ enabled: true, process: 'stopped', registered: true, version }),
+    repair: async () => { repairs++; return { ok: true, process: 'running' } },
+    onCurrent: () => { current++ }, onDashboardRepair: preview => notices.push(preview),
+  }
+  assert.equal(await launchUpdate(request, deps), 0)
+  assert.equal(repairs, 1)
+  assert.equal(current, 1)
+  assert.deepEqual(notices, [false])
+  await launchUpdate({ ...request, dryRun: true }, deps)
+  assert.equal(repairs, 1)
+  assert.deepEqual(notices, [false, true])
+  await launchUpdate(request, { ...deps, status: async () => ({ enabled: false, disabled: true, process: 'stopped' }) })
+  assert.equal(repairs, 1)
+  await assert.rejects(launchUpdate(request, { ...deps, repair: async () => ({ ok: false, error: 'port conflict' }) }), /Dashboard restart failed: port conflict/)
+  assert.equal(current, 2, 'Não informar sucesso quando o reparo falha')
 })
 
 test('update recusa downgrade da CLI global mesmo iniciado por uma versão local antiga', async () => {

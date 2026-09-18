@@ -110,6 +110,7 @@ Full task contract (every field, defaults, per-task `requireReview`/`maxAttempts
 ```bash
 node $ENGINE init --plan "$PRUMO_ROOT/.specs/graph/plans/<name>.plan.json" --run <name>-01
 prumo dashboard enable  # http://localhost:4949 — per-user background service
+prumo dashboard logs    # recent bounded lifecycle and crash diagnostics
 ```
 
 The global dashboard only observes; it never synchronizes a plan. Before resuming an existing run, use
@@ -141,6 +142,8 @@ On Windows, use PowerShell environment assignment ($env:PRUMO_ROOT) and quoted p
 Ensure the server is available and give the dev the URL before dispatching a single agent. It discovers
 known central workspaces and registered projects and follows their current runs. A taken port may be a
 managed Prumo or an unrelated process; use `prumo dashboard status` and never terminate an unidentified owner.
+If the managed dashboard disappears, inspect `prumo dashboard logs` before restarting it. Preserve the
+reported timestamp, PID, signal or fatal message in the incident evidence.
 
 **Two runs at once** work only when neither leans on the defaults: pass `--run <name>` to every
 command for the non-current run, and give the second dashboard its own port AND pin —
@@ -184,6 +187,14 @@ scout the phase's current code and artifacts; identify specific PO First gray ar
 least one contextual question. Select the question channel from tools actually exposed and allowed in
 the principal session, respecting their current schema and mode restrictions:
 
+Discussion resolves meaning and decisions; it does not deliver a task. Local source inspection is allowed.
+Do not run builds, tests, acceptance commands, database or cluster queries, external API probes, migrations,
+or writes when their output is itself a target task's result or acceptance evidence. The planner may perform
+read-only research needed to determine **how** the executor should work, but it must not produce the requested
+result. The executor performs every task deliverable, including a read-only measurement when that measurement
+is the task. Classify an ambiguous command by its purpose: if a successful result could satisfy a task or one
+of its acceptance criteria, defer it to that task's executor.
+
 - **Codex:** prefer `request_user_input_async` when available; use `request_user_input` only where its
   mode rules permit. A Plan-only tool being unavailable does not rule out an asynchronous native tool.
 - **Claude Code:** use `AskUserQuestion` when exposed. Keep discovery in the principal conversation;
@@ -205,7 +216,11 @@ changing behavior, scope, acceptance or execution remains. Put out-of-scope idea
 Run `begin-phase-discussion` before presenting the first question. It persists the phase as `discussing` and issues the
 current `roundId` and `nonce`. Write the resulting discovery JSON with those values and bind at least
 one freshly answered question to that `roundId`; include light research, the real `native` or
-`chat-fallback` channel, PO First coverage, decisions, deferred ideas and closure. Then run:
+`chat-fallback` channel, PO First coverage, decisions, deferred ideas, `executionBoundary` and closure.
+`executionBoundary.deferredToExecutor` must name every targeted task and `prematureTaskWork` is normally
+empty. If task work occurred during discussion, record its task and action, stop, tell the user, and do not
+reuse its result. Only after explicit user approval may `finish-*-discussion --accept-premature-work` close
+the round; the executor still repeats the work. Then run:
 
 ```bash
 node $ENGINE finish-phase-discussion F2 --context <discovery.json>

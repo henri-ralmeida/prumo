@@ -8,7 +8,7 @@ import { resolve, join, dirname } from 'node:path'
 import { planInstall, applyInstall, restoreInstall, installationStatus, discoverInstallations, detectHarnesses, reconcileDashboardInstall, readInstallationMarker } from '../lib/install.mjs'
 import { assertUpdateVersion, globalCliState, launchUpdate, reconcileDashboardUpdate, updateGlobalCli, updateRequest } from '../lib/update.mjs'
 import { releaseHistory } from '../lib/release-notes.mjs'
-import { dashboardNeedsRepair, dashboardStatus, disableDashboard, enableDashboard, runDashboardForeground } from '../lib/autostart.mjs'
+import { dashboardNeedsRepair, dashboardStatus, disableDashboard, enableDashboard, readDashboardEvents, runDashboardForeground } from '../lib/autostart.mjs'
 import { selectHarnesses } from '../lib/prompt.mjs'
 import { language, createTranslator, messages } from '../scripts/i18n.mjs'
 
@@ -106,13 +106,21 @@ try {
   const packageRoot = fileURLToPath(new URL('..', import.meta.url))
   if (values.version) print(version)
   else if (values.help || positionals.length === 0) {
-    print(`Prumo ${version} — graph-foreman + PO First\n\nprumo install [--all | --claude|--kiro|--codex] [--lang en|pt-BR] [--dry-run] [--project <path>]\nprumo update [--dry-run] [--lang en|pt-BR] [--project <path>]\nprumo migrate [--check] [--run <name>]\nprumo doctor --claude|--kiro|--codex [--lang en|pt-BR] [--project <path>]\nprumo dashboard [enable|disable|status]\nprumo restore <backup>\n`)
+    print(`Prumo ${version} — graph-foreman + PO First\n\nprumo install [--all | --claude|--kiro|--codex] [--lang en|pt-BR] [--dry-run] [--project <path>]\nprumo update [--dry-run] [--lang en|pt-BR] [--project <path>]\nprumo migrate [--check] [--run <name>]\nprumo doctor --claude|--kiro|--codex [--lang en|pt-BR] [--project <path>]\nprumo dashboard [enable|disable|status|logs]\nprumo restore <backup>\n`)
     print('Install opens a selection of detected environments; --all selects all without prompting')
   } else if (positionals[0] === 'dashboard') {
-    if (positionals.length > 2 || ['claude', 'kiro', 'codex', 'all'].some(name => values[name]) || values.lang || values['dry-run'] || values.project?.length) throw new Error('Dashboard accepts only enable, disable or status')
+    if (positionals.length > 2 || ['claude', 'kiro', 'codex', 'all'].some(name => values[name]) || values.lang || values['dry-run'] || values.project?.length) throw new Error('Dashboard accepts only enable, disable, status or logs')
     const action = positionals[1]
     if (!action) process.exitCode = runDashboardForeground()
-    else {
+    else if (action === 'logs') {
+      await dashboardStatus()
+      const events = readDashboardEvents()
+      if (!events.length) print('No dashboard events recorded')
+      for (const event of events) {
+        const detail = event.signal ?? event.code ?? event.message ?? ''
+        print(`${event.at ?? 'unknown time'}  ${event.event}  pid=${event.pid ?? '?'}${detail !== '' ? `  ${detail}` : ''}`)
+      }
+    } else {
       if (!['enable', 'disable', 'status'].includes(action)) throw new Error(`Unknown dashboard action: ${action}`)
       const result = action === 'enable' ? await enableDashboard() : action === 'disable' ? await disableDashboard() : await dashboardStatus()
       print(`dashboard: ${result.process}; ${result.registered ? 'registered' : 'not registered'}; ${result.enabled ? 'enabled' : result.disabled ? 'disabled' : 'not configured'}`)
@@ -125,7 +133,10 @@ try {
     if (positionals[0] === 'update') {
       const pendingUpdate = existsSync(join(homedir(), '.local/share/prumo/update-pending.json'))
       const request = { dryRun: values['dry-run'] ?? false, lang: values.lang, projects: (values.project ?? []).map(path => resolve(path)), cwd: process.cwd(), updateCli: true, sourceVersion: version, globalVersion: globalCliState(packageRoot).version, pendingUpdate }
-      const code = await launchUpdate(request, { onCurrent: current => print(t('Prumo is already up to date'), `v${current}`) })
+      const code = await launchUpdate(request, {
+        onCurrent: current => print(t('Prumo is already up to date'), `v${current}`),
+        onDashboardRepair: dryRun => print(dryRun ? 'Would restart the enabled Prumo dashboard' : 'Dashboard restarted: http://localhost:4949'),
+      })
       if (code === null) print('No Prumo installations found; install an environment first')
       else process.exitCode = code
     } else {

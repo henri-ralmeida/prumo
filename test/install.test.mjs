@@ -365,7 +365,8 @@ test('overlay migrates the legacy skill, preserves run data and supports complet
     questions: [{ question: 'Preserve this documentation scope?', answer: 'Yes.', channel: 'chat-fallback', round: 1 }],
     coverage: { problem: 'Document scope', affected: 'Readers', outcome: 'Accurate document', currentBehavior: 'Scope exists',
       desiredBehavior: 'Preserve it', rules: 'Inspection only', exceptions: 'None', scope: 'Documentation', acceptance: 'Inspection passes' },
-    decisions: [], deferred: [], closure: 'The documentation task is fully specified.' })
+    decisions: [], deferred: [], executionBoundary: { deferredToExecutor: ['T1'], prematureTaskWork: [] },
+    closure: 'The documentation task is fully specified.' })
   const statePath = join(root, '.specs', 'graph', 'legacy', 'state.json')
   for (const args of [['init', '--plan', planPath, '--run', 'legacy'], ['begin-discussion', 'T1']]) {
     const result = spawnSync(process.execPath, [join(source, 'scripts', 'engine.mjs'), ...args], { env, encoding: 'utf8' })
@@ -794,7 +795,8 @@ test('an in-flight validation finishes across overlay without a new attempt or s
     questions: [{ question: 'Preserve the in-flight validation?', answer: 'Yes.', channel: 'chat-fallback', round: 1 }],
     coverage: { problem: 'Overlay during validation', affected: 'Active run', outcome: 'No lost attempt', currentBehavior: 'Validation is active',
       desiredBehavior: 'Complete same attempt', rules: 'Preserve state', exceptions: 'None', scope: 'Overlay', acceptance: 'Validation completes' },
-    decisions: [], deferred: [], closure: 'The in-flight behavior is fully specified.' })
+    decisions: [], deferred: [], executionBoundary: { deferredToExecutor: ['T1'], prematureTaskWork: [] },
+    closure: 'The in-flight behavior is fully specified.' })
   for (const args of [['init', '--plan', plan, '--run', 'active'], ['begin-discussion', 'T1']]) {
     const result = cli(args)
     assert.equal(result.status, 0, result.stdout + result.stderr)

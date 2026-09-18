@@ -377,14 +377,19 @@ planning round. Unsafe adoption changes nothing.
   },
   "decisions": [{ "question": "Allow partial import?", "answer": "No." }],
   "deferred": [],
+  "executionBoundary": { "deferredToExecutor": ["T1"], "prematureTaskWork": [] },
   "closure": "The user resolved the task-specific behavior; no consequential gray area remains."
 }
 ```
 
 `finish-phase-discussion F1 --context <discovery.json>` requires the current receipt, nonempty light research,
 at least one answered question with a positive round and `native` or `chat-fallback` channel,
-all nine PO First coverage fields, resolved decisions, a `deferred` string array and a closure
+all nine PO First coverage fields, resolved decisions, a `deferred` string array, an `executionBoundary`
+that defers every target task to its executor, and a closure
 reason. It validates everything before atomically persisting discovery and returning `ready_to_plan`.
+If `prematureTaskWork` reports that discussion produced a task result, closure is refused. After the
+orchestrator discloses it and receives explicit user approval, `--accept-premature-work` records the incident;
+the planner treats that result as untrusted context and the executor repeats the work.
 The engine computes a canonical SHA-256 digest from the persisted fields and discussion receipt and
 binds it to `plan-phase`. The one planner researches the current code and contracts without editing them,
 then writes deterministic `task-plan-<id>.json` files. `finish-phase-planning --plan-dir <directory>` validates

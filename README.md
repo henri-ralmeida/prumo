@@ -79,12 +79,13 @@ Open a new session after installation. `doctor` distinguishes installed files, c
 
 ```sh
 prumo dashboard status
+prumo dashboard logs
 prumo dashboard enable
 prumo dashboard disable
 prumo dashboard
 ```
 
-`status` reports registration, process, version, port, URL and the selected startup mechanism. `enable` registers startup for the current user and starts the server immediately: Task Scheduler is tried first on Windows; if its per-user task cannot be created, Prumo automatically uses one hidden entry in the current user's Startup folder without requesting administrator access. macOS uses a LaunchAgent, and Linux uses a user systemd service with XDG autostart fallback. Reinstalls and updates keep the selected mechanism. A restart waits for the previous managed process to release the port, replaces a missing registration without duplicating a verified running dashboard, and records a created Startup fallback even when the restart later fails so `disable` can remove it. `disable` stops an exactly identified Prumo process and removes only its managed registration; this choice survives reinstall and update. The bare `prumo dashboard` command runs the server in the foreground.
+`status` reports registration, process, version, port, URL and the selected startup mechanism. `logs` shows the latest bounded lifecycle events, including startup, readiness, warnings, fatal errors, signals and a registered process later found missing. `enable` registers startup for the current user and starts the server immediately: Task Scheduler is tried first on Windows; if its per-user task cannot be created, Prumo automatically uses one hidden entry in the current user's Startup folder without requesting administrator access. macOS uses a LaunchAgent, and Linux uses a user systemd service with XDG autostart fallback. Reinstalls and updates keep the selected mechanism. A restart waits for the previous managed process to release the port, replaces a missing registration without duplicating a verified running dashboard, and records a created Startup fallback even when the restart later fails so `disable` can remove it. `disable` stops an exactly identified Prumo process and removes only its managed registration; this choice survives reinstall and update. The bare `prumo dashboard` command runs the server in the foreground.
 
 The server listens only on `127.0.0.1:4949` and is read-only. It discovers known central workspaces and projects recorded in `installations.json`, selects the most recently modified current run, notices new runs without restart and shows an empty state when none exist. It does not execute tasks, edit graph state, synchronize plans or scan the disk.
 

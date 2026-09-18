@@ -55,7 +55,7 @@ function fixture(t, tasks = [{ id: 'T1', title: 'Delivery estimate' }], options 
       openQuestions: [],
     }
   }
-  const discovery = () => ({
+  const discovery = (id = 'T1') => ({
     research: [{ source: join(project, 'delivery.cjs'), findings: 'Current delivery behavior and dependency outputs were inspected.' }],
     questions: [{ question: 'Should this task preserve the approved delivery behavior?', answer: 'Yes.', channel: 'chat-fallback', round: 1 }],
     coverage: {
@@ -66,6 +66,7 @@ function fixture(t, tasks = [{ id: 'T1', title: 'Delivery estimate' }], options 
       acceptance: 'The recorded functional check passes.',
     },
     decisions: [{ question: 'Preserve the approved behavior?', answer: 'Yes.' }], deferred: [],
+    executionBoundary: { deferredToExecutor: [id], prematureTaskWork: [] },
     closure: 'The user confirmed the only task-specific gray area; no consequential uncertainty remains.',
   })
   const contextPath = (value = discovery(), id = 'T1') => {
@@ -78,7 +79,7 @@ function fixture(t, tasks = [{ id: 'T1', title: 'Delivery estimate' }], options 
     writeFileSync(path, JSON.stringify(value))
     return ok('finish-planning', id, '--plan', path)
   }
-  const discuss = (id = 'T1', value = discovery()) => {
+  const discuss = (id = 'T1', value = discovery(id)) => {
     ok('begin-discussion', id)
     const round = state().tasks[id].discussionAttempts.at(-1)
     const bound = { ...value, roundId: round.roundId, nonce: round.nonce,
@@ -87,7 +88,7 @@ function fixture(t, tasks = [{ id: 'T1', title: 'Delivery estimate' }], options 
     ok('finish-discussion', id, '--context', path)
     return path
   }
-  const beginPlan = (id = 'T1', agent = 'planner-' + id, value = discovery()) => {
+  const beginPlan = (id = 'T1', agent = 'planner-' + id, value = discovery(id)) => {
     discuss(id, value)
     return ok('plan-task', id, '--agent', agent)
   }
@@ -211,6 +212,7 @@ test('discussion is persisted before questions and must close before a planner i
     { questions: [{ question: 'What changes?', answer: '', channel: 'chat-fallback', round: 1 }] },
     { questions: [{ question: 'What changes?', answer: 'Approved answer', channel: 'unknown', round: 1 }] },
     { coverage: { problem: 'Only one area' } },
+    { executionBoundary: undefined },
     { closure: '' },
   ]) {
     const round = baseline.tasks.T1.discussionAttempts[0]
@@ -241,6 +243,24 @@ test('discussion is persisted before questions and must close before a planner i
   assert.match(task.discovery.digest, /^[a-f0-9]{64}$/)
   assert.equal(task.discovery.digest, task.planningAttempts[0].discoveryDigest)
   assert.match(f.events(), /"discoveryQuestions":2/)
+})
+
+test('discussion reports premature task work and requires explicit acceptance without reusing it', t => {
+  const f = fixture(t)
+  f.ok('begin-discussion', 'T1')
+  const round = f.state().tasks.T1.discussionAttempts.at(-1)
+  const discovery = f.discovery('T1')
+  discovery.roundId = round.roundId
+  discovery.nonce = round.nonce
+  discovery.questions = discovery.questions.map(question => ({ ...question, roundId: round.roundId }))
+  discovery.executionBoundary.prematureTaskWork = [{ task: 'T1', action: 'Ran the acceptance query during discussion.' }]
+  const path = f.contextPath(discovery)
+  const before = f.state()
+  f.rejected(/explicit user approval.*--accept-premature-work/, 'finish-discussion', 'T1', '--context', path)
+  assert.deepEqual(f.state(), before)
+  f.ok('finish-discussion', 'T1', '--context', path, '--accept-premature-work')
+  assert.equal(f.state().tasks.T1.discovery.executionBoundary.deferredToExecutor[0], 'T1')
+  assert.match(f.events(), /"prematureTaskWork":1/)
 })
 
 test('planning is bound to canonical discovery and restarts only when its content changes', t => {

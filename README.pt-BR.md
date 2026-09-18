@@ -79,12 +79,13 @@ Abra uma nova sessão depois de instalar. `doctor` distingue arquivos instalados
 
 ```sh
 prumo dashboard status
+prumo dashboard logs
 prumo dashboard enable
 prumo dashboard disable
 prumo dashboard
 ```
 
-`status` informa registro, processo, versão, porta, URL e o mecanismo de inicialização escolhido. `enable` registra a inicialização para o usuário atual e inicia o servidor imediatamente: no Windows, tenta primeiro o Agendador de Tarefas; se a tarefa do usuário não puder ser criada, o Prumo usa automaticamente uma única entrada oculta na pasta Inicializar do usuário atual, sem pedir acesso de administrador. O macOS usa um LaunchAgent, e o Linux usa um serviço systemd do usuário com fallback XDG. Reinstalações e atualizações preservam o mecanismo escolhido. Um reinício espera o processo gerenciado anterior liberar a porta, repõe um registro ausente sem duplicar um dashboard ativo verificado e registra o fallback criado na pasta Inicializar mesmo se o reinício falhar depois, para que `disable` consiga removê-lo. `disable` encerra um processo Prumo identificado com exatidão e remove somente o registro gerenciado; essa escolha sobrevive a reinstalações e atualizações. `prumo dashboard` sem complemento executa o servidor em primeiro plano.
+`status` informa registro, processo, versão, porta, URL e o mecanismo de inicialização escolhido. `logs` mostra os eventos recentes de ciclo de vida, com histórico limitado: inicialização, disponibilidade, avisos, erros fatais, sinais e um processo registrado que depois desapareceu. `enable` registra a inicialização para o usuário atual e inicia o servidor imediatamente: no Windows, tenta primeiro o Agendador de Tarefas; se a tarefa do usuário não puder ser criada, o Prumo usa automaticamente uma única entrada oculta na pasta Inicializar do usuário atual, sem pedir acesso de administrador. O macOS usa um LaunchAgent, e o Linux usa um serviço systemd do usuário com fallback XDG. Reinstalações e atualizações preservam o mecanismo escolhido. Um reinício espera o processo gerenciado anterior liberar a porta, repõe um registro ausente sem duplicar um dashboard ativo verificado e registra o fallback criado na pasta Inicializar mesmo se o reinício falhar depois, para que `disable` consiga removê-lo. `disable` encerra um processo Prumo identificado com exatidão e remove somente o registro gerenciado; essa escolha sobrevive a reinstalações e atualizações. `prumo dashboard` sem complemento executa o servidor em primeiro plano.
 
 O servidor escuta somente em `127.0.0.1:4949` e é somente leitura. Ele descobre workspaces centrais conhecidos e projetos registrados em `installations.json`, escolhe a run atual modificada mais recentemente, percebe novas runs sem reiniciar e mostra estado vazio quando nenhuma existe. Ele não executa tarefas, edita o estado do grafo, sincroniza planos nem varre o disco.
 
