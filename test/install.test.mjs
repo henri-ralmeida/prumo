@@ -391,6 +391,25 @@ test('central graph-foreman workspaces move to Prumo and restore without changin
   assert.equal(existsSync(join(migrated, relativeState)), false)
 })
 
+test('large workspace relocation keeps file payloads out of memory and rejects a concurrent edit', t => {
+  const f = fixture(t)
+  const legacy = join(f.home, '.local', 'share', 'graph-foreman', 'large')
+  const destination = join(f.home, '.local', 'share', 'prumo', 'large')
+  const payload = join(legacy, '.specs', 'graph', 'run', 'payload.bin')
+  mkdirSync(dirname(payload), { recursive: true })
+  writeFileSync(payload, Buffer.alloc(8 * 1024 * 1024, 7))
+  const plan = f.plan()
+  const migration = plan.groups.find(group => group.name === 'workspace:large')
+  assert.ok(migration.relocation)
+  assert.equal(migration.changes.length, 0)
+  assert.ok(JSON.stringify(plan).length < 8 * 1024 * 1024, 'workspace bytes must not be retained in the plan')
+  writeFileSync(payload, Buffer.alloc(8 * 1024 * 1024, 8))
+  const result = applyInstall(plan)
+  assert.equal(result.groups.find(group => group.name === 'workspace:large').status, 'conflict')
+  assert.equal(existsSync(legacy), true)
+  assert.equal(existsSync(destination), false)
+})
+
 test('legacy migration blocks conflicting custom files without changing either skill', t => {
   const f = fixture(t)
   const legacy = join(f.skillRoot, 'graph-foreman', 'custom.txt')
