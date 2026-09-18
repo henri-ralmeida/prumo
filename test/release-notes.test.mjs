@@ -8,11 +8,11 @@ const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.u
 test('current release has concise English update highlights with descriptive subtitles', () => {
   const notes = releaseNotes(version)
   assert.deepEqual(notes.map(section => section.title), [
-    'Fixed — Filtered graph context',
-    'Fixed — Safe candidate updates',
-    'Fixed — macOS path aliases'
+    'Improved — Evidence-focused PO First',
+    'Improved — Independent adversarial review'
   ])
-  assert.ok(notes.flatMap(section => section.items).includes('Keep every task and phase visible while dimming cards outside the selected filter'))
+  assert.ok(notes.flatMap(section => section.items).includes('Require one independently derived counterexample for the highest-risk applicable criterion'))
+  assert.ok(releaseNotes('1.3.11').flatMap(section => section.items).includes('Keep every task and phase visible while dimming cards outside the selected filter'))
   assert.ok(releaseNotes('1.3.2').flatMap(section => section.items).includes('Keep one discussion and one planner when the user names one task'))
   assert.ok(releaseNotes('1.3.1').flatMap(section => section.items).includes('Open phases in declared order after earlier work is terminal'))
   assert.ok(releaseNotes('1.3.0').flatMap(section => section.items).includes('Start the read-only dashboard after global npm installation'))

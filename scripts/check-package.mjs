@@ -14,9 +14,8 @@ assert.equal(pkg.engines.node, '>=22')
 assert.equal(pkg.dependencies, undefined)
 const releaseNotes = JSON.parse(readFileSync(join(root, 'scripts', 'release-notes.json'), 'utf8'))
 assert.deepEqual(releaseNotes[pkg.version]?.en?.map(section => section.title), [
-    'Fixed — Filtered graph context',
-    'Fixed — Safe candidate updates',
-    'Fixed — macOS path aliases'
+    'Improved — Evidence-focused PO First',
+    'Improved — Independent adversarial review'
 ])
 assert.equal(releaseNotes[pkg.version]?.['pt-BR'], undefined)
 for (const file of ['SKILL.md', 'README.md', 'README.pt-BR.md', 'CHANGELOG.md', 'LICENSE', 'references/po-first.md', 'references/runtime.md', 'references/runtime.pt-BR.md']) assert.ok(existsSync(join(root, file)), file)
@@ -27,6 +26,11 @@ assert.match(skill, /every external dependency of every unfinished member is `do
 assert.match(skill, /A named task in the user's request is a hard scope boundary/)
 assert.match(skill, /keep its internal work inside the one immutable task plan/)
 assert.match(skill, /cachePaths/)
+assert.match(skill, /one focused counterexample for the highest-risk applicable/)
+assert.match(skill, /Once every applicable criterion has current evidence/)
+const poFirst = readFileSync(join(root, 'references', 'po-first.md'), 'utf8')
+assert.match(poFirst, /Stop investigating when every material criterion has current evidence/)
+assert.match(poFirst, /Judge suggestions by their usefulness/)
 assert.doesNotMatch(skill, /\u0000/)
 assert.match(readFileSync(join(root, 'LICENSE'), 'utf8'), /JrSantiaggo/)
 const html = readFileSync(join(root, 'scripts/dashboard.html'), 'utf8')
