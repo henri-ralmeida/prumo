@@ -248,6 +248,9 @@ decision, return it to the orchestrator: update discovery through the principal 
 fresh planning. Never invent an answer or label a material gap nonblocking to pass the gate.
 Ordinary refinement within approved scope needs no new task approval. Material changes to
 scope, behavior, acceptance or shared decisions return to the user and global plan workflow.
+Stop research once every material criterion and dependency is mapped to current evidence and no
+concrete unresolved risk remains. Do not reread equivalent sources or expand the investigation merely
+to accumulate confidence; record a real gap instead of searching indefinitely for certainty.
 
 ```text
 You are the read-only PLANNER for phase <F2>. Research every targeted task; do not implement them.
@@ -375,7 +378,10 @@ For a bug fix, demonstrate that the behavioral test detects the defect when prac
 
 At least one functional step is a structural minimum, not sufficient coverage by itself.
 Map every current functional criterion to a relevant check and its observable result before
-dispatch and review. Commands run in order: prepare prerequisites before checks that need
+dispatch and review. Preserve every result-shaping dimension in that mapping: order and
+precedence, boundaries, malformed or absent input, repetition and state transitions when they
+apply. Do not let a broader check such as membership, success or nonempty output stand in for
+one of those explicit rules. Commands run in order: prepare prerequisites before checks that need
 them, and ensure skipped-build or filtered tests use the current delivery and execute relevant
 cases. Do not hide failures or discard unrelated edits to make a check pass. Preserve earlier
 evidence with distinct output paths when a check writes artifacts. Review existing artifacts
@@ -389,8 +395,16 @@ runtime behavior, missing tools, unavailable environments, or a failing test. Th
 actionable rejection or a blocked task. `requireReview: false` never waives functional checks.
 
 The first reviewer must inspect the full behavioral path and the relevance of the tests, not only
-the changed lines. On a bounded corrective retry, the next reviewer inspects the rejection, changed
-paths and remaining checks, and may trust current step receipts that the engine explicitly reuses.
+the changed lines. Independently derive one focused counterexample for the highest-risk applicable
+criterion, especially an ordering, boundary, invalid-input or transition rule; do not copy the
+executor's examples or mirror the implementation. If the approved checks cannot establish a current
+criterion, reject it as a plan defect instead of approving on unrelated passing tests. Keep this probe
+proportional: one discriminating case is preferable to a generic matrix. On a bounded corrective retry,
+the next reviewer inspects the rejection, changed paths and remaining checks, and may trust current step
+receipts that the engine explicitly reuses.
+Once every applicable criterion has current evidence and the independent probe passes, stop the review.
+Continue only for a failure, contradiction, uncovered criterion or concrete risk; repeated equivalent
+commands and broad speculative checks add cost without strengthening the verdict.
 Browser/API workflows need checks that exercise that workflow at the
 appropriate layer; a pure helper test cannot prove a user journey. Keep tests scoped to the
 task and add a final integration check when separate tasks must work together.
@@ -594,6 +608,12 @@ questions unanswered is guessing.
 Report against the graph, not memory: `node $ENGINE status` is the source. Say what is `done`,
 what is `blocked` and on whom, and what a `skipped` task means. Never report a run as finished
 while a task is blocked — say "34/36, two waiting on you, here is what for".
+
+Lead the final report with the observable result for the affected person or operation. Then state
+the relevant change, evidence and material limitation in that order. Translate unfamiliar technical
+terms into their practical effect. Add one to three prioritized suggestions only when a real decision,
+risk, pending verification or useful next action remains; never manufacture follow-up work merely to
+populate a section.
 
 Then point the dev at the dashboard's **results** tab (`r`): wall clock vs agent time, the
 planning/build/verify split, the critical path against the wall clock, and which tasks were reviewed
