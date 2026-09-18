@@ -23,6 +23,7 @@ const discovery = {
   coverage: { problem: 'Problem', affected: 'People', outcome: 'Outcome', currentBehavior: 'Current',
     desiredBehavior: 'Desired', rules: 'Rules', exceptions: 'Exceptions', scope: 'Scope', acceptance: 'Acceptance' },
   decisions: [{ question: 'Keep behavior?', answer: 'Yes' }], deferred: ['Future idea'],
+  executionBoundary: { deferredToExecutor: ['T'], prematureTaskWork: [] },
 }
 
 function dashboard(lang = 'en', width = 1000, session = new Map(), navigation = { state: null, urls: [] }) {
@@ -248,20 +249,37 @@ test('dashboard observes phase discussion, phase planning and per-task input rea
       F2: { id: 'F2', state: 'planning', discussionAttempts: [{ targets: ['C'] }], planningAttempts: [{ targets: ['C'] }] },
     },
     derived: {
-      A: { effective: 'waiting', blockedBy: ['C'], planningStatus: 'planned', inputStatus: 'unresolved_later_phase_input' },
-      B: { effective: 'ready', blockedBy: [], planningStatus: 'planned' },
-      C: { effective: 'ready_to_plan', blockedBy: [], planningStatus: 'phase_planning' },
+      A: { effective: 'discussing', blockedBy: ['C'], planningStatus: 'phase_discussing', inputStatus: 'unresolved_later_phase_input' },
+      B: { effective: 'discussing', blockedBy: [], planningStatus: 'phase_discussing' },
+      C: { effective: 'planning', blockedBy: [], planningStatus: 'phase_planning' },
     } }
   for (const lang of ['en', 'pt-BR']) {
     const ui = dashboard(lang); ui.render(state)
-    assert.match(ui.nodes.get('#orchSub').textContent, lang === 'en' ? /phase discussion F1: 2 tasks/ : /discussão da fase F1: 2 tarefas/)
+    assert.match(ui.nodes.get('#orchSub').textContent, lang === 'en' ?
+      /phase discussion F1: 2 tasks.*phase execution locked/ : /discussão da fase F1: 2 tarefas.*execução da fase bloqueada/)
     assert.match(ui.nodes.get('#planSub').textContent, lang === 'en' ? /phase planning F2: 1 tasks/ : /planejamento da fase F2: 1 tarefas/)
     assert.match(ui.nodes.get('#lanes').innerHTML, lang === 'en' ? /discussion · orchestrator/ : /discussão · orquestrador/)
     assert.match(ui.nodes.get('#lanes').innerHTML, lang === 'en' ? /planning · planner/ : /planejamento · planejador/)
+    assert.match(ui.nodes.get('#lanes').innerHTML, /lane-state planning/)
     assert.match(ui.nodes.get('#nodes').innerHTML, lang === 'en' ? /unresolved later-phase input/ : /entrada de fase posterior não resolvida/)
-    assert.match(ui.nodes.get('#nodes').innerHTML, /data-st="waiting"[^>]*data-id="A"/, 'primary state remains DAG-driven')
-    assert.match(ui.nodes.get('#edgePaths').innerHTML, /e-discussion[^>]*data-to="A"/)
-    assert.match(ui.nodes.get('#edgePaths').innerHTML, /e-planning[^>]*data-to="C"/)
+    state.derived.A.inputStatus = 'unresolved_input'
+    ui.render(state)
+    assert.match(ui.nodes.get('#nodes').innerHTML, lang === 'en' ? /unresolved input/ : /entrada não resolvida/)
+    state.derived.A.inputStatus = 'unresolved_later_phase_input'
+    assert.match(ui.nodes.get('#nodes').innerHTML, /data-st="planning"[^>]*data-id="C"/)
+    const planningLabel = lang === 'en' ? 'planning' : 'em planejamento'
+    const plannerLabel = lang === 'en' ? 'planner' : 'planejador'
+    assert.match(ui.nodes.get('#nodes').innerHTML, new RegExp(`aria-label="C: ${planningLabel}"`))
+    assert.doesNotMatch(ui.nodes.get('#nodes').innerHTML, new RegExp(`aria-label="C: ${planningLabel} · ${plannerLabel}"`),
+      'the phase owns the planner relationship; member cards expose only their active state')
+    assert.match(ui.nodes.get('#nodes').innerHTML, /data-st="discussing"[^>]*data-id="A"/,
+      'an open phase discussion owns the active visual state before execution readiness')
+    assert.match(ui.nodes.get('#edgePaths').innerHTML, /e-discussion[^>]*data-to="__phase-F1"[^>]*data-members="A,B"/)
+    assert.equal((ui.nodes.get('#edgePaths').innerHTML.match(/class="e-discussion"/g) ?? []).length, 1,
+      'one phase discussion connects to the phase board, not every member card')
+    assert.match(ui.nodes.get('#edgePaths').innerHTML, /e-planning[^>]*data-to="__phase-F2"[^>]*data-members="C"/)
+    assert.equal((ui.nodes.get('#edgePaths').innerHTML.match(/class="e-planning"/g) ?? []).length, 1,
+      'one phase planner connects to the phase board, not every member card')
   }
   assert.doesNotMatch(html, /fetch\([^)]*begin-phase|onclick="[^"]*phase-(?:discussion|planning)/,
     'phase workflow remains observer-only')
@@ -407,6 +425,11 @@ test('filter controls expose every state and localize labels and dependency togg
   }
 })
 
+test('a run-only URL selects that run in the current root', () => {
+  assert.match(html, /const selectedRoot = SELECTED_ROOT \?\? currentRoot/)
+  assert.match(html, /selectedRoot && SELECTED_RUN[\s\S]*selectedRoot\}\/\$\{SELECTED_RUN/)
+})
+
 test('filters preserve the full graph and disable nonmatching cards', () => {
   const ui = dashboard('pt-BR')
   const tasks = { A: task('A', 'pending', { phase: 'F0' }), B: task('B', 'pending', { phase: 'F1', deps: ['A'] }),
@@ -533,10 +556,12 @@ test('phase boards expand for their cards and open with the complete graph visib
   assert.ok(initial.view.y >= 28)
   assert.equal(ui.run("$('#fitBtn').textContent"), '100%')
   ui.run('toggleFitView()')
-  const actual = JSON.parse(ui.run("JSON.stringify({ view: VIEW, mode: VIEW_MODE, label: $('#fitBtn').textContent })"))
+  const actual = JSON.parse(ui.run("JSON.stringify({ view: VIEW, mode: VIEW_MODE, label: $('#fitBtn').textContent, width: CANVAS_W, height: CANVAS_H })"))
   assert.equal(actual.view.k, 1)
   assert.equal(actual.mode, 'actual')
   assert.equal(actual.label, 'fit')
+  assert.equal(actual.view.y, 0, '100% starts at the top when the board is taller than the viewport')
+  assert.ok(actual.view.x >= 0, '100% never hides the hierarchy to the left of the viewport')
   ui.run('toggleFitView()')
   const refitted = JSON.parse(ui.run("JSON.stringify({ view: VIEW, mode: VIEW_MODE, label: $('#fitBtn').textContent })"))
   assert.equal(refitted.mode, 'fit')
@@ -685,7 +710,8 @@ test('discovery, planner identity and task plan render as escaped text, includin
     research: [{ source: hostile, findings: hostile }],
     questions: [{ question: hostile, answer: hostile, channel: 'chat-fallback', round: 1 }],
     coverage: Object.fromEntries(Object.keys(discovery.coverage).map(key => [key, hostile])),
-    decisions: [{ question: hostile, answer: hostile }], deferred: [hostile] }
+    decisions: [{ question: hostile, answer: hostile }], deferred: [hostile],
+    executionBoundary: { deferredToExecutor: ['T'], prematureTaskWork: [] } }
   const ui = dashboard('pt-BR')
   ui.render({ run: 'safe-plan', plan: {}, tasks: { T: task('T', 'pending', { discovery: hostileDiscovery, planner: hostile, taskPlan: recorded }) }, derived: { T: { effective: 'ready' } } })
   ui.run("fillPop('T')")
@@ -723,6 +749,27 @@ test('results count planning intervals and exclude human blocks and planning fro
   assert.match(ui.nodes.get('#results').innerHTML, /Planning share/)
   assert.match(ui.nodes.get('#results').innerHTML, /background:var\(--planning\)/)
   assert.match(ui.nodes.get('#results').innerHTML, /Run still active/)
+})
+
+test('results count shared phase planning once and keep pending runs live', () => {
+  const ui = dashboard()
+  const tasks = {
+    A: task('A', 'done', { phase: 'F1', attempts: [{ startedAt: instant(30), endedAt: instant(40) }] }),
+    B: task('B', 'pending', { phase: 'F2' }),
+  }
+  const state = { run: 'phase-metrics', createdAt: instant(0), plan: {}, tasks, derived: {}, phaseWorkflows: {
+    F1: { id: 'F1', state: 'planned', planningAttempts: [{ startedAt: instant(10), endedAt: instant(20) }] },
+    F2: { id: 'F2', state: 'planning', planningAttempts: [{ startedAt: instant(80) }] },
+  } }
+  const result = ui.run('analyse(input, [])', { input: state })
+  assert.equal(result.planningTotal, 30000, 'one planner interval per phase, never multiplied by member count')
+  assert.equal(result.agentTotal, 40000)
+  assert.equal(result.wall, 100000)
+  assert.equal(result.anyLive, true, 'pending work keeps the run live even when no executor is active')
+  assert.equal(JSON.stringify(result.phasePlanningByPhase), JSON.stringify([{ phase: 'F1', duration: 10000 }, { phase: 'F2', duration: 20000 }]))
+  assert.equal(result.cpLen, 20000, 'the critical path includes one shared phase-planning interval on each independent branch')
+  ui.run('renderResults(input)', { input: state })
+  assert.match(ui.nodes.get('#results').innerHTML, /phase planning: F1 10s · F2 20s/)
 })
 
 test('replanning a paused attempt never counts its waiting or research as execution or review', () => {

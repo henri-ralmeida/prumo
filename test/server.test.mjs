@@ -48,7 +48,8 @@ test('dashboard selects legacy and central data without writes or translation of
       questions: [{ question: 'Show these fixture states?', answer: 'Yes.', channel: 'chat-fallback', round: 1, roundId: round.roundId }],
       coverage: { problem: 'Show states', affected: 'Dashboard viewer', outcome: 'Visible states', currentBehavior: 'Fixture exists',
         desiredBehavior: 'Fixture remains visible', rules: 'Inspection only', exceptions: 'None', scope: phaseId, acceptance: 'States render' },
-      decisions: [], deferred: [], closure: 'The fixture behavior is fully specified.', roundId: round.roundId, nonce: round.nonce,
+      decisions: [], deferred: [], executionBoundary: { deferredToExecutor: round.targets, prematureTaskWork: [] },
+      closure: 'The fixture behavior is fully specified.', roundId: round.roundId, nonce: round.nonce,
     }))
     command('finish-phase-discussion', phaseId, '--context', discovery)
   }
@@ -114,7 +115,7 @@ test('dashboard selects legacy and central data without writes or translation of
   assert.equal(selected.derived.LEGACY.planningStatus, 'awaiting_migration')
   const planned = await (await get('/api/state?root=work&run=planning-demo')).json()
   assert.deepEqual(Object.fromEntries(Object.entries(planned.derived).map(([id, task]) => [id, task.effective])),
-    { PLAN: 'ready_for_discussion', ACTIVE: 'ready_to_plan', EXEC: 'ready', WAIT: 'waiting' })
+    { PLAN: 'discussing', ACTIVE: 'planning', EXEC: 'ready', WAIT: 'waiting' })
   assert.deepEqual(Object.fromEntries(Object.entries(planned.derived).map(([id, task]) => [id, task.planningStatus])),
     { PLAN: 'phase_discussing', ACTIVE: 'phase_planning', EXEC: 'planned', WAIT: 'awaiting_phase_plan' })
   assert.equal(planned.derived.WAIT.inputStatus, 'unresolved_later_phase_input')

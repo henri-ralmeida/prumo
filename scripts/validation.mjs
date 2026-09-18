@@ -15,7 +15,7 @@ const DISCOVERY_AREAS = [
   'problem', 'affected', 'outcome', 'currentBehavior', 'desiredBehavior',
   'rules', 'exceptions', 'scope', 'acceptance',
 ]
-const DISCOVERY_FIELDS = ['research', 'questions', 'coverage', 'decisions', 'deferred', 'closure', 'roundId', 'nonce']
+const DISCOVERY_FIELDS = ['research', 'questions', 'coverage', 'decisions', 'deferred', 'executionBoundary', 'closure', 'roundId', 'nonce']
 const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
   ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value
 
@@ -42,7 +42,27 @@ export function assertDiscovery(context) {
   'discovery decisions must contain resolved question and answer entries')
   insist(Array.isArray(context.deferred) && context.deferred.every(nonempty),
     'discovery deferred must be an array of nonempty strings')
+  insist(context.executionBoundary && typeof context.executionBoundary === 'object' &&
+    !Array.isArray(context.executionBoundary), 'discovery needs an executionBoundary object')
+  insist(Array.isArray(context.executionBoundary.deferredToExecutor) &&
+    context.executionBoundary.deferredToExecutor.every(nonempty),
+  'discovery executionBoundary.deferredToExecutor must be an array of task IDs')
+  insist(Array.isArray(context.executionBoundary.prematureTaskWork) &&
+    context.executionBoundary.prematureTaskWork.every(item => item && nonempty(item.task) && nonempty(item.action)),
+  'discovery executionBoundary.prematureTaskWork must contain task and action entries')
   insist(nonempty(context.closure), 'discovery closure must explain why no consequential gray area remains')
+}
+
+export function assertDiscussionBoundary(context, targetIds, { acceptPremature = false } = {}) {
+  const deferred = [...new Set(context.executionBoundary.deferredToExecutor)].sort()
+  const targets = [...new Set(targetIds)].sort()
+  insist(JSON.stringify(deferred) === JSON.stringify(targets),
+    'discovery must defer every discussion target to its executor; planner research cannot deliver the task')
+  const premature = context.executionBoundary.prematureTaskWork
+  insist(premature.every(item => targets.includes(item.task)),
+    'premature task work must identify a current discussion target')
+  insist(!premature.length || acceptPremature,
+    'premature task work was reported; stop and obtain explicit user approval, then repeat with --accept-premature-work so the executor still redoes it')
 }
 
 // The plan classifies checks; only the reviewer can judge their behavioral coverage.

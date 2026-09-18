@@ -33,11 +33,11 @@
  *   node $ENGINE migrate [--check] [--run <name>]
  *   node $ENGINE status|ready|graph [--run <name>]
  *   node $ENGINE begin-phase-discussion <phase> [--adopt-legacy]
- *   node $ENGINE finish-phase-discussion <phase> --context <discovery.json>
+ *   node $ENGINE finish-phase-discussion <phase> --context <discovery.json> [--accept-premature-work]
  *   node $ENGINE plan-phase <phase> --agent <name>
  *   node $ENGINE finish-phase-planning <phase> --plan-dir <directory>
  *   node $ENGINE begin-discussion <task> [--adopt-legacy]
- *   node $ENGINE finish-discussion <task> --context <discovery.json>
+ *   node $ENGINE finish-discussion <task> --context <discovery.json> [--accept-premature-work]
  *   node $ENGINE plan-task <task> --agent <name> [--context <legacy-discovery.json>]
  *   node $ENGINE finish-planning <task> --plan <task-plan.json>
  *   node $ENGINE start <task> --agent <name>   (max 3 executors)
@@ -59,7 +59,7 @@ import {
 } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { writeAtomicState } from './atomic-state.mjs'
-import { runValidation, assertValidation, validationContract, validationDirectories, assertDiscovery, discoveryDigest, assertTaskPlan,
+import { runValidation, assertValidation, validationContract, validationDirectories, assertDiscovery, assertDiscussionBoundary, discoveryDigest, assertTaskPlan,
   planTaskFromState, planningContext, hasCurrentTaskPlan, hasCurrentTaskScope, currentPlanningScope,
   phasePlanningContext, phaseRequiredInputs, assertPhaseTaskPlan, executionInputReceipt } from './validation.mjs'
 import { dirname, join, resolve } from 'node:path'
@@ -513,8 +513,14 @@ export function derive(state) {
       const phaseAdopted = !(state.legacyPhaseAdoption && !state.phaseWorkflows?.[t.phase]?.adoptedLegacy)
       if (state.plan.planningMode === 'phase') {
         planningBlockedBy = phasePlanningBlockers(state, t.phase)
-        effective = !phaseAdopted ? 'pending' : hasCurrentTaskPlan(state, t) ?
-          (blockedBy.length ? 'waiting' : 'ready') : planningBlockedBy.length ? 'waiting' :
+        const discussionRound = phase?.discussionAttempts?.at(-1)
+        const phaseDiscussing = phase?.state === 'discussing' && !discussionRound?.endedAt &&
+          discussionRound?.targets?.includes(t.id)
+        const planningRound = phase?.planningAttempts?.at(-1)
+        const phasePlanning = phase?.state === 'planning' && currentPhasePlanning(state, phase, planningRound) &&
+          planningRound.targets.includes(t.id)
+        effective = !phaseAdopted ? 'pending' : phaseDiscussing ? 'discussing' : hasCurrentTaskPlan(state, t) ?
+          (blockedBy.length ? 'waiting' : 'ready') : phasePlanning ? 'planning' : planningBlockedBy.length ? 'waiting' :
             (currentPhaseDiscussion(state, phase) ? 'ready_to_plan' : 'ready_for_discussion')
       } else {
         effective = blockedBy.length ? 'waiting' : !phaseAdopted ? 'pending' :
@@ -526,8 +532,11 @@ export function derive(state) {
       phase?.state === 'discussing' ? 'phase_discussing' : phase?.state === 'planning' ? 'phase_planning' : 'awaiting_phase_plan'
     let inputStatus
     if (t.taskPlan?.phaseId && t.taskPlan.unresolvedInputs?.length) {
-      const inputs = t.taskPlan.unresolvedInputs.map(input => state.tasks[input.task])
-      inputStatus = inputs.some(dep => !dep || !['done', 'skipped'].includes(dep.state)) ? 'unresolved_later_phase_input' :
+      const entries = t.taskPlan.unresolvedInputs.map(input => ({ input, task: state.tasks[input.task] }))
+      const unresolved = entries.filter(({ task }) => !task || !['done', 'skipped'].includes(task.state))
+      const inputs = entries.map(({ task }) => task)
+      inputStatus = unresolved.length ?
+        (unresolved.every(({ task }) => task && task.phase !== t.phase) ? 'unresolved_later_phase_input' : 'unresolved_input') :
         inputs.some(dep => dep.state === 'skipped') ? 'waived_input' : 'validated_input'
     }
     const showPlanningStatus = state.plan.planningMode === 'phase' && !['done', 'skipped'].includes(t.state)
@@ -736,8 +745,10 @@ const commands = {
     log(`states: ${JSON.stringify(p.by)}`)
     const width = Math.max(...Object.values(d).map((t) => t.id.length))
     const row = (t) => {
+      const phasePlanner = t.effective === 'planning' && t.state !== 'planning' ? state.phaseWorkflows?.[t.phase]?.planner : null
       const agent = t.state === 'discussing' ? `  @${tr('orchestrator')} (${tr('discussing')})` :
         t.state === 'planning' ? `  @${t.planner} (${tr('planning')})` :
+        phasePlanner ? `  @${phasePlanner} (${tr('planning')})` :
         t.state === 'reviewing' ? `  @${t.reviewer} (review)` : t.agent ? `  @${t.agent}` : ''
       const attempts = t.attempts.length > 1 ? `  (attempt ${t.attempts.length})` : ''
       const wait = t.effective === 'waiting' ? `  ← ${(t.planningBlockedBy ?? t.blockedBy).join(',')}` : ''
@@ -835,6 +846,7 @@ const commands = {
     emit(name, 'phase_discussion', null, { phase: phaseId, roundId: round.roundId, members: round.targets,
       ...(args['adopt-legacy'] === true ? { adoptedLegacy: true } : {}) })
     log(`[prumo] ${phaseId} discussing ${round.targets.length} task(s) (round ${round.roundId}, nonce ${round.nonce})`)
+    log('[prumo] discussion guard: inspect local context and resolve decisions only; planner researches how, executor delivers every task')
   },
 
   'finish-phase-discussion'() {
@@ -849,13 +861,14 @@ const commands = {
     try {
       discovery = JSON.parse(readFileSync(resolve(args.context), 'utf8'))
       assertDiscovery(discovery)
+      assertDiscussionBoundary(discovery, round.targets, { acceptPremature: args['accept-premature-work'] === true })
       if (discovery.roundId !== round.roundId || discovery.nonce !== round.nonce)
         throw new Error('discovery roundId and nonce must match the current phase discussion')
       if (!discovery.questions.some(question => question.roundId === round.roundId))
         throw new Error('discovery needs a fresh answered question bound to the current phase discussion roundId')
       digest = discoveryDigest(discovery)
     } catch (error) { die(error.message) }
-    const fields = ['research', 'questions', 'coverage', 'decisions', 'deferred', 'closure', 'roundId', 'nonce']
+    const fields = ['research', 'questions', 'coverage', 'decisions', 'deferred', 'executionBoundary', 'closure', 'roundId', 'nonce']
     phase.discovery = { ...Object.fromEntries(fields.map(field => [field, discovery[field]])),
       recordedAt: new Date().toISOString(), context: round.context, digest }
     Object.assign(round, { endedAt: new Date().toISOString(), result: 'discussed', discoveryDigest: digest,
@@ -863,7 +876,7 @@ const commands = {
     phase.state = 'pending'
     saveState(name, state)
     emit(name, 'phase_discussed', null, { phase: phaseId, roundId: round.roundId, questions: discovery.questions.length,
-      members: round.targets })
+      members: round.targets, prematureTaskWork: discovery.executionBoundary.prematureTaskWork.length })
     log(`[prumo] ${phaseId} ready to plan (${round.targets.length} task(s))`)
   },
 
@@ -898,6 +911,7 @@ const commands = {
     saveState(name, state)
     emit(name, 'phase_planning', null, { phase: phaseId, planner: agent, round: round.n, members: round.targets })
     log(`[prumo] ${phaseId} in planning (planner ${agent}, ${round.targets.length} task(s))`)
+    log('[prumo] planner guard: read-only research may determine how to execute; task results and acceptance evidence belong to the executor')
   },
 
   'finish-phase-planning'() {
@@ -994,6 +1008,7 @@ const commands = {
     emit(name, 'task_discussion', id, { roundId: round.roundId, attempt: round.attempt,
       ...(adoptLegacy ? { adoptedLegacy: true } : {}) })
     log(`[prumo] ${id} discussing (round ${round.roundId}, nonce ${round.nonce})`)
+    log('[prumo] discussion guard: inspect local context and resolve decisions only; planner researches how, executor delivers the task')
   },
 
   'finish-discussion'() {
@@ -1013,19 +1028,21 @@ const commands = {
     try {
       discovery = JSON.parse(readFileSync(resolve(args.context), 'utf8'))
       assertDiscovery(discovery)
+      assertDiscussionBoundary(discovery, [id], { acceptPremature: args['accept-premature-work'] === true })
       if (discovery.roundId !== round.roundId || discovery.nonce !== round.nonce)
         throw new Error('discovery roundId and nonce must match the current discussion')
       if (!discovery.questions.some(question => question.roundId === round.roundId))
         throw new Error('discovery needs a fresh answered question bound to the current discussion roundId')
       digest = discoveryDigest(discovery)
     } catch (error) { die(error.message) }
-    const fields = ['research', 'questions', 'coverage', 'decisions', 'deferred', 'closure', 'roundId', 'nonce']
+    const fields = ['research', 'questions', 'coverage', 'decisions', 'deferred', 'executionBoundary', 'closure', 'roundId', 'nonce']
     t.discovery = { ...Object.fromEntries(fields.map(field => [field, discovery[field]])),
       recordedAt: new Date().toISOString(), context: round.context, attempt: round.attempt, digest }
     Object.assign(round, { endedAt: new Date().toISOString(), result: 'discussed', discoveryDigest: digest })
     t.state = t.planningReturn ? 'blocked' : 'pending'
     saveState(name, state)
-    emit(name, 'task_discussed', id, { roundId: round.roundId, questions: discovery.questions.length, state: t.state })
+    emit(name, 'task_discussed', id, { roundId: round.roundId, questions: discovery.questions.length, state: t.state,
+      prematureTaskWork: discovery.executionBoundary.prematureTaskWork.length })
     log(`[prumo] ${id} ready to plan (discussion ${round.roundId} closed)`)
   },
 
@@ -1072,7 +1089,8 @@ const commands = {
     if (pausedExecution) t.planningReturn = { stateBeforeBlock: t.stateBeforeBlock, blockReason: t.blockReason }
     if (stale || changedDiscovery) closePlanning(t, 'superseded')
     if (discovery && !t.discussionRequired) {
-      const fields = ['research', 'questions', 'coverage', 'decisions', 'deferred', 'closure']
+      assertDiscussionBoundary(discovery, [id], { acceptPremature: args['accept-premature-work'] === true })
+      const fields = ['research', 'questions', 'coverage', 'decisions', 'deferred', 'executionBoundary', 'closure']
       t.discovery = { ...Object.fromEntries(fields.map(field => [field, discovery[field]])),
         recordedAt: new Date().toISOString(), context: planningContext(state, t),
         attempt: t.attempts.length + (t.planningReturn ? 0 : 1), digest }
@@ -1082,6 +1100,7 @@ const commands = {
     emit(name, 'task_planning', id, { planner: agent, round: t.planningAttempts.length,
       ...(discovery ? { discoveryQuestions: discovery.questions.length } : {}) })
     log(`[prumo] ${id} in planning (planner ${agent}, round ${t.planningAttempts.length})`)
+    log('[prumo] planner guard: read-only research may determine how to execute; task results and acceptance evidence belong to the executor')
   },
 
   'finish-planning'() {

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { dashboardHealth, dashboardNeedsRepair, dashboardStatus, disableDashboard, enableDashboard, restartDashboard, runDashboardForeground } from '../lib/autostart.mjs'
+import { dashboardHealth, dashboardNeedsRepair, dashboardStatus, disableDashboard, enableDashboard, readDashboardEvents, restartDashboard, runDashboardForeground } from '../lib/autostart.mjs'
 
 function fixture(t, platform, extra = {}) {
   const home = mkdtempSync(join(tmpdir(), 'prumo autostart-'))
@@ -72,6 +72,33 @@ test('doctor policy distinguishes opt-out from missing, stopped and conflicting 
   assert.equal(dashboardNeedsRepair({ disabled: false, registered: true, process: 'stopped', conflict: false }), true)
   assert.equal(dashboardNeedsRepair({ disabled: false, registered: true, process: 'conflict', conflict: true }), true)
   assert.equal(dashboardNeedsRepair({ disabled: false, registered: true, process: 'running', conflict: false }), false)
+})
+
+test('status registra uma única observação quando o processo habilitado desaparece', async t => {
+  const f = fixture(t, 'linux', { exec: () => ({ status: 1, stdout: '' }) })
+  const data = join(f.home, '.local/share/prumo')
+  mkdirSync(data, { recursive: true })
+  writeFileSync(join(data, 'dashboard.json'), JSON.stringify({
+    enabled: true, mechanism: 'xdg', pid: 9876, node: f.node, script: f.script,
+  }))
+  await dashboardStatus(f.options)
+  await dashboardStatus(f.options)
+  const observations = readDashboardEvents({ home: f.home }).filter(event => event.event === 'stale-process')
+  assert.equal(observations.length, 1)
+  assert.equal(observations[0].pid, 9876)
+})
+
+test('ações de controle ficam registradas antes de alterar o processo', async t => {
+  const f = fixture(t, 'linux', { exec: () => ({ status: 1, stdout: '' }) })
+  const data = join(f.home, '.local/share/prumo')
+  mkdirSync(data, { recursive: true })
+  writeFileSync(join(data, 'dashboard.json'), JSON.stringify({
+    enabled: false, mechanism: 'xdg', pid: 4321, node: f.node, script: f.script,
+  }))
+  await restartDashboard(f.options)
+  await disableDashboard(f.options)
+  const events = readDashboardEvents({ home: f.home }).map(event => event.event)
+  assert.deepEqual(events, ['restart-requested', 'disable-requested'])
 })
 
 test('Windows creates one ONLOGON task with absolute quoted paths and persists opt-out', async t => {

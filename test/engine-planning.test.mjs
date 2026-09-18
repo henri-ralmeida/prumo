@@ -25,7 +25,8 @@ function fixture(t, dependent = false, { requireReview = true } = {}) {
     questions: [{ question: 'Preserve the contract?', answer: 'Yes.', channel: 'chat-fallback', round: 1 }],
     coverage: { problem: 'Incorrect delivery.', affected: 'Users.', outcome: 'Correct delivery.', currentBehavior: 'Reviewed.',
       desiredBehavior: 'Approved behavior.', rules: 'Keep contract.', exceptions: 'None.', scope: 'T1.', acceptance: 'Check passes.' },
-    decisions: [], deferred: [], closure: 'No gray area remains.',
+    decisions: [], deferred: [], executionBoundary: { deferredToExecutor: ['T1'], prematureTaskWork: [] },
+    closure: 'No gray area remains.',
   }
   const discoveryPath = join(root, 'discovery.json'), taskPlanPath = join(root, 'task-plan.json')
   writeFileSync(taskPlanPath, JSON.stringify({ research: [{ source: 'delivery', findings: 'Implementation inspected.' }], decisions: [],
@@ -227,7 +228,8 @@ function phaseFixture(t, tasks, { planningMode = 'phase' } = {}) {
       questions: [{ question: 'Keep the approved phase behavior?', answer: 'Yes.', channel: 'chat-fallback', round: 1, roundId: round.roundId }],
       coverage: { problem: 'A phase needs planning.', affected: 'Graph users.', outcome: 'Stable phase plans.', currentBehavior: 'Inspected.',
         desiredBehavior: 'Approved.', rules: 'Keep task bindings.', exceptions: 'None.', scope: phaseId, acceptance: 'Current receipts only.' },
-      decisions: [], deferred: [], closure: 'No gray area remains.', roundId: round.roundId, nonce: round.nonce }
+      decisions: [], deferred: [], executionBoundary: { deferredToExecutor: round.targets, prematureTaskWork: [] },
+      closure: 'No gray area remains.', roundId: round.roundId, nonce: round.nonce }
     const path = join(root, `discovery-${phaseId}.json`); writeFileSync(path, JSON.stringify(value)); return path
   }
   const writeArtifacts = phaseId => {
@@ -253,6 +255,9 @@ test('independent phases plan concurrently by explicit choice without moving tas
   const derived = JSON.parse(f.ok('graph').stdout).derived
   for (const id of ['A', 'B', 'C']) assert.equal(derived[id].effective, 'ready_for_discussion')
   f.ok('begin-phase-discussion', 'F2')
+  const discussing = JSON.parse(f.ok('graph').stdout).derived
+  assert.equal(discussing.A.effective, 'ready_for_discussion')
+  for (const id of ['B', 'C']) assert.equal(discussing[id].effective, 'discussing')
   assert.equal(f.state().phaseWorkflows.F1.discussionAttempts.length, 0, 'eligibility does not open other phases')
   f.ok('finish-phase-discussion', 'F2', '--context', f.discovery('F2'))
   f.ok('plan-phase', 'F2', '--agent', 'planner-f2')
@@ -260,8 +265,17 @@ test('independent phases plan concurrently by explicit choice without moving tas
   f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
   f.ok('plan-phase', 'F1', '--agent', 'planner-f1')
   for (const id of ['F1', 'F2']) assert.equal(f.state().phaseWorkflows[id].state, 'planning')
+  const activelyPlanning = JSON.parse(f.ok('graph').stdout).derived
+  for (const id of ['A', 'B', 'C']) assert.equal(activelyPlanning[id].effective, 'planning')
+  assert.match(f.ok('status').stdout, /A\s+planning\s+@planner-f1.*planning/)
+  assert.match(f.ok('status').stdout, /B\s+planning\s+@planner-f2.*planning/)
   assert.equal(f.state().tasks.B.phase, 'F2')
   assert.deepEqual(f.state().tasks.C.deps, ['B'])
+  f.writeArtifacts('F2')
+  f.ok('finish-phase-planning', 'F2', '--plan-dir', f.plans)
+  const plannedF2 = JSON.parse(f.ok('graph').stdout).derived
+  assert.equal(plannedF2.C.effective, 'waiting')
+  assert.equal(plannedF2.C.inputStatus, 'unresolved_input')
   assert.equal(readFileSync(f.planPath, 'utf8'), source)
 })
 
@@ -661,7 +675,8 @@ test('one phase discussion plans every member atomically while the DAG binds lat
       questions: [{ question: 'Keep task DAG authoritative?', answer: 'Yes.', channel: 'chat-fallback', round: 1, roundId: round.roundId }],
       coverage: { problem: 'Repeated task discussions.', affected: 'Graph users.', outcome: 'One phase discussion.', currentBehavior: 'Task scoped.',
         desiredBehavior: 'Phase scoped.', rules: 'DAG gates execution.', exceptions: 'Later inputs stay unresolved.', scope: phaseId, acceptance: 'Receipts bind inputs.' },
-      decisions: [], deferred: [], closure: 'The phase contract is settled.', roundId: round.roundId, nonce: round.nonce }
+      decisions: [], deferred: [], executionBoundary: { deferredToExecutor: round.targets, prematureTaskWork: [] },
+      closure: 'The phase contract is settled.', roundId: round.roundId, nonce: round.nonce }
     const path = join(root, `discovery-${phaseId}.json`); writeFileSync(path, JSON.stringify(value)); return path
   }
   const artifact = (task, binding, unresolvedInputs = []) => ({
@@ -701,6 +716,10 @@ test('one phase discussion plans every member atomically while the DAG binds lat
   const beforeWrongReceipt = readFileSync(statePath, 'utf8')
   rejects(/roundId and nonce/, 'finish-phase-discussion', 'F1', '--context', wrongPath)
   assert.equal(readFileSync(statePath, 'utf8'), beforeWrongReceipt)
+  const incompletePath = discovery('F1'), incomplete = JSON.parse(readFileSync(incompletePath, 'utf8'))
+  incomplete.executionBoundary.deferredToExecutor = ['A']; writeFileSync(incompletePath, JSON.stringify(incomplete))
+  rejects(/defer every discussion target/, 'finish-phase-discussion', 'F1', '--context', incompletePath)
+  assert.equal(readFileSync(statePath, 'utf8'), beforeWrongReceipt)
   ok('finish-phase-discussion', 'F1', '--context', discovery('F1'))
   ok('plan-phase', 'F1', '--agent', 'phase-planner')
   rejects(/already has planner/, 'plan-phase', 'F1', '--agent', 'second-planner')
@@ -710,7 +729,7 @@ test('one phase discussion plans every member atomically while the DAG binds lat
   const unchanged = readFileSync(statePath, 'utf8')
   rejects(/task-plan-C|ENOENT/, 'finish-phase-planning', 'F1', '--plan-dir', plans)
   assert.equal(readFileSync(statePath, 'utf8'), unchanged, 'partial artifact batches do not mutate state')
-  assert.equal(JSON.parse(ok('graph').stdout).derived.A.effective, 'ready_to_plan')
+  assert.equal(JSON.parse(ok('graph').stdout).derived.A.effective, 'planning')
   writeFileSync(join(plans, 'task-plan-C.json'), JSON.stringify(artifact('C', binding)))
   ok('finish-phase-planning', 'F1', '--plan-dir', plans)
   const planned = state()

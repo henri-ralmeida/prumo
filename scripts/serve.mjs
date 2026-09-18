@@ -19,6 +19,7 @@ const ENGINE = join(HERE, 'engine.mjs')
 import { findRoot, storageHome, graphRoots as listRoots, globalGraphRoots } from './storage.mjs'
 import { language, localizeDashboard, log, errorLog, tr } from './i18n.mjs'
 import { discoveryDigest, hasCurrentTaskPlan, phasePlanningContext, planningContext } from './validation.mjs'
+import { dashboardDiagnostics } from './dashboard-diagnostics.mjs'
 
 const argv = process.argv.slice(2)
 const flag = (name, fallback) => {
@@ -178,16 +179,31 @@ function phasePlanningBlockers(state, phaseId) {
   return [...blockers]
 }
 
+function phaseContext(state, phaseId, targets = phaseTargets(state, phaseId)) {
+  return JSON.stringify([state.plan.name, state.plan.description, state.plan.planningRevision ?? 0, phaseId,
+    targets.map(task => [task.id, phasePlanningContext(state, task)]).sort()])
+}
+
 function currentPhaseDiscussion(state, phase) {
   const round = phase?.discussionAttempts?.at(-1)
   const targets = round?.targets?.map(id => state.tasks[id]).filter(Boolean)
   if (round?.result !== 'discussed' || targets?.length !== round.targets.length ||
       !phaseTargets(state, phase.id).every(task => round.targets.includes(task.id))) return false
-  const context = JSON.stringify([state.plan.name, state.plan.description, state.plan.planningRevision ?? 0, phase.id,
-    targets.map(task => [task.id, phasePlanningContext(state, task)]).sort()])
+  const context = phaseContext(state, phase.id, targets)
   return round.context === context && phase.discovery?.context === context && phase.discovery?.roundId === round.roundId &&
     phase.discovery?.nonce === round.nonce && phase.discovery?.digest === round.discoveryDigest &&
     phase.discovery.digest === discoveryDigest(phase.discovery)
+}
+
+function currentPhasePlanning(state, phase, round = phase?.planningAttempts?.at(-1)) {
+  if (!round || round.endedAt || !Array.isArray(round.targets)) return false
+  const discussion = phase?.discussionAttempts?.at(-1)
+  const targets = round.targets.map(id => state.tasks[id]).filter(Boolean)
+  const liveTargets = phaseTargets(state, phase.id).map(task => task.id).sort()
+  return discussion?.roundId === round.discussionRoundId && currentPhaseDiscussion(state, phase) &&
+    targets.length === round.targets.length && JSON.stringify([...round.targets].sort()) === JSON.stringify(liveTargets) &&
+    round.context === phaseContext(state, phase.id, discussion.targets.map(id => state.tasks[id])) &&
+    round.discoveryDigest === phase.discovery?.digest
 }
 
 function currentDiscussion(state, task) {
@@ -214,8 +230,14 @@ function derive(state) {
       const phaseAdopted = !(state.legacyPhaseAdoption && !phase?.adoptedLegacy)
       if (state.plan.planningMode === 'phase') {
         planningBlockedBy = phasePlanningBlockers(state, t.phase)
-        effective = !phaseAdopted ? 'pending' : hasCurrentTaskPlan(state, t) ?
-          (blockedBy.length ? 'waiting' : 'ready') : planningBlockedBy.length ? 'waiting' :
+        const discussionRound = phase?.discussionAttempts?.at(-1)
+        const phaseDiscussing = phase?.state === 'discussing' && !discussionRound?.endedAt &&
+          discussionRound?.targets?.includes(t.id)
+        const planningRound = phase?.planningAttempts?.at(-1)
+        const phasePlanning = phase?.state === 'planning' && currentPhasePlanning(state, phase, planningRound) &&
+          planningRound.targets.includes(t.id)
+        effective = !phaseAdopted ? 'pending' : phaseDiscussing ? 'discussing' : hasCurrentTaskPlan(state, t) ?
+          (blockedBy.length ? 'waiting' : 'ready') : phasePlanning ? 'planning' : planningBlockedBy.length ? 'waiting' :
             (currentPhaseDiscussion(state, phase) ? 'ready_to_plan' : 'ready_for_discussion')
       } else {
         effective = blockedBy.length ? 'waiting' : !phaseAdopted ? 'pending' :
@@ -227,8 +249,11 @@ function derive(state) {
       phase?.state === 'discussing' ? 'phase_discussing' : phase?.state === 'planning' ? 'phase_planning' : 'awaiting_phase_plan'
     let inputStatus
     if (t.taskPlan?.phaseId && t.taskPlan.unresolvedInputs?.length) {
-      const inputs = t.taskPlan.unresolvedInputs.map(input => state.tasks[input.task])
-      inputStatus = inputs.some(dep => !dep || !['done', 'skipped'].includes(dep.state)) ? 'unresolved_later_phase_input' :
+      const entries = t.taskPlan.unresolvedInputs.map(input => ({ input, task: state.tasks[input.task] }))
+      const unresolved = entries.filter(({ task }) => !task || !['done', 'skipped'].includes(task.state))
+      const inputs = entries.map(({ task }) => task)
+      inputStatus = unresolved.length ?
+        (unresolved.every(({ task }) => task && task.phase !== t.phase) ? 'unresolved_later_phase_input' : 'unresolved_input') :
         inputs.some(dep => dep.state === 'skipped') ? 'waived_input' : 'validated_input'
     }
     const showPlanningStatus = state.plan.planningMode === 'phase' && !['done', 'skipped'].includes(t.state)
@@ -258,6 +283,8 @@ function productVersion() {
 }
 
 const VERSION = productVersion()
+const diagnostic = GLOBAL ? dashboardDiagnostics({ version: VERSION, port: PORT }) : () => {}
+diagnostic('startup', { node: process.version, platform: process.platform })
 const EMPTY_STATE = { plan: { name: '', phases: [] }, tasks: {}, derived: {}, empty: true }
 
 const server = createServer((req, res) => {
@@ -323,6 +350,7 @@ const server = createServer((req, res) => {
 /* Loopback ONLY: this is a read-only dashboard for the dev's own browser. Binding every
  * interface would expose run state to the local network for no benefit. */
 }).listen(PORT, '127.0.0.1', () => {
+  diagnostic('listening', { port: server.address().port })
   let selected
   try { selected = GLOBAL ? catalog().current : currentRun() }
   catch (error) { errorLog(`[prumo] Could not read current run: ${error.message}`) }
@@ -331,6 +359,7 @@ const server = createServer((req, res) => {
       `auto-sync: ${SYNC_PLAN ? 'on' : 'off'})`,
   )
 }).on('error', (e) => {
+  diagnostic('server-error', { code: e.code, message: e.message })
   /* A taken port is the NORMAL second-run case (the previous dashboard is still up and
      already follows CURRENT) — say that, instead of dying with a stack trace. */
   if (e.code === 'EADDRINUSE') {

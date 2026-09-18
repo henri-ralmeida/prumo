@@ -99,8 +99,12 @@ tarefa produtora, fase e evidência exigida. Exemplo da parte comum do contrato:
 O JSON de descoberta exige `research` com `source`/`findings`; `questions` com ao menos um
 `question`/`answer`, `round` positivo e `channel` igual a `native` ou `chat-fallback`; `coverage`
 com `problem`, `affected`, `outcome`, `currentBehavior`, `desiredBehavior`, `rules`, `exceptions`,
-`scope` e `acceptance`; pares resolvidos em `decisions`; textos em `deferred`; e `closure` explicando
+`scope` e `acceptance`; pares resolvidos em `decisions`; textos em `deferred`; `executionBoundary` com
+`deferredToExecutor` nomeando todas as tarefas alvo e `prematureTaskWork` normalmente vazio; e `closure` explicando
 por que não restou área cinzenta relevante. Uma síntese pode cobrir vários campos, sem virar questionário.
+Se a discussão produziu o resultado de uma tarefa, `prematureTaskWork` registra a tarefa e a ação e o motor
+recusa o fechamento. Depois de informar o usuário e receber aprovação explícita,
+`--accept-premature-work` registra o incidente; o executor ainda repete o trabalho.
 O motor calcula um SHA-256 canônico da descoberta e do recibo da discussão e liga o digest à rodada.
 Repetir `plan-phase` durante a mesma rodada não altera o estado. `finish-phase-planning` recusa um lote
 incompleto, alterado ou ligado a uma descoberta desatualizada.
