@@ -12,6 +12,10 @@ npm install -g @henri-ralmeida/prumo
 
 The global npm `postinstall` configures detected supported harnesses and starts the read-only dashboard.
 A local npm install is inert. Use `prumo install --all` after disabled npm scripts or to repair a new harness.
+`prumo update` refreshes the CLI, skill, both READMEs, references, scripts and PO First configuration in
+every registered Claude Code, Kiro and Codex installation. It compares managed contents, resumes a pending
+activation and never downgrades a global CLI newer than npm `latest`. A damaged marker is recovered only
+for its exact registered harness/path and only from a byte-verified Prumo backup.
 
 ## What it does
 
@@ -95,7 +99,9 @@ the skill is the DISCIPLINE. Neither replaces the other.
 | `dashboard.html` | Live view: DAG laid out as phase swimlanes (toggle to dep-depth layering), animated dep edges, lineage highlight on hover, task details in a popover beside the node (long hover peeks, click pins; side panel = run state + logs only), working/validated sub-state per running task, orchestrator heartbeat, event flashes, retries, event log. Plus a **results** tab (`r`) deriving what the run cost — see below. |
 
 New state lives in `~/.local/share/prumo/<workspace>/.specs/graph/<run>/`, outside project
-repositories. Installation migrates central graph-foreman workspaces there byte-for-byte.
+repositories. Installation migrates durable central graph-foreman data there: graph state,
+saved graph backups and top-level plan or handoff files. Generated execution directories,
+dependency copies and build outputs are removed only after the durable destination is verified.
 `PRUMO_HOME` overrides that base; `GRAPH_FOREMAN_HOME` only locates legacy data for discovery and migration.
 Stale root references follow a migrated central workspace once its old graph is absent and the new graph exists. Set `PRUMO_ROOT`
 (or legacy `GRAPH_ROOT`) to an existing workspace before running commands. Existing
@@ -226,6 +232,9 @@ coverage, reject zero-test runs, and revalidate after any code change.
 Existing completed history is unchanged. Old plans remain readable, but their next approval
 must provide typed functional steps or a justified inspection exception. Update the approved
 plan through the existing workflow; do not silently reclassify tasks to make them pass.
+`skip <task> --reason <text>` requires a nonempty explicit decision and is terminal: it cannot
+rewrite an already done/skipped task. If delivery or review is active, skip closes that attempt
+with `result: skipped` and no fabricated validation receipt.
 
 For an approved validation change in an existing run, use
 `node $ENGINE refresh-contract <task> --plan <approved-plan.json> --run <run>`.
@@ -262,7 +271,8 @@ contract and planning revisions, canonical discovery, scope and dependency resul
 wrong; retry then requires discuss and fresh planning. A missing reviewer reason also prevents reuse.
 
 Use the selected `--run` on every call. `retry` does not reload a plan and refuses a failed
-task whose recorded contract differs from its approved source; synchronize and inspect first.
+task whose recorded contract differs from its approved source, or whose global `name`, `description`
+or `requireReview` decision differs; synchronize and inspect first.
 `refresh-contract` only updates validation fields; it does not record rejection. If no
 implementation was rejected and only verification needs updating, refresh and review in the
 same attempt instead. Completed tasks need explicit follow-up work, not rewritten history.
@@ -573,8 +583,9 @@ plan, in planning and ready to execute without replacing existing states.
 ### Navigating
 
 The canvas is a whiteboard, not a scroll area: **drag** the board to pan, **ctrl/⌘+wheel** to
-zoom at the cursor, plain wheel/trackpad to pan, **`0`** or the `fit` button to re-frame, `+`/`-`
-to zoom. It auto-fits on first paint, so the first thing on screen is the whole graph.
+zoom at the cursor, plain wheel/trackpad to pan, **`0`** or the `fit` button to toggle between
+the complete graph and a centered 100% view, `+`/`-` to zoom. It auto-fits on first paint, so
+the first thing on screen is the whole graph.
 
 Two details that are easy to break: the transform is reapplied after every tick (the 1.5s
 refresh would otherwise snap the board back to the origin), and pointer capture starts only once

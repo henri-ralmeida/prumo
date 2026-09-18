@@ -90,10 +90,17 @@ test('skip encerra tentativa ativa sem inventar recibo de validação', t => {
     assert.equal(attempt.reason, 'Approved cancellation')
     assert.ok(attempt.endedAt)
     assert.ok(attempt.endedAt >= attempt.startedAt)
-    f.ok('skip', 'T1', '--reason', 'Second decision')
-    assert.deepEqual(f.state().tasks.T1.attempts, task.attempts)
-    assert.equal(f.state().tasks.T1.skipReason, 'Second decision')
+    const unchanged = JSON.stringify(task)
+    f.rejects(/already terminal/, 'skip', 'T1', '--reason', 'Second decision')
+    assert.equal(JSON.stringify(f.state().tasks.T1), unchanged)
   }
+})
+
+test('skip exige motivo explícito antes de alterar estado ou histórico', t => {
+  const f = fixture(t)
+  const before = f.state()
+  f.rejects(/requires --reason/, 'skip', 'T1')
+  assert.deepEqual(f.state(), before)
 })
 
 test('retry recusa mudança global aprovada antes de mutar a tarefa falha', t => {

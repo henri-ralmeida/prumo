@@ -58,7 +58,7 @@ ENGINE="<this skill's directory>/scripts/engine.mjs"    # e.g. .claude/skills/pr
 SERVE="<this skill's directory>/scripts/serve.mjs"
 ```
 
-Node.js 22+, no project dependencies to install. New run state **lives in a central workspace**. Installation migrates central graph-foreman workspaces to Prumo byte-for-byte; existing project-local runs remain at their original paths. Before every
+Node.js 22+, no project dependencies to install. New run state **lives in a central workspace**. Installation migrates durable central graph-foreman data to Prumo: graph state, saved graph backups and top-level plan or handoff files. Generated execution directories, dependency copies and build outputs are discarded only after verification; existing project-local runs remain at their original paths. Before every
 engine or dashboard command, select one central workspace:
 
 ```bash

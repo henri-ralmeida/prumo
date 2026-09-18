@@ -396,7 +396,9 @@ test('delivered dependency changes invalidate planning; unrelated task progress 
   f.ok('note', 'T0', '--text', 'Unrelated scheduling note')
   f.beginPlan('T2', 'other-planner')
   assert.equal(f.graph().derived.T1.effective, 'ready')
-  f.ok('skip', 'T0', '--reason', 'Different approved prerequisite outcome')
+  const changedWaiver = f.state()
+  changedWaiver.tasks.T0.skipReason = 'Recovered legacy waiver changed outside the current engine'
+  f.save(changedWaiver)
   assert.equal(f.graph().derived.T1.effective, 'ready_for_discussion')
   f.rejected(/completed current planning/, 'start', 'T1', '--agent', 'executor', '--force')
   assert.deepEqual(f.state().tasks.T1.taskPlan, original)
