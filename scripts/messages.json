@@ -1,4 +1,9 @@
 {
+  "Legacy graph link targets a directory that migration cannot recreate: {0}": "O link do grafo legado aponta para uma pasta vazia que a migração não consegue preservar; a origem foi mantida: {0}",
+  "Legacy graph references execution data; preserve it before migration: {0}": "O grafo legado referencia dados de execução; preserve esses dados antes de migrar: {0}",
+  "Legacy workspace changed during installation: {0}": "O workspace legado mudou durante a instalação; a migração foi interrompida: {0}",
+  "Workspace changed during installation: {0}": "O workspace mudou durante a instalação: {0}",
+  "{0} global plan decisions differ from the approved plan ({1}) — run sync-plan and inspect the persisted plan before retry": "As decisões globais de {0} diferem do plano aprovado ({1}); execute sync-plan e confira o plano persistido antes do retry",
   "Install opens a selection of detected environments; --all selects all without prompting": "Install abre a seleção dos ambientes detectados; --all seleciona todos diretamente",
   "Interactive selection needs a terminal; use --all or choose a harness flag": "A seleção interativa precisa de um terminal; use --all ou escolha um ambiente por opção",
   "Installation selection cancelled": "Seleção de instalação cancelada",

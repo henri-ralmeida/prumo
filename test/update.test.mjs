@@ -28,11 +28,11 @@ test('update exits before npm only when Claude, Kiro and Codex are all already l
   const request = { dryRun: false, cwd: home, projects: [], updateCli: true, sourceVersion: version, globalVersion: version }
   const current = await launchUpdate(request, {
     discover: () => installations, latestVersion: () => version,
-    onCurrent: value => { reported = value }, run: () => { throw new Error('npm must not run') },
+    onCurrent: value => { reported = value }, run: () => { throw new Error('npm must not run') }, filesCurrent: () => true,
   })
   assert.equal(current, 0)
   assert.equal(reported, version)
-  assert.equal(installationsCurrent(installations, version), true)
+  assert.equal(installationsCurrent(installations, version, { filesCurrent: () => true }), true)
 
   const runUpdater = () => {
     launched++
@@ -53,6 +53,49 @@ test('update exits before npm only when Claude, Kiro and Codex are all already l
   })
   assert.equal(stale, 0)
   assert.equal(launched, 2, 'one stale harness must still launch the updater')
+
+  await launchUpdate({ ...request, pendingUpdate: true }, {
+    discover: () => installations, latestVersion: () => version, run: runUpdater, filesCurrent: () => true,
+  })
+  assert.equal(launched, 3, 'a pending checkpoint must prevent the current-version shortcut')
+})
+
+test('update recusa downgrade da CLI global mesmo iniciado por uma versão local antiga', async () => {
+  let launched = false
+  await assert.rejects(launchUpdate({ dryRun: false, cwd: source, projects: [], updateCli: true,
+    sourceVersion: '1.3.14', globalVersion: '1.3.15' }, {
+    discover: () => [], latestVersion: () => '1.3.14',
+    run: () => { launched = true; throw new Error('updater iniciado indevidamente') },
+  }), /Installed Prumo 1\.3\.15 is newer than npm latest 1\.3\.14/)
+  assert.equal(launched, false)
+})
+
+test('update does not treat an empty discovery or an absent global CLI as current', async t => {
+  const home = mkdtempSync(join(realpathSync(tmpdir()), 'prumo-current-boundary-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
+  const root = join(home, 'claude', 'skills')
+  put(join(root, 'prumo', '.prumo-install.json'), { product: 'prumo', harness: 'claude', version })
+  const installations = [{ harness: 'claude', roots: [root] }]
+  let launched = 0
+  let current = 0
+  const runUpdater = () => {
+    launched++
+    const child = new EventEmitter()
+    child.stderr = new EventEmitter()
+    queueMicrotask(() => child.emit('exit', 0, null))
+    return child
+  }
+  const request = { dryRun: false, cwd: home, projects: [], updateCli: true, sourceVersion: version }
+  assert.equal(await launchUpdate({ ...request, globalVersion: version }, {
+    discover: () => [], latestVersion: () => version, run: runUpdater, onCurrent: () => { current++ },
+  }), 0)
+  assert.equal(launched, 1, 'an empty discovery must not satisfy every()')
+  assert.equal(current, 0)
+  assert.equal(await launchUpdate({ ...request, globalVersion: null }, {
+    discover: () => installations, latestVersion: () => version, run: runUpdater, onCurrent: () => { current++ },
+  }), 0)
+  assert.equal(launched, 2, 'null means that the global CLI is absent, not current')
+  assert.equal(current, 0)
 })
 
 test('update detects installed harnesses and custom paths, preserves preferences, previews and skips legacy-only environments', t => {
@@ -114,8 +157,38 @@ test('update detects installed harnesses and custom paths, preserves preferences
   assert.throws(() => discoverInstallations({ home, cwd, env: {} }))
 })
 
+test('update recupera marcadores nulos dos tres ambientes por meio de backups integros', t => {
+  const home = mkdtempSync(join(realpathSync(tmpdir()), 'prumo-recover-update-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
+  const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CONFIG_DIR: join(home, '.claude'),
+    KIRO_HOME: join(home, '.kiro'), CODEX_HOME: join(home, '.codex'), PRUMO_HOME: join(home, 'data'),
+    GRAPH_ROOT: '', PRUMO_ROOT: '', GRAPH_FOREMAN_HOME: '', PRUMO_LANG: 'en' }
+  const markers = []
+  for (const harness of ['claude', 'kiro', 'codex']) {
+    const first = planInstall({ harness, home, cwd: home, env })
+    assert.ok(applyInstall(first).groups.every(group => group.status !== 'conflict'))
+    const marker = join(first.groups.find(group => group.name.startsWith('skill:')).snapshots[0], '.prumo-install.json')
+    markers.push(marker)
+    put(marker, { ...JSON.parse(read(marker)), version: '1.0.8' })
+    const second = planInstall({ harness, home, cwd: home, env })
+    const applied = applyInstall(second)
+    assert.ok(applied.backup)
+    writeFileSync(marker, Buffer.alloc(90))
+  }
+  put(join(home, '.local/share/prumo/dashboard.json'), { enabled: false, mechanism: process.platform === 'win32' ? 'schtasks' : process.platform === 'darwin' ? 'launchd' : 'xdg' })
+  const result = spawnSync(process.execPath, [join(source, 'bin/prumo.mjs'), '_update'], {
+    cwd: home, env: { ...env, PRUMO_UPDATE_REQUEST: JSON.stringify({ dryRun: false, cwd: home, projects: [], updateCli: false }) },
+    encoding: 'utf8', windowsHide: true, timeout: 120000,
+  })
+  assert.equal(result.status, 0, result.stdout + result.stderr)
+  assert.match(result.stdout, /Prumo updated successfully/)
+  assert.match(result.stdout, /Prumo v1\.0\.9/)
+  assert.doesNotMatch(result.stderr, /Invalid Prumo installation marker/)
+  for (const marker of markers) assert.equal(JSON.parse(read(marker)).version, version)
+})
+
 test('update rejects malformed requests before applying installations', () => {
-  for (const value of [undefined, '{}', 'null', JSON.stringify({ dryRun: true, cwd: '.', projects: [] }), JSON.stringify({ dryRun: true, cwd: source, projects: [], lang: 'invalid' }), JSON.stringify({ dryRun: true, cwd: source, projects: [], sourceVersion: 'next' }), JSON.stringify({ dryRun: true, cwd: source, projects: [], globalVersion: 'next' })]) assert.throws(() => updateRequest(value))
+  for (const value of [undefined, '{}', 'null', JSON.stringify({ dryRun: true, cwd: '.', projects: [] }), JSON.stringify({ dryRun: true, cwd: source, projects: [], lang: 'invalid' }), JSON.stringify({ dryRun: true, cwd: source, projects: [], sourceVersion: 'next' }), JSON.stringify({ dryRun: true, cwd: source, projects: [], globalVersion: 'next' }), JSON.stringify({ dryRun: true, cwd: source, projects: [], pendingUpdate: 'yes' })]) assert.throws(() => updateRequest(value))
   assert.equal(updateRequest(JSON.stringify({ dryRun: false, cwd: source, projects: [] })).updateCli, true, 'legacy callers update the global CLI')
   assert.equal(updateRequest(JSON.stringify({ dryRun: false, cwd: source, projects: [], updateCli: false })).updateCli, false)
   assert.equal(isGlobalCli(join(source, 'package'), { platform: 'linux', run: () => ({ status: 0, stdout: source }) }), true)

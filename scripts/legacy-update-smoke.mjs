@@ -108,6 +108,8 @@ try {
   const before = JSON.parse(readFileSync(join(oldRoot, relativeState), 'utf8'))
   const beforeEvents = readFileSync(join(oldRoot, '.specs/graph/legacy/events.ndjson'), 'utf8')
   const dependency = 'attempt4/source/node_modules/@retro-pass/desktop'
+  put(join(oldRoot, 'approved.plan.json'), plan)
+  put(join(oldRoot, 'backups/approved.plan.json'), plan)
   put(join(oldRoot, 'attempt4/source/packages/desktop/value.txt'), 'preserved dependency')
   mkdirSync(dirname(join(oldRoot, dependency)), { recursive: true })
   symlinkSync(join(oldRoot, 'attempt4/source/packages/desktop'), join(oldRoot, dependency), 'junction')
@@ -116,7 +118,8 @@ try {
     PRUMO_TEST_REQUESTS: join(home, 'requests'), PRUMO_TEST_FAILURE: join(home, 'failure') } })
   const address = await new Promise((resolve, reject) => { registry.once('message', resolve); registry.once('error', reject) })
   env.npm_config_registry = address.url
-  const output = run(process.execPath, [cli, 'update'])
+  // Na mesma versão, solicita reparo explícito para exercitar o pacote candidato.
+  const output = run(process.execPath, [cli, 'update', ...(fromVersion === pkg.version ? ['--lang', 'en'] : [])])
   const compare = (a, b) => a.split('.').map(Number).reduce((result, value, index) => result || value - Number(b.split('.')[index]), 0)
   for (const released of JSON.parse(process.env.PRUMO_TEST_PUBLISHED_VERSIONS ?? '[]')) {
     if (compare(released, fromVersion) > 0 && compare(released, pkg.version) <= 0)
@@ -134,8 +137,9 @@ try {
   assert.ok(existsSync(join(newRoot, relativeState)))
   assert.equal(existsSync(oldRoot), false, 'validated migration removes the old data root')
   assert.equal(readFileSync(join(newRoot, '.specs/graph/legacy/events.ndjson'), 'utf8'), beforeEvents)
-  assert.equal(readFileSync(join(newRoot, dependency, 'value.txt'), 'utf8'), 'preserved dependency')
-  assert.equal(realpathSync(join(newRoot, dependency)), realpathSync(join(newRoot, 'attempt4/source/packages/desktop')))
+  assert.equal(existsSync(join(newRoot, 'attempt4')), false, 'a migracao minima descarta copias de execucao')
+  assert.deepEqual(JSON.parse(readFileSync(join(newRoot, 'approved.plan.json'), 'utf8')), plan)
+  assert.deepEqual(JSON.parse(readFileSync(join(newRoot, 'backups/approved.plan.json'), 'utf8')), plan)
   plan.tasks[2].validationMode = 'functional'
   plan.tasks[2].validation = [{ kind: 'functional', run: 'node check.cjs', expect: 'migrated behavior passes' }]
   put(join(project, 'check.cjs'), "require('node:assert/strict').equal(1 + 1, 2)\n")

@@ -2,6 +2,31 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 1.3.15 — 2026-09-18
+
+### Fixed — Recoverable updates
+
+- Recover damaged installation markers only from registered installations and byte-verified Prumo backups.
+- Reapply an update when managed files differ, an activation remains pending or the global CLI is absent.
+- Refuse to replace a newer global CLI with an older npm `latest` release.
+
+### Fixed — Transactional legacy migration
+
+- Detect concurrent workspace changes before deleting generated legacy execution data.
+- Restore a relocated workspace when a later installation step fails and preserve durable internal links across migration and restore.
+- Refuse a migration before changing its source when a durable link targets an empty directory that cannot be recreated.
+
+### Fixed — Dashboard restart ownership
+
+- Wait for the previous Windows dashboard to release its port before starting its replacement.
+- Avoid duplicate managed processes when the scheduled task is missing but the dashboard is already running.
+- Persist a created Startup fallback before reporting a restart failure so a later disable removes it.
+
+### Fixed — Task history consistency
+
+- Close the active delivery attempt when a task is explicitly skipped without fabricating a validation receipt.
+- Require `sync-plan` before retry when approved global plan decisions changed.
+
 ## 1.3.14 — 2026-09-18
 
 ### Fixed — Minimal legacy migration
