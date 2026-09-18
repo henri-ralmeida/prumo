@@ -2,6 +2,19 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 1.3.14 — 2026-09-18
+
+### Fixed — Minimal legacy migration
+
+- Move only graph state, saved graph backups and top-level plan or handoff files from a legacy graph-foreman workspace.
+- Delete generated execution directories, dependency copies and build outputs after the required state is verified in Prumo storage.
+- Complete the shared migration once instead of repeating a full workspace copy for Claude Code, Kiro and Codex.
+
+### Improved — Fast first update
+
+- Keep the recoverable state backup proportional to the plan data instead of the full execution workspace.
+- Preserve conflicting graph copies and refuse migration rather than replacing current state.
+
 ## 1.3.13 — 2026-09-18
 
 ### Fixed — Bounded workspace updates
