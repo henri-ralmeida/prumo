@@ -1,4 +1,10 @@
 {
+  "1.3.12": {
+    "en": [
+      { "title": "Improved — Evidence-focused PO First", "items": ["Preserve ordering, precedence, boundaries, invalid input and state transitions as explicit acceptance dimensions", "Stop investigation after every material criterion and the highest-risk counterexample have current evidence", "Lead final reports with the observable result and translate technical details into their practical effect"] },
+      { "title": "Improved — Independent adversarial review", "items": ["Require one independently derived counterexample for the highest-risk applicable criterion", "Reject a plan whose checks cannot establish every current criterion", "Keep review proportional and add suggestions only when they provide a real next action"] }
+    ]
+  },
   "1.3.11": {
     "en": [
       { "title": "Fixed — Filtered graph context", "items": ["Keep every task and phase visible while dimming cards outside the selected filter", "Disable nonmatching cards while preserving requested dependency context", "Preserve graph positions, zoom and canvas size when filters change"] },

@@ -2,6 +2,20 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 1.3.12 — 2026-09-17
+
+### Improved — Evidence-focused PO First
+
+- Preserve ordering, precedence, boundaries, invalid input and state transitions as explicit acceptance dimensions instead of collapsing them into a happy-path rule.
+- Stop investigation once every material criterion and the highest-risk focused counterexample have current evidence, avoiding repeated sources and equivalent checks.
+- Lead final reports with the observable result, followed by the relevant change, evidence and material limitation in language product stakeholders can use.
+
+### Improved — Independent adversarial review
+
+- Require the reviewer to derive one focused counterexample independently from the executor and implementation.
+- Reject a plan defect when approved checks cannot establish a current criterion, even if unrelated tests pass.
+- Keep reviews and suggestions proportional to concrete risks and useful next actions.
+
 ## 1.3.11 — 2026-09-17
 
 ### Fixed — Filtered graph context
