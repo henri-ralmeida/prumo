@@ -2,6 +2,19 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 1.3.13 — 2026-09-18
+
+### Fixed — Bounded workspace updates
+
+- Relocate a previously unmigrated central workspace without retaining its file payloads in the Node.js heap.
+- Keep the original workspace inside the recoverable installation backup while copying and byte-verifying the destination.
+- Detect concurrent workspace changes, preserve junction targets and report the migration instead of leaving the progress label on a harness update.
+
+### Fixed — Current-version updates
+
+- End `prumo update` before launching the isolated npm updater when the CLI and every managed Claude Code, Kiro and Codex installation already match npm `latest`.
+- Continue the update when any one managed harness is stale or when an explicit language change was requested.
+
 ## 1.3.12 — 2026-09-17
 
 ### Improved — Evidence-focused PO First

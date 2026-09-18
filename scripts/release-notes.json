@@ -1,4 +1,10 @@
 {
+  "1.3.13": {
+    "en": [
+      { "title": "Fixed — Bounded workspace updates", "items": ["Relocate large legacy workspaces without retaining their file payloads in memory", "Keep a recoverable original while copying and byte-verifying the destination", "Detect concurrent changes and preserve internal and external junction targets"] },
+      { "title": "Fixed — Current-version updates", "items": ["Skip npm and harness rewrites when the CLI and every managed installation already match latest", "Continue updating when Claude Code, Kiro or Codex is stale or an explicit language change was requested"] }
+    ]
+  },
   "1.3.12": {
     "en": [
       { "title": "Improved — Evidence-focused PO First", "items": ["Preserve ordering, precedence, boundaries, invalid input and state transitions as explicit acceptance dimensions", "Stop investigation after every material criterion and the highest-risk counterexample have current evidence", "Lead final reports with the observable result and translate technical details into their practical effect"] },

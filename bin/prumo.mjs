@@ -54,7 +54,7 @@ function printReleaseNotes(fromVersions, version) {
   }
 }
 
-function runInstall(options, { command = 'install', dryRun = false, quiet = false, reported = new Set() } = {}) {
+function runInstall(options, { command = 'install', dryRun = false, quiet = false, reported = new Set(), onProgress } = {}) {
   const plan = planInstall(options)
   t = createTranslator(messages, plan.lang)
   if (command === 'install' && !quiet) {
@@ -66,14 +66,14 @@ function runInstall(options, { command = 'install', dryRun = false, quiet = fals
     }
     for (const data of plan.data) print(data.action === 'migrate' ? t('Migrate existing data: {0} -> {1}', data.source, data.root) : t('Existing data stays in place: {0}', data.root))
     for (const warning of plan.warnings) print(`${t('pending activation')}: ${t(warning)}`)
-    const result = applyInstall(plan, { dryRun })
+    const result = applyInstall(plan, { dryRun, onProgress })
     if (result.backup) print(t('Backup: {0}', result.backup))
     for (const group of result.groups) { print(`${group.name}: ${t(group.status)}`); for (const error of group.errors) print(t(error)) }
     if (result.groups.some(group => group.status === 'conflict')) process.exitCode = 2
     if (dryRun) print('Dry run: no files changed')
     else print('Open a new session to load Prumo and PO First')
   } else if (command === 'install') {
-    const result = applyInstall(plan, { dryRun })
+    const result = applyInstall(plan, { dryRun, onProgress })
     for (const group of result.groups.filter(group => group.status === 'conflict')) {
       for (const error of group.errors) if (!reported.has(error)) {
         console.error(`[prumo] ${group.name}: ${t(error)}`)
@@ -123,8 +123,8 @@ try {
   } else if (['update', '_update'].includes(positionals[0])) {
     if (positionals.length !== 1 || ['claude', 'kiro', 'codex', 'all'].some(name => values[name])) throw new Error('Update automatically selects installed environments; do not select a harness')
     if (positionals[0] === 'update') {
-      const request = { dryRun: values['dry-run'] ?? false, lang: values.lang, projects: (values.project ?? []).map(path => resolve(path)), cwd: process.cwd(), updateCli: true, sourceVersion: version }
-      const code = await launchUpdate(request)
+      const request = { dryRun: values['dry-run'] ?? false, lang: values.lang, projects: (values.project ?? []).map(path => resolve(path)), cwd: process.cwd(), updateCli: true, sourceVersion: version, globalVersion: globalCliState(packageRoot).version }
+      const code = await launchUpdate(request, { onCurrent: current => print(t('Prumo is already up to date'), `v${current}`) })
       if (code === null) print('No Prumo installations found; install an environment first')
       else process.exitCode = code
     } else {
@@ -174,7 +174,9 @@ try {
             t = createTranslator(messages, language(lang))
             if (!quiet) print(t('Updating {0} with Prumo {1}', entry.harness, version))
             else progress.update(45 + Math.round(45 * (index + 1) / Math.max(installed.length, 1)), t('Updating {0}', entry.harness))
-            runInstall({ harness: entry.harness, configRoot: entry.config, skillRoots: roots, onlyInstalled: true, cwd: request.cwd, projects: entry.projects, lang }, { dryRun: request.dryRun, quiet, reported })
+            const percent = 45 + Math.round(45 * (index + 1) / Math.max(installed.length, 1))
+            runInstall({ harness: entry.harness, configRoot: entry.config, skillRoots: roots, onlyInstalled: true, cwd: request.cwd, projects: entry.projects, lang }, { dryRun: request.dryRun, quiet, reported,
+              onProgress: event => progress.update(percent, t('Migrating workspace {0}', event.name)) })
           }
         } catch (error) { console.error(`[prumo] ${t(error.message)}`); process.exitCode = 2 }
       }

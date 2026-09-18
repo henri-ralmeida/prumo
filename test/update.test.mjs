@@ -5,14 +5,55 @@ import { tmpdir } from 'node:os'
 import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
+import { EventEmitter } from 'node:events'
 import { planInstall, applyInstall, discoverInstallations } from '../lib/install.mjs'
-import { assertUpdateVersion, globalCliState, isGlobalCli, npmLatestVersion, npmProcess, reconcileDashboardUpdate, updateRequest } from '../lib/update.mjs'
+import { assertUpdateVersion, globalCliState, installationsCurrent, isGlobalCli, launchUpdate, npmLatestVersion, npmProcess, reconcileDashboardUpdate, updateRequest } from '../lib/update.mjs'
 import { inside } from '../scripts/storage.mjs'
 
 const source = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const read = path => readFileSync(path, 'utf8')
 const version = JSON.parse(read(join(source, 'package.json'))).version
 const put = (path, value) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, typeof value === 'string' ? value : JSON.stringify(value)) }
+
+test('update exits before npm only when Claude, Kiro and Codex are all already latest', async t => {
+  const home = mkdtempSync(join(realpathSync(tmpdir()), 'prumo-current-test-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
+  const installations = ['claude', 'kiro', 'codex'].map(harness => {
+    const root = join(home, harness, 'skills')
+    put(join(root, 'prumo', '.prumo-install.json'), { product: 'prumo', harness, version })
+    return { harness, roots: [root] }
+  })
+  let launched = 0
+  let reported
+  const request = { dryRun: false, cwd: home, projects: [], updateCli: true, sourceVersion: version, globalVersion: version }
+  const current = await launchUpdate(request, {
+    discover: () => installations, latestVersion: () => version,
+    onCurrent: value => { reported = value }, run: () => { throw new Error('npm must not run') },
+  })
+  assert.equal(current, 0)
+  assert.equal(reported, version)
+  assert.equal(installationsCurrent(installations, version), true)
+
+  const runUpdater = () => {
+    launched++
+    const child = new EventEmitter()
+    child.stderr = new EventEmitter()
+    queueMicrotask(() => child.emit('exit', 0, null))
+    return child
+  }
+  await launchUpdate({ ...request, globalVersion: '0.0.9' }, {
+    discover: () => installations, latestVersion: () => version, run: runUpdater,
+  })
+  assert.equal(launched, 1, 'an older global CLI must still launch the updater')
+
+  put(join(home, 'kiro', 'skills', 'prumo', '.prumo-install.json'), { product: 'prumo', harness: 'kiro', version: '0.0.9' })
+  const stale = await launchUpdate(request, {
+    discover: () => installations, latestVersion: () => version,
+    run: runUpdater,
+  })
+  assert.equal(stale, 0)
+  assert.equal(launched, 2, 'one stale harness must still launch the updater')
+})
 
 test('update detects installed harnesses and custom paths, preserves preferences, previews and skips legacy-only environments', t => {
   const base = realpathSync(tmpdir())
@@ -74,7 +115,7 @@ test('update detects installed harnesses and custom paths, preserves preferences
 })
 
 test('update rejects malformed requests before applying installations', () => {
-  for (const value of [undefined, '{}', 'null', JSON.stringify({ dryRun: true, cwd: '.', projects: [] }), JSON.stringify({ dryRun: true, cwd: source, projects: [], lang: 'invalid' }), JSON.stringify({ dryRun: true, cwd: source, projects: [], sourceVersion: 'next' })]) assert.throws(() => updateRequest(value))
+  for (const value of [undefined, '{}', 'null', JSON.stringify({ dryRun: true, cwd: '.', projects: [] }), JSON.stringify({ dryRun: true, cwd: source, projects: [], lang: 'invalid' }), JSON.stringify({ dryRun: true, cwd: source, projects: [], sourceVersion: 'next' }), JSON.stringify({ dryRun: true, cwd: source, projects: [], globalVersion: 'next' })]) assert.throws(() => updateRequest(value))
   assert.equal(updateRequest(JSON.stringify({ dryRun: false, cwd: source, projects: [] })).updateCli, true, 'legacy callers update the global CLI')
   assert.equal(updateRequest(JSON.stringify({ dryRun: false, cwd: source, projects: [], updateCli: false })).updateCli, false)
   assert.equal(isGlobalCli(join(source, 'package'), { platform: 'linux', run: () => ({ status: 0, stdout: source }) }), true)
