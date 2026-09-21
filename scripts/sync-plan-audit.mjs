@@ -54,17 +54,34 @@ function validationSummary(value) {
   return { type: typeof value }
 }
 
+function changedValidationSteps(previous, next) {
+  if (!Array.isArray(previous) || !Array.isArray(next)) return null
+  const indices = []
+  for (let index = 0; index < Math.max(previous.length, next.length); index++) {
+    if (!equal(previous[index], next[index])) indices.push(index + 1)
+  }
+  return {
+    count: indices.length,
+    indices: indices.slice(0, MAX_SUMMARY_ITEMS),
+    ...(indices.length > MAX_SUMMARY_ITEMS && { truncated: true }),
+  }
+}
+
 export function summarizeContractValue(field, value) {
   if (field === 'validation') return validationSummary(value)
   return boundedValue(value)
 }
 
 export function contractChanges(previous, next, fields = CONTRACT_FIELDS) {
-  return fields.filter(field => !equal(previous?.[field], next?.[field])).map(field => ({
-    field,
-    before: summarizeContractValue(field, previous?.[field]),
-    after: summarizeContractValue(field, next?.[field]),
-  }))
+  return fields.filter(field => !equal(previous?.[field], next?.[field])).map(field => {
+    const change = {
+      field,
+      before: summarizeContractValue(field, previous?.[field]),
+      after: summarizeContractValue(field, next?.[field]),
+    }
+    const changedSteps = field === 'validation' ? changedValidationSteps(previous?.[field], next?.[field]) : null
+    return changedSteps ? { ...change, changedSteps } : change
+  })
 }
 
 function canonicalIds(knownIds) {
@@ -235,7 +252,16 @@ export function formatValidationSummary(summary) {
 
 export function formatContractChange(change) {
   const render = (value) => JSON.stringify(value)
-  if (change.field === 'validation')
-    return `${change.field} ${formatValidationSummary(change.before)} -> ${formatValidationSummary(change.after)}`
+  if (change.field === 'validation') {
+    const before = formatValidationSummary(change.before)
+    const after = formatValidationSummary(change.after)
+    const changed = change.changedSteps
+    if (before === after && changed?.count) {
+      const indices = changed.indices.join(',') + (changed.truncated ? ',…' : '')
+      const unit = changed.count === 1 ? 'check' : 'checks'
+      return `${change.field} content changed in ${changed.count} ${unit} (indices ${indices})`
+    }
+    return `${change.field} ${before} -> ${after}`
+  }
   return `${change.field} ${render(change.before)} -> ${render(change.after)}`
 }

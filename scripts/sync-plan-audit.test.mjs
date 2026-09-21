@@ -38,6 +38,32 @@ test('sync audit preserves dependency arrays and summarizes validation contracts
   assert.doesNotMatch(formatContractChange(validation), /a{100}|b{100}|c{100}/)
 })
 
+test('sync audit reports changed validation step indices when shape stays the same', () => {
+  const before = {
+    validation: [
+      { kind: 'static', run: 'node check-a.mjs', expect: 'old static result' },
+      { kind: 'functional', run: 'node verify-a.mjs', expect: 'old behavior' },
+      { kind: 'functional', run: 'node stable.mjs', expect: 'unchanged behavior' },
+    ],
+  }
+  const after = {
+    validation: [
+      { kind: 'static', run: 'node check-b.mjs', expect: 'new static result' },
+      { kind: 'functional', run: 'node verify-b.mjs', expect: 'new behavior' },
+      { kind: 'functional', run: 'node stable.mjs', expect: 'unchanged behavior' },
+    ],
+  }
+  const validation = contractChanges(before, after).find(change => change.field === 'validation')
+  assert.deepEqual(validation, {
+    field: 'validation',
+    before: { type: 'steps', count: 3, kinds: { static: 1, functional: 2 } },
+    after: { type: 'steps', count: 3, kinds: { static: 1, functional: 2 } },
+    changedSteps: { count: 2, indices: [1, 2] },
+  })
+  assert.equal(formatContractChange(validation), 'validation content changed in 2 checks (indices 1,2)')
+  assert.doesNotMatch(formatContractChange(validation), /check-a|verify-b|old behavior|new behavior/)
+})
+
 test('sync audit bounds every contract field before it reaches output or events', () => {
   const marker = 'sensitive-marker-' + 'x'.repeat(6000)
   const before = {
@@ -147,12 +173,16 @@ test('sync-plan records per-task changes and diagnostics in plan_sync', (t) => {
   const largeMarker = 'contract-marker-' + 'z'.repeat(6000)
   correctedPlan.tasks.find(task => task.id === 'T12').title = largeMarker
   correctedPlan.tasks.find(task => task.id === 'T12').deps = ['T11', 'T25', 'T26']
+  correctedPlan.tasks.find(task => task.id === 'T12').validation = [
+    { ...check, expect: 'corrected behavior verified' },
+  ]
   correctedPlan.tasks.find(task => task.id === 'T25').deps = ['T11']
   correctedPlan.tasks.find(task => task.id === 'T26').deps = ['T11']
   writeFileSync(planPath, JSON.stringify(correctedPlan))
   const synced = run('sync-plan', '--plan', planPath)
   assert.equal(synced.status, 0, synced.stdout + synced.stderr)
   assert.match(synced.stdout + synced.stderr, /T12 changed: .*deps \["T11"\] -> \["T11","T25","T26"\]/)
+  assert.match(synced.stdout + synced.stderr, /validation content changed in 1 check \(indices 1\)/)
   assert.match(synced.stdout + synced.stderr, /strong warning: T12 blockReason cites T25, T26/)
   assert.doesNotMatch(synced.stdout + synced.stderr, new RegExp(largeMarker))
 
@@ -164,6 +194,9 @@ test('sync-plan records per-task changes and diagnostics in plan_sync', (t) => {
   const t12 = event.changes.find(change => change.task === 'T12')
   assert.deepEqual(t12.fields.find(field => field.field === 'deps'), {
     field: 'deps', before: ['T11'], after: ['T11', 'T25', 'T26'],
+  })
+  assert.deepEqual(t12.fields.find(field => field.field === 'validation').changedSteps, {
+    count: 1, indices: [1],
   })
   assert.deepEqual(event.diagnostics.blockReasonContradictions[0].backEdgesBefore, ['T25', 'T26'])
 
