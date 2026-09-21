@@ -245,6 +245,22 @@ test('discussion is persisted before questions and must close before a planner i
   assert.match(f.events(), /"discoveryQuestions":2/)
 })
 
+test('sync-plan during task discussion supersedes the stale round before reopening', t => {
+  const f = fixture(t)
+  f.ok('begin-discussion', 'T1')
+  const first = f.state().tasks.T1.discussionAttempts.at(-1)
+  f.plan.tasks[0].title = 'Approved homologation correction'
+  f.writePlan()
+  f.ok('sync-plan', '--plan', f.planPath)
+  f.ok('begin-discussion', 'T1')
+  const rounds = f.state().tasks.T1.discussionAttempts
+  assert.equal(rounds.length, 2)
+  assert.equal(rounds[0].roundId, first.roundId)
+  assert.equal(rounds[0].result, 'superseded')
+  assert.ok(rounds[0].endedAt)
+  assert.notEqual(rounds[1].roundId, first.roundId)
+})
+
 test('discussion reports premature task work and requires explicit acceptance without reusing it', t => {
   const f = fixture(t)
   f.ok('begin-discussion', 'T1')

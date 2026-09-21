@@ -25,7 +25,8 @@
  * passing validation recorded during review, by an agent other than the one that did the work.
  *
  * Readiness is DERIVED: satisfied deps → ready_to_plan; current task plan → ready.
- * Legacy tasks without planningRequired retain their original lifecycle.
+ * Tasks without planningRequired (or explicitly marked false during migration)
+ * retain their original lifecycle.
  *
  * Usage (ENGINE = path to this file, wherever the skill is installed):
  *   node $ENGINE init --plan <plan.json> --run <name>
@@ -60,12 +61,17 @@ import {
 import { randomUUID } from 'node:crypto'
 import { writeAtomicState } from './atomic-state.mjs'
 import { runValidation, assertValidation, validationContract, validationDirectories, assertDiscovery, assertDiscussionBoundary, discoveryDigest, assertTaskPlan,
-  planTaskFromState, planningContext, hasCurrentTaskPlan, hasCurrentTaskScope, currentPlanningScope,
+  planTaskFromState, planningContext, hasCurrentTaskPlan, hasCurrentTaskScope, currentPlanningScope, usesCurrentPlanning,
   phasePlanningContext, phaseRequiredInputs, assertPhaseTaskPlan, executionInputReceipt } from './validation.mjs'
-import { dirname, join, resolve } from 'node:path'
 
-import { findRoot, legacyExecutionPending } from './storage.mjs'
+import { basename, dirname, join, resolve } from 'node:path'
+
+import { findRoot } from './storage.mjs'
 import { log, errorLog, tr } from './i18n.mjs'
+import {
+  auditSyncPlan, contractChanges, displayIdentifier, formatContractChange,
+  sanitizeChanges, sanitizeDiagnostics, sanitizeTaskIds,
+} from './sync-plan-audit.mjs'
 
 let ROOT
 try { ROOT = findRoot() } catch (error) { errorLog('[prumo] ERROR: ' + error.message); process.exit(1) }
@@ -150,10 +156,19 @@ function migrationStatus(state) {
   if (structural) {
     for (const task of nonterminal) {
       const reasons = []
-      if (!['pending', 'failed'].includes(task.state)) reasons.push(`state ${task.state}`)
-      if (task.attempts?.length) reasons.push(`${task.attempts.length} execution attempt(s)`)
-      if (task.discussionAttempts?.some(round => !round.endedAt)) reasons.push('open discussion')
-      if (task.planningAttempts?.some(round => !round.endedAt)) reasons.push('open planning')
+      const openDiscussion = task.discussionAttempts?.some(round => !round.endedAt)
+      const openPlanning = task.planningAttempts?.some(round => !round.endedAt)
+      const executionStarted = (task.attempts?.length ?? 0) > 0
+      // A task with an open current workflow cannot be moved between the task
+      // and phase planners while that workflow is in flight. An already
+      // started legacy attempt is safe to keep on its old lifecycle, however;
+      // making it a migration blocker is what used to freeze unrelated work.
+      const currentPlanning = task.planningRequired === true ||
+        (!executionStarted && task.planningRequired !== false)
+      if (currentPlanning && !['pending', 'failed', 'blocked'].includes(task.state)) reasons.push(`state ${task.state}`)
+      if (currentPlanning && executionStarted) reasons.push(`${task.attempts.length} execution attempt(s)`)
+      if (openDiscussion) reasons.push('open discussion')
+      if (openPlanning) reasons.push('open planning')
       if (reasons.length) blockers.push(`${task.id}: ${reasons.join(', ')}`)
     }
     for (const phase of Object.values(state.phaseWorkflows ?? {})) {
@@ -190,13 +205,37 @@ function migrateState(name, { check = false, quiet = false } = {}) {
     if (adoptingLegacy) delete state.legacyPhaseAdoption
   }
   for (const task of Object.values(state.tasks)) {
-    if (!adoptingLegacy || ['done', 'skipped'].includes(task.state)) continue
-    task.discussionRequired = true
-    task.discoveryRequired = true
-    task.planningRequired = true
-    task.discussionAttempts ??= []
-    task.planningAttempts ??= []
-    task.planningHistory ??= []
+    if (['done', 'skipped'].includes(task.state)) continue
+    const started = (task.attempts?.length ?? 0) > 0
+    const openWorkflow = task.discussionAttempts?.some(round => !round.endedAt) ||
+      task.planningAttempts?.some(round => !round.endedAt)
+    const legacy = task.planningRequired === false || started ||
+      (task.planningRequired === undefined && ['running', 'reviewing'].includes(task.state))
+    if (legacy) {
+      // This marker is the per-task compatibility boundary. It lets the
+      // global run adopt the current graph structure without forcing an
+      // existing attempt through a new discussion/planning round.
+      if (adoptingLegacy && task.planningRequired === undefined) task.planningRequired = false
+      continue
+    }
+    // A malformed open workflow is rejected by migrationStatus above. Keep
+    // its fields untouched if a future caller reaches this branch anyway.
+    if (openWorkflow) continue
+    if (task.planningRequired === undefined) {
+      task.discussionRequired = true
+      task.discoveryRequired = true
+      task.planningRequired = true
+      task.discussionAttempts ??= []
+      task.planningAttempts ??= []
+      task.planningHistory ??= []
+    } else if (adoptingLegacy) {
+      task.discussionRequired = true
+      task.discoveryRequired = true
+      task.planningRequired = true
+      task.discussionAttempts ??= []
+      task.planningAttempts ??= []
+      task.planningHistory ??= []
+    }
   }
   saveState(name, state)
   emit(name, 'schema_migrate', null, { schemaVersion: STATE_SCHEMA_VERSION, planningMode: status.mode })
@@ -346,6 +385,45 @@ function historicalTasks(state) {
   return new Set(Object.values(state?.tasks ?? {}).filter(t => ['done', 'skipped'].includes(t.state)).map(t => t.id))
 }
 
+function printSyncPlanAudit(changes, diagnostics) {
+  // Applied changes are the actionable CLI result. Preserved terminal diffs stay
+  // structured in the event and are summarized by task ID below, avoiding a wall
+  // of historical fields when an old run contains many completed contracts.
+  for (const change of changes.filter(item => !item.preserved)) {
+    const details = change.fields.map(formatContractChange).join('; ')
+    log('[prumo] ' + tr('sync-plan task {0} changed: {1}', displayIdentifier(change.task), details))
+  }
+  for (const finding of diagnostics.blockReasonContradictions) {
+    if (finding.missingDeps.length)
+      log('[prumo] ' + tr(
+        'sync-plan warning: {0} blockReason cites {1}, absent from persisted deps',
+        displayIdentifier(finding.task), finding.missingDeps.map(displayIdentifier).join(', '),
+      ))
+    if (finding.plannedMissingDeps.length)
+      log('[prumo] ' + tr(
+        'sync-plan warning: {0} blockReason cites {1}, absent from planned deps',
+        displayIdentifier(finding.task), finding.plannedMissingDeps.map(displayIdentifier).join(', '),
+      ))
+    const backEdges = [...new Set([...finding.backEdgesBefore, ...finding.backEdgesAfter])]
+    if (backEdges.length)
+      log('[prumo] ' + tr(
+        'sync-plan strong warning: {0} blockReason cites {1}, and cited tasks depend on it',
+        displayIdentifier(finding.task), backEdges.map(displayIdentifier).join(', '),
+      ))
+  }
+  for (const leaf of diagnostics.newLeaves) {
+    if (leaf.severity === 'warning') {
+      const blocker = diagnostics.blockReasonContradictions.find(item => item.cited.includes(leaf.task))?.task
+      log('[prumo] ' + tr(
+        'sync-plan warning: new leaf task {0} is cited by blocked task {1}',
+        displayIdentifier(leaf.task), displayIdentifier(blocker ?? '?'),
+      ))
+    } else {
+      log('[prumo] ' + tr('sync-plan info: new leaf task {0} has no dependents', displayIdentifier(leaf.task)))
+    }
+  }
+}
+
 function readPlan(planPath, state) {
   const source = resolve(planPath)
   const plan = JSON.parse(readFileSync(source, 'utf8'))
@@ -432,13 +510,14 @@ function getPhase(state, phaseId) {
 
 function phaseTargets(state, phaseId) {
   return phaseMembers(state, phaseId).filter(task => !['done', 'skipped'].includes(task.state) &&
+    usesCurrentPlanning(state, task) &&
     !(task.taskPlan?.phaseId === phaseId && hasCurrentTaskPlan(state, task)))
 }
 
 function phasePlanningBlockers(state, phaseId) {
   const blockers = new Set()
   for (const task of phaseMembers(state, phaseId)) {
-    if (['done', 'skipped'].includes(task.state)) continue
+    if (['done', 'skipped'].includes(task.state) || !usesCurrentPlanning(state, task)) continue
     for (const id of task.deps ?? []) {
       const dep = state.tasks[id]
       if (dep?.phase !== phaseId && !['done', 'skipped'].includes(dep?.state)) {
@@ -489,7 +568,10 @@ function assertCurrentTaskScope(state, task) {
 }
 
 function assertCurrentExecutionInputs(state, task) {
-  if (!task.taskPlan?.phaseId || !task.attempts?.length) return
+  if (!task.attempts?.length) return
+  const blockedBy = (task.deps ?? []).filter(id => !['done', 'skipped'].includes(state.tasks[id]?.state))
+  if (blockedBy.length) die(task.id + ' still waiting on: ' + blockedBy.join(', '))
+  if (!task.taskPlan?.phaseId) return
   let receipt
   try { receipt = executionInputReceipt(state, task) } catch (error) { die(error.message) }
   if (task.attempts.at(-1).inputDigest !== receipt.digest)
@@ -511,7 +593,9 @@ export function derive(state) {
         return !dep || (dep.state !== 'done' && dep.state !== 'skipped')
       })
       const phaseAdopted = !(state.legacyPhaseAdoption && !state.phaseWorkflows?.[t.phase]?.adoptedLegacy)
-      if (state.plan.planningMode === 'phase') {
+      if (!usesCurrentPlanning(state, t)) {
+        effective = blockedBy.length ? 'waiting' : 'ready'
+      } else if (state.plan.planningMode === 'phase') {
         planningBlockedBy = phasePlanningBlockers(state, t.phase)
         const discussionRound = phase?.discussionAttempts?.at(-1)
         const phaseDiscussing = phase?.state === 'discussing' && !discussionRound?.endedAt &&
@@ -528,7 +612,8 @@ export function derive(state) {
             t.discussionRequired && !currentDiscussion(state, t) ? 'ready_for_discussion' : 'ready_to_plan'
       }
     }
-    const planningStatus = state.legacyPhaseAdoption && !phase?.adoptedLegacy ? 'awaiting_phase_adoption' : hasCurrentTaskPlan(state, t) ? 'planned' :
+    const planningStatus = !usesCurrentPlanning(state, t) ? 'legacy_lifecycle' :
+      state.legacyPhaseAdoption && !phase?.adoptedLegacy ? 'awaiting_phase_adoption' : hasCurrentTaskPlan(state, t) ? 'planned' :
       phase?.state === 'discussing' ? 'phase_discussing' : phase?.state === 'planning' ? 'phase_planning' : 'awaiting_phase_plan'
     let inputStatus
     if (t.taskPlan?.phaseId && t.taskPlan.unresolvedInputs?.length) {
@@ -539,10 +624,10 @@ export function derive(state) {
         (unresolved.every(({ task }) => task && task.phase !== t.phase) ? 'unresolved_later_phase_input' : 'unresolved_input') :
         inputs.some(dep => dep.state === 'skipped') ? 'waived_input' : 'validated_input'
     }
-    const showPlanningStatus = state.plan.planningMode === 'phase' && !['done', 'skipped'].includes(t.state)
+    const showPlanningStatus = state.plan.planningMode === 'phase' && usesCurrentPlanning(state, t) && !['done', 'skipped'].includes(t.state)
     out[id] = { ...t, effective, blockedBy, ...(showPlanningStatus ?
       { planningStatus, ...(planningBlockedBy.length ? { planningBlockedBy } : {}), ...(inputStatus ? { inputStatus } : {}) } : {}) }
-    if (migrationPending && t.state === 'pending' && !t.attempts?.length)
+    if (migrationPending && t.state === 'pending' && usesCurrentPlanning(state, t))
       Object.assign(out[id], { effective: 'pending', planningStatus: 'awaiting_migration' })
   }
   return out
@@ -575,7 +660,7 @@ function agentBusy(state, agent) {
 function assertAvailable(state, task, role, agent) {
   if (typeof agent !== 'string' || !agent.trim()) die('active work needs a recorded agent')
   const blockedBy = task.deps.filter((id) => !['done', 'skipped'].includes(state.tasks[id]?.state))
-  if (blockedBy.length && (!args.force || role === 'planning' || task.planningRequired)) die(task.id + ' still waiting on: ' + blockedBy.join(', '))
+  if (blockedBy.length) die(task.id + ' still waiting on: ' + blockedBy.join(', '))
   const occ = occupancy(state)
   if (role === 'running' && occ.executors.length >= occ.maxExec && !args.force)
     die(occ.executors.length + ' executors already running (max ' + occ.maxExec + ')')
@@ -643,16 +728,21 @@ const commands = {
   'sync-plan'() {
     const name = runName()
     const state = loadState(name)
-    const planPath = args.plan ?? state.plan.source ?? die('sync-plan needs --plan <plan.json> once')
+    const storedSource = state.plan.source
+    const centralSource = storedSource ? join(GRAPH_DIR, 'plans', basename(storedSource)) :
+      join(GRAPH_DIR, 'plans', `${safeId(state.plan.name, 'plan')}.plan.json`)
+    const planPath = args.plan ?? (storedSource && existsSync(storedSource) ? storedSource :
+      existsSync(centralSource) ? centralSource : die('sync-plan needs --plan <plan.json> once'))
     const { plan, source } = readPlan(planPath, state)
     const removed = Object.keys(state.tasks).filter((id) => !plan.tasks.some((t) => t.id === id))
     if (removed.length) die(`sync-plan is additive: plan removed ${removed.join(', ')}`)
 
-    const mutableStates = new Set(['pending', 'planning', 'failed', 'blocked'])
     const contractFields = TASK_CONTRACT_FIELDS
+    const persistedTasks = structuredClone(state.tasks)
     const added = []
     const updated = []
     const preserved = []
+    const changes = []
     for (const planTask of plan.tasks) {
       const current = state.tasks[planTask.id]
       if (!current) {
@@ -665,18 +755,23 @@ const commands = {
         (field) => JSON.stringify(current[field]) !== JSON.stringify(next[field]),
       )
       if (!changed.length) continue
-      if (!mutableStates.has(current.state)) {
+      const fields = contractChanges(current, next, contractFields)
+      if (['done', 'skipped'].includes(current.state)) {
         preserved.push(planTask.id)
+        changes.push({ task: planTask.id, applied: false, preserved: true, fields })
         continue
       }
       for (const field of changed) current[field] = next[field]
       if (current.planningRequired) current.planningRevision = (current.planningRevision ?? 0) + 1
-      if (current.planningRequired && changed.some(field => !['validation', 'validationMode', 'inspectionReason'].includes(field)))
+      if (changed.some(field => !['validation', 'validationMode', 'inspectionReason'].includes(field)))
         current.scopeRevision = (current.scopeRevision ?? 0) + 1
       if (changed.some((field) => ['validation', 'validationMode', 'inspectionReason'].includes(field)))
         current.contractRevision = (current.contractRevision ?? 0) + 1
       updated.push(planTask.id)
+      changes.push({ task: planTask.id, applied: true, preserved: false, fields })
     }
+
+    const diagnostics = auditSyncPlan({ stateTasks: persistedTasks, planTasks: plan.tasks, added })
 
     const effectivePlan = { ...plan, tasks: Object.values(state.tasks).map(planTaskFromState) }
     validatePlan(effectivePlan, args['allow-overlap'] === true, historicalTasks(state))
@@ -695,8 +790,20 @@ const commands = {
       nextPlan.planningRevision = (state.plan.planningRevision ?? 0) + (planningChanged ? 1 : 0)
     const planChanged = JSON.stringify(state.plan) !== JSON.stringify(nextPlan)
     if (!added.length && !updated.length && !planChanged) {
+      const hasDiagnostics = diagnostics.blockReasonContradictions.length || diagnostics.newLeaves.length
+      if (hasDiagnostics || changes.length) {
+        emit(name, 'plan_sync_audit', null, {
+          added: sanitizeTaskIds(added),
+          updated: sanitizeTaskIds(updated),
+          preserved: sanitizeTaskIds(preserved),
+          changes: sanitizeChanges(changes),
+          diagnostics: sanitizeDiagnostics(diagnostics),
+          tasks: Object.keys(state.tasks).length,
+        })
+        printSyncPlanAudit(changes, diagnostics)
+      }
       if (preserved.length)
-        log(`[prumo] no state changes; plan differs for preserved tasks: ${preserved.join(', ')}. Use refresh-contract for an approved validation change; do not fail/retry completed work to refresh a contract.`)
+        log(`[prumo] no state changes; plan differs for preserved tasks: ${preserved.map(displayIdentifier).join(', ')}. Use refresh-contract for an approved validation change; do not fail/retry completed work to refresh a contract.`)
       else log(`[prumo] run "${name}" already matches plan (${Object.keys(state.tasks).length} tasks)`)
       return
     }
@@ -710,11 +817,14 @@ const commands = {
     }
     saveState(name, state)
     emit(name, 'plan_sync', null, {
-      added,
-      updated,
-      preserved,
+      added: sanitizeTaskIds(added),
+      updated: sanitizeTaskIds(updated),
+      preserved: sanitizeTaskIds(preserved),
+      changes: sanitizeChanges(changes),
+      diagnostics: sanitizeDiagnostics(diagnostics),
       tasks: Object.keys(state.tasks).length,
     })
+    printSyncPlanAudit(changes, diagnostics)
     log(
       `[prumo] run "${name}" synced: +${added.length}, updated ${updated.length}, ` +
         `preserved ${preserved.length}, total ${Object.keys(state.tasks).length}`,
@@ -826,8 +936,14 @@ const commands = {
     }
     const phase = getPhase(state, phaseId)
     if (!phaseMembers(state, phaseId).length) die(`phase "${phaseId}" has no tasks`)
-    if (phase.state === 'discussing' && !phase.discussionAttempts.at(-1)?.endedAt)
+    const discussion = phase.discussionAttempts.at(-1)
+    const discussionTargets = discussion?.targets?.map(id => state.tasks[id]).filter(Boolean) ?? []
+    const staleDiscussion = phase.state === 'discussing' && discussion && !discussion.endedAt &&
+      (discussionTargets.length !== discussion.targets.length ||
+        discussion.context !== phaseContext(state, phaseId, discussionTargets))
+    if (phase.state === 'discussing' && discussion && !discussion.endedAt && !staleDiscussion)
       die(`${phaseId} already has an open discussion round`)
+    if (staleDiscussion) Object.assign(discussion, { endedAt: new Date().toISOString(), result: 'superseded' })
     const planning = phase.planningAttempts.at(-1)
     const stalePlanning = phase.state === 'planning' && planning && !currentPhasePlanning(state, phase, planning)
     if (phase.state === 'planning' && !stalePlanning) die(`${phaseId} is currently planning`)
@@ -836,7 +952,8 @@ const commands = {
       phase.planner = null
     }
     let targets = phaseTargets(state, phaseId)
-    if (!targets.length) targets = phaseMembers(state, phaseId).filter(task => !['done', 'skipped'].includes(task.state))
+    if (!targets.length) targets = phaseMembers(state, phaseId).filter(task =>
+      usesCurrentPlanning(state, task) && !['done', 'skipped'].includes(task.state))
     if (!targets.length) die(`${phaseId} has no nonterminal tasks to discuss`)
     const round = { roundId: randomUUID(), nonce: randomUUID(), startedAt: new Date().toISOString(),
       targets: targets.map(task => task.id), context: phaseContext(state, phaseId, targets) }
@@ -986,8 +1103,12 @@ const commands = {
         !(adoptLegacy && t.state === 'failed'))
       die(id + ' must be ready for discussion or require fresh planning')
     const open = t.discussionAttempts?.at(-1)
-    if (t.state === 'discussing' && open && !open.endedAt)
+    const staleDiscussion = t.state === 'discussing' && open && !open.endedAt &&
+      (open.context !== planningContext(state, t) ||
+        open.attempt !== t.attempts.length + (t.planningReturn ? 0 : 1))
+    if (t.state === 'discussing' && open && !open.endedAt && !staleDiscussion)
       die(id + ' already has an open discussion round')
+    if (staleDiscussion) closeDiscussion(t, 'superseded')
     if (stalePlanning) closePlanning(t, 'superseded')
     if (pausedExecution) t.planningReturn = { stateBeforeBlock: t.stateBeforeBlock, blockReason: t.blockReason }
     const round = {
@@ -1290,6 +1411,7 @@ const commands = {
                 current.attempts.length !== snapshot.attempts.length || current.agent !== snapshot.agent ||
                 current.reviewer !== snapshot.reviewer ||
                 (current.contractRevision ?? 0) !== (snapshot.contractRevision ?? 0) ||
+                (current.scopeRevision ?? 0) !== (snapshot.scopeRevision ?? 0) ||
                 (current.stateRevision ?? 0) !== (snapshot.stateRevision ?? 0)) return
             emit(name, 'task_check', id, { ...check, token, attempt: snapshot.attempts.length,
               by: snapshot.validations.at(-1).by })
@@ -1305,6 +1427,7 @@ const commands = {
       if (t.state !== snapshot.state || t.attempts.length !== snapshot.attempts.length ||
           t.agent !== snapshot.agent || t.reviewer !== snapshot.reviewer || last?.token !== token ||
           (t.contractRevision ?? 0) !== (snapshot.contractRevision ?? 0) ||
+          (t.scopeRevision ?? 0) !== (snapshot.scopeRevision ?? 0) ||
           (t.stateRevision ?? 0) !== (snapshot.stateRevision ?? 0) ||
           JSON.stringify([t.validation, t.validationMode, t.inspectionReason]) !==
           JSON.stringify([snapshot.validation, snapshot.validationMode, snapshot.inspectionReason]))
@@ -1525,16 +1648,31 @@ if (!cmd || !commands[cmd]) {
    takes the run's lock for its whole read-modify-write; validate locks its state updates
    separately so command execution cannot outlive the short lock lease. */
 const READ_ONLY = new Set(['runs', 'status', 'ready', 'graph'])
+const LEGACY_MIGRATION_CONTINUATIONS = new Set([
+  'start', 'review', 'validate', 'done', 'fail', 'retry', 'block', 'unblock', 'skip', 'refresh-contract',
+])
+function assertMigrationCommandAllowed(state, command) {
+  if (READ_ONLY.has(command) || command === 'sync-plan' || command === 'note') return
+  const task = state.tasks[args._[0]]
+  if (command === 'finish-discussion' && task?.discussionAttempts?.some(round => !round.endedAt)) return
+  if (command === 'finish-planning' && task?.planningAttempts?.some(round => !round.endedAt)) return
+  const phase = state.phaseWorkflows?.[args._[0]]
+  if (command === 'finish-phase-discussion' && phase?.discussionAttempts?.some(round => !round.endedAt)) return
+  if (command === 'finish-phase-planning' && phase?.planningAttempts?.some(round => !round.endedAt)) return
+  const legacyAttempt = task && task.planningRequired !== true && (task.attempts?.length ?? 0) > 0
+  if (legacyAttempt && LEGACY_MIGRATION_CONTINUATIONS.has(command)) return
+  die('migration is blocked by unsafe in-flight planning; only legacy attempt continuation, read-only commands, sync-plan and note are allowed')
+}
 if (!['init', 'runs', 'migrate'].includes(cmd)) {
   const name = runName()
   if (migrationStatus(loadState(name)).needed) withLock(name, () => {
     const state = loadState(name)
     if (!migrationStatus(state).needed) return
-    const task = state.tasks[args._[0]]
-    const resume = task?.state === 'blocked' && cmd === 'unblock' ||
-      task?.attempts?.length && ['start', 'review', 'validate', 'done', 'fail', 'retry', 'block', 'unblock', 'note', 'amend-validation'].includes(cmd)
-    if (legacyExecutionPending(state) && (READ_ONLY.has(cmd) || resume || ['skip', 'sync-plan'].includes(cmd))) {
-      errorLog('[prumo] Migration deferred: finish or resume started legacy tasks before planning new work')
+    const status = migrationStatus(state)
+    if (status.blockers.length) {
+      errorLog('[prumo] Migration deferred: resolve unsafe in-flight planning before starting new work')
+      errorLog('[prumo] Migration blockers: ' + status.blockers.join('; '))
+      assertMigrationCommandAllowed(state, cmd)
     } else migrateState(name, { quiet: true })
   })
 }

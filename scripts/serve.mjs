@@ -18,7 +18,7 @@ const ENGINE = join(HERE, 'engine.mjs')
 
 import { findRoot, storageHome, graphRoots as listRoots, globalGraphRoots } from './storage.mjs'
 import { language, localizeDashboard, log, errorLog, tr } from './i18n.mjs'
-import { discoveryDigest, hasCurrentTaskPlan, phasePlanningContext, planningContext } from './validation.mjs'
+import { discoveryDigest, hasCurrentTaskPlan, phasePlanningContext, planningContext, usesCurrentPlanning } from './validation.mjs'
 import { dashboardDiagnostics } from './dashboard-diagnostics.mjs'
 
 const argv = process.argv.slice(2)
@@ -162,13 +162,14 @@ if (SYNC_PLAN) {
  *  read-only (importing engine.mjs would run its CLI arg handling). Keep in sync. */
 function phaseTargets(state, phaseId) {
   return Object.values(state.tasks).filter(task => task.phase === phaseId && !['done', 'skipped'].includes(task.state) &&
+    usesCurrentPlanning(state, task) &&
     !(task.taskPlan?.phaseId === phaseId && hasCurrentTaskPlan(state, task)))
 }
 
 function phasePlanningBlockers(state, phaseId) {
   const blockers = new Set()
   for (const task of Object.values(state.tasks).filter(task => task.phase === phaseId)) {
-    if (['done', 'skipped'].includes(task.state)) continue
+    if (['done', 'skipped'].includes(task.state) || !usesCurrentPlanning(state, task)) continue
     for (const id of task.deps ?? []) {
       const dep = state.tasks[id]
       if (dep?.phase !== phaseId && !['done', 'skipped'].includes(dep?.state)) {
@@ -228,7 +229,9 @@ function derive(state) {
         return !dep || (dep.state !== 'done' && dep.state !== 'skipped')
       })
       const phaseAdopted = !(state.legacyPhaseAdoption && !phase?.adoptedLegacy)
-      if (state.plan.planningMode === 'phase') {
+      if (!usesCurrentPlanning(state, t)) {
+        effective = blockedBy.length ? 'waiting' : 'ready'
+      } else if (state.plan.planningMode === 'phase') {
         planningBlockedBy = phasePlanningBlockers(state, t.phase)
         const discussionRound = phase?.discussionAttempts?.at(-1)
         const phaseDiscussing = phase?.state === 'discussing' && !discussionRound?.endedAt &&
@@ -245,7 +248,8 @@ function derive(state) {
             t.discussionRequired && !currentDiscussion(state, t) ? 'ready_for_discussion' : 'ready_to_plan'
       }
     }
-    const planningStatus = state.legacyPhaseAdoption && !phase?.adoptedLegacy ? 'awaiting_phase_adoption' : hasCurrentTaskPlan(state, t) ? 'planned' :
+    const planningStatus = !usesCurrentPlanning(state, t) ? 'legacy_lifecycle' :
+      state.legacyPhaseAdoption && !phase?.adoptedLegacy ? 'awaiting_phase_adoption' : hasCurrentTaskPlan(state, t) ? 'planned' :
       phase?.state === 'discussing' ? 'phase_discussing' : phase?.state === 'planning' ? 'phase_planning' : 'awaiting_phase_plan'
     let inputStatus
     if (t.taskPlan?.phaseId && t.taskPlan.unresolvedInputs?.length) {
@@ -256,11 +260,11 @@ function derive(state) {
         (unresolved.every(({ task }) => task && task.phase !== t.phase) ? 'unresolved_later_phase_input' : 'unresolved_input') :
         inputs.some(dep => dep.state === 'skipped') ? 'waived_input' : 'validated_input'
     }
-    const showPlanningStatus = state.plan.planningMode === 'phase' && !['done', 'skipped'].includes(t.state)
+    const showPlanningStatus = state.plan.planningMode === 'phase' && usesCurrentPlanning(state, t) && !['done', 'skipped'].includes(t.state)
     out[id] = { effective, blockedBy,
       ...(showPlanningStatus ?
         { planningStatus, ...(planningBlockedBy.length ? { planningBlockedBy } : {}), ...(inputStatus ? { inputStatus } : {}) } : {}) }
-    if (migrationPending && t.state === 'pending' && !t.attempts?.length)
+    if (migrationPending && t.state === 'pending' && usesCurrentPlanning(state, t))
       Object.assign(out[id], { effective: 'pending', planningStatus: 'awaiting_migration' })
   }
   return out

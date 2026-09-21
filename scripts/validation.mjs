@@ -231,9 +231,22 @@ export function planningContext(state, task, {
   ])).digest('hex')
 }
 
+// Whether this task belongs to the current planning workflow. During a
+// structural migration, tasks without the marker are still interpreted from
+// their persisted history: an old attempt stays legacy, while unstarted work
+// waits for the migration to assign the current workflow explicitly.
+export function usesCurrentPlanning(state, task) {
+  if (task.planningRequired === true) return true
+  if (task.planningRequired === false) return false
+  return !['phase', 'task'].includes(state.plan?.planningMode) && !(task.attempts?.length)
+}
+
 export function hasCurrentTaskPlan(state, task) {
   if (state.legacyPhaseAdoption && !state.phaseWorkflows?.[task.phase]?.adoptedLegacy) return false
-  if (!task.planningRequired) return state.plan.planningMode !== 'phase'
+  // Legacy tasks keep the lifecycle they were already using.  The global
+  // planning mode may have been introduced by a structural migration, but it
+  // must not retroactively manufacture a task plan for an active attempt.
+  if (!usesCurrentPlanning(state, task)) return true
   try { assertTaskPlan(task, task.taskPlan) } catch { return false }
   if (task.taskPlan?.phaseId) {
     const phase = state.phaseWorkflows?.[task.taskPlan.phaseId]
@@ -257,7 +270,9 @@ export function hasCurrentTaskPlan(state, task) {
 // Validation-only refreshes do not invalidate the research behind an active execution attempt.
 export function hasCurrentTaskScope(state, task, attempt = task.attempts.length) {
   if (state.legacyPhaseAdoption && !state.phaseWorkflows?.[task.phase]?.adoptedLegacy) return false
-  if (!task.planningRequired) return state.plan.planningMode !== 'phase'
+  // See hasCurrentTaskPlan: per-task compatibility takes precedence over the
+  // run-wide planning mode while legacy work is being completed.
+  if (!usesCurrentPlanning(state, task)) return true
   const plan = task.taskPlan
   try { assertTaskPlan(task, plan) } catch { return false }
   if (!(nonempty(plan?.planner) && nonempty(plan.completedAt))) return false
@@ -289,7 +304,7 @@ export function hasCurrentTaskScope(state, task, attempt = task.attempts.length)
 }
 
 export function currentPlanningScope(state, task, attempt = task.attempts.length) {
-  if (!task.planningRequired || !hasCurrentTaskScope(state, task, attempt)) return undefined
+  if (!usesCurrentPlanning(state, task) || !hasCurrentTaskScope(state, task, attempt)) return undefined
   return task.taskPlan.attempt === attempt ? task.taskPlan.scope : task.retryPlan.scope
 }
 
@@ -386,6 +401,7 @@ export async function runValidation(task, cwd, previousReceipt = null, onCheck =
       previousReceipt?.by === 'review' && current?.by === 'review'
     if (revision && previousReceipt?.contract === contract.key &&
         (previousReceipt.contractRevision ?? 0) === (task.contractRevision ?? 0) &&
+        (previousReceipt.scopeRevision ?? 0) === (task.scopeRevision ?? 0) &&
         (previousReceipt.stateRevision ?? 0) === (task.stateRevision ?? 0) &&
         previousReceipt.by === current?.by && (sameAttempt || correctiveRetry) &&
         prior?.workspaceRevision === revision && passed(step, prior)) {
@@ -421,6 +437,7 @@ export async function runValidation(task, cwd, previousReceipt = null, onCheck =
     if (!passed(step, check)) break
   }
   return { contract: contract.key, contractRevision: task.contractRevision ?? 0,
+    scopeRevision: task.scopeRevision ?? 0,
     stateRevision: task.stateRevision ?? 0, checks }
 }
 
@@ -430,6 +447,8 @@ export function assertValidation(task, receipt) {
   insist(receipt.contract === contract.key, 'validation lacks an execution receipt for this contract — validate again')
   insist((receipt.contractRevision ?? 0) === (task.contractRevision ?? 0),
     'contract was refreshed after validation — validate the current contract again')
+  insist((receipt.scopeRevision ?? 0) === (task.scopeRevision ?? 0),
+    'execution scope changed after validation — validate the current scope again')
   insist(Array.isArray(receipt.checks), 'validation receipt has no checks')
   if (receipt.checks.length !== contract.steps.length) {
     const index = receipt.checks.length - 1

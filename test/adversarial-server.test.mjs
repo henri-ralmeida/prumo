@@ -91,3 +91,28 @@ test('workspace auto-sync tolerates incomplete state both at startup and during 
   assert.equal(f.child.exitCode, null, f.output())
   assert.equal(readFileSync(f.stateFile, 'utf8'), f.state)
 })
+
+test('adversarial mixed migration state keeps legacy attempts out of current planning projection', async t => {
+  const f = await fixture(t)
+  const mixed = {
+    schemaVersion: 1,
+    plan: { name: 'Mixed', planningMode: 'phase', phases: [{ id: 'F1', title: 'Mixed' }] },
+    phaseWorkflows: { F1: { id: 'F1', title: 'Mixed', state: 'pending', discussionAttempts: [], planningAttempts: [] } },
+    tasks: {
+      LEGACY: { id: 'LEGACY', phase: 'F1', title: 'Legacy attempt', state: 'blocked', deps: [],
+        planningRequired: false, attempts: [{ n: 1, agent: 'executor' }], validations: [] },
+      CURRENT: { id: 'CURRENT', phase: 'F1', title: 'New task', state: 'pending', deps: [],
+        planningRequired: true, discussionRequired: true, discoveryRequired: true,
+        discussionAttempts: [], planningAttempts: [], planningHistory: [], attempts: [], validations: [] },
+    },
+  }
+  f.put(f.stateFile, JSON.stringify(mixed))
+  const response = await f.get('/api/state')
+  assert.equal(response.status, 200)
+  const body = await response.json()
+  assert.equal(body.derived.LEGACY.effective, 'blocked')
+  assert.equal(body.derived.LEGACY.planningStatus, undefined)
+  assert.equal(body.derived.CURRENT.effective, 'ready_for_discussion')
+  assert.equal(body.derived.CURRENT.planningStatus, 'awaiting_phase_plan')
+  assert.equal(f.child.exitCode, null, f.output())
+})

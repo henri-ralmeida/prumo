@@ -244,8 +244,10 @@ including if a later refresh restores the old text. A fresh validation is requir
 Done/skipped tasks cannot be refreshed. The command neither dispatches work nor unblocks tasks.
 Do not use fail/retry solely for contract migration, redo a delivered fix, or enlarge a data
 window because the skill changed. The reviewer can verify delivered work in the same attempt.
-Where sync-plan exists, it preserves active/completed task contracts and reports differences;
-use refresh-contract explicitly for active work instead of treating synchronization as proof.
+`sync-plan` refreshes active contracts while preserving their lifecycle and keeps completed contracts as
+immutable history. It prints bounded per-task field changes, summarizes validation contracts without their
+contents and records dependency/block-reason diagnostics in structured events. Synchronization records the
+approved definition; it is not proof that active work meets it.
 
 ### Rejection with an approved contract change
 
@@ -270,7 +272,11 @@ contract and planning revisions, canonical discovery, scope and dependency resul
 `fail --plan-defect --reason "..."` when the plan itself is
 wrong; retry then requires discuss and fresh planning. A missing reviewer reason also prevents reuse.
 
-Use the selected `--run` on every call. `retry` does not reload a plan and refuses a failed
+Use the selected `--run` on every call. `sync-plan` refreshes the complete approved contract in every
+nonterminal state without changing lifecycle, agents, attempts, notes or evidence. A changed active scope
+must be blocked and replanned before review or completion; done/skipped contracts remain immutable history.
+If a migrated run's stored graph-foreman source is gone, sync recovers the matching plan from the central
+Prumo plans directory. `retry` does not reload a plan and refuses a failed
 task whose recorded contract differs from its approved source, or whose global `name`, `description`
 or `requireReview` decision differs; synchronize and inspect first.
 `refresh-contract` only updates validation fields; it does not record rejection. If no
@@ -350,10 +356,11 @@ issues a `roundId` and `nonce`. The principal conversation writes discovery befo
 Before continuing a run created by an older engine, `migrate --check` reports structural compatibility.
 Every single-run engine command automatically migrates a safe pre-planning state, writes a versioned
 backup, enables missing gates and leaves every phase pending without opening a discussion. Terminal tasks
-stay unchanged; active work or prior attempts block conversion with a task-specific reason.
-During this deferral, read-only commands and continuation of already-started attempts remain available,
-including independent review and retry. New tasks cannot start. `sync-plan` can repair approved contracts
-without rewriting active or terminal history. Once existing attempts finish, automatic migration proceeds.
+stay unchanged. A task with an existing legacy attempt keeps its previous lifecycle and may resume, retry,
+receive independent review and finish without retroactive discussion or planning. New or never-started
+tasks receive the current gates and can proceed when their own dependencies are complete. Only an
+in-flight planning workflow that cannot be mapped safely blocks migration, with a task-specific reason.
+`sync-plan` can repair approved contracts without rewriting active or terminal history.
 Workspace relocation preserves dependency links without traversing their targets; internal absolute links
 follow the new workspace location, and external targets remain untouched.
 The skill must still inspect every nonterminal contract,

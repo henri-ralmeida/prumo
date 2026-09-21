@@ -1,4 +1,11 @@
 {
+  "1.3.17": {
+    "en": [
+      { "title": "Fixed — Safe plan synchronization", "items": ["Synchronize approved contracts for every nonterminal task without rewriting lifecycle or history", "Recheck dependencies after synchronization and prevent force from bypassing unfinished prerequisites", "Invalidate prior validation receipts when execution scope changes"] },
+      { "title": "Improved — Actionable graph diagnostics", "items": ["Show bounded field-level changes and exact dependency differences after sync-plan", "Warn about missing or reversed blocked-task dependencies and new leaf tasks", "Recover stale legacy plan sources and record diagnostic-only synchronization events"] },
+      { "title": "Fixed — Partial run migration", "items": ["Adopt current planning structure while active legacy attempts continue", "Apply current gates to unstarted work without holding unrelated tasks", "Keep engine and dashboard state aligned and supersede stale discussion rounds"] }
+    ]
+  },
   "1.3.16": {
     "en": [
       { "title": "Improved — Complete installed guidance", "items": ["Document recoverable updates, safe run migration and transactional legacy storage in English and Brazilian Portuguese", "Explain current PO First evidence, counterexample and prioritized-suggestion rules", "Update both READMEs, the skill and runtime references across Claude Code, Kiro and Codex"] },

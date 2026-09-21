@@ -142,6 +142,66 @@ test('dashboard selects legacy and central data without writes or translation of
   assert.equal((await (await get('/api/state?root=work&run=planning-demo')).json()).derived.EXEC.planningStatus, undefined)
 })
 
+test('dashboard projection matches the engine for mixed legacy and current tasks', async t => {
+  const base = realpathSync(tmpdir())
+  const home = mkdtempSync(join(base, 'prumo-mixed-server-'))
+  const root = join(home, 'workspace')
+  const graph = join(root, '.specs', 'graph', 'mixed')
+  mkdirSync(graph, { recursive: true })
+  const state = {
+    schemaVersion: 1,
+    plan: { name: 'Mixed migration', planningMode: 'phase', phases: [{ id: 'F1', title: 'Mixed phase' }] },
+    phaseWorkflows: { F1: { id: 'F1', title: 'Mixed phase', state: 'pending', discussionAttempts: [], planningAttempts: [] } },
+    tasks: {
+      LEGACY: { id: 'LEGACY', phase: 'F1', title: 'Legacy blocked', state: 'blocked', deps: [],
+        planningRequired: false, attempts: [{ n: 1, agent: 'legacy-executor' }], validations: [] },
+      CURRENT: { id: 'CURRENT', phase: 'F1', title: 'Current pending', state: 'pending', deps: [],
+        planningRequired: true, discussionRequired: true, discoveryRequired: true,
+        discussionAttempts: [], planningAttempts: [], planningHistory: [], attempts: [], validations: [] },
+    },
+  }
+  const statePath = join(graph, 'state.json')
+  writeFileSync(join(root, '.specs', 'graph', 'CURRENT'), 'mixed')
+  writeFileSync(statePath, JSON.stringify(state))
+  writeFileSync(join(graph, 'events.ndjson'), '')
+  const environment = { ...process.env, HOME: home, USERPROFILE: home, PRUMO_HOME: join(home, 'central'),
+    PRUMO_ROOT: root, GRAPH_ROOT: '', GRAPH_FOREMAN_HOME: '', PRUMO_LANG: 'en' }
+  const script = fileURLToPath(new URL('../scripts/serve.mjs', import.meta.url))
+  const engine = fileURLToPath(new URL('../scripts/engine.mjs', import.meta.url))
+  const child = spawn(process.execPath, [script, '--port', '0'], {
+    cwd: root, env: environment, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
+  })
+  let output = ''
+  child.stdout.on('data', chunk => { output += chunk })
+  child.stderr.on('data', chunk => { output += chunk })
+  const closed = new Promise((resolve, reject) => { child.on('close', resolve); child.on('error', reject) })
+  t.after(async () => {
+    if (child.exitCode === null) child.kill()
+    await closed
+    assert.equal(dirname(home), base)
+    rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  })
+  const deadline = Date.now() + 15000
+  while (!/localhost:\d+/.test(output) && child.exitCode === null && Date.now() < deadline) await setTimeout(30)
+  const port = output.match(/localhost:(\d+)/)?.[1]
+  assert.ok(port && child.exitCode === null, output)
+  const before = readFileSync(statePath, 'utf8')
+  const dashboard = await (await fetch('http://127.0.0.1:' + port + '/api/state?run=mixed')).json()
+  assert.equal(dashboard.derived.LEGACY.effective, 'blocked')
+  assert.equal(dashboard.derived.LEGACY.planningStatus, undefined)
+  assert.equal(dashboard.derived.CURRENT.effective, 'ready_for_discussion')
+  assert.equal(dashboard.derived.CURRENT.planningStatus, 'awaiting_phase_plan')
+  const engineDerived = JSON.parse(execFileSync(process.execPath, [engine, 'graph', '--run', 'mixed'], {
+    cwd: root, env: environment, windowsHide: true, encoding: 'utf8',
+  })).derived
+  for (const id of ['LEGACY', 'CURRENT']) {
+    assert.equal(dashboard.derived[id].effective, engineDerived[id].effective, id + '.effective')
+    assert.deepEqual(dashboard.derived[id].blockedBy, engineDerived[id].blockedBy, id + '.blockedBy')
+    assert.equal(dashboard.derived[id].planningStatus, engineDerived[id].planningStatus, id + '.planningStatus')
+  }
+  assert.equal(readFileSync(statePath, 'utf8'), before)
+})
+
 test('global dashboard discovers only known roots, stays read-only, and refreshes without restart', async t => {
   const base = realpathSync(tmpdir())
   const home = mkdtempSync(join(base, 'prumo-global-server-'))

@@ -2,6 +2,26 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 1.3.17 — 2026-09-21
+
+### Fixed — Safe plan synchronization
+
+- Synchronize approved contracts for every nonterminal task while preserving lifecycle, attempts, evidence and terminal history.
+- Recheck dependencies after synchronization, including legacy attempts, and prevent `--force` from bypassing unfinished prerequisites.
+- Invalidate prior validation receipts when dependencies, phase, touched paths or other execution scope changes.
+
+### Improved — Actionable graph diagnostics
+
+- Show bounded field-level contract changes and exact dependency differences after `sync-plan`.
+- Warn when a blocked task cites missing or reversed dependencies, and when a newly added task has no dependents.
+- Recover stale pre-migration plan sources from central Prumo storage and record diagnostic-only synchronization events.
+
+### Fixed — Partial run migration
+
+- Adopt the current planning structure without interrupting active legacy attempts or holding unrelated new work.
+- Apply discussion and planning gates to unstarted tasks and keep engine and dashboard state derivation aligned.
+- Supersede stale discussion rounds after an approved plan changes so the complete current scope can be discussed again.
+
 ## 1.3.16 — 2026-09-18
 
 ### Improved — Complete installed guidance

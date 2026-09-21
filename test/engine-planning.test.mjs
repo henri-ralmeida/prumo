@@ -345,7 +345,56 @@ test('migration refuses newer state schemas without downgrading or writing backu
   assert.equal(existsSync(join(f.root, '.specs/graph/phase-negative/state.pre-migrate-v1.json')), false)
 })
 
-test('legacy work can finish independently reviewed before automatic migration admits new tasks', t => {
+test('migration adds current gates to an unstarted unmarked task when the mode already exists', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Unstarted legacy task' }])
+  const legacy = f.state()
+  delete legacy.schemaVersion
+  delete legacy.phaseWorkflows
+  delete legacy.tasks.A.planningRequired
+  delete legacy.tasks.A.discussionRequired
+  delete legacy.tasks.A.discoveryRequired
+  delete legacy.tasks.A.discussionAttempts
+  delete legacy.tasks.A.planningAttempts
+  delete legacy.tasks.A.planningHistory
+  f.save(legacy)
+
+  f.ok('status')
+  const migrated = f.state()
+  assert.equal(migrated.plan.planningMode, 'phase')
+  assert.equal(migrated.tasks.A.planningRequired, true)
+  assert.deepEqual(migrated.tasks.A.discussionAttempts, [])
+  assert.deepEqual(migrated.tasks.A.planningAttempts, [])
+  assert.equal(JSON.parse(f.ok('graph').stdout).derived.A.effective, 'ready_for_discussion')
+  f.rejects(/completed current planning/, 'start', 'A', '--agent', 'too-early')
+})
+
+test('unsafe migration blockers reject new task-mode flow but allow legacy continuation', t => {
+  const f = phaseFixture(t, [
+    { id: 'A', phase: 'F1', title: 'Current planning in flight' },
+    { id: 'B', phase: 'F1', title: 'New task' },
+    { id: 'C', phase: 'F1', title: 'Legacy attempt' },
+  ])
+  const state = f.state()
+  state.tasks.A.state = 'planning'
+  state.tasks.A.planner = 'planner'
+  state.tasks.A.planningAttempts = [{ n: 1, agent: 'planner', startedAt: '2026-09-21T12:00:00.000Z' }]
+  state.tasks.C.state = 'running'
+  state.tasks.C.agent = 'legacy-executor'
+  state.tasks.C.attempts = [{ n: 1, agent: 'legacy-executor', startedAt: '2026-09-21T12:00:00.000Z' }]
+  state.tasks.C.planningRequired = false
+  delete state.schemaVersion
+  delete state.plan.planningMode
+  delete state.phaseWorkflows
+  f.save(state)
+
+  f.rejects(/unsafe in-flight planning/, 'begin-discussion', 'B')
+  f.rejects(/unsafe in-flight planning/, 'start', 'B', '--agent', 'new-executor')
+  f.ok('review', 'C', '--agent', 'independent-reviewer')
+  assert.equal(f.state().tasks.C.state, 'reviewing')
+  f.ok('status')
+})
+
+test('legacy work can finish independently reviewed while new tasks use the current workflow', t => {
   const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Active legacy task' }, { id: 'B', phase: 'F2', title: 'New work' }])
   const legacy = f.state()
   delete legacy.schemaVersion
@@ -357,16 +406,15 @@ test('legacy work can finish independently reviewed before automatic migration a
   Object.assign(f.plan.tasks[0], { validationMode: 'inspection', inspectionReason: 'Inspect fixture documentation', validation: 'Documentation inspected' })
   writeFileSync(f.planPath, JSON.stringify(f.plan))
   for (const field of ['discussionRequired', 'discoveryRequired', 'planningRequired']) delete legacy.tasks.A[field]
+  const legacyAttempts = structuredClone(legacy.tasks.A.attempts)
   f.save(legacy)
-  const statePath = join(f.root, '.specs/graph/phase-negative/state.json')
-  const before = readFileSync(statePath, 'utf8')
-  assert.match(f.ok('status').stderr, /Migration deferred/)
-  assert.equal(readFileSync(statePath, 'utf8'), before)
-  f.rejects(/needs migration, blocked by A/, 'migrate')
-  f.rejects(/needs migration, blocked by A/, 'start', 'B', '--agent', 'new-worker')
-  const graph = JSON.parse(f.ok('graph').stdout)
-  assert.equal(graph.derived.B.effective, 'pending')
-  assert.equal(graph.derived.B.planningStatus, 'awaiting_migration')
+  f.ok('status')
+  const migrated = f.state()
+  assert.equal(migrated.plan.planningMode, 'phase')
+  assert.equal(migrated.tasks.A.planningRequired, false)
+  assert.equal(migrated.tasks.B.planningRequired, true)
+  assert.equal(JSON.parse(f.ok('graph').stdout).derived.B.effective, 'ready_for_discussion')
+  assert.deepEqual(migrated.tasks.A.attempts, legacyAttempts)
   f.ok('block', 'A', '--reason', 'Waiting for an existing input')
   f.ok('unblock', 'A')
   f.ok('fail', 'A', '--reason', 'Transient execution failure')
@@ -384,7 +432,7 @@ test('legacy work can finish independently reviewed before automatic migration a
   assert.equal(f.state().tasks.A.attempts[0].result, 'failed')
 })
 
-test('an unstarted legacy human block can be lifted before safe migration', t => {
+test('an unstarted legacy human block enters the current workflow during migration', t => {
   const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Awaiting human input' }])
   const legacy = f.state()
   delete legacy.schemaVersion
@@ -393,13 +441,82 @@ test('an unstarted legacy human block can be lifted before safe migration', t =>
   legacy.tasks.A.state = 'blocked'
   legacy.tasks.A.stateBeforeBlock = 'pending'
   f.save(legacy)
-  f.rejects(/blocked by A/, 'migrate')
-  f.ok('unblock', 'A')
-  assert.equal(f.state().tasks.A.state, 'pending')
   f.ok('status')
   assert.equal(f.state().schemaVersion, 1)
-  assert.equal(f.state().tasks.A.attempts.length, 0)
+  assert.equal(f.state().tasks.A.planningRequired, true)
+  assert.equal(f.state().tasks.A.state, 'blocked')
+  f.ok('unblock', 'A')
+  assert.equal(f.state().tasks.A.state, 'pending')
   assert.equal(f.state().phaseWorkflows.F1.state, 'pending')
+})
+
+test('partial migration keeps a blocked legacy attempt resumable while independent new tasks plan', t => {
+  const f = phaseFixture(t, [
+    { id: 'T11', phase: 'F1', title: 'Completed prerequisite' },
+    { id: 'T12', phase: 'F1', title: 'Legacy blocked work' },
+    { id: 'T25', phase: 'F1', title: 'New independent work', deps: ['T11'] },
+    { id: 'T26', phase: 'F1', title: 'Another independent work', deps: ['T11'] },
+  ])
+  const legacy = f.state()
+  legacy.tasks.T11.state = 'done'
+  legacy.tasks.T11.validations = [{
+    ok: true, by: 'review', agent: 'seed-reviewer', evidence: 'Seed prerequisite',
+    attempt: 0, token: 'seed-receipt',
+  }]
+  legacy.tasks.T12.state = 'blocked'
+  legacy.tasks.T12.stateBeforeBlock = 'running'
+  legacy.tasks.T12.blockReason = 'Waiting for an external decision'
+  legacy.tasks.T12.agent = 'legacy-executor'
+  legacy.tasks.T12.attempts = [{ n: 1, agent: 'legacy-executor', startedAt: '2026-09-21T12:00:00.000Z' }]
+  legacy.tasks.T12.validations = [{
+    ok: false, by: 'executor', agent: 'legacy-executor', evidence: 'Prior failed evidence',
+    attempt: 1, token: 'prior-evidence',
+  }]
+  for (const field of ['discussionRequired', 'discoveryRequired', 'planningRequired', 'discussionAttempts', 'planningAttempts', 'planningHistory'])
+    delete legacy.tasks.T12[field]
+  const completedBefore = structuredClone(legacy.tasks.T11)
+  const attemptBefore = structuredClone(legacy.tasks.T12.attempts[0])
+  const evidenceBefore = structuredClone(legacy.tasks.T12.validations)
+  delete legacy.schemaVersion
+  delete legacy.plan.planningMode
+  delete legacy.phaseWorkflows
+  f.save(legacy)
+
+  const migrated = JSON.parse(f.ok('graph').stdout)
+  assert.equal(migrated.plan.planningMode, 'phase')
+  assert.deepEqual(migrated.tasks.T11, completedBefore)
+  assert.equal(migrated.tasks.T12.state, 'blocked')
+  assert.equal(migrated.tasks.T12.planningRequired, false)
+  assert.deepEqual(migrated.tasks.T12.attempts, [attemptBefore])
+  assert.deepEqual(migrated.tasks.T12.validations, evidenceBefore)
+  assert.equal(migrated.derived.T25.effective, 'ready_for_discussion')
+  assert.equal(migrated.derived.T26.effective, 'ready_for_discussion')
+
+  f.ok('unblock', 'T12')
+  f.ok('review', 'T12', '--agent', 'independent-reviewer')
+  f.ok('validate', 'T12', '--ok', '--evidence', 'Legacy attempt reviewed', '--cwd', f.project)
+  f.ok('done', 'T12')
+  const completedLegacy = f.state().tasks.T12
+  assert.equal(completedLegacy.attempts.length, 1)
+  assert.equal(completedLegacy.attempts[0].agent, attemptBefore.agent)
+  assert.equal(completedLegacy.attempts[0].startedAt, attemptBefore.startedAt)
+  assert.equal(completedLegacy.attempts[0].result, 'done')
+  assert.deepEqual(completedLegacy.validations[0], evidenceBefore[0])
+
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('plan-phase', 'F1', '--agent', 'planner-f1')
+  f.writeArtifacts('F1')
+  f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  const planned = f.state()
+  for (const id of ['T25', 'T26']) {
+    assert.equal(planned.tasks[id].planningRequired, true)
+    assert.equal(planned.tasks[id].taskPlan.phaseId, 'F1')
+  }
+  f.ok('start', 'T25', '--agent', 'new-worker-25')
+  f.ok('start', 'T26', '--agent', 'new-worker-26')
+  assert.equal(f.state().tasks.T25.state, 'running')
+  assert.equal(f.state().tasks.T26.state, 'running')
 })
 
 test('material sync invalidates a completed phase discussion before planner dispatch', t => {
@@ -483,6 +600,23 @@ test('sync-plan adding a phase member makes the previous discussion stale withou
   f.ok('plan-phase', 'F1', '--agent', 'second-planner')
   assert.deepEqual(f.state().phaseWorkflows.F1.planningAttempts.at(-1).targets, ['B'])
   assert.deepEqual(f.state().tasks.A.taskPlan, existingPlan)
+})
+
+test('sync-plan during an open phase discussion can supersede and reopen the stale round', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Original homologation contract' }])
+  f.ok('begin-phase-discussion', 'F1')
+  const first = f.state().phaseWorkflows.F1.discussionAttempts.at(-1)
+  f.plan.tasks[0].title = 'Homologation correction requested by the area'
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.ok('sync-plan', '--plan', f.planPath)
+  f.ok('begin-phase-discussion', 'F1')
+  const phase = f.state().phaseWorkflows.F1
+  assert.equal(phase.discussionAttempts.length, 2)
+  assert.equal(phase.discussionAttempts[0].roundId, first.roundId)
+  assert.equal(phase.discussionAttempts[0].result, 'superseded')
+  assert.ok(phase.discussionAttempts[0].endedAt)
+  assert.notEqual(phase.discussionAttempts[1].roundId, first.roundId)
+  assert.deepEqual(phase.discussionAttempts[1].targets, ['A'])
 })
 
 test('sync-plan adding a phase member rejects an open plan batch atomically and reopens complete coverage', t => {

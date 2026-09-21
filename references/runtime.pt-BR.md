@@ -63,10 +63,12 @@ respostas reais, canal/rodada, cobertura PO First, decisões e motivo de encerra
 
 Antes de continuar uma run antiga, a skill inspeciona cada contrato não terminal, normaliza validações
 obsoletas ou em prosa na fonte aprovada com evidência do repositório e executa `sync-plan` no run original.
-Tentativas legadas em andamento adiam a migração estrutural, mas podem ser retomadas, revisadas e
-concluídas. O status continua disponível; novas tarefas ficam bloqueadas até a migração ser segura.
-Use `sync-plan` para sincronizar contratos corrigidos sem apagar histórico. Não remova tentativas nem
-pule trabalho real para contornar bloqueios. Links de dependências e junctions são preservados na
+Uma migração parcial segura cria a estrutura atual e marca por tarefa as tentativas legadas já iniciadas
+para manterem o ciclo anterior. Elas podem ser retomadas, revisadas e concluídas sem discussão ou
+planejamento retroativos. Tarefas novas ou ainda não iniciadas recebem as etapas atuais e avançam quando
+suas próprias dependências estão prontas. Somente um planejamento em andamento que não possa ser mapeado
+com segurança bloqueia a migração, com motivo específico. Use `sync-plan` para sincronizar contratos
+corrigidos sem apagar histórico. Não remova tentativas nem pule trabalho real para contornar bloqueios. Links de dependências e junctions são preservados na
 mudança de pasta: destinos internos acompanham o workspace e destinos externos não são alterados.
 
 Essa migração do contrato inteiro não autoriza ampliar o grafo ou o planejamento. Quando o usuário nomeia
@@ -220,9 +222,9 @@ da sessão, incluindo perguntas nativas assíncronas quando disponíveis fora do
 
 ## Planos em andamento
 
-`sync-plan` preserva tarefas ativas e concluídas e informa diferenças não aplicadas. Tarefas pending, failed e blocked podem receber alterações aprovadas permitidas. Remover tarefas pelo sync é recusado.
+`sync-plan` atualiza o contrato completo de qualquer tarefa não terminal sem mudar estado, tentativas, agentes, notas, evidências ou bloqueio. A saída mostra por tarefa os campos aplicados, resume contratos de validação sem imprimir seu conteúdo e registra no evento estruturado avisos de contradição entre dependências e `blockReason`. Mudanças de escopo deixam o planejamento anterior desatualizado e impedem revisão ou conclusão até que o trabalho seja bloqueado e replanejado. Tarefas done/skipped permanecem como histórico imutável e exigem acompanhamento explícito. Remover tarefas pelo sync é recusado. Quando uma run migrada ainda aponta para uma origem graph-foreman removida, o comando recupera o plano correspondente no workspace central do Prumo.
 
-Use `refresh-contract` para mudar somente o contrato aprovado de uma tarefa ativa. Ele preserva estado, tentativas, agentes, notas e bloqueio. A revisão do contrato invalida recibos anteriores, mesmo quando o texto volta à versão anterior. Tarefas done/skipped exigem acompanhamento explícito.
+Use `refresh-contract` quando a única mudança aprovada for validação. Ele preserva estado, tentativas, agentes, notas e bloqueio. A revisão do contrato invalida recibos anteriores, mesmo quando o texto volta à versão anterior.
 
 Trabalho entregue pode seguir à revisão, que pode completar verificações faltantes. Não use fail/retry **somente** para atualizar contrato nem registre erro de orquestração como falha do executor. Um bloqueio solicitado permanece até uma decisão explícita de desbloqueio.
 

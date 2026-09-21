@@ -67,7 +67,7 @@ function fixture(t, task = {}, planOptions = {}, { init = true } = {}) {
     save(legacy)
   }
   const events = () => readFileSync(join(root, '.specs/graph/regression/events.ndjson'), 'utf8').trim().split('\n').map(JSON.parse)
-  return { cli, ok, rejected, state, save, project, validate, beginReview, options, plan, planPath, events }
+  return { cli, ok, rejected, state, save, root, project, validate, beginReview, options, plan, planPath, events }
 }
 
 test('unblock restores running work and contract refresh can be reviewed in the same attempt', (t) => {
@@ -88,6 +88,57 @@ test('unblock restores running work and contract refresh can be reviewed in the 
   f.ok('done', 'T1')
   assert.equal(f.state().tasks.T1.attempts.length, 1)
   assert.equal(f.events().filter(e => e.type === 'task_start').length, 1)
+})
+
+test('legacy active work rechecks current dependencies before review, validation, done and unblock', (t) => {
+  const f = fixture(t, {}, { tasks: [{ id: 'T0', title: 'New prerequisite', validation: [functionalStep] }] })
+  f.ok('start', 'T1', '--agent', 'executor')
+  const before = structuredClone(f.state().tasks.T1.attempts)
+  f.plan.tasks.find(task => task.id === 'T1').deps = ['T0']
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.ok('sync-plan', '--plan', f.planPath)
+  assert.deepEqual(f.state().tasks.T1.attempts, before)
+  for (const command of [
+    ['review', 'T1', '--agent', 'reviewer'],
+    ['validate', 'T1', '--ok', '--evidence', 'Dependency must finish first', '--cwd', f.project],
+    ['done', 'T1'],
+  ]) f.rejected(/still waiting on: T0/, ...command)
+  f.ok('block', 'T1', '--reason', 'Pause until prerequisite is complete')
+  f.rejected(/still waiting on: T0/, 'unblock', 'T1')
+  assert.equal(f.state().tasks.T1.state, 'blocked')
+  f.ok('skip', 'T0', '--reason', 'Fixture prerequisite waived')
+  f.ok('unblock', 'T1')
+  f.ok('review', 'T1', '--agent', 'reviewer')
+  assert.equal(f.validate().status, 0)
+  f.ok('done', 'T1')
+})
+
+test('force never bypasses dependencies for legacy start or retry', (t) => {
+  const f = fixture(t, { deps: ['T0'] }, {
+    tasks: [{ id: 'T0', title: 'Pending prerequisite', validation: [functionalStep] }],
+  })
+  f.rejected(/still waiting on: T0/, 'start', 'T1', '--agent', 'legacy-executor', '--force')
+  const failed = f.state()
+  failed.tasks.T1.state = 'failed'
+  failed.tasks.T1.attempts = [{ n: 1, agent: 'legacy-executor', result: 'failed', reason: 'Retry fixture' }]
+  f.save(failed)
+  f.ok('retry', 'T1', '--force')
+  f.rejected(/still waiting on: T0/, 'start', 'T1', '--agent', 'legacy-executor-v2', '--force')
+})
+
+test('legacy validation cannot approve a scope synchronized afterwards', (t) => {
+  const f = fixture(t, {}, {
+    tasks: [{ id: 'T0', title: 'Later prerequisite', validation: [functionalStep] }],
+  })
+  f.beginReview()
+  assert.equal(f.validate().status, 0)
+  f.plan.tasks.find(task => task.id === 'T1').deps = ['T0']
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.ok('sync-plan', '--plan', f.planPath)
+  f.ok('skip', 'T0', '--reason', 'Fixture dependency completed by waiver')
+  f.rejected(/execution scope changed after validation/, 'done', 'T1')
+  assert.equal(f.validate().status, 0)
+  f.ok('done', 'T1')
 })
 
 test('unblock with reviewer hands delivered work directly to review without acquiring an executor slot', (t) => {
@@ -708,20 +759,44 @@ test('refresh during validation discards the old result without losing the attem
   assert.equal(f.state().tasks.T1.state, 'reviewing')
 })
 
-test('sync-plan reports active contract differences instead of already matches', (t) => {
+test('sync-plan updates active and blocked contracts without rewriting their lifecycle', (t) => {
   if (!readFileSync(engine, 'utf8').includes("'sync-plan'()")) return t.skip('This installation has no sync-plan command')
+  for (const blocked of [false, true]) {
+    const f = fixture(t)
+    f.ok('start', 'T1', '--agent', 'executor')
+    if (blocked) f.ok('block', 'T1', '--reason', 'Homologation requested rework')
+    const before = f.state().tasks.T1
+    f.plan.tasks[0].title = blocked ? 'Blocked homologation correction' : 'Active homologation correction'
+    f.plan.tasks[0].validation[1] = { ...functionalStep, timeoutMs: 900000 }
+    writeFileSync(f.planPath, JSON.stringify(f.plan))
+    const result = f.ok('sync-plan', '--plan', f.planPath)
+    assert.match(result.output, /updated 1/)
+    const after = f.state().tasks.T1
+    assert.equal(after.state, before.state)
+    assert.equal(after.stateBeforeBlock, before.stateBeforeBlock)
+    assert.equal(after.blockReason, before.blockReason)
+    assert.equal(after.agent, before.agent)
+    assert.deepEqual(after.attempts, before.attempts)
+    assert.deepEqual(after.notes, before.notes)
+    assert.equal(after.title, f.plan.tasks[0].title)
+    assert.deepEqual(after.validation, f.plan.tasks[0].validation)
+  }
+})
+
+test('sync-plan recovers a missing legacy source from the central plans directory', (t) => {
   const f = fixture(t)
-  f.ok('start', 'T1', '--agent', 'executor')
-  const before = f.state()
-  f.plan.tasks[0].validation[1] = { ...functionalStep, timeoutMs: 900000 }
-  writeFileSync(f.planPath, JSON.stringify(f.plan))
-  const result = f.ok('sync-plan', '--plan', f.planPath)
-  assert.match(result.output, /plan differs for preserved tasks: T1/)
-  assert.doesNotMatch(result.output, /already matches/)
-  assert.deepEqual(f.state(), before)
-  f.ok('refresh-contract', 'T1', '--plan', f.planPath)
-  assert.equal(f.state().tasks.T1.state, 'running')
-  assert.equal(f.state().tasks.T1.attempts.length, 1)
+  const plans = join(f.root, '.specs', 'graph', 'plans')
+  mkdirSync(plans, { recursive: true })
+  const central = join(plans, 'plan.json')
+  f.plan.tasks[0].title = 'Recovered central plan'
+  writeFileSync(central, JSON.stringify(f.plan))
+  const state = f.state()
+  state.plan.source = join(f.root, '.local', 'share', 'graph-foreman', 'plan.json')
+  f.save(state)
+  const result = f.ok('sync-plan')
+  assert.match(result.output, /updated 1/)
+  assert.equal(f.state().tasks.T1.title, 'Recovered central plan')
+  assert.equal(f.state().plan.source, central)
 })
 
 test('real rejection and approved contract change preserve history and verify the new behavior on retry', (t) => {

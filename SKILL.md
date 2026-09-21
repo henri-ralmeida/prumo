@@ -117,11 +117,12 @@ The global dashboard only observes; it never synchronizes a plan. Before resumin
 `node $ENGINE migrate --check --run <name>` when you need a read-only compatibility report. Every
 single-run engine command automatically applies a safe, versioned structural migration first, creates
 `state.pre-migrate-v<schema>.json`, enables missing discussion and planning gates, and opens no rounds.
-It preserves terminal tasks. Active legacy work defers structural migration: status remains readable,
-and already-started attempts can resume, retry and finish through independent review. New tasks remain
-blocked and visibly await migration. Explicit `migrate` still names unsafe blockers; do not clear attempts,
-skip real work or rewrite history to bypass them. Synchronize corrected contracts with `sync-plan` while
-finishing existing work; automatic migration resumes once the blockers are terminal. Before `init`, `sync-plan` or resuming
+It preserves terminal tasks. A safe partial migration creates the current run structure while marking each
+already-started legacy task to keep its previous lifecycle; those attempts can resume, retry and finish through
+independent review without retroactive planning. New or never-started tasks receive the current discussion and
+planning gates and can proceed when their own dependencies are ready. Explicit `migrate` still names unsafe
+in-flight planning blockers; do not clear attempts, skip real work or rewrite history to bypass them. Synchronize
+corrected contracts with `sync-plan` while finishing existing work. Before `init`, `sync-plan` or resuming
 an existing run, inspect the approved source and persisted graph for legacy contracts. Normalize every
 nonterminal prose or obsolete validation into the current executable validation schema using repository
 evidence, restore declared phase order and membership from the approved plan structure, preserve task IDs,
@@ -129,8 +130,14 @@ dependencies, scope and history, then run `sync-plan` on the same run
 and inspect the persisted result. Do not create an auxiliary run to avoid adapting old tasks. Ask in the
 principal discussion only when a consequential contract meaning cannot be established from the repository.
 
-`sync-plan` adds approved tasks, refreshes pending/failed/blocked contracts and preserves active/done
-history. Task removal is refused. A named task in the user's request is a hard scope boundary: its
+`sync-plan` adds approved tasks and refreshes contracts in every nonterminal state while preserving the
+current lifecycle, agents, attempts, notes and evidence. Active work whose scope changed cannot advance
+through review or completion until current planning is restored; block and replan it without inventing a
+failure. Done/skipped contracts remain immutable history and need an explicit follow-up task. Task removal
+is refused. If a migrated run still names a missing graph-foreman source, `sync-plan` recovers the matching
+plan from the central Prumo workspace. Its output lists bounded per-task field changes, summarizes validation
+contracts without printing their contents and warns when a waiting `blockReason` contradicts dependency
+direction; the event log keeps the same structured audit. A named task in the user's request is a hard scope boundary: its
 dependencies, prerequisites or internal deliverables are context, not permission to add tasks, plan
 siblings or dispatch more planners. Keep one discussion and one planner for that task unless the user
 explicitly approves a broader graph change. Otherwise, adopt a migrated task-scoped run one eligible phase
@@ -505,8 +512,9 @@ node $ENGINE start T4 --agent <executor> --run <run-name>  # pair with actual di
 
 Resume from the recorded phase if some steps already happened. `retry` alone does not reload
 the plan and refuses to proceed when the recorded failed task differs from its approved source;
-run `sync-plan` and inspect first. `sync-plan` preserves active/completed definitions; refresh
-only updates validation fields and does not record a rejection. Preserve the prior attempt's
+run `sync-plan` and inspect first. `sync-plan` updates every nonterminal definition without changing its
+lifecycle and preserves completed definitions as immutable history; refresh only updates validation fields
+and does not record a rejection. Preserve the prior attempt's
 reason and evidence. A bounded corrective retry records `planSourceAttempt` separately from the
 immediately rejected `correctionOf` attempt and carries that review reason as execution context,
 without changing the approved task plan or adding a fabricated planning round. Missing
