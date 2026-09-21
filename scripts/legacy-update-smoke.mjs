@@ -77,7 +77,7 @@ try {
       research: [{ source: 'legacy.plan.json', findings: 'This fixture closes an inspection task before upgrading.' }],
       questions: [{ question: 'Inspect the fixture document?', answer: 'Yes.', channel: 'chat-fallback', round: 1, roundId: round.roundId }],
       coverage: { problem: 'Documentation', affected: 'Readers', outcome: 'Reviewed document', currentBehavior: 'Pending', desiredBehavior: 'Reviewed', rules: 'Independent review', exceptions: 'None', scope: 'DONE', acceptance: 'Document inspected' },
-      decisions: [], deferred: [], executionBoundary: { deferredToExecutor: ['T1'], prematureTaskWork: [] },
+      decisions: [], deferred: [], executionBoundary: { deferredToExecutor: ['DONE'], prematureTaskWork: [] },
       closure: 'Inspection scope approved.' })
     saveFlow('discussing')
     old('finish-phase-discussion', 'F1', '--context', context)
@@ -192,7 +192,7 @@ try {
     questions: [{ question: 'Preserve merged history?', answer: 'Yes.', channel: 'chat-fallback', round: 1, roundId: discussion.roundId }],
     coverage: { problem: 'Legacy contract.', affected: 'Run owners.', outcome: 'Resume safely.', currentBehavior: 'Old prose.',
       desiredBehavior: 'Executable gate.', rules: 'Preserve terminal tasks.', exceptions: 'None.', scope: 'NEXT.', acceptance: 'Independent review passes.' },
-    decisions: [], deferred: [], executionBoundary: { deferredToExecutor: ['T1'], prematureTaskWork: [] },
+    decisions: [], deferred: [], executionBoundary: { deferredToExecutor: ['NEXT'], prematureTaskWork: [] },
     closure: 'Approved migration scope.' })
   modern('finish-phase-discussion', 'F2', '--context', context)
   modern('plan-phase', 'F2', '--agent', 'planner')
