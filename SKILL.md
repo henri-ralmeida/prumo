@@ -48,6 +48,29 @@ is fixed under the central Prumo workspace.
 
 Apply [PO First](references/po-first.md), also configured globally by the installer, in every role. Respond in the user's language. A functional check means evidence of the requested effect, whether the work concerns data, automation, migration, software, or another domain. Use the host's native subagent tools; if dedicated planning, execution or independent review are unavailable, report that limitation rather than inventing agent dispatch. The engine records transitions; it does not create agents. In Codex invoke this skill as `$prumo`; Claude Code and Kiro use `/prumo`.
 
+## Invocation router
+
+The top-level Prumo skill is the orchestrator. On every invocation, inspect the user's requested
+scope, the approved source plan, persisted `status`/`ready`, dashboard `/api/runs`, and actual native
+agent state before selecting exactly one current flow:
+
+| Observed context | Route |
+| --- | --- |
+| No approved global plan | Global planning and user approval; do not initialize or dispatch |
+| Approved plan, but no persisted run | Storage/dashboard bootstrap, then `init` and visibility verification |
+| `ready_for_discussion`, `discussing`, `discussed`, `ready_to_plan` or `planning` | Discussion and read-only planning flow |
+| `ready` or `running` with a current task plan | Executor flow |
+| `reviewing` or a current validation receipt | Independent reviewer flow |
+| `failed` | Classify implementation correction versus plan defect before retrying |
+| `blocked` | Resolve or wait for the recorded blocker; never route around it |
+| Every task terminal | Close-out and results flow |
+
+Persisted state wins over conversational recollection. Never route a task to an executor merely because
+the user requested implementation or because a plan file exists: its current discussion, planning,
+dependency and dashboard gates must also agree. Never combine planner, executor and reviewer into one
+agent turn. A plan defect routes back through fresh discussion and planning; a bounded implementation
+correction may reuse a current approved plan only when the engine records that reuse.
+
 ## 0. Resolving the engine
 
 The scripts live under `scripts/` in **this skill's own directory** — resolve them relative to
@@ -69,6 +92,11 @@ export PRUMO_HOME PRUMO_ROOT
 ```
 
 Local harnesses running as the same user share this Prumo store. Preserve explicit compatibility overrides and do not choose a different store per harness. These commands create missing directories. Access still depends on each harness's permissions; cloud sessions do not automatically share local files.
+
+Use the same `PRUMO_HOME` as the per-user global dashboard. A sandbox or filesystem restriction
+is not a reason to redirect a real run into a session, visualization or temporary directory: request
+the required access to the user's central store instead. A different `PRUMO_HOME` creates a valid but
+isolated run that the managed dashboard will not discover.
 
 `<workspace>` groups related runs, for example `ai-memory-migration`. `PRUMO_ROOT` must be an
 existing child of `PRUMO_HOME` for new work; existing legacy workspaces are also accepted. When cwd is already
@@ -151,6 +179,13 @@ known central workspaces and registered projects and follows their current runs.
 managed Prumo or an unrelated process; use `prumo dashboard status` and never terminate an unidentified owner.
 If the managed dashboard disappears, inspect `prumo dashboard logs` before restarting it. Preserve the
 reported timestamp, PID, signal or fatal message in the incident evidence.
+
+Process health is not enough: before presenting the dashboard URL, read `<reported-url>/api/runs` and
+confirm that the exact workspace and run just initialized are present. If they are absent, stop before
+dispatch. Compare the engine's effective `PRUMO_HOME` with the managed dashboard's central store and
+correct the storage mismatch while preserving the existing workspace and history; do not recreate the
+run or claim that the dashboard is ready. Recheck `/api/runs`, then open the URL pinned with
+`?root=<workspace>&run=<run>` so the dev lands on the intended execution.
 
 **Two runs at once** work only when neither leans on the defaults: pass `--run <name>` to every
 command for the non-current run, and give the second dashboard its own port AND pin —
