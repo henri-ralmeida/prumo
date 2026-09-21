@@ -130,6 +130,87 @@ test('a new leaf is informational until a blocked reason cites it, then it is a 
   ])
 })
 
+test('sync audit warns when a phased task gains functional checks before discussion', () => {
+  const stateTasks = {
+    T26: { id: 'T26', phase: 'F2', validation: [{ kind: 'static', run: 'node lint.mjs', expect: 'clean' }] },
+  }
+  const planTasks = [{
+    id: 'T26', phase: 'F2', validation: [
+      { kind: 'static', run: 'node lint.mjs', expect: 'clean' },
+      { kind: 'functional', run: 'node test-a.mjs', expect: 'case A passes' },
+      { kind: 'functional', run: 'node test-b.mjs', expect: 'case B passes' },
+    ],
+  }]
+  const audit = auditSyncPlan({
+    stateTasks,
+    planTasks,
+    effectiveTasks: { T26: { effective: 'ready_for_discussion' } },
+  })
+  assert.deepEqual(audit.preDiscussionFunctionalContracts, [{
+    task: 'T26', effective: 'ready_for_discussion', count: 2, added: 2,
+    indices: [2, 3], severity: 'warning',
+  }])
+  assert.deepEqual(auditSyncPlan({
+    stateTasks,
+    planTasks,
+    effectiveTasks: { T26: { effective: 'ready' } },
+  }).preDiscussionFunctionalContracts, [], 'planned work must not warn')
+  assert.deepEqual(auditSyncPlan({
+    stateTasks: { T26: { ...stateTasks.T26, validation: planTasks[0].validation } },
+    planTasks,
+    effectiveTasks: { T26: { effective: 'ready_for_discussion' } },
+  }).preDiscussionFunctionalContracts, [], 'unchanged functional count must not warn')
+})
+
+test('sync-plan warns but still applies functional checks added before phase discussion', (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'prumo-sync-discussion-warning-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }))
+  const root = join(home, 'workspace')
+  mkdirSync(root)
+  const planPath = join(root, 'plan.json')
+  const initialPlan = {
+    name: 'discussion-warning',
+    phases: [{ id: 'F1', title: 'Discovery' }],
+    tasks: [{
+      id: 'T26', phase: 'F1', title: 'Define behavior', deps: [],
+      validationMode: 'inspection', inspectionReason: 'Initial contract is documentation-only.',
+      validation: 'Inspect the approved document.',
+    }],
+  }
+  writeFileSync(planPath, JSON.stringify(initialPlan))
+  const env = { ...process.env, PRUMO_HOME: home, PRUMO_ROOT: root, PRUMO_LANG: 'en' }
+  const run = (...args) => spawnSync(process.execPath, [engine, ...args], {
+    cwd: root, env, encoding: 'utf8', timeout: 20000,
+  })
+  const init = run('init', '--plan', planPath, '--run', 'warning')
+  assert.equal(init.status, 0, init.stdout + init.stderr)
+
+  const changedPlan = structuredClone(initialPlan)
+  const task = changedPlan.tasks[0]
+  task.validationMode = 'functional'
+  delete task.inspectionReason
+  task.validation = [
+    { ...check, run: 'node test-a.mjs', expect: 'case A passes' },
+    { ...check, run: 'node test-b.mjs', expect: 'case B passes' },
+  ]
+  writeFileSync(planPath, JSON.stringify(changedPlan))
+  const synced = run('sync-plan', '--plan', planPath)
+  assert.equal(synced.status, 0, synced.stdout + synced.stderr)
+  assert.match(synced.stdout + synced.stderr,
+    /T26 is ready_for_discussion, but validation now has 2 functional checks \(new indices 1, 2\); is this planning\?/)
+
+  const statePath = join(root, '.specs', 'graph', 'warning', 'state.json')
+  const state = JSON.parse(readFileSync(statePath, 'utf8'))
+  assert.equal(state.tasks.T26.validation.length, 2, 'warning must not block synchronization')
+  const events = readFileSync(join(root, '.specs', 'graph', 'warning', 'events.ndjson'), 'utf8')
+    .trim().split('\n').map(JSON.parse)
+  const event = events.find(item => item.type === 'plan_sync')
+  assert.deepEqual(event.diagnostics.preDiscussionFunctionalContracts, [{
+    task: 'T26', effective: 'ready_for_discussion', count: 2, added: 2,
+    indices: [1, 2], severity: 'warning',
+  }])
+})
+
 test('sync-plan records per-task changes and diagnostics in plan_sync', (t) => {
   const home = mkdtempSync(join(tmpdir(), 'prumo-sync-audit-'))
   t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }))

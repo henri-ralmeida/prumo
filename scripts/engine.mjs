@@ -422,6 +422,12 @@ function printSyncPlanAudit(changes, diagnostics) {
       log('[prumo] ' + tr('sync-plan info: new leaf task {0} has no dependents', displayIdentifier(leaf.task)))
     }
   }
+  for (const finding of diagnostics.preDiscussionFunctionalContracts) {
+    const unit = finding.count === 1 ? 'functional check' : 'functional checks'
+    const indexLabel = finding.indices.length === 1 ? 'new index' : 'new indices'
+    const indices = finding.indices.join(', ') + (finding.truncated ? ', …' : '')
+    log(`[prumo] sync-plan warning: ${displayIdentifier(finding.task)} is ${tr(finding.effective)}, but validation now has ${finding.count} ${unit} (${indexLabel} ${indices}); is this planning?`)
+  }
 }
 
 function readPlan(planPath, state) {
@@ -771,7 +777,8 @@ const commands = {
       changes.push({ task: planTask.id, applied: true, preserved: false, fields })
     }
 
-    const diagnostics = auditSyncPlan({ stateTasks: persistedTasks, planTasks: plan.tasks, added })
+    const effectiveTasks = derive({ ...state, tasks: persistedTasks })
+    const diagnostics = auditSyncPlan({ stateTasks: persistedTasks, planTasks: plan.tasks, added, effectiveTasks })
 
     const effectivePlan = { ...plan, tasks: Object.values(state.tasks).map(planTaskFromState) }
     validatePlan(effectivePlan, args['allow-overlap'] === true, historicalTasks(state))
@@ -790,7 +797,8 @@ const commands = {
       nextPlan.planningRevision = (state.plan.planningRevision ?? 0) + (planningChanged ? 1 : 0)
     const planChanged = JSON.stringify(state.plan) !== JSON.stringify(nextPlan)
     if (!added.length && !updated.length && !planChanged) {
-      const hasDiagnostics = diagnostics.blockReasonContradictions.length || diagnostics.newLeaves.length
+      const hasDiagnostics = diagnostics.blockReasonContradictions.length || diagnostics.newLeaves.length ||
+        diagnostics.preDiscussionFunctionalContracts.length
       if (hasDiagnostics || changes.length) {
         emit(name, 'plan_sync_audit', null, {
           added: sanitizeTaskIds(added),

@@ -154,6 +154,12 @@ export function sanitizeDiagnostics(audit = {}) {
       task: displayIdentifier(leaf.task),
       dependents: boundedIdentifiers(leaf.dependents),
     })),
+    preDiscussionFunctionalContracts: (audit.preDiscussionFunctionalContracts ?? []).map(finding => ({
+      ...finding,
+      task: displayIdentifier(finding.task),
+      indices: finding.indices.slice(0, MAX_SUMMARY_ITEMS),
+      ...(finding.indices.length > MAX_SUMMARY_ITEMS && { truncated: true }),
+    })),
   }
 }
 
@@ -189,11 +195,37 @@ function planTaskMap(tasks) {
  * the stale contract the sync is repairing. Back-edges are checked in both graphs so a
  * single sync cannot silently introduce the semantic cycle it is meant to reveal.
  */
-export function auditSyncPlan({ stateTasks = {}, planTasks = [], added = [] } = {}) {
+function functionalChecks(validation) {
+  if (!Array.isArray(validation)) return []
+  return validation.map((step, index) => ({ step, index: index + 1 })).filter(({ step }) =>
+    step?.kind === 'functional' &&
+    (typeof step.run === 'string' && step.run.trim() || typeof step.expect === 'string' && step.expect.trim()))
+}
+
+export function auditSyncPlan({ stateTasks = {}, planTasks = [], added = [], effectiveTasks = {} } = {}) {
   const before = dependencyMap(stateTasks)
   const after = planTaskMap(planTasks)
   const ids = new Set([...Object.keys(before), ...Object.keys(after)])
   const blockReasonContradictions = []
+  const preDiscussionFunctionalContracts = []
+
+  for (const task of planTasks) {
+    const current = before[task.id]
+    const effective = effectiveTasks[task.id]?.effective
+    if (!current || !task.phase || !['ready_for_discussion', 'discussing'].includes(effective)) continue
+    const previousChecks = functionalChecks(current.validation)
+    const nextChecks = functionalChecks(task.validation)
+    if (nextChecks.length <= previousChecks.length) continue
+    const previousIndices = new Set(previousChecks.map(check => check.index))
+    preDiscussionFunctionalContracts.push({
+      task: task.id,
+      effective,
+      count: nextChecks.length,
+      added: nextChecks.length - previousChecks.length,
+      indices: nextChecks.map(check => check.index).filter(index => !previousIndices.has(index)),
+      severity: 'warning',
+    })
+  }
 
   for (const [taskId, task] of Object.entries(before)) {
     if (typeof task.blockReason !== 'string' || !task.blockReason.trim()) continue
@@ -230,7 +262,7 @@ export function auditSyncPlan({ stateTasks = {}, planTasks = [], added = [] } = 
     })
   }
 
-  return { blockReasonContradictions, newLeaves }
+  return { blockReasonContradictions, newLeaves, preDiscussionFunctionalContracts }
 }
 
 // `added` is normally a list of IDs. Keep the helper tolerant of callers passing plan
