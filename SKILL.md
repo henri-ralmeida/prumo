@@ -246,13 +246,19 @@ result. The executor performs every task deliverable, including a read-only meas
 is the task. Classify an ambiguous command by its purpose: if a successful result could satisfy a task or one
 of its acceptance criteria, defer it to that task's executor.
 
-- **Codex:** prefer `request_user_input_async` when available; use `request_user_input` only where its
-  mode rules permit. A Plan-only tool being unavailable does not rule out an asynchronous native tool.
+- **Codex:** before falling back to chat, inspect the actually exposed tool names. Call
+  `request_user_input_async` first when it is present; it is the preferred nonblocking wrapper and may be
+  available in Default mode. Otherwise call `request_user_input` only when its current mode rules permit.
+  The app-server protocol name `tool/requestUserInput` describes the host/client request beneath these
+  wrappers; it is not itself a model-callable tool name. A Plan-only `request_user_input` being unavailable
+  does not prove that `request_user_input_async` is absent, and remembering a tool from another session does
+  not prove that the current host exposed it.
 - **Claude Code:** use `AskUserQuestion` when exposed. Keep discovery in the principal conversation;
   do not assume the tool is available to a subagent or a restricted SDK integration.
 - **Kiro or another harness:** use an exposed native clarification tool if available. Do not invent
   a tool name or infer support from the product name or Plan mode alone.
-- **Fallback:** when no permitted native tool exists, or it explicitly reports unsupported operation,
+- **Fallback:** only after the current tool inventory has no permitted native wrapper, or the exposed wrapper
+  explicitly reports unsupported operation,
   ask in the same conversation using **What I understood**, **Gray areas**, **Suggestions** and focused
   numbered **Questions**, translated to the user's language. In Kiro CLI, the user may optionally use
   `/reply` to answer point by point; it is a user command, not an agent question tool.
