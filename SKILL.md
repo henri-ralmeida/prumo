@@ -61,15 +61,24 @@ agent state before selecting exactly one current flow:
 | `ready_for_discussion`, `discussing`, `discussed`, `ready_to_plan` or `planning` | Discussion and read-only planning flow |
 | `ready` or `running` with a current task plan | Executor flow |
 | `reviewing` or a current validation receipt | Independent reviewer flow |
-| `failed` | Classify implementation correction versus plan defect before retrying |
+| `failed` | Classify unchanged-contract correction versus an explicit contract change before retrying |
 | `blocked` | Resolve or wait for the recorded blocker; never route around it |
 | Every task terminal | Close-out and results flow |
 
 Persisted state wins over conversational recollection. Never route a task to an executor merely because
 the user requested implementation or because a plan file exists: its current discussion, planning,
 dependency and dashboard gates must also agree. Never combine planner, executor and reviewer into one
-agent turn. A plan defect routes back through fresh discussion and planning; a bounded implementation
-correction may reuse a current approved plan only when the engine records that reuse.
+agent turn.
+
+### One planner per approved task contract
+
+Dispatch the planner exactly once for a task's approved contract. Any number of reviewer rejections or
+executor retries stays in the `executor -> reviewer -> executor` loop and reuses the same immutable task
+plan; carry the latest actionable review reason to the next executor. Incomplete implementation guidance
+is not permission to dispatch another planner or mark `--plan-defect` when the approved contract already
+settles the behavior. If feedback truly requires a new business rule, acceptance condition, dependency or
+write scope, block the task and return that contract change to the user. Only an explicitly approved
+contract revision may open a new discussion/planning round; that is a new contract, not a retry.
 
 ## 0. Resolving the engine
 
@@ -455,7 +464,9 @@ The first reviewer must inspect the full behavioral path and the relevance of th
 the changed lines. Independently derive one focused counterexample for the highest-risk applicable
 criterion, especially an ordering, boundary, invalid-input or transition rule; do not copy the
 executor's examples or mirror the implementation. If the approved checks cannot establish a current
-criterion, reject it as a plan defect instead of approving on unrelated passing tests. Keep this probe
+criterion, reject it with an actionable reason instead of approving on unrelated passing tests. Under the
+one-planner rule, unchanged-contract feedback returns to the executor; a missing acceptance decision blocks
+for the user rather than silently dispatching another planner. Keep this probe
 proportional: one discriminating case is preferable to a generic matrix. On a bounded corrective retry,
 the next reviewer inspects the rejection, changed paths and remaining checks, and may trust current step
 receipts that the engine explicitly reuses.
@@ -523,7 +534,7 @@ Reuse explicit user steering as approval; ask only when a new requirement remain
 | Situation | Next action |
 | --- | --- |
 | Actual rejected delivery, unchanged contract and sound plan | Record the reviewer's actionable `fail --reason`, then `retry` and `start`; the engine reuses the approved plan only while its contract, discovery, scope and dependency binding remain current. |
-| Reviewer finds the task plan itself defective | Record `fail --reason "..." --plan-defect`, then `retry`; run fresh discussion and planning for that task through its phase before execution. |
+| Reviewer finds implementation guidance incomplete, but the approved contract is unchanged | Record an actionable `fail --reason` without `--plan-defect`, then `retry` and send the same task plan plus that reason to the next executor; do not dispatch another planner. |
 | Actual rejected delivery, approved contract also changed | Record the real failure; edit the approved plan; `sync-plan` while `failed`; inspect the persisted contract, `touches` and dependencies; then `retry`, fresh task planning and execution. |
 | Delivered work needs only an approved validation update | `refresh-contract`, then verification by an independent reviewer in the same attempt; no invented failure or executor. |
 | New scope after `done`/`skipped` | Create an explicit follow-up through the approved planning workflow; preserve completed history. |
@@ -552,9 +563,10 @@ lifecycle and preserves completed definitions as immutable history; refresh only
 and does not record a rejection. Preserve the prior attempt's
 reason and evidence. A bounded corrective retry records `planSourceAttempt` separately from the
 immediately rejected `correctionOf` attempt and carries that review reason as execution context,
-without changing the approved task plan or adding a fabricated planning round. Missing
-reviewer rationale, `--plan-defect`, or a changed contract, discovery, scope or dependency result
-makes the task ready to plan instead. Prefer the harness's structured editor for the approved plan. If a
+without changing the approved task plan or adding a fabricated planning round. Missing reviewer rationale,
+`--plan-defect`, or a changed contract, discovery, scope or dependency result makes the engine require
+planning. Do not set `--plan-defect` for unchanged-contract review feedback under the one-planner rule;
+block and obtain an explicit contract decision when the existing contract cannot resolve the gap. Prefer the harness's structured editor for the approved plan. If a
 temporary program is the safest way to change a large plan, verify its backup and exact diff,
 then remove it; that helper is not a Prumo transition.
 
@@ -575,9 +587,10 @@ completed evidence and attempt history remain recorded. Explain an earlier orche
 with a note; do not rewrite it as an implementation failure or erase historical attempts.
 
 For tasks requiring planning, task/dependency/global decision changes can make research stale. Pending work needs new planning.
-A reviewer-rejected implementation may reuse its current approved plan only for a bounded correction
-while the complete recorded planning context still matches;
-plan defects and material changes require fresh planning while preserving prior plans and evidence. If an active execution
+A reviewer-rejected implementation with an unchanged approved contract must reuse its current approved
+plan for every correction, regardless of retry count, while the complete recorded planning context still
+matches. Review feedback travels to the next executor; it does not dispatch a planner. Only an explicitly
+approved material contract change requires fresh planning while preserving prior plans and evidence. If an active execution
 scope changes, keep its attempt, block it, synchronize the approved change and use its phase discussion/planning workflow.
 `finish-phase-planning` returns this work to **blocked**, preserving its original phase and reason;
 explicit `unblock` then resumes the same attempt. Do not fabricate fail/retry for replanning.
