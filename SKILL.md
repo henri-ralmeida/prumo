@@ -305,6 +305,12 @@ satisfies that input at execution time without rewriting the plan. Contract chan
 plan and true downstream scopes; shared phase discovery stales nonterminal plans in that phase; a marked
 plan defect stales only that task.
 
+Every task plan may add `verification[].requires` using the documented resource vocabulary and a `writes`
+list of anticipated project paths. `writes` must fit the task's approved `touches`; no or empty `writes`
+is a warning that the reviewer must resolve from the real diff. A required and unavailable resource is a
+nonblocking planning warning. Keep `manual-inspection` visible as pending for the reviewer and user until
+the inspection has current evidence; never infer it from a harness name.
+
 Existing task-scoped runs use `begin-discussion`, `finish-discussion`, `plan-task` and
 `finish-planning` when the user explicitly selected one existing task or when legacy phase boundaries
 cannot be mapped without broadening scope. That path still receives current discovery and exactly one
@@ -343,10 +349,14 @@ Inspect the current implementation/artifacts and relevant sources; identify exis
 Apply PO First. Do not repeat discovery questions; return newly found consequential gaps to the orchestrator.
 Preserve known decisions; propose any material contract change for the authorized global-plan workflow.
 Write ONLY task-plan-<id>.json in <absolute artifact directory> for each target: research, decisions,
-steps, verification, open questions, phaseBinding and unresolvedInputs. Copy the exact phaseBinding and
+steps, verification, open questions, writes, phaseBinding and unresolvedInputs. Each verification item may
+declare required resources with `requires`; use only the documented vocabulary. Record anticipated project
+paths in `writes`, all contained by that task's `touches`. Copy the exact phaseBinding and
 that task's unresolvedInputs from the `plan-phase` output; do not recalculate them or renumber plannerRound.
 When discussion was skipped, discussionRoundId is the confirmed skip decisionId printed by the engine.
 Schema: references/runtime.md#task-plan-artifact.
+Inspect the real `git status --short` and relevant staged/unstaged diff while planning. Identify changes
+already present before execution so the reviewer can distinguish them from this task's delivery.
 Do not edit .specs/graph/ state. Report the artifact path, findings and any decision that blocks execution.
 ```
 
@@ -357,6 +367,10 @@ requires a valid behavioral contract: planning never permits fake `echo` checks 
 exceptions for functional work. The executor reads and rechecks the plan; the independent reviewer
 can challenge an incomplete or incorrect plan against the approved objective and current criteria.
 These roles reduce opportunities for error; none guarantees that models cannot make mistakes.
+Before the executor starts, record the real `git status --short`, staged and unstaged diff for the
+task's declared `writes` (or approved `touches` when `writes` is absent), and relevant pre-existing
+untracked paths in a durable task note or review handoff. The planner identifies those existing
+changes; the reviewer compares against this baseline and excludes them from the delivery judgment.
 
 ### Dispatch — recording a role does not create an agent
 
@@ -520,7 +534,11 @@ appropriate layer; a pure helper test cannot prove a user journey. Keep tests sc
 task and add a final integration check when separate tasks must work together.
 
 Call `validate --ok --evidence "<observations against each criterion>" --cwd <absolute-project>`
-after inspecting the diff and the approved commands. This runs the plan's commands and records
+after inspecting real `git status --short` and staged/unstaged diffs against the pre-start baseline,
+the declared `writes` and approved `touches`, and the approved commands. Discount paths and hunks
+already present before execution; a dirty path alone does not attribute a change to the current task.
+Check every verification item's `requires`, including pending manual inspection, and record observations.
+This runs the plan's commands and records
 their output and exit codes; inspect those receipts before `done`. Avoid logging credentials.
 Do not mutate the reviewed code while checks run; rerun validation if it changes afterward.
 All steps rerun by default. Mark only deterministic `static` steps as `cacheable: true`; Prumo
@@ -659,13 +677,15 @@ overrides), checks the contract clause by clause, and answers `--ok` or `--faile
 
 ```text
 You are the REVIEWER for <T4>: <title>. You did NOT produce this delivery.
-Judge these changes: <diff, delivered artifacts or before/after state under `touches`>
+Inspect actual `git status --short`, staged and unstaged diffs, then compare with this pre-start baseline: <baseline>.
+Judge only new changes under declared `writes` (or approved `touches` when `writes` is absent): <diff, delivered artifacts or before/after state>
 Against this contract, clause by clause: <validation>
 Relevant approved context and constraints: <references; distinguish superseded history>.
 Recorded taskPlan: <artifact>; treat it as evidence to inspect, not authority over the approved objective.
 Challenge missing or incorrect planning/criteria instead of approving a flawed plan's implementation.
 Read the project's agent rules and the relevant implementation, inputs, outputs and checks.
 Check that the contract proves the changed behavior and that any inspection exception fits the diff.
+Check each verification item's `requires`; report manual inspection as pending until you have inspected it.
 Run the gate YOURSELF through engine validate: <Project overrides, engine path, absolute project cwd>.
 Check the recorded output, actual relevant test count, and results against every criterion.
 Never accept lint/build/typecheck, echo instructions, or zero relevant tests as functional proof.

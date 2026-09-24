@@ -194,6 +194,30 @@ test('waiting cards identify the blocking phase even without their own task depe
   }
 })
 
+test('dashboard marks declared manual inspection as pending and displays plan writes and required resources', () => {
+  for (const [lang, pending, requires, writes] of [
+    ['en', 'Manual inspection pending', 'Requires: manual-inspection', 'Writes'],
+    ['pt-BR', 'Inspeção manual pendente', 'Requer: manual-inspection', 'Caminhos declarados para escrita'],
+  ]) {
+    const ui = dashboard(lang)
+    const state = graphState(1, 1)
+    const taskValue = state.tasks.T001
+    taskValue.unavailable = ['manual-inspection']
+    taskValue.taskPlan = { ...plan, writes: ['src/report.mjs'], verification: [
+      { criterion: 'the report is checked', check: 1, requires: ['manual-inspection'] },
+    ] }
+    state.derived.T001.manualInspectionPending = true
+    ui.render(state)
+    assert.ok(ui.nodes.get('#nodes').innerHTML.includes(pending))
+    ui.run("POP_MODE = 'detail'; fillPop('T001')")
+    const detail = ui.nodes.get('#popBody').innerHTML
+    assert.ok(detail.includes(pending))
+    assert.ok(detail.includes(requires))
+    assert.ok(detail.includes(writes))
+    assert.ok(detail.includes('src/report.mjs'))
+  }
+})
+
 test('dashboard renders separate planning queues, active planner hub and execution readiness in both languages', () => {
   const tasks = {
     P: task('P', 'pending', { planningRequired: true }),

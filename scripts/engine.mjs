@@ -65,6 +65,7 @@ import {
 import { randomUUID } from 'node:crypto'
 import { writeAtomicState } from './atomic-state.mjs'
 import { runValidation, assertValidation, validationContract, validationDirectories, assertDiscovery, assertDiscussionBoundary, discoveryDigest, assertTaskPlan,
+  assertUnavailableResources,
   planTaskFromState, planningContext, hasCurrentTaskPlan, hasCurrentTaskScope, currentPlanningScope, usesCurrentPlanning,
   phasePlanningContext, phaseRequiredInputs, assertPhaseTaskPlan, executionInputReceipt, currentPlanningSkip } from './validation.mjs'
 
@@ -85,7 +86,7 @@ const MAX_ATTEMPTS_SOFT = 3
 const DEFAULT_MAX_PARALLEL = 4
 const DEFAULT_MAX_EXECUTORS = 3   // the 4th slot is RESERVED for review
 const STATE_SCHEMA_VERSION = 1
-const TASK_CONTRACT_FIELDS = ['phase', 'title', 'deps', 'validation', 'validationMode', 'inspectionReason', 'requireReview', 'maxAttempts', 'tags', 'touches']
+const TASK_CONTRACT_FIELDS = ['phase', 'title', 'deps', 'validation', 'validationMode', 'inspectionReason', 'requireReview', 'maxAttempts', 'tags', 'touches', 'unavailable']
 const GLOBAL_PLAN_FIELDS = ['name', 'description', 'requireReview']
 const LOCK_WAIT_MS = 5000         // how long a command waits for the run's lock
 const LOCK_STALE_MS = 30000       // a lock older than this belonged to a process that died
@@ -339,6 +340,118 @@ function pathsCollide(a, b) {
   return a.startsWith(b) || b.startsWith(a)
 }
 
+function touchPathSegments(value) {
+  if (typeof value !== 'string' || !value.trim() || value.includes('\0')) return null
+  const normalized = value.replace(/\\/g, '/')
+  if (normalized.startsWith('/') || /^[A-Za-z]:/.test(normalized) || normalized.split('/').includes('..')) return null
+  return normalized.split('/').filter(part => part && part !== '.')
+}
+
+function validationRoots(task) {
+  const steps = Array.isArray(task.validation) ? task.validation : []
+  const roots = steps.length
+    ? steps.map(step => typeof step?.cwd === 'string' && step.cwd.trim() ? resolve(step.cwd) : process.cwd())
+    : [process.cwd()]
+  return [...new Set(roots)]
+}
+
+function pathDistance(left, right) {
+  const a = process.platform === 'win32' ? left.toLowerCase() : left
+  const b = process.platform === 'win32' ? right.toLowerCase() : right
+  const row = Array.from({ length: b.length + 1 }, (_, index) => index)
+  for (let i = 1; i <= a.length; i++) {
+    let diagonal = row[0]
+    row[0] = i
+    for (let j = 1; j <= b.length; j++) {
+      const above = row[j]
+      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1))
+      diagonal = above
+    }
+  }
+  return row[b.length]
+}
+
+function closestTouchPath(root, parts) {
+  let parent = root
+  const found = []
+  for (let index = 0; index < parts.length; index++) {
+    let entries
+    try { entries = readdirSync(parent, { withFileTypes: true }) } catch { return null }
+    const wanted = parts[index]
+    const equal = name => process.platform === 'win32' ? name.toLowerCase() === wanted.toLowerCase() : name === wanted
+    const exact = entries.find(entry => equal(entry.name))
+    if (exact) {
+      found.push(exact.name)
+      parent = join(parent, exact.name)
+      if (index < parts.length - 1 && !exact.isDirectory()) return null
+      continue
+    }
+    const candidates = entries.map(entry => ({ name: entry.name, distance: pathDistance(wanted, entry.name) }))
+      .sort((a, b) => a.distance - b.distance)
+    const best = candidates[0]
+    if (!best || best.distance > Math.max(1, Math.floor(wanted.length / 3)) || candidates[1]?.distance === best.distance)
+      return null
+    const suggestion = [...found, best.name, ...parts.slice(index + 1)]
+    try { statSync(resolve(root, ...suggestion)); return suggestion.join('/') } catch { return null }
+  }
+  return null
+}
+
+function warnPlanTouchPaths(plan) {
+  for (const task of plan.tasks) {
+    if (!Array.isArray(task.touches) || !task.touches.length) continue
+    const roots = validationRoots(task)
+    const accessible = roots.filter(root => {
+      try { return statSync(root).isDirectory() } catch { return false }
+    })
+    const inaccessible = roots.filter(root => !accessible.includes(root))
+    for (const touch of task.touches) {
+      const parts = touchPathSegments(touch)
+      if (!parts) {
+        log('[prumo] ' + tr('touches check not run for task {0} path "{1}": only repository-relative paths can be checked',
+          task.id, touch))
+        continue
+      }
+      if (accessible.some(root => {
+        try { statSync(resolve(root, ...parts)); return true } catch { return false }
+      })) continue
+      if (!accessible.length) {
+        log('[prumo] ' + tr('touches check not run for task {0} path "{1}": validation repository/cwd is inaccessible ({2})',
+          task.id, touch, roots.join(', ')))
+        continue
+      }
+      const suggestion = accessible.map(root => closestTouchPath(root, parts)).find(Boolean)
+      log('[prumo] ' + tr('touches warning: task {0} path "{1}" was not found in validation repository/cwd {2}{3}; a new file or folder is allowed, so confirm this is intentional',
+        task.id, touch, accessible.join(', '), suggestion ? tr(' — closest existing path: {0}', suggestion) : ''))
+      if (inaccessible.length)
+        log('[prumo] ' + tr('touches check not run in inaccessible validation repository/cwd: {0}', inaccessible.join(', ')))
+    }
+  }
+}
+
+function warnTaskPlan(task, plan) {
+  if (!plan.writes?.length)
+    log('[prumo] ' + tr('task plan warning: {0} declares no writes; confirm the executor stays within approved touches', task.id))
+  for (let index = 0; index < (plan.verification ?? []).length; index++) {
+    const item = plan.verification[index]
+    for (const resource of item.requires ?? []) {
+      if (task.unavailable?.includes(resource))
+        log('[prumo] ' + tr('planning warning: task {0} verification {1} requires unavailable resource {2}; keep it pending for the reviewer',
+          task.id, index + 1, resource))
+    }
+  }
+}
+
+function manualInspectionPending(state, task) {
+  const required = task.unavailable?.includes('manual-inspection') ||
+    task.taskPlan?.verification?.some(item => item.requires?.includes('manual-inspection'))
+  if (!required) return false
+  const receipt = task.validations?.at(-1)
+  const currentScope = !task.planningRequired || receipt?.planningScope === currentPlanningScope(state, task, receipt?.attempt)
+  return !(receipt?.ok && receipt.by === 'review' && receipt.agent === task.reviewer && task.reviewer !== task.agent &&
+    receipt.attempt === task.attempts?.length && currentScope)
+}
+
 function validatePlan(plan, allowOverlap = false, historical = new Set()) {
   if (!Array.isArray(plan.tasks) || plan.tasks.length === 0) die('plan has no tasks')
   const ids = new Set()
@@ -355,6 +468,7 @@ function validatePlan(plan, allowOverlap = false, historical = new Set()) {
     safeId(t.id)
     if (ids.has(t.id)) die(`duplicate task id ${t.id}`)
     if (planningMode === 'phase' && !phaseIds.has(t.phase)) die(`task ${t.id} needs a declared phase for phase planning`)
+    try { assertUnavailableResources(t) } catch (error) { die(`task ${t.id}: ${error.message}`) }
     if (!historical.has(t.id))
       try { validationContract(t) } catch (error) { die(`task ${t.id}: ${error.message}`) }
     ids.add(t.id)
@@ -471,6 +585,7 @@ function taskFromPlan(t) {
     maxAttempts: t.maxAttempts,
     tags: t.tags ?? [],
     touches: t.touches ?? [],
+    unavailable: t.unavailable,
     state: 'pending',
     discussionRequired: true,
     discussionAttempts: [],
@@ -710,7 +825,7 @@ export function derive(state) {
         inputs.some(dep => dep.state === 'skipped') ? 'waived_input' : 'validated_input'
     }
     const showPlanningStatus = state.plan.planningMode === 'phase' && usesCurrentPlanning(state, t) && !['done', 'skipped'].includes(t.state)
-    out[id] = { ...t, effective, blockedBy, ...(showPlanningStatus ?
+    out[id] = { ...t, effective, blockedBy, ...(manualInspectionPending(state, t) ? { manualInspectionPending: true } : {}), ...(showPlanningStatus ?
       { planningStatus, ...(planningBlockedBy.length ? { planningBlockedBy } : {}), ...(inputStatus ? { inputStatus } : {}) } : {}) }
     if (migrationPending && t.state === 'pending' && usesCurrentPlanning(state, t))
       Object.assign(out[id], { effective: 'pending', planningStatus: 'awaiting_migration' })
@@ -770,6 +885,7 @@ const commands = {
     const planPath = args.plan ?? die('init needs --plan <plan.json>')
     const name = args.run ?? die('init needs --run <name>')
     const { plan, source } = readPlan(planPath)
+    warnPlanTouchPaths(plan)
     const dir = runDir(name)
     if (existsSync(join(dir, 'state.json')) && !args.force)
       die(`run "${name}" already exists (use --force to overwrite)`)
@@ -819,6 +935,7 @@ const commands = {
     const planPath = args.plan ?? (storedSource && existsSync(storedSource) ? storedSource :
       existsSync(centralSource) ? centralSource : die('sync-plan needs --plan <plan.json> once'))
     const { plan, source } = readPlan(planPath, state)
+    warnPlanTouchPaths(plan)
     const removed = Object.keys(state.tasks).filter((id) => !plan.tasks.some((t) => t.id === id))
     if (removed.length) die(`sync-plan is additive: plan removed ${removed.join(', ')}`)
 
@@ -954,7 +1071,8 @@ const commands = {
         t.state === 'reviewing' ? `  @${t.reviewer} (review)` : t.agent ? `  @${t.agent}` : ''
       const attempts = t.attempts.length > 1 ? `  (attempt ${t.attempts.length})` : ''
       const wait = t.effective === 'waiting' ? `  ← ${(t.planningBlockedBy ?? t.blockedBy).join(',')}` : ''
-      console.log(`  ${t.id.padEnd(width)}  ${tr(t.effective).padEnd(8)}${agent}${attempts}${wait}`)
+      const manual = t.manualInspectionPending ? `  [${tr('Manual inspection pending')}]` : ''
+      console.log(`  ${t.id.padEnd(width)}  ${tr(t.effective).padEnd(8)}${agent}${attempts}${wait}${manual}`)
     }
     for (const phase of state.plan.phases) {
       console.log(`\n${phase.id} — ${phase.title}`)
@@ -1205,9 +1323,10 @@ const commands = {
     }
     if (errors.length) die(tr('finish-phase-planning {0} rejected {1} task-plan artifact(s); nothing was recorded:\n{2}',
       phaseId, errors.length, errors.join('\n')))
+    for (const [task, plan] of plans) warnTaskPlan(task, plan)
     const completedAt = new Date().toISOString()
     for (const [task, plan] of plans) {
-      const fields = ['research', 'decisions', 'steps', 'verification', 'openQuestions', 'phaseBinding', 'unresolvedInputs']
+      const fields = ['research', 'decisions', 'steps', 'verification', 'openQuestions', 'phaseBinding', 'unresolvedInputs', 'writes']
       const artifact = Object.fromEntries(fields.map(field => [field, plan[field]]))
       task.planner = phase.planner
       task.taskPlan = { ...artifact, planner: phase.planner, startedAt: round.startedAt, completedAt,
@@ -1443,7 +1562,8 @@ const commands = {
       plan = readPlanningArtifact(path)
       assertTaskPlan(t, plan)
     } catch (error) { die(planningArtifactError(filename, error)) }
-    const artifact = Object.fromEntries(['research', 'decisions', 'steps', 'verification', 'openQuestions'].map(field => [field, plan[field]]))
+    warnTaskPlan(t, plan)
+    const artifact = Object.fromEntries(['research', 'decisions', 'steps', 'verification', 'openQuestions', 'writes'].map(field => [field, plan[field]]))
     t.taskPlan = { ...artifact, planner: t.planner, startedAt: round.startedAt, completedAt: new Date().toISOString(),
       context: round.context, scope: planningContext(state, t, { scopeOnly: true }), attempt: round.attempt,
       ...(round.discoveryDigest ? { discoveryDigest: round.discoveryDigest } : {}),

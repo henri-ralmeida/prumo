@@ -325,6 +325,32 @@ test('finish-phase-planning reports every artifact error with its filename and a
   assert.ok(f.state().tasks.B.taskPlan)
 })
 
+test('phase planning checks writes before batch persistence and records resource warnings', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Scoped manual review', touches: ['./phase///'],
+    unavailable: ['database', 'manual-inspection'] }])
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('plan-phase', 'F1', '--agent', 'phase-planner')
+  f.writeArtifacts('F1')
+  const artifactPath = join(f.plans, 'task-plan-A.json')
+  const artifact = JSON.parse(readFileSync(artifactPath, 'utf8'))
+  artifact.verification = [{ criterion: 'delivery behavior passes', check: 1, requires: ['database', 'manual-inspection'] }]
+  artifact.writes = ['phase-other/result.mjs']
+  writeFileSync(artifactPath, JSON.stringify(artifact))
+  const statePath = join(f.root, '.specs/graph/phase-negative/state.json')
+  const before = readFileSync(statePath, 'utf8')
+  f.rejects(/outside task touches/, 'finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  assert.equal(readFileSync(statePath, 'utf8'), before, 'out-of-scope writes reject the whole phase batch')
+
+  artifact.writes = ['.//phase\\result.mjs']
+  writeFileSync(artifactPath, JSON.stringify(artifact))
+  const finished = f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  assert.match(finished.stdout, /task A verification 1 requires unavailable resource database/)
+  assert.match(finished.stdout, /task A verification 1 requires unavailable resource manual-inspection/)
+  assert.deepEqual(f.state().tasks.A.taskPlan.writes, artifact.writes)
+  assert.deepEqual(f.state().tasks.A.taskPlan.verification[0].requires, artifact.verification[0].requires)
+})
+
 test('unresolvedInputs diagnostics distinguish missing and unexpected inputs and preserve the round-opening snapshot', t => {
   const f = phaseFixture(t, [
     { id: 'A', phase: 'F1', title: 'Missing input', deps: ['B'] },

@@ -8,6 +8,37 @@ const nonempty = (value) => typeof value === 'string' && value.trim().length > 0
 const insist = (condition, message) => { if (!condition) throw new Error(message) }
 const expectedExitCodes = (step) => step.expectedExitCodes ?? [0]
 const passed = (step, check) => expectedExitCodes(step).includes(check.exitCode) && !check.error && !check.signal
+const RESOURCE_VALUES = ['database', 'network', 'credential', 'external-service', 'production-data', 'manual-inspection']
+
+function assertResources(value, field) {
+  insist(Array.isArray(value) && value.every(resource => RESOURCE_VALUES.includes(resource)),
+    `${field} must be an array containing only ${RESOURCE_VALUES.join(', ')}`)
+}
+
+export function assertUnavailableResources(task) {
+  if (task.unavailable !== undefined) assertResources(task.unavailable, 'unavailable')
+}
+
+function safeRelativePath(value) {
+  if (!nonempty(value) || value.includes('\0')) return false
+  const normalized = value.replace(/\\/g, '/')
+  return !isAbsolute(value) && !normalized.startsWith('/') && !/^[/\\]{2}/.test(value) &&
+    !/^[A-Za-z]:/.test(normalized) && !normalized.split('/').includes('..')
+}
+
+function normalizedScopePath(value) {
+  const parts = String(value).replace(/\\/g, '/').split('/').filter(part => part && part !== '.')
+  const normalized = parts.join('/')
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized
+}
+
+function writeIsInsideTouches(write, touches) {
+  const candidate = normalizedScopePath(write)
+  return touches.some(touch => {
+    const prefix = normalizedScopePath(touch)
+    return candidate === prefix || (prefix && candidate.startsWith(prefix + '/'))
+  })
+}
 const failureMessage = (step, check, index, total) =>
   `validation check ${index + 1}/${total} (${step.kind ?? 'static'}) failed: ${check?.error ?? `exit ${check?.exitCode ?? 'not run'}`}; command: ${step.run} — functional failures cannot be replaced by lint`
 
@@ -67,6 +98,7 @@ export function assertDiscussionBoundary(context, targetIds, { acceptPremature =
 
 // The plan classifies checks; only the reviewer can judge their behavioral coverage.
 export function validationContract(task) {
+  assertUnavailableResources(task)
   const mode = task.validationMode ?? 'functional'
   insist(['functional', 'inspection'].includes(mode), 'validationMode must be functional or inspection')
   if (mode === 'inspection')
@@ -125,6 +157,19 @@ export function assertTaskPlan(task, plan) {
     plan.verification.every(item => item && nonempty(item.criterion) && checks.includes(item.check)) &&
     checks.every(check => plan.verification.some(item => item.check === check)),
   'task plan verification must map observable criteria to every validation check (1-based index, or "inspection")')
+  for (const item of plan.verification) {
+    if (item.requires !== undefined)
+      assertResources(item.requires, 'verification requires')
+  }
+  if (plan.writes !== undefined) {
+    insist(Array.isArray(plan.writes) && plan.writes.every(safeRelativePath),
+      'task plan writes must be an array of safe relative paths without absolute paths, .. or NUL')
+    if (task.touches?.length) {
+      for (const write of plan.writes)
+        insist(writeIsInsideTouches(write, task.touches),
+          `task plan writes path "${write}" is outside task touches; correct the approved task contract, run sync-plan, and replan before execution`)
+    }
+  }
   insist(Array.isArray(plan.openQuestions) && plan.openQuestions.every(item => item &&
     nonempty(item.question) && typeof item.blocking === 'boolean' &&
     (item.answer === undefined || nonempty(item.answer))),
@@ -146,6 +191,7 @@ export function planTaskFromState(t) {
     maxAttempts: t.maxAttempts,
     tags: t.tags,
     touches: t.touches,
+    unavailable: t.unavailable,
   }
 }
 

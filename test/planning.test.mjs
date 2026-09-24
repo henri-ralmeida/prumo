@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 const engine = resolve(dirname(fileURLToPath(import.meta.url)), '../scripts/engine.mjs')
 const check = { kind: 'functional', run: 'node delivery.test.cjs', expect: 'Express delivery takes 1 day and normal delivery takes 3 days' }
 
-function fixture(t, tasks = [{ id: 'T1', title: 'Delivery estimate' }], options = {}) {
+function fixture(t, tasks = [{ id: 'T1', title: 'Delivery estimate' }], options = {}, { lang = 'en' } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'prumo-planning-'))
   t.after(() => {
     assert.equal(dirname(home), resolve(tmpdir()))
@@ -26,7 +26,7 @@ function fixture(t, tasks = [{ id: 'T1', title: 'Delivery estimate' }], options 
   const planPath = join(root, 'plan.json')
   const writePlan = () => writeFileSync(planPath, JSON.stringify(plan))
   writePlan()
-  const env = { ...process.env, PRUMO_ROOT: root, PRUMO_HOME: home, GRAPH_ROOT: root, GRAPH_FOREMAN_HOME: home, PRUMO_LANG: 'en' }
+  const env = { ...process.env, PRUMO_ROOT: root, PRUMO_HOME: home, GRAPH_ROOT: root, GRAPH_FOREMAN_HOME: home, PRUMO_LANG: lang }
   const cli = (...args) => {
     const result = spawnSync(process.execPath, [engine, ...args], { env, cwd: project, encoding: 'utf8', timeout: 20000, windowsHide: true })
     assert.ifError(result.error)
@@ -93,9 +93,9 @@ function fixture(t, tasks = [{ id: 'T1', title: 'Delivery estimate' }], options 
     return ok('plan-task', id, '--agent', agent)
   }
   const planTask = (id = 'T1', agent = 'planner-' + id) => { beginPlan(id, agent); finish(id) }
-  ok('init', '--plan', planPath, '--run', 'planning')
+  const initialized = ok('init', '--plan', planPath, '--run', 'planning')
   return { root, project, plan, planPath, writePlan, cli, ok, rejected, state, save, events, graph,
-    artifact, discovery, contextPath, discuss, beginPlan, finish, planTask }
+    artifact, discovery, contextPath, discuss, beginPlan, finish, planTask, initialized }
 }
 
 test('event progress counts executor plan steps and actual reviewer checks per attempt', t => {
@@ -172,7 +172,7 @@ test('new tasks require researched planning before execution and still require i
   assert.equal(f.state().tasks.T1.attempts.length, 0)
   assert.match(f.ok('status').output, /@planner/)
   f.rejected(/not pending/, 'start', 'T1', '--agent', 'executor', '--force')
-  f.finish()
+  assert.match(f.finish().stdout, /declares no writes/)
   const planned = f.state().tasks.T1
   assert.equal(f.graph().derived.T1.effective, 'ready')
   assert.equal(planned.taskPlan.planner, 'planner')
@@ -678,6 +678,129 @@ test('1.2.0 planning tasks remain compatible without a retroactive discovery gat
   f.save(previous)
   f.ok('plan-task', 'T1', '--agent', 'previous-planner')
   assert.equal(f.state().tasks.T1.state, 'planning')
-  f.finish()
+  assert.match(f.finish().stdout, /declares no writes/)
   assert.equal(f.graph().derived.T1.effective, 'ready')
 })
+
+test('task plans persist declared resources and manual inspection clears after current reviewer approval', t => {
+  const f = fixture(t, [{ id: 'T1', title: 'Manual review', touches: ['./delivery.cjs//'],
+    unavailable: ['database', 'manual-inspection'] }])
+  f.beginPlan()
+  const artifact = { ...f.artifact(), verification: [{ criterion: 'delivery behavior passes', check: 1,
+    requires: ['database', 'manual-inspection'] }], writes: ['./delivery.cjs'] }
+  const finished = f.finish('T1', artifact)
+  assert.match(finished.stdout, /task T1 verification 1 requires unavailable resource database/)
+  assert.match(finished.stdout, /task T1 verification 1 requires unavailable resource manual-inspection/)
+  const task = f.state().tasks.T1
+  assert.deepEqual(task.taskPlan.writes, artifact.writes)
+  assert.deepEqual(task.taskPlan.verification[0].requires, artifact.verification[0].requires)
+  assert.deepEqual(task.unavailable, ['database', 'manual-inspection'])
+  assert.equal(f.graph().derived.T1.manualInspectionPending, true)
+  assert.match(f.ok('status').stdout, /Manual inspection pending/)
+  f.ok('start', 'T1', '--agent', 'executor')
+  f.ok('review', 'T1', '--agent', 'reviewer')
+  f.ok('validate', 'T1', '--ok', '--evidence', 'Reviewer inspected the required manual condition and the functional check passed', '--cwd', f.project)
+  assert.equal(f.graph().derived.T1.manualInspectionPending, undefined)
+  f.ok('done', 'T1')
+  assert.equal(f.graph().derived.T1.manualInspectionPending, undefined)
+  assert.doesNotMatch(f.ok('status').stdout, /Manual inspection pending/)
+})
+
+test('manual inspection becomes pending again when its approved scope changes after review', t => {
+  const f = fixture(t, [{ id: 'T1', title: 'Current manual review', touches: ['delivery.cjs'], unavailable: ['manual-inspection'] }])
+  f.beginPlan()
+  f.finish('T1', { ...f.artifact(), verification: [{ criterion: 'delivery behavior passes', check: 1,
+    requires: ['manual-inspection'] }], writes: ['delivery.cjs'] })
+  f.ok('start', 'T1', '--agent', 'executor')
+  f.ok('review', 'T1', '--agent', 'reviewer')
+  f.ok('validate', 'T1', '--ok', '--evidence', 'Current manual inspection passed', '--cwd', f.project)
+  assert.equal(f.graph().derived.T1.manualInspectionPending, undefined)
+
+  f.plan.tasks[0].touches = ['delivery.cjs', 'delivery.test.cjs']
+  f.writePlan()
+  f.ok('sync-plan', '--plan', f.planPath)
+  assert.equal(f.graph().derived.T1.manualInspectionPending, true)
+})
+
+test('task plan writes must be safe and stay inside normalized touches prefixes', t => {
+  const f = fixture(t, [{ id: 'T1', title: 'Scoped write', touches: ['./src///feature/'] }])
+  f.beginPlan()
+  const base = f.artifact()
+  for (const writes of [
+    ['/outside/file.mjs'], ['C:/outside/file.mjs'], ['../outside/file.mjs'],
+    ['src/../outside.mjs'], ['src/feature\0outside.mjs'], ['src/feature-other/file.mjs'],
+    ...(process.platform === 'win32' ? [] : [['SRC/feature/check.mjs']]),
+  ]) {
+    f.rejected(/task plan writes/, 'finish-planning', 'T1', '--plan', writeFileSyncArtifact(f, { ...base, writes }))
+    assert.equal(f.state().tasks.T1.taskPlan, undefined)
+  }
+  const writes = [process.platform === 'win32' ? 'SRC/FEATURE/check.mjs' : './/src\\feature///check.mjs']
+  f.finish('T1', { ...base, writes })
+  assert.deepEqual(f.state().tasks.T1.taskPlan.writes, writes)
+})
+
+function writeFileSyncArtifact(f, artifact) {
+  const path = join(f.root, 'writes-task-plan.json')
+  writeFileSync(path, JSON.stringify(artifact))
+  return path
+}
+
+test('unavailable uses a closed vocabulary and a contract change stales current planning', t => {
+  const invalid = fixture(t)
+  invalid.plan.tasks[0].unavailable = ['gpu']
+  invalid.writePlan()
+  const before = invalid.state()
+  invalid.rejected(/unavailable must be an array containing only/, 'sync-plan', '--plan', invalid.planPath)
+  assert.deepEqual(invalid.state(), before)
+
+  const portuguese = fixture(t, [{ id: 'T1', title: 'Bad resource' }], {}, { lang: 'pt-BR' })
+  portuguese.plan.tasks[0].unavailable = ['gpu']
+  portuguese.writePlan()
+  portuguese.rejected(/tarefa T1: unavailable deve ser uma lista contendo somente/, 'sync-plan', '--plan', portuguese.planPath)
+
+  const f = fixture(t)
+  f.beginPlan()
+  f.plan.tasks[0].unavailable = ['network']
+  f.writePlan()
+  assert.match(f.ok('sync-plan', '--plan', f.planPath).stdout, /unavailable/)
+  assert.deepEqual(f.state().tasks.T1.unavailable, ['network'])
+  f.rejected(/planning is stale/, 'finish-planning', 'T1', '--plan', writeFileSyncArtifact(f, f.artifact()))
+})
+
+test('verification requires rejects resources outside the closed vocabulary', t => {
+  const f = fixture(t)
+  f.beginPlan()
+  f.rejected(/verification requires must be an array containing only/, 'finish-planning', 'T1', '--plan',
+    writeFileSyncArtifact(f, { ...f.artifact(), verification: [{ criterion: 'delivery behavior passes', check: 1, requires: ['gpu'] }] }))
+  assert.equal(f.state().tasks.T1.taskPlan, undefined)
+})
+
+test('init and sync-plan warn on missing touches paths, suggest close paths and allow new folders', t => {
+  const existing = fixture(t, [{ id: 'T1', title: 'Existing path', touches: ['delivery.cjs'] }])
+  assert.doesNotMatch(existing.ok('sync-plan', '--plan', existing.planPath).stdout, /touches warning/)
+
+  const typo = fixture(t, [{ id: 'T1', title: 'Typo', touches: ['deliveri.cjs'] }])
+  assert.match(typo.initialized.stdout, /touches warning/)
+  const suggestion = typo.ok('sync-plan', '--plan', typo.planPath).stdout
+  assert.match(suggestion, /touches warning/)
+  assert.match(suggestion, /closest existing path: delivery\.cjs/)
+
+  const freshFolder = fixture(t, [{ id: 'T1', title: 'New folder', touches: ['new/components/'] }])
+  const warning = freshFolder.ok('sync-plan', '--plan', freshFolder.planPath).stdout
+  assert.match(warning, /touches warning/)
+  assert.match(warning, /new file or folder is allowed/)
+  assert.deepEqual(freshFolder.state().tasks.T1.touches, ['new/components/'])
+})
+
+test('touches existence check reports when a declared validation cwd is inaccessible', t => {
+  const f = fixture(t, [{ id: 'T1', title: 'Remote check', touches: ['delivery.cjs', '../outside'],
+    validation: [{ ...check, cwd: join(fixtureTempBase(), 'missing-repository') }] }])
+  const output = f.ok('sync-plan', '--plan', f.planPath).stdout
+  assert.match(output, /touches check not run/)
+  assert.match(output, /inaccessible/)
+  assert.match(output, /only repository-relative paths can be checked/)
+})
+
+function fixtureTempBase() {
+  return tmpdir()
+}

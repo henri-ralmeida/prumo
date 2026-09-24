@@ -30,6 +30,7 @@ Cada execução usa `.specs/graph/<run>/state.json` e `events.ndjson`. `CURRENT`
   "tasks": [{
     "id": "T1", "title": "Comprovar o resultado solicitado",
     "phase": "P1", "deps": [], "touches": ["entrega/"],
+    "unavailable": ["database", "manual-inspection"],
     "validationMode": "functional",
     "validation": [{
       "kind": "functional", "run": "node verificacao.mjs",
@@ -40,6 +41,12 @@ Cada execução usa `.specs/graph/<run>/state.json` e `events.ndjson`. `CURRENT`
 ```
 
 `deps` define a ordem. Dependências concluídas ou explicitamente puladas liberam a tarefa. Ciclos, IDs duplicados e dependências desconhecidas são recusados. `touches` detecta gravações sobrepostas entre tarefas paralelas; `--allow-overlap` é uma exceção explícita de agendamento.
+
+`unavailable` é opcional e aceita somente `database`, `network`, `credential`, `external-service`,
+`production-data` e `manual-inspection`. Alterar essa lista muda o contrato da tarefa e exige planejamento atual.
+`init` e `sync-plan` avisam quando um prefixo de `touches` não existe no cwd da validação ou no `cwd`
+declarado por um passo; o aviso não bloqueia, pois novos arquivos e pastas são legítimos. Cwd inacessível
+é informado como checagem não realizada.
 
 `requireReview` pode ser definido por tarefa ou plano; o padrão exige revisão. Desabilitar revisão não elimina a comprovação funcional. `maxAttempts` por tarefa define o limite de tentativas antes de escalar; o padrão é três. `tags` é uma lista opcional de classificações.
 
@@ -130,7 +137,8 @@ e recusa artefatos incompletos, alterados ou ligados a uma descoberta desatualiz
   "research": [{ "source": "src/importacao.mjs", "findings": "O importador atual valida as linhas antes de gravar; reutilizar essa validação." }],
   "decisions": [{ "question": "Como tratar uma linha inválida?", "answer": "O contrato aprovado exige rejeição sem gravação parcial." }],
   "steps": ["Ampliar a validação existente.", "Adicionar o caso de linha inválida à verificação funcional existente."],
-  "verification": [{ "criterion": "Linha inválida produz o erro aprovado e preserva os registros existentes.", "check": 1 }],
+  "verification": [{ "criterion": "Linha inválida produz o erro aprovado e preserva os registros existentes.", "check": 1, "requires": ["database"] }],
+  "writes": ["src/importacao.mjs", "test/importacao.test.mjs"],
   "openQuestions": [],
   "phaseBinding": { "phaseId": "F1", "discussionRoundId": "<roundId-ou-decisionId-do-skip>", "plannerRound": 1 },
   "unresolvedInputs": [{ "task": "T2", "phase": "F2", "requiredEvidence": "current terminal receipt for T2" }]
@@ -138,7 +146,14 @@ e recusa artefatos incompletos, alterados ou ligados a uma descoberta desatualiz
 ```
 
 `research` exige fonte e achados; `steps`, passos de execução; `verification`, critérios observáveis
-associados a **todas** as entradas de `task.validation` pelo índice numérico a partir de 1.
+associados a **todas** as entradas de `task.validation` pelo índice numérico a partir de 1. Cada verificação
+pode declarar `requires`, usando o mesmo vocabulário fechado de `unavailable`. Se um recurso exigido também
+estiver indisponível, o fechamento avisa com tarefa, índice da verificação e recurso, mas continua. A inspeção
+manual aparece como pendente no status e no dashboard até o revisor independente registrar aprovação atual;
+o motor não deduz capacidade pelo nome do harness. `writes` é uma lista opcional de caminhos relativos seguros
+de arquivos ou pastas; se a tarefa declara `touches`, cada caminho precisa estar dentro de um prefixo por segmento.
+Separadores e `./` são normalizados; caixa é ignorada somente no Windows. Ausência ou lista vazia gera aviso,
+sem invalidar planos antigos.
 `verification.check` não indexa `taskPlan.steps`. Use `"inspection"`
 somente quando o contrato aprovado for inspeção em texto. Esses três arrays não podem estar vazios.
 `decisions` contém pares `question`/`answer` resolvidos e pode ser vazio. `openQuestions` contém

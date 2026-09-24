@@ -128,6 +128,7 @@ plans live in the workspace's `.specs/graph/plans/`. Node.js 22+, zero runtime d
       "deps": ["T0"],
       "validation": [{ "kind": "functional", "run": "pnpm test:changed", "expect": "the task-specific behavior cases pass" }],
       "touches": ["supabase/functions/scenes/"],
+      "unavailable": ["database", "manual-inspection"],
       "tags": ["migration"]
     }
   ]
@@ -149,12 +150,17 @@ and a valid validation contract; phase planning refines each task's execution wi
 | `validationMode` | "functional" \| "inspection" | "functional" | Behavioral checks required unless this is a justified non-runtime inspection. |
 | `inspectionReason` | string | — | Required for inspection; explain why runtime behavior is unaffected. |
 | `touches`       | string[]                      | `[]`      | Path prefixes the task writes; `init` refuses parallel tasks with overlapping paths           |
+| `unavailable`   | resource[]                    | —         | Resources this task cannot use: `database`, `network`, `credential`, `external-service`, `production-data`, `manual-inspection`; changing it requires fresh planning |
 | `tags`          | string[]                      | `[]`      | Free labels (`migration`, `docs`…) — informational only                                       |
 | `requireReview` | boolean                       | inherit   | Per-task override of the plan's `requireReview` (e.g. `false` for a mechanical docs task)     |
 | `maxAttempts`   | number                        | `3`       | Per-task retry cap before `retry` demands escalation (`--force` overrides)                    |
 
 Plan-level fields: `name` (required), `description`, `phases[]` (`{id, title}`),
 `maxParallel` (4), `maxExecutors` (3), `requireReview` (true).
+
+`init` and `sync-plan` warn when a `touches` prefix is missing from the validation cwd or a step's declared
+`cwd`; this does not block the plan because a new file or folder can be intentional. An inaccessible cwd
+is reported as unchecked.
 
 Keep purpose and background in `description` or referenced approved documents. Keep current,
 consistent acceptance criteria in `validation[].expect` and the checks that establish them in
@@ -431,7 +437,8 @@ Example for a task with one executable validation check:
   "research": [{ "source": "src/import.mjs", "findings": "The existing importer validates each row before writing; reuse that boundary." }],
   "decisions": [{ "question": "How should invalid rows behave?", "answer": "The approved contract requires rejection without partial writes." }],
   "steps": ["Extend the existing importer validation.", "Add the missing invalid-row scenario to the existing behavioral check."],
-  "verification": [{ "criterion": "An invalid row produces the approved error and leaves stored records unchanged.", "check": 1 }],
+  "verification": [{ "criterion": "An invalid row produces the approved error and leaves stored records unchanged.", "check": 1, "requires": ["database"] }],
+  "writes": ["src/import.mjs", "test/import.test.mjs"],
   "openQuestions": [],
   "phaseBinding": { "phaseId": "F1", "discussionRoundId": "<roundId-or-skip-decisionId>", "plannerRound": 1 },
   "unresolvedInputs": [{ "task": "T2", "phase": "F2", "requiredEvidence": "current terminal receipt for T2" }]
@@ -439,7 +446,15 @@ Example for a task with one executable validation check:
 ```
 
 Each phase task artifact requires nonempty `research` (`source`, `findings`),
-`steps` (strings) and `verification` (`criterion`, `check`). Every entry in the task's
+`steps` (strings) and `verification` (`criterion`, `check`). Each verification item may add
+`requires`, a list using the same closed resource vocabulary as task `unavailable`. When a required
+resource is also unavailable, finish planning warns with its task, verification index and resource;
+the warning does not reject the plan. Manual inspection is shown as pending in status and the dashboard
+until the current independent reviewer records a passing inspection; no harness name implies capability.
+`writes` is an optional list of safe relative file or folder paths. When present alongside task `touches`,
+every write must fit one declared prefix by path segment; separators and `./` are normalized, and case is
+ignored only on Windows. A missing or empty `writes` warns but remains valid for older task plans.
+Every entry in the task's
 `validation` array must be mapped by its **1-based numeric index**; `verification.check` does not
 index `taskPlan.steps`. Use `"inspection"` only for an approved prose
 inspection contract. `decisions` is an array of resolved `question`/`answer` pairs; it may be
