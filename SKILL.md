@@ -343,7 +343,10 @@ Inspect the current implementation/artifacts and relevant sources; identify exis
 Apply PO First. Do not repeat discovery questions; return newly found consequential gaps to the orchestrator.
 Preserve known decisions; propose any material contract change for the authorized global-plan workflow.
 Write ONLY task-plan-<id>.json in <absolute artifact directory> for each target: research, decisions,
-steps, verification, open questions, phaseBinding and unresolvedInputs. Schema: references/runtime.md#task-plan-artifact.
+steps, verification, open questions, phaseBinding and unresolvedInputs. Copy the exact phaseBinding and
+that task's unresolvedInputs from the `plan-phase` output; do not recalculate them or renumber plannerRound.
+When discussion was skipped, discussionRoundId is the confirmed skip decisionId printed by the engine.
+Schema: references/runtime.md#task-plan-artifact.
 Do not edit .specs/graph/ state. Report the artifact path, findings and any decision that blocks execution.
 ```
 

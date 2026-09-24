@@ -118,8 +118,12 @@ Se a discussão produziu o resultado de uma tarefa, `prematureTaskWork` registra
 recusa o fechamento. Depois de informar o usuário e receber aprovação explícita,
 `--accept-premature-work` registra o incidente; o executor ainda repete o trabalho.
 O motor calcula um SHA-256 canônico da descoberta e do recibo da discussão e liga o digest à rodada.
-Repetir `plan-phase` durante a mesma rodada não altera o estado. `finish-phase-planning` recusa um lote
-incompleto, alterado ou ligado a uma descoberta desatualizada.
+`plan-phase` imprime um trecho JSON copiável por tarefa alvo, lido da rodada de planejamento persistida;
+copie `phaseBinding` e `unresolvedInputs` daquela tarefa sem alterações para seu artefato. `discussionRoundId`
+é o `roundId` da discussão ou o `decisionId` da decisão confirmada pelo usuário quando a discussão foi pulada.
+Mantenha `plannerRound` como impresso; não renumere. Repetir `plan-phase` na mesma rodada aberta imprime os
+mesmos trechos sem criar outra rodada. `finish-phase-planning` valida o lote inteiro antes de gravar qualquer plano
+e recusa artefatos incompletos, alterados ou ligados a uma descoberta desatualizada.
 
 ```json
 {
@@ -127,7 +131,9 @@ incompleto, alterado ou ligado a uma descoberta desatualizada.
   "decisions": [{ "question": "Como tratar uma linha inválida?", "answer": "O contrato aprovado exige rejeição sem gravação parcial." }],
   "steps": ["Ampliar a validação existente.", "Adicionar o caso de linha inválida à verificação funcional existente."],
   "verification": [{ "criterion": "Linha inválida produz o erro aprovado e preserva os registros existentes.", "check": 1 }],
-  "openQuestions": []
+  "openQuestions": [],
+  "phaseBinding": { "phaseId": "F1", "discussionRoundId": "<roundId-ou-decisionId-do-skip>", "plannerRound": 1 },
+  "unresolvedInputs": [{ "task": "T2", "phase": "F2", "requiredEvidence": "current terminal receipt for T2" }]
 }
 ```
 

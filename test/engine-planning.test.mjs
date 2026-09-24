@@ -245,6 +245,149 @@ function phaseFixture(t, tasks, { planningMode = 'phase' } = {}) {
   return { root, project, plans, plan, planPath, ok, rejects, state, save, events, discovery, writeArtifacts }
 }
 
+function printedPhasePlanFragments(output) {
+  return [...output.matchAll(/task-plan-([A-Za-z0-9._-]+)\.json:\r?\n```json\r?\n([\s\S]*?)\r?\n```/g)]
+    .map(([, id, json]) => [id, JSON.parse(json)])
+}
+
+test('plan-phase prints the persisted copyable contract on first dispatch and no-op, including skipped discussion IDs', async t => {
+  await t.test('first dispatch and active-round no-op repeat the same fragments', t => {
+    const f = phaseFixture(t, [
+      { id: 'A', phase: 'F1', title: 'Producer' },
+      { id: 'B', phase: 'F1', title: 'Consumer', deps: ['A'] },
+    ])
+    f.ok('begin-phase-discussion', 'F1')
+    const discussionId = f.state().phaseWorkflows.F1.discussionAttempts.at(-1).roundId
+    f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+    const first = f.ok('plan-phase', 'F1', '--agent', 'phase-planner')
+    const firstState = f.state(), round = firstState.phaseWorkflows.F1.planningAttempts.at(-1)
+    assert.equal(round.n, 1)
+    const fragments = printedPhasePlanFragments(first.stdout)
+    assert.deepEqual(fragments.map(([id]) => id), ['A', 'B'])
+    assert.deepEqual(fragments[0][1], {
+      phaseBinding: { phaseId: 'F1', discussionRoundId: discussionId, plannerRound: 1 }, unresolvedInputs: [],
+    })
+    assert.deepEqual(fragments[1][1].unresolvedInputs, round.requiredInputs.B)
+    assert.deepEqual(fragments[1][1].unresolvedInputs, [{
+      task: 'A', phase: 'F1', requiredEvidence: 'current terminal receipt for A',
+    }])
+
+    const repeat = f.ok('plan-phase', 'F1', '--agent', 'phase-planner')
+    assert.match(repeat.stdout, /no new round recorded/)
+    assert.deepEqual(printedPhasePlanFragments(repeat.stdout), fragments)
+    assert.equal(f.state().phaseWorkflows.F1.planningAttempts.length, 1)
+  })
+
+  await t.test('a skipped discussion binds to its persisted decision ID', t => {
+    const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Delivery' }])
+    f.ok('skip-phase-discussion', 'F1', '--reason', 'The contract is settled', '--confirmed-by-user')
+    const decisionId = f.state().phaseWorkflows.F1.discussionSkips.at(-1).decisionId
+    const planned = f.ok('plan-phase', 'F1', '--agent', 'phase-planner')
+    assert.deepEqual(printedPhasePlanFragments(planned.stdout), [['A', {
+      phaseBinding: { phaseId: 'F1', discussionRoundId: decisionId, plannerRound: 1 }, unresolvedInputs: [],
+    }]])
+  })
+})
+
+test('finish-phase-planning reports every artifact error with its filename and accepts a UTF-8 BOM atomically', t => {
+  const f = phaseFixture(t, ['A', 'B', 'C', 'D'].map(id => ({ id, phase: 'F1', title: `Task ${id}` })))
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('plan-phase', 'F1', '--agent', 'planner')
+  f.writeArtifacts('F1')
+  const statePath = join(f.root, '.specs/graph/phase-negative/state.json')
+  const before = readFileSync(statePath, 'utf8')
+  const files = Object.fromEntries(['A', 'B', 'C', 'D'].map(id => [id, join(f.plans, `task-plan-${id}.json`)]))
+  rmSync(files.A)
+  writeFileSync(files.B, '{invalid json')
+  const wrongBinding = JSON.parse(readFileSync(files.C, 'utf8'))
+  wrongBinding.phaseBinding.phaseId = 'F2'
+  writeFileSync(files.C, JSON.stringify(wrongBinding))
+  const invalidPlan = JSON.parse(readFileSync(files.D, 'utf8'))
+  invalidPlan.steps = []
+  writeFileSync(files.D, JSON.stringify(invalidPlan))
+
+  const refusal = f.rejects(/task-plan-A\.json:[\s\S]*task-plan-D\.json:/, 'finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  const output = refusal.stdout + refusal.stderr
+  assert.match(output, /finish-phase-planning F1 rejected 4 task-plan artifact\(s\); nothing was recorded/)
+  for (const id of ['A', 'B', 'C', 'D']) assert.match(output, new RegExp(`task-plan-${id}\\.json:`))
+  assert.match(output, /does not exist/)
+  assert.match(output, /JSON is invalid/)
+  assert.match(output, /binding must match/)
+  assert.match(output, /execution steps/)
+  assert.equal(readFileSync(statePath, 'utf8'), before, 'no plan is recorded when any artifact fails')
+  assert.deepEqual(Object.values(f.state().tasks).map(task => task.taskPlan), [undefined, undefined, undefined, undefined])
+
+  f.writeArtifacts('F1')
+  writeFileSync(files.B, `\uFEFF${readFileSync(files.B, 'utf8')}`)
+  f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  assert.equal(f.state().phaseWorkflows.F1.state, 'planned')
+  assert.ok(f.state().tasks.B.taskPlan)
+})
+
+test('unresolvedInputs diagnostics distinguish missing and unexpected inputs and preserve the round-opening snapshot', t => {
+  const f = phaseFixture(t, [
+    { id: 'A', phase: 'F1', title: 'Missing input', deps: ['B'] },
+    { id: 'B', phase: 'F1', title: 'Producer' },
+    { id: 'C', phase: 'F1', title: 'Unexpected input' },
+    { id: 'D', phase: 'F1', title: 'Both directions', deps: ['B'] },
+  ])
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('plan-phase', 'F1', '--agent', 'planner')
+  const round = f.state().phaseWorkflows.F1.planningAttempts.at(-1)
+  f.writeArtifacts('F1')
+  const writeInputs = (id, inputs) => {
+    const path = join(f.plans, `task-plan-${id}.json`)
+    const plan = JSON.parse(readFileSync(path, 'utf8'))
+    plan.unresolvedInputs = inputs
+    writeFileSync(path, JSON.stringify(plan))
+  }
+  writeInputs('A', [])
+  writeInputs('C', [{ task: 'X', phase: 'F2', requiredEvidence: 'unexpected evidence' }])
+  writeInputs('D', [{ task: 'X', phase: 'F2', requiredEvidence: 'unexpected evidence' }])
+
+  const refusal = f.rejects(/unresolvedInputs differ/, 'finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  const output = refusal.stdout + refusal.stderr
+  assert.match(output, /task-plan-A\.json:.*phase task plan A/)
+  assert.match(output, /task-plan-C\.json:.*phase task plan C/)
+  assert.match(output, /task-plan-D\.json:.*phase task plan D/)
+  assert.match(output, /missing \[\{"task":"B","phase":"F1"\}\]; unexpected \[\]/)
+  assert.match(output, /missing \[\]; unexpected \[\{"task":"X","phase":"F2"\}\]/)
+  assert.match(output, /expected JSON at round opening: \[\{"task":"B","phase":"F1","requiredEvidence":"current terminal receipt for B"\}\]/)
+  assert.deepEqual(round.requiredInputs.A, [{ task: 'B', phase: 'F1', requiredEvidence: 'current terminal receipt for B' }])
+})
+
+test('phase plan dependencies completed after dispatch remain bound to the round-opening snapshot', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Existing producer' }])
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('plan-phase', 'F1', '--agent', 'first-planner')
+  f.writeArtifacts('F1')
+  f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+
+  f.plan.tasks.push({ id: 'B', phase: 'F1', title: 'New consumer', deps: ['A'], validation })
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.ok('sync-plan', '--plan', f.planPath)
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('plan-phase', 'F1', '--agent', 'second-planner')
+  const opened = f.state().phaseWorkflows.F1.planningAttempts.at(-1)
+  assert.deepEqual(opened.requiredInputs.B, [{
+    task: 'A', phase: 'F1', requiredEvidence: 'current terminal receipt for A',
+  }])
+
+  f.ok('start', 'A', '--agent', 'producer')
+  f.ok('review', 'A', '--agent', 'producer-reviewer')
+  f.ok('validate', 'A', '--ok', '--evidence', 'producer output independently validated', '--cwd', f.project)
+  f.ok('done', 'A')
+  assert.equal(f.state().tasks.A.state, 'done')
+  f.writeArtifacts('F1')
+  f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  assert.deepEqual(f.state().tasks.B.taskPlan.unresolvedInputs, opened.requiredInputs.B,
+    'the accepted artifact preserves the dependency state captured when its planning round opened')
+})
+
 test('independent phases plan concurrently by explicit choice without moving tasks', t => {
   const f = phaseFixture(t, [
     { id: 'A', phase: 'F1', title: 'First phase' },
@@ -625,7 +768,8 @@ test('stale phase planning is superseded before a fresh discussion without parti
   ])
   f.ok('begin-phase-discussion', 'F1')
   f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
-  f.ok('plan-phase', 'F1', '--agent', 'released-planner')
+  const firstDispatch = f.ok('plan-phase', 'F1', '--agent', 'released-planner')
+  assert.equal(printedPhasePlanFragments(firstDispatch.stdout)[0][1].phaseBinding.plannerRound, 1)
   f.writeArtifacts('F1')
 
   const currentState = readFileSync(join(f.root, '.specs/graph/phase-negative/state.json'), 'utf8')
@@ -656,14 +800,19 @@ test('stale phase planning is superseded before a fresh discussion without parti
   assert.deepEqual(recovered.tasks.A.planningHistory, [])
 
   f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
-  f.ok('plan-phase', 'F1', '--agent', 'released-planner')
+  const resumedDispatch = f.ok('plan-phase', 'F1', '--agent', 'released-planner')
+  const resumed = printedPhasePlanFragments(resumedDispatch.stdout)
+  assert.equal(f.state().phaseWorkflows.F1.planningAttempts.at(-1).n, 2)
+  assert.equal(resumed[0][1].phaseBinding.plannerRound, 2)
+  assert.equal(resumed[0][1].phaseBinding.discussionRoundId, f.state().phaseWorkflows.F1.discussionAttempts.at(-1).roundId)
 })
 
 test('sync-plan adding a phase member makes the previous discussion stale without invalidating current plans', t => {
   const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Already planned' }])
   f.ok('begin-phase-discussion', 'F1')
   f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
-  f.ok('plan-phase', 'F1', '--agent', 'first-planner')
+  const firstDispatch = f.ok('plan-phase', 'F1', '--agent', 'first-planner')
+  assert.equal(printedPhasePlanFragments(firstDispatch.stdout)[0][1].phaseBinding.plannerRound, 1)
   f.writeArtifacts('F1')
   f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
   const existingPlan = structuredClone(f.state().tasks.A.taskPlan)
@@ -683,8 +832,12 @@ test('sync-plan adding a phase member makes the previous discussion stale withou
   f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
   derived = JSON.parse(f.ok('graph').stdout).derived
   assert.equal(derived.B.effective, 'ready_to_plan')
-  f.ok('plan-phase', 'F1', '--agent', 'second-planner')
+  const secondDispatch = f.ok('plan-phase', 'F1', '--agent', 'second-planner')
   assert.deepEqual(f.state().phaseWorkflows.F1.planningAttempts.at(-1).targets, ['B'])
+  const secondFragment = printedPhasePlanFragments(secondDispatch.stdout)[0]
+  assert.equal(secondFragment[0], 'B')
+  assert.equal(secondFragment[1].phaseBinding.plannerRound, 2)
+  assert.equal(secondFragment[1].phaseBinding.discussionRoundId, f.state().phaseWorkflows.F1.discussionAttempts.at(-1).roundId)
   assert.deepEqual(f.state().tasks.A.taskPlan, existingPlan)
 })
 

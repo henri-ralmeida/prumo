@@ -110,6 +110,22 @@ function die(msg) {
   process.exit(1)
 }
 
+function readPlanningArtifact(path) {
+  let source
+  try { source = readFileSync(path, 'utf8') }
+  catch (error) {
+    if (error.code === 'ENOENT') throw new Error(tr('task plan artifact does not exist'))
+    throw error
+  }
+  if (source.charCodeAt(0) === 0xFEFF) source = source.slice(1)
+  try { return JSON.parse(source) }
+  catch (error) { throw new Error(tr('task plan artifact JSON is invalid: {0}', error.message)) }
+}
+
+function planningArtifactError(filename, error) {
+  return tr('task plan artifact {0}: {1}', filename, tr(error.message))
+}
+
 function runName() {
   if (args.run) return args.run
   if (existsSync(CURRENT_FILE)) return readFileSync(CURRENT_FILE, 'utf8').trim()
@@ -583,6 +599,16 @@ function currentPhaseDiscussionDecision(state, phase) {
     kind: 'skipped', id: skipped.decisionId, digest: skipped.digest, targets: skipped.targets,
   }
   return null
+}
+
+function logPhasePlanningInputs(phaseId, round) {
+  const binding = { phaseId, discussionRoundId: round.discussionRoundId, plannerRound: round.n }
+  for (const id of round.targets) {
+    log(tr('Copy these fields into task-plan-{0}.json:', id))
+    log('```json')
+    log(JSON.stringify({ phaseBinding: binding, unresolvedInputs: round.requiredInputs?.[id] ?? [] }, null, 2))
+    log('```')
+  }
 }
 
 function currentTaskDiscussionSkip(state, task) {
@@ -1099,7 +1125,8 @@ const commands = {
     const open = phase.planningAttempts.at(-1)
     if (phase.state === 'planning' && !open?.endedAt && open.context === context && open.discussionDigest === discussion.digest) {
       if (agent !== phase.planner) die(`${phaseId} already has planner "${phase.planner}" for the current round`)
-      log(`[prumo] ${phaseId} already in planning with the same discovery; no new round recorded`)
+      log(`[prumo] ${tr('{0} already in planning with the same discovery; no new round recorded', phaseId)}`)
+      logPhasePlanningInputs(phaseId, open)
       return
     }
     if (phase.state === 'planning') die(`${phaseId} has a stale open planning round; begin a fresh phase discussion`)
@@ -1118,6 +1145,7 @@ const commands = {
     saveState(name, state)
     emit(name, 'phase_planning', null, { phase: phaseId, planner: agent, round: round.n, members: round.targets })
     log(`[prumo] ${phaseId} in planning (planner ${agent}, ${round.targets.length} task(s))`)
+    logPhasePlanningInputs(phaseId, round)
     log('[prumo] planner guard: read-only research may determine how to execute; task results and acceptance evidence belong to the executor')
   },
 
@@ -1163,17 +1191,20 @@ const commands = {
       die(`${phaseId} planning is stale — discuss and plan the current phase contract`)
     const tasks = round.targets.map(id => getTask(state, id))
     const binding = { phaseId, discussionRoundId: round.discussionRoundId, plannerRound: round.n }
-    const plans = [], planDir = resolve(args['plan-dir'])
-    try {
-      for (const task of tasks) {
+    const plans = [], errors = [], planDir = resolve(args['plan-dir'])
+    for (const task of tasks) {
+      const filename = `task-plan-${task.id}.json`
+      try {
         safeId(task.id)
-        const path = resolve(planDir, `task-plan-${task.id}.json`)
-        if (dirname(path) !== planDir) throw new Error(`task-plan-${task.id}.json escapes --plan-dir`)
-        const plan = JSON.parse(readFileSync(path, 'utf8'))
+        const path = resolve(planDir, filename)
+        if (dirname(path) !== planDir) throw new Error(tr('task plan artifact path escapes --plan-dir'))
+        const plan = readPlanningArtifact(path)
         assertPhaseTaskPlan(state, task, plan, binding, round.requiredInputs?.[task.id] ?? [])
         plans.push([task, plan])
-      }
-    } catch (error) { die(error.message) }
+      } catch (error) { errors.push(planningArtifactError(filename, error)) }
+    }
+    if (errors.length) die(tr('finish-phase-planning {0} rejected {1} task-plan artifact(s); nothing was recorded:\n{2}',
+      phaseId, errors.length, errors.join('\n')))
     const completedAt = new Date().toISOString()
     for (const [task, plan] of plans) {
       const fields = ['research', 'decisions', 'steps', 'verification', 'openQuestions', 'phaseBinding', 'unresolvedInputs']
@@ -1407,10 +1438,11 @@ const commands = {
       die('task planning used stale discovery — run plan-task with the current discovery context')
     if (t.deps.some(dep => !['done', 'skipped'].includes(state.tasks[dep]?.state))) die('planning dependencies are no longer complete')
     let plan
+    const path = resolve(args.plan), filename = basename(path)
     try {
-      plan = JSON.parse(readFileSync(resolve(args.plan), 'utf8'))
+      plan = readPlanningArtifact(path)
       assertTaskPlan(t, plan)
-    } catch (error) { die(error.message) }
+    } catch (error) { die(planningArtifactError(filename, error)) }
     const artifact = Object.fromEntries(['research', 'decisions', 'steps', 'verification', 'openQuestions'].map(field => [field, plan[field]]))
     t.taskPlan = { ...artifact, planner: t.planner, startedAt: round.startedAt, completedAt: new Date().toISOString(),
       context: round.context, scope: planningContext(state, t, { scopeOnly: true }), attempt: round.attempt,

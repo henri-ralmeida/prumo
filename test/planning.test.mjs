@@ -327,11 +327,14 @@ test('incomplete research, missing check coverage and unanswered blocking questi
     assert.equal(f.events(), events)
   }
   writeFileSync(path, '{invalid')
-  f.rejected(/JSON|property name/i, 'finish-planning', 'T1', '--plan', path)
-  f.rejected(/ENOENT/, 'finish-planning', 'T1', '--plan', join(f.root, 'missing.json'))
+  f.rejected(/invalid\.json: .*JSON|invalid\.json: .*property name/i, 'finish-planning', 'T1', '--plan', path)
+  f.rejected(/missing\.json: .*does not exist/i, 'finish-planning', 'T1', '--plan', join(f.root, 'missing.json'))
   assert.deepEqual(f.state(), baseline)
-  f.finish('T1', { ...f.artifact(), decisions: [{ question: 'Which policy?', answer: 'The approved task specifies 1 day express and 3 days normal.' }],
-    openQuestions: [{ question: 'Which policy?', blocking: true, answer: 'Use the approved contract.' }, { question: 'Future holiday policy?', blocking: false }] })
+  const accepted = { ...f.artifact(), decisions: [{ question: 'Which policy?', answer: 'The approved task specifies 1 day express and 3 days normal.' }],
+    openQuestions: [{ question: 'Which policy?', blocking: true, answer: 'Use the approved contract.' }, { question: 'Future holiday policy?', blocking: false }] }
+  writeFileSync(path, `\uFEFF${JSON.stringify(accepted)}`)
+  f.ok('finish-planning', 'T1', '--plan', path)
+  assert.deepEqual(f.state().tasks.T1.taskPlan.steps, accepted.steps)
 })
 
 test('planners consume total capacity and cannot share an agent with execution or review', t => {

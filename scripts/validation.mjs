@@ -185,9 +185,23 @@ export function assertPhaseTaskPlan(state, task, plan, binding, expected = phase
   insist(Array.isArray(plan.unresolvedInputs) && plan.unresolvedInputs.every(input =>
     input && nonempty(input.task) && Object.hasOwn(input, 'phase') && nonempty(input.requiredEvidence)),
   'phase task plan unresolvedInputs must contain task, phase and requiredEvidence')
-  insist(JSON.stringify(plan.unresolvedInputs.map(input => [input.task, input.phase]).sort()) ===
-    JSON.stringify(expected.map(input => [input.task, input.phase]).sort()),
-  'phase task plan must list exactly the currently incomplete direct dependencies as unresolved inputs')
+  const key = input => JSON.stringify([input.task, input.phase])
+  const difference = (left, right) => {
+    const counts = new Map()
+    for (const input of right) counts.set(key(input), (counts.get(key(input)) ?? 0) + 1)
+    const unmatched = []
+    for (const input of left) {
+      const inputKey = key(input), count = counts.get(inputKey) ?? 0
+      if (count) counts.set(inputKey, count - 1)
+      else unmatched.push({ task: input.task, phase: input.phase })
+    }
+    return unmatched.sort((a, b) => a.task.localeCompare(b.task) || key(a).localeCompare(key(b)))
+  }
+  const missing = difference(expected, plan.unresolvedInputs)
+  const unexpected = difference(plan.unresolvedInputs, expected)
+  if (missing.length || unexpected.length) {
+    insist(false, `phase task plan ${task.id} unresolvedInputs differ from the inputs captured when its planning round opened: missing ${JSON.stringify(missing)}; unexpected ${JSON.stringify(unexpected)}; expected JSON at round opening: ${JSON.stringify(expected)}`)
+  }
 }
 
 export function executionInputReceipt(state, task) {

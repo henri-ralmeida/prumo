@@ -414,7 +414,11 @@ orchestrator discloses it and receives explicit user approval, `--accept-prematu
 the planner treats that result as untrusted context and the executor repeats the work.
 The engine computes a canonical SHA-256 digest from the persisted fields and discussion receipt and
 binds it to `plan-phase`. The one planner researches the current code and contracts without editing them,
-then writes deterministic `task-plan-<id>.json` files. `finish-phase-planning --plan-dir <directory>` validates
+then writes deterministic `task-plan-<id>.json` files. `plan-phase` prints a copyable JSON fragment for each
+target, read from the persisted planning round; copy that task's `phaseBinding` and `unresolvedInputs` unchanged
+into its artifact. `discussionRoundId` is the discussion `roundId`, or the user-confirmed `decisionId` when
+discussion was skipped. Keep `plannerRound` as printed; never renumber it. Repeating `plan-phase` in the same
+open round prints the same fragments without creating a round. `finish-phase-planning --plan-dir <directory>` validates
 the complete batch before atomically recording any plan. Every artifact includes `phaseBinding` and lists
 currently incomplete direct dependencies in `unresolvedInputs` with producer task, phase and required evidence.
 New material uncertainty returns to principal discovery and fresh planning.
@@ -428,7 +432,9 @@ Example for a task with one executable validation check:
   "decisions": [{ "question": "How should invalid rows behave?", "answer": "The approved contract requires rejection without partial writes." }],
   "steps": ["Extend the existing importer validation.", "Add the missing invalid-row scenario to the existing behavioral check."],
   "verification": [{ "criterion": "An invalid row produces the approved error and leaves stored records unchanged.", "check": 1 }],
-  "openQuestions": []
+  "openQuestions": [],
+  "phaseBinding": { "phaseId": "F1", "discussionRoundId": "<roundId-or-skip-decisionId>", "plannerRound": 1 },
+  "unresolvedInputs": [{ "task": "T2", "phase": "F2", "requiredEvidence": "current terminal receipt for T2" }]
 }
 ```
 
