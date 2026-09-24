@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, copyFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -103,7 +103,8 @@ test('event progress counts executor plan steps and actual reviewer checks per a
   const f = fixture(t, [{ id: 'T4', title: 'Four steps', validation: [check, check, check, check] }])
   f.beginPlan('T4')
   f.finish('T4', { ...f.artifact('T4'), steps: ['Inspect', 'Implement', 'Verify', 'Report'] })
-  f.ok('start', 'T4', '--agent', 'executor')
+  const started = f.ok('start', 'T4', '--agent', 'executor')
+  assert.match(started.output, /progress 'T4' --step 1 --agent 'executor' --run 'planning'/)
   const log = () => f.events().trim().split('\n').map(JSON.parse)
   assert.equal(log().at(-1).current, 1)
   assert.equal(log().at(-1).total, 4)
@@ -112,14 +113,19 @@ test('event progress counts executor plan steps and actual reviewer checks per a
   f.rejected(/index/, 'progress', 'T4', '--step', '5', '--agent', 'executor')
   assert.deepEqual(f.state(), baseline)
   assert.equal(f.events(), events)
-  for (const step of [2, 3, 4]) f.ok('progress', 'T4', '--step', String(step), '--agent', 'executor')
+  assert.match(f.ok('progress', 'T4', '--step', '2', '--agent', 'executor').output,
+    /execution position recorded at 2\/4/)
+  for (const step of [3, 4]) f.ok('progress', 'T4', '--step', String(step), '--agent', 'executor')
   const atFour = f.events()
-  f.ok('progress', 'T4', '--step', '4', '--agent', 'executor')
+  assert.match(f.ok('progress', 'T4', '--step', '4', '--agent', 'executor').output,
+    /execution position already recorded at 4\/4/)
   assert.equal(f.events(), atFour)
   f.rejected(/backwards/, 'progress', 'T4', '--step', '1', '--agent', 'executor')
   assert.deepEqual(log().filter(e => ['task_start', 'task_progress'].includes(e.type)).map(e => [e.current, e.total]),
     [[1, 4], [2, 4], [3, 4], [4, 4]])
   f.ok('review', 'T4', '--agent', 'reviewer')
+  const reviewStarted = log().find(event => event.type === 'task_review')
+  assert.deepEqual([reviewStarted.current, reviewStarted.total], [1, 4])
   f.ok('validate', 'T4', '--ok', '--evidence', 'All four delivery checks match', '--cwd', f.project)
   const checks = log().filter(e => e.type === 'task_check')
   assert.deepEqual(checks.filter(e => e.status === 'started').map(e => [e.current, e.total]), [[1, 4], [2, 4], [3, 4], [4, 4]])
@@ -133,13 +139,120 @@ test('event progress counts executor plan steps and actual reviewer checks per a
   assert.equal(log().at(-1).attempt, 2)
 })
 
+test('start prints a PowerShell-safe command for paths and shell metacharacters', t => {
+  if (process.platform !== 'win32') return t.skip('PowerShell command-line compatibility')
+  const f = fixture(t, [{ id: 'T4', title: 'Command quoting' }])
+  f.beginPlan('T4')
+  f.finish('T4', { ...f.artifact('T4'), steps: ['Inspect', 'Report'] })
+
+  const copiedScripts = join(f.root, "engine path & 'quoted'")
+  mkdirSync(copiedScripts)
+  for (const file of ['engine.mjs', 'atomic-state.mjs', 'validation.mjs', 'storage.mjs', 'i18n.mjs',
+    'messages.json', 'region.mjs', 'sync-plan-audit.mjs', 'contract-drift.mjs'])
+    copyFileSync(join(dirname(engine), file), join(copiedScripts, file))
+  const copiedEngine = join(copiedScripts, 'engine.mjs')
+  const home = dirname(f.root)
+  const env = { ...process.env, GRAPH_FOREMAN_HOME: home, GRAPH_ROOT: f.root, PRUMO_HOME: home,
+    PRUMO_ROOT: f.root, PRUMO_LANG: 'en' }
+  const agent = "executor & 'quoted'"
+  const started = spawnSync(process.execPath, [copiedEngine, 'start', 'T4', '--agent', agent, '--run', 'planning'],
+    { cwd: f.project, env, encoding: 'utf8', timeout: 20000, windowsHide: true })
+  assert.ifError(started.error)
+  const output = started.stdout + started.stderr
+  assert.equal(started.status, 0, output)
+  const command = output.split(/\r?\n/).find(line => line.startsWith('& '))
+  assert.ok(command, output)
+  assert.ok(command.includes("engine path & ''quoted''"), command)
+  assert.ok(command.includes(`--agent '${agent.replaceAll("'", "''")}'`), command)
+
+  const executed = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command],
+    { cwd: f.project, env, encoding: 'utf8', timeout: 20000, windowsHide: true })
+  assert.ifError(executed.error)
+  assert.equal(executed.status, 0, executed.stdout + executed.stderr)
+  assert.match(executed.stdout + executed.stderr, /execution position already recorded at 1\/2/)
+  assert.equal(f.state().tasks.T4.agent, agent)
+})
+
+test('review warns when executor progress remains at the first of several steps', t => {
+  const f = fixture(t, [{ id: 'T4', title: 'Four steps', validation: [check, check, check, check] }])
+  f.beginPlan('T4')
+  f.finish('T4', { ...f.artifact('T4'), steps: ['Inspect', 'Implement', 'Verify', 'Report'] })
+  const started = f.ok('start', 'T4', '--agent', 'executor')
+  assert.match(started.output, /--run 'planning'/)
+  const review = f.ok('review', 'T4', '--agent', 'reviewer')
+  assert.match(review.output, /WARNING: executor progress stayed at 1\/4/)
+  const event = f.events().trim().split('\n').map(JSON.parse).findLast(item => item.type === 'task_review')
+  assert.deepEqual([event.current, event.total], [1, 4])
+  assert.equal(f.state().tasks.T4.attempts.at(-1).executionStep, 1)
+})
+
+test('structured inspection criteria must be traversed in order before a passing validation', t => {
+  const f = fixture(t, [{ id: 'DOC', title: 'Delivery policy docs', validationMode: 'inspection',
+    inspectionReason: 'The task only updates documentation.', validation: 'Compare the documented policy with the implementation.' }])
+  f.beginPlan('DOC')
+  f.finish('DOC', { ...f.artifact('DOC'), verification: [
+    { criterion: 'The documented express rate matches the code.', check: 'inspection' },
+    { criterion: 'The documented normal rate matches the code.', check: 'inspection' },
+  ] })
+  f.ok('start', 'DOC', '--agent', 'executor')
+  f.ok('review', 'DOC', '--agent', 'reviewer')
+  const reviewEvent = f.events().trim().split('\n').map(JSON.parse).findLast(item => item.type === 'task_review')
+  assert.deepEqual([reviewEvent.current, reviewEvent.total, reviewEvent.basis], [1, 2, 'inspection'])
+
+  const before = f.state(), events = f.events()
+  f.rejected(/inspection criteria are not fully traversed/, 'validate', 'DOC', '--ok', '--evidence', 'Docs inspected')
+  assert.deepEqual(f.state(), before)
+  assert.equal(f.events(), events)
+  f.rejected(/traverse the next criterion in order/, 'review-progress', 'DOC', '--step', '2', '--agent', 'reviewer')
+  assert.deepEqual(f.state(), before)
+  assert.equal(f.events(), events)
+
+  assert.match(f.ok('review-progress', 'DOC', '--step', '1', '--agent', 'reviewer').output,
+    /review progress reports 1\/2 criteria traversed; next criterion 2\/2; reviewer report is not proof of inspection/)
+  assert.match(f.ok('review-progress', 'DOC', '--step', '2', '--agent', 'reviewer').output,
+    /review progress reports 2\/2 criteria traversed; reviewer report is not proof of inspection or approval/)
+  const progressEvent = f.events().trim().split('\n').map(JSON.parse).findLast(item => item.type === 'task_review_progress')
+  assert.deepEqual([progressEvent.reviewer, progressEvent.traversed, progressEvent.total, progressEvent.selfReported],
+    ['reviewer', 2, 2, true])
+  f.ok('validate', 'DOC', '--ok', '--evidence', 'Both documented rates match the current implementation')
+  f.ok('done', 'DOC')
+})
+
+test('inspection denominator counts criteria even when they share one static check', t => {
+  const f = fixture(t, [{ id: 'DOC', title: 'Delivery policy docs', validationMode: 'inspection',
+    inspectionReason: 'The task only updates documentation.',
+    validation: [{ kind: 'static', run: 'node --check delivery.cjs', expect: 'syntax valid' }] }])
+  f.beginPlan('DOC')
+  f.finish('DOC', { ...f.artifact('DOC'), verification: [
+    { criterion: 'The documented express rate matches the code.', check: 1 },
+    { criterion: 'The documented normal rate matches the code.', check: 1 },
+  ] })
+  f.ok('start', 'DOC', '--agent', 'executor')
+  f.ok('review', 'DOC', '--agent', 'reviewer')
+  const reviewEvent = f.events().trim().split('\n').map(JSON.parse).findLast(item => item.type === 'task_review')
+  assert.deepEqual([reviewEvent.current, reviewEvent.total, reviewEvent.basis], [1, 2, 'inspection'])
+
+  const before = f.state(), events = f.events()
+  f.rejected(/inspection criteria are not fully traversed/, 'validate', 'DOC', '--ok', '--evidence', 'Docs inspected', '--cwd', f.project)
+  assert.deepEqual(f.state(), before)
+  assert.equal(f.events(), events)
+  f.ok('review-progress', 'DOC', '--step', '1', '--agent', 'reviewer')
+  const afterFirst = f.state(), afterFirstEvents = f.events()
+  f.rejected(/inspection criteria are not fully traversed/, 'validate', 'DOC', '--ok', '--evidence', 'Docs inspected', '--cwd', f.project)
+  assert.deepEqual(f.state(), afterFirst)
+  assert.equal(f.events(), afterFirstEvents)
+  f.ok('review-progress', 'DOC', '--step', '2', '--agent', 'reviewer')
+  f.ok('validate', 'DOC', '--ok', '--evidence', 'Both documented rates match the current implementation', '--cwd', f.project)
+  f.ok('done', 'DOC')
+})
+
 test('corrective review reuses earlier path-scoped receipts through the engine', t => {
   const steps = [
     { kind: 'static', cacheable: true, cachePaths: ['stable.txt', 'step.cjs'], run: 'node step.cjs first', expect: 'passes' },
     { kind: 'static', cacheable: true, cachePaths: ['changed.txt', 'step.cjs'], run: 'node step.cjs second once', expect: 'passes' },
   ]
   const f = fixture(t, [{ id: 'T1', title: 'Corrective review', validationMode: 'inspection',
-    inspectionReason: 'Fixture exercises deterministic static review steps.', validation: steps }])
+    inspectionReason: 'Fixture exercises deterministic static review steps.', validation: steps }], {}, { lang: 'pt-BR' })
   writeFileSync(join(f.project, 'stable.txt'), 'stable\n')
   writeFileSync(join(f.project, 'changed.txt'), 'before\n')
   writeFileSync(join(f.project, 'step.cjs'), `const fs=require('node:fs');const [name,fail]=process.argv.slice(2);fs.appendFileSync(name+'.count','x');if(fail==='once'&&!fs.existsSync(name+'.failed')){fs.writeFileSync(name+'.failed','1');process.exit(7)}\n`)
@@ -148,13 +261,21 @@ test('corrective review reuses earlier path-scoped receipts through the engine',
   f.planTask()
   f.ok('start', 'T1', '--agent', 'executor-a')
   f.ok('review', 'T1', '--agent', 'reviewer-a')
-  f.rejected(/validation check 2\/2/, 'validate', 'T1', '--ok', '--evidence', 'first review', '--cwd', f.project)
+  f.ok('review-progress', 'T1', '--step', '1', '--agent', 'reviewer-a')
+  f.ok('review-progress', 'T1', '--step', '2', '--agent', 'reviewer-a')
+  f.rejected(/verificação 2\/2/, 'validate', 'T1', '--ok', '--evidence', 'first review', '--cwd', f.project)
   f.ok('fail', 'T1', '--reason', 'review: second check failed')
   f.ok('retry', 'T1')
   f.ok('start', 'T1', '--agent', 'executor-b')
   writeFileSync(join(f.project, 'changed.txt'), 'after\n')
   f.ok('review', 'T1', '--agent', 'reviewer-b')
+  f.ok('review-progress', 'T1', '--step', '1', '--agent', 'reviewer-b')
+  f.ok('review-progress', 'T1', '--step', '2', '--agent', 'reviewer-b')
   f.ok('validate', 'T1', '--ok', '--evidence', 'corrective review', '--cwd', f.project)
+  const reused = f.ok('show-check', 'T1', '--check', '1', '--attempt', '2')
+  assert.match(reused.output, /reutilizada sim/)
+  assert.match(reused.output, /código de saída: 0/)
+  assert.ok(reused.output.includes(`diretório de trabalho: ${f.project}`))
   const checks = f.events().trim().split('\n').map(JSON.parse).filter(event => event.type === 'task_check' && event.attempt === 2)
   assert.deepEqual(checks.map(event => [event.current, event.status]), [[1, 'reused'], [2, 'started'], [2, 'passed']])
   assert.equal(readFileSync(join(f.project, 'first.count'), 'utf8'), 'x')

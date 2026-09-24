@@ -255,6 +255,7 @@ Resolva `scripts/engine.mjs` a partir da skill instalada. Acrescente `--run <nom
 | `migrate [--check]` | Migra com backup o schema legado seguro; `--check` apenas diagnostica |
 | `status`, `ready`, `graph`, `runs` | Consulta estado, trabalho pronto, JSON ou execuções |
 | `show-contract <tarefa> [--diff]` | Exibe os contratos de negócio antes/depois sem comandos `validation.run` |
+| `show-check <tarefa> --check <N> --attempt <K>` | Exibe stdout, stderr, diretório, código de saída e reutilização do recibo armazenado |
 | `begin-phase-discussion <fase> [--adopt-legacy]` | Persiste a discussão escolhida da fase antes da primeira pergunta; a opção adota uma fase legada segura |
 | `skip-phase-discussion <fase> --reason <texto> --confirmed-by-user` | Registra a escolha explícita de pular a discussão da fase |
 | `finish-phase-discussion <fase> --context <descoberta.json>` | Valida o recibo e as respostas da rodada atual |
@@ -270,7 +271,9 @@ Resolva `scripts/engine.mjs` a partir da skill instalada. Acrescente `--run <nom
 | `start <tarefa> --agent <nome>` | Registra executor e inicia tentativa |
 | `progress <tarefa> --step <índice> --agent <executor>` | Registra o passo atual do plano durante a execução, começando em 1 |
 | `review <tarefa> --agent <nome>` | Encaminha trabalho para revisão |
-| `validate <tarefa> --ok --summary <frase> --evidence <texto> --cwd <diretório>` | Executa o contrato; guarda resumo curto e evidência completa; falha real impede aprovação |
+| `review-progress <tarefa> --step <índice> --agent <revisor>` | Registra os critérios percorridos na revisão, em ordem |
+| `show-check <tarefa> --check <índice> --attempt <número>` | Mostra a saída completa, pasta, código de saída e reuso de um check registrado |
+| `validate <tarefa> --ok --summary <frase> --evidence <texto> --cwd <diretório> [--tail <linhas>]` | Executa o contrato, guarda resumo curto e evidência completa e mostra até 15 linhas; falha real impede aprovação |
 | `validate <tarefa> --failed --summary <frase> --evidence <texto>` | Registra reprovação com resumo opcional e evidência completa |
 | `done <tarefa>` | Conclui com evidência válida da tentativa e revisor atuais |
 | `fail <tarefa> --reason <texto>` | Registra falha real da tentativa |
@@ -280,6 +283,14 @@ Resolva `scripts/engine.mjs` a partir da skill instalada. Acrescente `--run <nom
 | `unblock <tarefa> --reviewer <nome>` | Leva tentativa ativa pausada diretamente à revisão |
 | `skip <tarefa> --reason <texto>` | Pula uma vez por decisão explícita não vazia; uma tentativa ativa termina como skipped sem inventar recibo de validação |
 | `note <tarefa> --text <texto>` | Acrescenta nota ao histórico |
+
+Antes de `validate --ok`, o revisor inspeciona a saída dos checks. `show-check` exibe o recibo completo;
+`validate` mostra por padrão as últimas 15 linhas de cada check funcional ou falho. `--tail 0` oculta
+essa prévia, mas mantém a saída integral no recibo. Linhas de resumo são marcadas como texto; a aprovação
+depende do código de saída e do resultado relevante, não de palavras como “passed”. Em inspeções com
+checks ou critérios estruturados, percorra cada item com `review-progress` antes de aprovar. O evento
+registra um relato rastreável do revisor; não prova que houve inspeção nem que o trabalho passou. Um
+estado legado sem denominador continua sem total inventado.
 
 O histórico mostra `Executando T4 [2/4]` a partir dos passos de `taskPlan.steps`, conforme o executor
 informa o avanço ao orquestrador. O índice indica o passo atual, não uma aprovação; repetição é

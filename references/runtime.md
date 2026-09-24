@@ -203,6 +203,16 @@ return a code in its expectedExitCodes (default [0]), with no execution error or
 interpreted as an assertion by the engine. Checks must assert the actual behavior or resulting
 state relevant to the task, rather than merely repeat an executor report.
 
+Before `validate --ok`, inspect the approved check output. `show-check <task> --check N --attempt K`
+prints the complete stored stdout and stderr, working directory, exit code and reuse status. A fresh
+review should run and inspect each approved check before recording its verdict. `validate` then reruns
+them and previews up to 15 lines from functional and failed checks; `--tail 0` suppresses the preview.
+Marked summary lines identify output text only and do not determine success. For a new prose-only
+inspection plan, or an inspection plan with executable checks, traverse every known criterion with
+`review-progress` before `validate --ok`. Legacy inspection state without a denominator keeps progress
+unknown. `review-progress` records the named reviewer's report; it is not proof that the inspection
+occurred or that the work passed.
+
 For documentation or another task with no runtime behavior change, declare
 `validationMode: "inspection"` and a nonempty `inspectionReason` explaining the exception.
 Such a task may use prose validation plus concrete review evidence, or static commands.
@@ -622,7 +632,9 @@ node .claude/skills/prumo/scripts/engine.mjs finish-phase-planning F1 --plan-dir
 node .claude/skills/prumo/scripts/engine.mjs start T1 --agent ag-server      # max 3 executors
 node .claude/skills/prumo/scripts/engine.mjs progress T1 --step 2 --agent ag-server  # actual executor report
 node .claude/skills/prumo/scripts/engine.mjs review T1 --agent rev-server    # hand to a fresh reviewer
-node .claude/skills/prumo/scripts/engine.mjs validate T1 --ok --summary "The import rejects invalid rows before writing." --evidence "reviewed all 3 behavior cases" --cwd <absolute-project>
+node .claude/skills/prumo/scripts/engine.mjs review-progress T1 --step 1 --agent rev-server # after inspecting check 1
+node .claude/skills/prumo/scripts/engine.mjs show-check T1 --check 1 --attempt 1 # full stored output
+node .claude/skills/prumo/scripts/engine.mjs validate T1 --ok --summary "The import rejects invalid rows before writing." --evidence "reviewed all 3 behavior cases" --cwd <absolute-project> --tail 15
 node .claude/skills/prumo/scripts/engine.mjs done T1               # refuses without a passing validation
 node .claude/skills/prumo/scripts/engine.mjs fail T2 --reason "typecheck broke"
 node .claude/skills/prumo/scripts/engine.mjs retry T2              # warns after 3 attempts

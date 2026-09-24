@@ -49,7 +49,9 @@
  *   node $ENGINE start <task> --agent <name>   (max 3 executors)
  *   node $ENGINE progress <task> --step <1-based index> --agent <executor>
  *   node $ENGINE review <task> --agent <name>  (hands it to a reviewer)
- *   node $ENGINE validate <task> --ok|--failed --evidence "<text>" [--cwd <project>]
+ *   node $ENGINE review-progress <task> --step <1-based index> --agent <reviewer>
+ *   node $ENGINE validate <task> --ok|--failed --evidence "<text>" [--cwd <project>] [--tail <lines>]
+ *   node $ENGINE show-check <task> --check <1-based index> --attempt <number>
  *   node $ENGINE refresh-contract <task> --plan <approved-plan.json>
  *   node $ENGINE done <task>
  *   node $ENGINE fail <task> --reason "<text>" [--plan-defect]
@@ -326,6 +328,80 @@ function getTask(state, id) {
   const t = state.tasks[id]
   if (!t) die(`unknown task "${id}"`)
   return t
+}
+
+function reviewDenominator(task) {
+  let contract
+  try { contract = validationContract(task) } catch { return null }
+  const criteria = task.taskPlan?.verification
+  if (contract.mode === 'inspection' && Array.isArray(criteria) && criteria.length)
+    return { total: criteria.length, basis: 'inspection', inspection: true }
+  if (contract.steps.length) return { total: contract.steps.length, basis: 'checks', inspection: contract.mode === 'inspection' }
+  if (contract.mode !== 'inspection') return null
+  return null
+}
+
+function reviewProgressRecord(task, agent, denominator) {
+  const attempt = task.attempts.at(-1)
+  if (!attempt) return null
+  if (!denominator) {
+    delete attempt.reviewProgress
+    return null
+  }
+  const record = { current: 1, total: denominator.total, traversed: 0, basis: denominator.basis,
+    agent, selfReported: false, contractRevision: task.contractRevision ?? 0,
+    scopeRevision: task.scopeRevision ?? 0 }
+  attempt.reviewProgress = record
+  return record
+}
+
+function quoteCommandArg(value) {
+  const text = String(value)
+  return process.platform === 'win32'
+    ? `'${text.replaceAll("'", "''")}'`
+    : `'${text.replaceAll("'", "'\\''")}'`
+}
+
+function positiveIndex(value, label) {
+  if (typeof value !== 'string' || !/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) < 1)
+    die(`${label} must be a positive integer`)
+  return Number(value)
+}
+
+function tailLineLimit(value) {
+  if (value === undefined) return 15
+  if (typeof value !== 'string' || !/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)))
+    die('validate --tail must be a nonnegative integer')
+  return Number(value)
+}
+
+function checkPassed(check) {
+  const expected = Array.isArray(check.expectedExitCodes) ? check.expectedExitCodes : [0]
+  return expected.includes(check.exitCode) && !check.error && !check.signal
+}
+
+function checkOutput(check) {
+  const stdout = typeof check.stdout === 'string' ? check.stdout : ''
+  const stderr = typeof check.stderr === 'string' ? check.stderr : ''
+  if (!stdout || !stderr) return stdout + stderr
+  return stdout + (stdout.endsWith('\n') || stdout.endsWith('\r') ? '' : '\n') + stderr
+}
+
+function printValidationTail(checks, limit) {
+  if (limit === 0) return
+  for (const [index, check] of checks.entries()) {
+    if (check.kind !== 'functional' && checkPassed(check)) continue
+    const lines = checkOutput(check).split(/\r\n|\n|\r/)
+    while (lines.at(-1) === '') lines.pop()
+    if (!lines.length) continue
+    const tail = lines.slice(-limit)
+    log(`[prumo] check ${index + 1}/${checks.length} output tail (${tail.length} lines; exit ${check.exitCode ?? 'unknown'}; reused ${tr(check.reusedAt ? 'yes' : 'no')}; summary labels are textual only)`)
+    for (const line of tail) {
+      const visible = line.length > 1024 ? `…${line.slice(-1024)}` : line
+      const summary = /\b(?:summary|results?|total|passed|failed|skipped|errors?)\b|\b\d+\s+(?:tests?|checks?|cases?|scenarios?)\b/i.test(visible)
+      console.log(`  ${summary ? tr('SUMMARY') : '|'} ${visible}`)
+    }
+  }
 }
 
 /** Can `from` reach `to` through deps? Two tasks so related are ORDERED, never concurrent. */
@@ -1410,6 +1486,32 @@ const commands = {
       diff: args.diff === true, fields, before: select(before), after: select(after) }, null, 2))
   },
 
+  'show-check'() {
+    const id = args._[0] ?? die('show-check <task> --check <index> --attempt <number>')
+    const checkNumber = positiveIndex(args.check, 'show-check --check')
+    const attemptNumber = positiveIndex(args.attempt, 'show-check --attempt')
+    const task = getTask(loadState(runName()), id)
+    const receipt = task.validations?.slice().reverse().find(item =>
+      item.attempt === attemptNumber && item.checks?.[checkNumber - 1])
+    if (!receipt) die(`${id} has no stored check ${checkNumber} for attempt ${attemptNumber}`)
+    const check = receipt.checks[checkNumber - 1]
+    const reused = Boolean(check.reusedAt)
+    log(`[prumo] ${id} check ${checkNumber}/${receipt.checks.length} from attempt ${attemptNumber} (${receipt.by ?? 'unknown'}; reused ${tr(reused ? 'yes' : 'no')})`)
+    console.log(tr('run: {0}', check.run ?? '(not recorded)'))
+    console.log(tr('cwd: {0}', check.cwd ?? '(not recorded)'))
+    console.log(tr('exit code: {0}', check.exitCode ?? '(not recorded)'))
+    if (check.error) console.log(tr('error: {0}', check.error))
+    if (check.signal) console.log(tr('signal: {0}', check.signal))
+    const stdout = typeof check.stdout === 'string' ? check.stdout : ''
+    const stderr = typeof check.stderr === 'string' ? check.stderr : ''
+    log('--- stdout ---')
+    if (stdout) { process.stdout.write(stdout); if (!stdout.endsWith('\n')) process.stdout.write('\n') }
+    else log('(empty)')
+    log('--- stderr ---')
+    if (stderr) { process.stdout.write(stderr); if (!stderr.endsWith('\n')) process.stdout.write('\n') }
+    else log('(empty)')
+  },
+
   runs() {
     if (!existsSync(GRAPH_DIR)) return log('(no runs)')
     for (const d of readdirSync(GRAPH_DIR)) {
@@ -2119,6 +2221,13 @@ const commands = {
     emit(name, 'task_start', id, { agent, attempt: t.attempts.length, ...(planDigest ? { planDigest: planDigest.slice(0, 4) } : {}),
       ...(total ? { current: 1, total } : {}) })
     log(`[prumo] ${id} running (agent ${agent}, attempt ${t.attempts.length})`)
+    if (total) {
+      const command = [...(process.platform === 'win32' ? ['&'] : []), quoteCommandArg(process.execPath),
+        quoteCommandArg(process.argv[1]), 'progress', quoteCommandArg(id), '--step', '1', '--agent',
+        quoteCommandArg(agent), '--run', quoteCommandArg(name)].join(' ')
+      log('[prumo] report each actual execution step with:')
+      console.log(command)
+    }
   },
 
   progress() {
@@ -2135,10 +2244,14 @@ const commands = {
       die('progress step must be an index in the current task plan')
     const attempt = t.attempts.at(-1)
     if (current < (attempt.executionStep ?? 1)) die('progress cannot move backwards within an attempt')
-    if (current === attempt.executionStep) return
+    if (current === attempt.executionStep) {
+      log(`[prumo] ${id} execution position already recorded at ${current}/${total} (agent ${t.agent}, attempt ${t.attempts.length}); position is not completion evidence`)
+      return
+    }
     attempt.executionStep = current
     saveState(name, state)
     emit(name, 'task_progress', id, { agent: t.agent, attempt: t.attempts.length, current, total })
+    log(`[prumo] ${id} execution position recorded at ${current}/${total} (agent ${t.agent}, attempt ${t.attempts.length}); position is not completion evidence`)
   },
 
   /** Hand a finished task to a REVIEWER — a different agent, fresh context, that never
@@ -2165,9 +2278,55 @@ const commands = {
     t.reviewer = reviewer
     t.attempts.at(-1).reviewer = reviewer
     t.attempts.at(-1).reviewStartedAt = new Date().toISOString()
+    const denominator = reviewDenominator(t)
+    reviewProgressRecord(t, reviewer, denominator)
     saveState(name, state)
-    emit(name, 'task_review', id, { reviewer, attempt: t.attempts.length })
+    emit(name, 'task_review', id, { reviewer, attempt: t.attempts.length,
+      ...(denominator ? { current: 1, total: denominator.total, basis: denominator.basis } : {}) })
     log(`[prumo] ${id} in review (reviewer ${reviewer})`)
+    if (t.taskPlan?.steps?.length > 1 && (t.attempts.at(-1).executionStep ?? 1) === 1)
+      log(`[prumo] WARNING: executor progress stayed at 1/${t.taskPlan.steps.length}; the position is not proof of completed work`)
+  },
+
+  'review-progress'() {
+    const name = runName()
+    const id = args._[0] ?? die('review-progress <task> --step <index> --agent <reviewer>')
+    const state = loadState(name)
+    const t = getTask(state, id)
+    const reviewDisabled = (t.requireReview ?? state.plan.requireReview) === false
+    const agent = t.state === 'reviewing' ? t.reviewer : t.state === 'running' && reviewDisabled ? t.agent : null
+    if (!agent) die(`${id} is not in review`)
+    if (!args.agent || args.agent !== agent) die('review-progress needs the current reviewing agent')
+    assertCurrentTaskScope(state, t)
+    assertCurrentExecutionInputs(state, t)
+    const denominator = reviewDenominator(t)
+    if (!denominator) die(`${id} has no structured review progress denominator; legacy criteria keep progress unknown`)
+    const step = positiveIndex(args.step, 'review-progress step')
+    if (step > denominator.total) die(`review-progress step must be between 1 and ${denominator.total}`)
+    const attempt = t.attempts.at(-1)
+    let progress = attempt.reviewProgress
+    if (!progress || progress.total !== denominator.total || progress.basis !== denominator.basis ||
+        progress.agent !== agent || progress.contractRevision !== (t.contractRevision ?? 0) ||
+        progress.scopeRevision !== (t.scopeRevision ?? 0)) {
+      progress = reviewProgressRecord(t, agent, denominator)
+    }
+    if (step <= progress.traversed) {
+      log(`[prumo] ${id} review progress already reports ${progress.traversed}/${progress.total} criteria traversed; no state change; reviewer report is not proof of inspection or approval`)
+      return
+    }
+    if (step !== progress.current)
+      die(`review-progress must traverse the next criterion in order: expected ${progress.current}, received ${step}`)
+    progress.traversed = step
+    progress.current = Math.min(step + 1, progress.total)
+    progress.selfReported = true
+    progress.reportedAt = new Date().toISOString()
+    saveState(name, state)
+    emit(name, 'task_review_progress', id, { reviewer: agent, attempt: t.attempts.length,
+      current: progress.current, total: progress.total, traversed: progress.traversed, basis: progress.basis,
+      selfReported: true })
+    if (progress.traversed === progress.total)
+      log(`[prumo] ${id} review progress reports ${progress.traversed}/${progress.total} criteria traversed; reviewer report is not proof of inspection or approval`)
+    else log(`[prumo] ${id} review progress reports ${progress.traversed}/${progress.total} criteria traversed; next criterion ${progress.current}/${progress.total}; reviewer report is not proof of inspection`)
   },
 
   'refresh-contract'() {
@@ -2201,6 +2360,7 @@ const commands = {
     if (typeof args.evidence !== 'string' || !args.evidence.trim()) die('validation evidence must not be empty')
     if (args.summary !== undefined && (typeof args.summary !== 'string' || !args.summary.trim()))
       die('validation summary must be a nonempty string when present')
+    const tail = tailLineLimit(args.tail)
     const token = randomUUID()
     const snapshot = withLock(name, () => {
       const state = loadState(name)
@@ -2214,6 +2374,16 @@ const commands = {
       if (requestedOk && (t.requireReview ?? state.plan.requireReview) !== false &&
           (by !== 'review' || !t.reviewer || t.reviewer === t.agent))
         die('passing validation requires an independent reviewer')
+      const denominator = reviewDenominator(t)
+      if (requestedOk && denominator?.inspection) {
+        const progress = t.attempts.at(-1)?.reviewProgress
+        const reviewer = by === 'review' ? t.reviewer : t.agent
+        if (!progress || progress.total !== denominator.total || progress.traversed !== denominator.total ||
+            progress.selfReported !== true ||
+            progress.basis !== denominator.basis || progress.agent !== reviewer ||
+            progress.contractRevision !== (t.contractRevision ?? 0) || progress.scopeRevision !== (t.scopeRevision ?? 0))
+          die(`${id} inspection criteria are not fully traversed; record reviewer-reported progress for each criterion with review-progress ${id} --step <index> --agent ${reviewer} (this is not proof of inspection)`)
+      }
       if (requestedOk) {
         try { validationDirectories(t, args.cwd) } catch (error) { die(error.message) }
       }
@@ -2246,6 +2416,7 @@ const commands = {
               by: snapshot.validations.at(-1).by })
           })
         })
+        printValidationTail(result.checks ?? [], tail)
         assertValidation(snapshot, { ...result, evidence: args.evidence })
       } catch (e) { error = e.message }
     }
@@ -2431,12 +2602,25 @@ const commands = {
         attempt.reviewStartedAt = new Date().toISOString()
       }
     }
+    let reviewDenom
+    if (target === 'reviewing') {
+      const attempt = t.attempts.at(-1)
+      reviewDenom = reviewDenominator(t)
+      const progress = attempt.reviewProgress
+      if (!progress || progress.agent !== reviewer || progress.total !== reviewDenom?.total ||
+          progress.basis !== reviewDenom?.basis || progress.contractRevision !== (t.contractRevision ?? 0) ||
+          progress.scopeRevision !== (t.scopeRevision ?? 0))
+        reviewProgressRecord(t, reviewer, reviewDenom)
+    }
     t.state = target
     delete t.blockReason
     delete t.stateBeforeBlock
     saveState(name, state)
-    emit(name, 'task_unblock', id, { state: target, agent: target === 'reviewing' ? t.reviewer : target === 'planning' ? t.planner : t.agent, attempt: t.attempts.length })
+    emit(name, 'task_unblock', id, { state: target, agent: target === 'reviewing' ? t.reviewer : target === 'planning' ? t.planner : t.agent, attempt: t.attempts.length,
+      ...(target === 'reviewing' && reviewDenom ? { current: 1, total: reviewDenom.total, basis: reviewDenom.basis } : {}) })
     log('[prumo] ' + id + ' unblocked to ' + target + '; attempt ' + t.attempts.length + ' preserved; no agent dispatched')
+    if (target === 'reviewing' && t.taskPlan?.steps?.length > 1 && (t.attempts.at(-1).executionStep ?? 1) === 1)
+      log(`[prumo] WARNING: executor progress stayed at 1/${t.taskPlan.steps.length}; the position is not proof of completed work`)
   },
 
   skip() {
@@ -2464,11 +2648,15 @@ const commands = {
   note() {
     const name = runName()
     const id = args._[0] ?? die('note <task> --text "<text>"')
+    const text = args.text
+    if (typeof text !== 'string' || !text.trim()) die('note needs a nonempty --text "<text>"')
     const state = loadState(name)
     const t = getTask(state, id)
-    t.notes.push({ text: args.text ?? '', at: new Date().toISOString() })
+    t.notes.push({ text, at: new Date().toISOString() })
     saveState(name, state)
-    emit(name, 'task_note', id, { text: args.text ?? '' })
+    emit(name, 'task_note', id, { text })
+    const characters = Array.from(text).length
+    log(`[prumo] ${id} note recorded (${characters} ${characters === 1 ? 'character' : 'characters'})`)
   },
 }
 
@@ -2481,9 +2669,9 @@ if (!cmd || !commands[cmd]) {
    either the previous state or the next one, never a half-written one. Everything else
    takes the run's lock for its whole read-modify-write; validate locks its state updates
    separately so command execution cannot outlive the short lock lease. */
-const READ_ONLY = new Set(['runs', 'status', 'ready', 'graph', 'show-contract'])
+const READ_ONLY = new Set(['runs', 'status', 'ready', 'graph', 'show-contract', 'show-check'])
 const LEGACY_MIGRATION_CONTINUATIONS = new Set([
-  'start', 'review', 'validate', 'done', 'fail', 'retry', 'block', 'unblock', 'skip', 'refresh-contract',
+  'start', 'progress', 'review', 'review-progress', 'validate', 'done', 'fail', 'retry', 'block', 'unblock', 'skip', 'refresh-contract',
 ])
 function assertMigrationCommandAllowed(state, command) {
   if (READ_ONLY.has(command) || command === 'sync-plan' || command === 'note') return

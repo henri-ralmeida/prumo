@@ -11,7 +11,7 @@ const engine = resolve(process.env.GRAPH_TEST_ENGINE ?? join(dirname(fileURLToPa
 const staticStep = { run: 'node --check delivery.cjs', kind: 'static', expect: 'valid JavaScript syntax' }
 const functionalStep = { run: 'node delivery.test.cjs', kind: 'functional', expect: 'express delivery is 1 day; normal delivery is 3 days' }
 
-function fixture(t, task = {}, planOptions = {}, { init = true } = {}) {
+function fixture(t, task = {}, planOptions = {}, { init = true, lang = 'en' } = {}) {
   const parent = resolve(tmpdir())
   const home = mkdtempSync(join(parent, 'graph-validation-'))
   t.after(() => {
@@ -28,7 +28,7 @@ function fixture(t, task = {}, planOptions = {}, { init = true } = {}) {
   const plan = { name: 'validation-regression', ...planOptions, tasks: [{ id: 'T1', title: 'Delivery estimate', validation: [staticStep, functionalStep], ...task }, ...(planOptions.tasks ?? [])] }
   const planPath = join(root, 'plan.json')
   writeFileSync(planPath, JSON.stringify(plan))
-  const env = { ...process.env, GRAPH_FOREMAN_HOME: home, GRAPH_ROOT: root, PRUMO_HOME: home, PRUMO_ROOT: root, PRUMO_LANG: 'en' }
+  const env = { ...process.env, GRAPH_FOREMAN_HOME: home, GRAPH_ROOT: root, PRUMO_HOME: home, PRUMO_ROOT: root, PRUMO_LANG: lang }
   const options = { env, cwd: project, encoding: 'utf8', timeout: 20000 }
   function cli(...args) {
     const r = spawnSync(process.execPath, [engine, ...args], options)
@@ -419,11 +419,18 @@ test('passing functional checks execute real code and record commands, output an
   f.beginReview()
   const result = f.validate()
   assert.equal(result.status, 0, result.output)
+  assert.match(result.output, /check 2\/2 output tail/)
+  assert.match(result.output, /SUMMARY 2 delivery scenarios passed/)
   const receipt = f.state().tasks.T1.validations.at(-1)
   assert.equal(receipt.checks.length, 2)
   assert.equal(receipt.checks[1].cwd, f.project)
   assert.equal(receipt.checks[1].exitCode, 0)
   assert.match(receipt.checks[1].stdout, /2 delivery scenarios passed/)
+  const shown = f.ok('show-check', 'T1', '--check', '2', '--attempt', '1')
+  assert.ok(shown.output.includes(`cwd: ${f.project}`))
+  assert.match(shown.output, /exit code: 0/)
+  assert.match(shown.output, /reused no/)
+  assert.match(shown.output, /2 delivery scenarios passed/)
   f.ok('done', 'T1')
   assert.equal(f.state().tasks.T1.state, 'done')
 })
@@ -432,12 +439,64 @@ test('syntactically valid behavioral regression passes lint but blocks done', (t
   const f = fixture(t)
   f.beginReview()
   writeFileSync(join(f.project, 'delivery.cjs'), 'exports.days = express => express ? 99 : 3;\n')
-  assert.notEqual(f.validate().status, 0)
+  const result = f.validate()
+  assert.notEqual(result.status, 0)
+  assert.match(result.output, /check 2\/2 output tail/)
+  assert.match(result.output, /ERR_ASSERTION/)
   const receipt = f.state().tasks.T1.validations.at(-1)
   assert.equal(receipt.checks[0].exitCode, 0)
   assert.equal(receipt.checks[1].exitCode, 1)
   assert.match(receipt.checks[1].stderr, /AssertionError/)
   f.rejected(/no passing validation/, 'done', 'T1')
+})
+
+test('validate --tail 0 suppresses output previews but keeps the full receipt', (t) => {
+  const f = fixture(t)
+  f.beginReview()
+  const result = f.validate('--tail', '0')
+  assert.equal(result.status, 0, result.output)
+  assert.doesNotMatch(result.output, /2 delivery scenarios passed/)
+  const receipt = f.state().tasks.T1.validations.at(-1)
+  assert.match(receipt.checks[1].stdout, /2 delivery scenarios passed/)
+})
+
+test('validate shows at most the last 15 stdout and stderr lines together', (t) => {
+  const f = fixture(t, { validation: [{ kind: 'functional', run: 'node noisy.cjs', expect: 'the check reports its scenarios' }] })
+  writeFileSync(join(f.project, 'noisy.cjs'), `for(let i=1;i<=10;i++)console.log('stdout-'+i);\nfor(let i=1;i<=10;i++)console.error('stderr-'+i);\nconsole.log('10 scenarios passed');\n`)
+  f.beginReview()
+  const result = f.validate()
+  assert.equal(result.status, 0, result.output)
+  assert.match(result.output, /check 1\/1 output tail \(15 lines/)
+  assert.match(result.output, /\| stdout-7/)
+  assert.doesNotMatch(result.output, /\| stdout-6(?:\r?\n|$)/)
+  assert.match(result.output, /\| stderr-1/)
+  assert.match(result.output, /SUMMARY 10 scenarios passed/)
+  const shown = f.ok('show-check', 'T1', '--check', '1', '--attempt', '1')
+  assert.match(shown.output, /stdout-1/)
+  assert.match(shown.output, /stderr-10/)
+})
+
+test('validation output tail localizes a non-reused check in pt-BR', (t) => {
+  const f = fixture(t, { validation: [{ kind: 'functional', run: 'node noisy.cjs', expect: '1 scenario passed' }] }, {}, { lang: 'pt-BR' })
+  writeFileSync(join(f.project, 'noisy.cjs'), "console.log('1 scenario passed');\n")
+  f.beginReview()
+  const result = f.validate()
+  assert.equal(result.status, 0, result.output)
+  assert.match(result.output, /reutilizada não/)
+})
+
+test('legacy inspection reviews do not invent a progress denominator', (t) => {
+  const f = fixture(t, { validationMode: 'inspection', inspectionReason: 'Documentation-only change',
+    validation: 'Compare the setup instructions with the package scripts.' })
+  f.beginReview()
+  const review = f.events().find(event => event.type === 'task_review')
+  assert.equal(Object.hasOwn(review, 'current'), false)
+  assert.equal(Object.hasOwn(review, 'total'), false)
+  const before = f.state(), events = f.events()
+  f.rejected(/no structured review progress denominator/, 'review-progress', 'T1', '--step', '1', '--agent', 'reviewer')
+  assert.deepEqual(f.state(), before)
+  assert.deepEqual(f.events(), events)
+  f.ok('validate', 'T1', '--ok', '--evidence', 'The instructions match the package scripts')
 })
 
 test('documentation inspection accepts evidence without executing the application', (t) => {
@@ -451,6 +510,7 @@ test('documentation inspection accepts evidence without executing the applicatio
 test('documentation may use a static checker; inspection needs a justification', (t) => {
   const f = fixture(t, { validationMode: 'inspection', inspectionReason: 'Documentation-only syntax example', validation: [staticStep] })
   f.beginReview()
+  f.ok('review-progress', 'T1', '--step', '1', '--agent', 'reviewer')
   assert.equal(f.validate().status, 0)
   f.ok('done', 'T1')
   const bad = fixture(t, { validationMode: 'inspection', validation: 'Review docs' }, {}, { init: false })
@@ -466,6 +526,21 @@ test('empty evidence and pre-upgrade bare approval cannot reach done', (t) => {
   state.tasks.T1.validations.push({ ok: true, by: 'review', agent: 'reviewer', evidence: 'lint passed', attempt: 1 })
   f.save(state)
   f.rejected(/execution receipt/, 'done', 'T1')
+})
+
+test('note rejects missing and empty text without mutating history and preserves prior empty notes', (t) => {
+  const f = fixture(t)
+  const state = f.state()
+  state.tasks.T1.notes.push({ text: '', at: 'legacy timestamp' })
+  f.save(state)
+  const before = f.state(), events = f.events()
+  f.rejected(/note needs a nonempty --text/, 'note', 'T1')
+  f.rejected(/note needs a nonempty --text/, 'note', 'T1', '--text', '')
+  f.rejected(/note needs a nonempty --text/, 'note', 'T1', '--text', '   ')
+  assert.deepEqual(f.state(), before)
+  assert.deepEqual(f.events(), events)
+  assert.match(f.ok('note', 'T1', '--text', '📦').output, /1 character/)
+  assert.deepEqual(f.state().tasks.T1.notes.map(note => note.text), ['', '📦'])
 })
 
 test('review opt-out does not opt out of functional verification', (t) => {

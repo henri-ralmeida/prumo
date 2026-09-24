@@ -627,6 +627,17 @@ Browser/API workflows need checks that exercise that workflow at the
 appropriate layer; a pure helper test cannot prove a user journey. Keep tests scoped to the
 task and add a final integration check when separate tasks must work together.
 
+Before `validate --ok`, inspect the approved check output. Use `show-check <task> --check N --attempt K`
+for the full stdout, stderr, working directory, exit code and reuse status of a stored check. On a first
+review, run each approved check yourself and inspect its output before recording the verdict. Mark each
+reviewed check or structured inspection criterion with `review-progress <task> --step N --agent <reviewer>`;
+inspection tasks with structured criteria cannot pass validation until every criterion is traversed.
+This progress is a traceable reviewer report, not proof that an inspection happened or that work passed.
+Legacy inspection work without a recorded denominator stays unknown and does not gain invented criteria.
+`validate --ok` reruns the approved commands and prints up to 15 output lines from functional and failed
+checks; use `--tail 0` to suppress that preview. Summary labels only call out output text: judge the exit
+code and relevant result against the criterion, never keywords alone.
+
 Call `validate --ok --summary "<one-sentence PO First verdict>" --evidence "<complete observations against each criterion>" --cwd <absolute-project>`
 after inspecting real `git status --short` and staged/unstaged diffs against the pre-start baseline,
 the declared `writes` and approved `touches`, and the approved commands. Discount paths and hunks
