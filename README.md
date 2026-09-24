@@ -238,4 +238,4 @@ npm pack
 
 After changing translations, run `node scripts/build-dashboard.mjs --write`. The dashboard embeds its catalog so already-running legacy servers need no new asset routes.
 
-Prumo is based on graph-foreman by **JrSantiaggo**, preserving the original history and [MIT license](LICENSE) in its independent repository. Prumo and PO First additions are described in the [changelog](CHANGELOG.md).
+Prumo started as a fork of graph-foreman by **JrSantiaggo** and is now an independent project under the [MIT license](LICENSE). Prumo and PO First additions are described in the [changelog](CHANGELOG.md).

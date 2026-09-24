@@ -238,4 +238,4 @@ npm pack
 
 Ao editar traduções: `node scripts/build-dashboard.mjs --write`. O dashboard incorpora o catálogo para funcionar em servidores antigos sem novas rotas de arquivos.
 
-Prumo é baseado no graph-foreman de **JrSantiaggo**, com histórico original e [licença MIT](LICENSE) preservados em seu repositório independente. As alterações estão documentadas no [changelog](CHANGELOG.md).
+O Prumo nasceu como fork do graph-foreman de **JrSantiaggo** e hoje é um projeto independente, sob [licença MIT](LICENSE). As alterações estão documentadas no [changelog](CHANGELOG.md).
