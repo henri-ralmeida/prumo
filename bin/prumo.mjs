@@ -15,6 +15,7 @@ import { language, createTranslator, messages } from '../scripts/i18n.mjs'
 let t = createTranslator(messages, language())
 const print = (...parts) => console.log(...parts.map(part => t(part)))
 const color = (code, value, stream = process.stdout) => stream.isTTY && !('NO_COLOR' in process.env) ? `\x1b[${code}m${value}\x1b[0m` : value
+const harnessLabels = { claude: 'Claude Code', kiro: 'Kiro', codex: 'Codex', dsh: 'DeepSeek Harness' }
 
 function progressUi(enabled, stream = process.stdout) {
   let active = false
@@ -95,7 +96,7 @@ function runInstall(options, { command = 'install', dryRun = false, quiet = fals
 try {
   if (Number(process.versions.node.split('.')[0]) < 22) throw new Error('Prumo requires Node.js 22 or newer')
   const { values, positionals } = parseArgs({ allowPositionals: true, options: {
-    claude: { type: 'boolean' }, kiro: { type: 'boolean' }, codex: { type: 'boolean' }, all: { type: 'boolean' },
+    claude: { type: 'boolean' }, kiro: { type: 'boolean' }, codex: { type: 'boolean' }, dsh: { type: 'boolean' }, all: { type: 'boolean' },
     lang: { type: 'string' }, 'dry-run': { type: 'boolean' }, project: { type: 'string', multiple: true },
     check: { type: 'boolean' }, run: { type: 'string' },
     help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'v' },
@@ -106,10 +107,10 @@ try {
   const packageRoot = fileURLToPath(new URL('..', import.meta.url))
   if (values.version) print(version)
   else if (values.help || positionals.length === 0) {
-    print(`Prumo ${version} — graph-foreman + PO First\n\nprumo install [--all | --claude|--kiro|--codex] [--lang en|pt-BR] [--dry-run] [--project <path>]\nprumo update [--dry-run] [--lang en|pt-BR] [--project <path>]\nprumo migrate [--check] [--run <name>]\nprumo doctor --claude|--kiro|--codex [--lang en|pt-BR] [--project <path>]\nprumo dashboard [enable|disable|status|logs]\nprumo restore <backup>\n`)
+    print(`Prumo ${version} — graph-foreman + PO First\n\nprumo install [--all | --claude|--kiro|--codex|--dsh] [--lang en|pt-BR] [--dry-run] [--project <path>]\nprumo update [--dry-run] [--lang en|pt-BR] [--project <path>]\nprumo migrate [--check] [--run <name>]\nprumo doctor --claude|--kiro|--codex|--dsh [--lang en|pt-BR] [--project <path>]\nprumo dashboard [enable|disable|status|logs]\nprumo restore <backup>\n`)
     print('Install opens a selection of detected environments; --all selects all without prompting')
   } else if (positionals[0] === 'dashboard') {
-    if (positionals.length > 2 || ['claude', 'kiro', 'codex', 'all'].some(name => values[name]) || values.lang || values['dry-run'] || values.project?.length) throw new Error('Dashboard accepts only enable, disable, status or logs')
+    if (positionals.length > 2 || ['claude', 'kiro', 'codex', 'dsh', 'all'].some(name => values[name]) || values.lang || values['dry-run'] || values.project?.length) throw new Error('Dashboard accepts only enable, disable, status or logs')
     const action = positionals[1]
     if (!action) process.exitCode = runDashboardForeground()
     else if (action === 'logs') {
@@ -129,7 +130,7 @@ try {
       if (result.conflict || 'ok' in result && !result.ok) process.exitCode = 2
     }
   } else if (['update', '_update'].includes(positionals[0])) {
-    if (positionals.length !== 1 || ['claude', 'kiro', 'codex', 'all'].some(name => values[name])) throw new Error('Update automatically selects installed environments; do not select a harness')
+    if (positionals.length !== 1 || ['claude', 'kiro', 'codex', 'dsh', 'all'].some(name => values[name])) throw new Error('Update automatically selects installed environments; do not select a harness')
     if (positionals[0] === 'update') {
       const pendingUpdate = existsSync(join(homedir(), '.local/share/prumo/update-pending.json'))
       const request = { dryRun: values['dry-run'] ?? false, lang: values.lang, projects: (values.project ?? []).map(path => resolve(path)), cwd: process.cwd(), updateCli: true, sourceVersion: version, globalVersion: globalCliState(packageRoot).version, pendingUpdate }
@@ -216,7 +217,7 @@ try {
       }
     }
   } else if (positionals[0] === 'migrate') {
-    if (positionals.length !== 1 || ['claude', 'kiro', 'codex', 'all'].some(name => values[name]) || values.lang || values['dry-run'] || values.project?.length) throw new Error('Migrate accepts only --check and --run <name>')
+    if (positionals.length !== 1 || ['claude', 'kiro', 'codex', 'dsh', 'all'].some(name => values[name]) || values.lang || values['dry-run'] || values.project?.length) throw new Error('Migrate accepts only --check and --run <name>')
     const engineArgs = [fileURLToPath(new URL('../scripts/engine.mjs', import.meta.url)), 'migrate']
     if (values.check) engineArgs.push('--check')
     if (values.run) engineArgs.push('--run', values.run)
@@ -229,12 +230,17 @@ try {
   } else {
     const command = positionals[0]
     if (!['install', 'doctor'].includes(command) || positionals.length !== 1) throw new Error(t('Unknown command: {0}', positionals.join(' ')))
-    const selected = ['claude', 'kiro', 'codex'].filter(name => values[name])
-    if (selected.length > 1 || command === 'doctor' && selected.length !== 1) throw new Error('Choose exactly one of --claude, --kiro or --codex')
+    const selected = ['claude', 'kiro', 'codex', 'dsh'].filter(name => values[name])
+    if (selected.length > 1 || command === 'doctor' && selected.length !== 1) throw new Error('Choose exactly one of --claude, --kiro, --codex or --dsh')
     if (values.all && (selected.length || command !== 'install')) throw new Error('Use --all only with install and without a harness flag')
     const options = { lang: values.lang, projects: values.project ?? [] }
-    let harnesses = selected.length ? selected : detectHarnesses(options)
-    if (!harnesses.length) throw new Error('No supported environments detected; choose --claude, --kiro or --codex explicitly')
+    const detected = detectHarnesses(options)
+    if (command === 'install' && selected.length === 1 && !detected.includes(selected[0])) {
+      const harness = selected[0]
+      throw new Error(t('{0} is not installed or configured; install or configure it before running prumo install {1}', harnessLabels[harness], `--${harness}`))
+    }
+    let harnesses = selected.length ? selected : detected
+    if (!harnesses.length) throw new Error('No supported environments detected; install or configure Claude Code, Kiro, Codex or DeepSeek Harness first')
     if (!selected.length) {
       print(t('Detected environments: {0}', harnesses.join(', ')))
       const allCurrent = command === 'install' && harnesses.every(harness => {

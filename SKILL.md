@@ -1,13 +1,13 @@
 ---
 name: prumo
-description: Executes an approved plan as a task GRAPH — one read-only planner researches each phase and writes immutable task plans, parallel subagents deliver, and independent review validates before done. Includes PO First and a live dashboard.
+description: Executes an approved global plan as a task GRAPH — optional user-decided phase discussion and planning, persistent executors, and mandatory independent review before done. Includes PO First and a live dashboard.
 ---
 
 # /prumo [plan|run]
 
 
-Runs an **already approved** plan through the graph engine bundled with this skill: a DAG of
-tasks, one read-only planner researching each phase and composing immutable plans for its tasks, parallel executors, a validation gate before anything
+Runs an **already approved** global plan through the graph engine bundled with this skill: a DAG of
+tasks, optional phase discussion and read-only planning chosen explicitly by the user, parallel executors, a validation gate before anything
 is `done`, and a read-only dashboard the dev can watch.
 
 ## When to use
@@ -46,7 +46,9 @@ is fixed under the central Prumo workspace.
 
 ## Product-first behavior
 
-Apply [PO First](references/po-first.md), also configured globally by the installer, in every role. Respond in the user's language. A functional check means evidence of the requested effect, whether the work concerns data, automation, migration, software, or another domain. Use the host's native subagent tools; if dedicated planning, execution or independent review are unavailable, report that limitation rather than inventing agent dispatch. The engine records transitions; it does not create agents. In Codex invoke this skill as `$prumo`; Claude Code and Kiro use `/prumo`.
+Apply [PO First](references/po-first.md), also configured globally by the installer, in every role. Respond in the user's language. A functional check means evidence of the requested effect, whether the work concerns data, automation, migration, software, or another domain. Use the host's native subagent tools; if dedicated planning, execution or independent review are unavailable, report that limitation rather than inventing agent dispatch. The engine records transitions; it does not create agents. In Codex invoke this skill as `$prumo`; Claude Code, Kiro and DeepSeek Harness (DSH) use `/prumo`.
+
+For DSH, `prumo install --dsh` integrates only with an already detected external DSH installation and `prumo doctor --dsh` diagnoses that integration. A nonempty `DSH_HOME` takes precedence, otherwise the root is `~/.dsh`; Prumo manages `<DSH_HOME>/skills/prumo` and its PO First block in the global `<DSH_HOME>/AGENTS.md`. It never installs `@deepseek-ai/dsh`; explicit installation fails without writes when DSH is absent. The upstream version validated for this adapter was `0.1.6-alpha.2`, still alpha/developer preview. DSH already supplies skills, instructions, subagents and workflows in applicable profiles, so Prumo does not create or edit Cordis configuration, profiles, plugins, subagents, workflows or credentials. Structural install, doctor and `dsh --profile headless --dump-config` checks do not establish a real model conversation.
 
 ## Invocation router
 
@@ -58,8 +60,8 @@ agent state before selecting exactly one current flow:
 | --- | --- |
 | No approved global plan | Global planning and user approval; do not initialize or dispatch |
 | Approved plan, but no persisted run | Storage/dashboard bootstrap, then `init` and visibility verification |
-| `ready_for_discussion`, `discussing`, `discussed`, `ready_to_plan` or `planning` | Discussion and read-only planning flow |
-| `ready` or `running` with a current task plan | Executor flow |
+| `ready_for_discussion`, `discussing`, `discussed`, `ready_to_plan` or `planning` | Ask for the independent discussion/planning decisions, then follow or explicitly skip each gate |
+| `ready` or `running` with a current task plan or planning-skip receipt | Executor flow |
 | `reviewing` or a current validation receipt | Independent reviewer flow |
 | `failed` | Classify unchanged-contract correction versus an explicit contract change before retrying |
 | `blocked` | Resolve or wait for the recorded blocker; never route around it |
@@ -211,9 +213,11 @@ Use a different native agent for each role on a task; recording another label is
 
 ```bash
 node $ENGINE ready                              # separate planning/execution readiness and capacity
-node $ENGINE begin-phase-discussion F2          # persist phase discussion BEFORE asking
+node $ENGINE begin-phase-discussion F2          # after the user chooses discussion
+node $ENGINE skip-phase-discussion F2 --reason "..." --confirmed-by-user
 node $ENGINE finish-phase-discussion F2 --context <discovery.json>
 node $ENGINE plan-phase F2 --agent plan-scenes  # one read-only planner for the phase
+node $ENGINE skip-phase-planning F2 --reason "..." --confirmed-by-user
 node $ENGINE finish-phase-planning F2 --plan-dir <artifact-directory>
 node $ENGINE start T4 --agent ag-scenes         # dispatch up to the cap, in the SAME message
 node $ENGINE review T4 --agent rev-scenes       # executor finished → hand to a fresh reviewer
@@ -223,8 +227,15 @@ node $ENGINE done T4
 
 ### Two planning levels
 
-Global Plan/Spec mode defines and approves the graph. For new phased runs, each phase follows
-**one discussion → one read-only planner → separate immutable plans per task**. A phase can begin discussion
+Global Plan/Spec mode defines and approves the graph and remains mandatory. Discussion and planning are
+two independent optional gates for every eligible phase; execution and independent review remain mandatory.
+Before each gate, inspect observable signals such as scope size and complexity, ambiguity, impact,
+dependencies, novelty, risk and
+whether the approved contract/context is already sufficient. Give a reasoned recommendation to perform or
+skip that gate, state clearly that it is optional, offer both choices and wait for the user's explicit choice.
+Never use token economy as the reason to skip and never impose the recommendation. Record a skip with a
+nonempty reason and `--confirmed-by-user`. Supported combinations are discuss+plan, skip discussion+plan,
+discuss+skip planning and skip both. A phase can begin discussion
 or planning only when every external dependency of every unfinished member is `done` or `skipped`.
 One blocked member blocks the whole phase, including members without dependencies. Internal dependencies
 within the same phase gate execution, not phase planning. Phase numbering alone never blocks independent
@@ -232,9 +243,9 @@ phases. The user chooses which eligible phases to plan, including multiple phase
 does not authorize opening all phases automatically. Keep the approved phase assignments and dependency
 chains. Overlapping `touches` must be resolved through the approved dependency graph, not by moving tasks.
 
-Before dispatching the planner, the orchestrator runs an agnostic discovery protocol in the principal
-Codex, Claude Code or Kiro conversation. Load the global plan, settled decisions and dependency outputs;
-scout the phase's current code and artifacts; identify specific PO First gray areas; then always ask at
+When the user chooses discussion, the orchestrator runs an agnostic discovery protocol in the principal
+Codex, Claude Code, Kiro or DSH conversation. Load the global plan, settled decisions and dependency outputs;
+scout the phase's current code and artifacts; identify specific PO First gray areas; then ask at
 least one contextual question. Select the question channel from tools actually exposed and allowed in
 the principal session, respecting their current schema and mode restrictions:
 
@@ -255,7 +266,7 @@ of its acceptance criteria, defer it to that task's executor.
   not prove that the current host exposed it.
 - **Claude Code:** use `AskUserQuestion` when exposed. Keep discovery in the principal conversation;
   do not assume the tool is available to a subagent or a restricted SDK integration.
-- **Kiro or another harness:** use an exposed native clarification tool if available. Do not invent
+- **Kiro, DSH or another harness:** use an exposed native clarification tool if available. Do not invent
   a tool name or infer support from the product name or Plan mode alone.
 - **Fallback:** only after the current tool inventory has no permitted native wrapper, or the exposed wrapper
   explicitly reports unsupported operation,
@@ -285,7 +296,7 @@ node $ENGINE plan-phase F2 --agent <planner>
 node $ENGINE finish-phase-planning F2 --plan-dir <artifact-directory>
 ```
 
-The planner writes `task-plan-<id>.json` for every targeted member. Never turn steps, evidence gaps,
+When planning is chosen, the planner writes `task-plan-<id>.json` for every targeted member. Never turn steps, evidence gaps,
 prerequisites or dependency outputs inside an explicitly selected task into separate graph tasks or
 planner assignments without explicit user approval. The engine validates the whole batch
 before recording any artifact. Each artifact is immutable and lists incomplete direct dependencies as
@@ -363,22 +374,44 @@ actual agent handle in a note if it differs from the engine label. If dispatch i
 or the user paused work, block with the real orchestration reason. A recorded label is not
 proof that an agent is running, and a dispatch problem is not an implementation failure.
 
-Each executor gets its current task contract, approved context and recorded task plan:
+Each executor gets its current task contract, approved context and recorded task plan when one exists.
+When planning was explicitly skipped, give it the global contract, dependency outputs, recorded gate
+reasons and all available homologation/review feedback; do not invent a task plan or reduce the acceptance contract:
 
 ```text
-You are the EXECUTOR for <T4>: <title>. Deliver exactly that, then stop.
+You are the EXECUTOR for <T4>: <title>. Deliver exactly that; do not hand it to review until you
+reasonably believe every planned step and validation clause is satisfied.
 Read the project's agent rules first.
 Write ONLY under: <touches>  — another executor owns the rest, right now.
 Build on what these already produced: <deps>.
-Read the current taskPlan and recheck its research/steps against the actual workspace: <artifact>.
+Read the current taskPlan and recheck its research/steps against the actual workspace: <artifact, or "planning explicitly skipped" plus its receipt>.
 Report a stale plan or unresolved consequential decision; do not silently change the approved contract.
 Relevant approved context: <purpose, constraints and source references; identify superseded history>.
 Your work must satisfy, clause by clause: <validation>
   A DIFFERENT agent checks your delivery against that contract and never sees this message.
 <on a retry: the reviewer's --reason, verbatim>
+Treat a recoverable obstacle as executor work, not as a reason to hand incomplete work to review:
+inspect the failure, do targeted additional research when needed, change strategy, try safe alternatives
+inside the approved contract, and rerun the relevant implementation checks. Continue until the complete
+task plan is delivered. Stop early only for missing authority, an unresolved consequential scope/behavior
+decision, unauthorized destructive risk, an unavailable external dependency after proportional attempts,
+or evidenced impossibility. Record that blocker and the attempts made; do not widen scope or rewrite the plan.
 Commit policy: <Project overrides>. Never touch .specs/graph/ — the orchestrator owns the state.
 Report back: what you changed, and what a reviewer needs to reproduce it.
 ```
+
+A recoverable obstacle is executor work, not a reason to hand incomplete work to review. If an executor
+reports one, keep that executor working (or resume the interrupted execution in the same attempt) with the
+same immutable plan and current feedback. Do not run `review` merely because the executor reached a wall.
+The reviewer is a validation gate, not failure triage. Handoff is eligible only when the executor reports
+the whole plan delivered, every validation clause addressed, relevant safe checks passing and no known
+recoverable gap. This persistence does not authorize new scope, destructive action or invented business
+decisions; those are real blockers under the conditions above. Planner dispatch remains exactly once per
+approved contract, including while the executor rotates strategies.
+
+Corrections discovered during homologation keep their feedback and attempt history. Recommend discussion
+and planning separately from the observable uncertainty/risk, but let the user skip either or both. An
+unchanged-contract correction normally stays in the executor/reviewer loop; no replanning is invented.
 
 Report each execution step as it starts, using the 1-based index in the recorded `taskPlan.steps`.
 The orchestrator records actual executor reports with `progress <task> --step <index> --agent <executor>`.
@@ -652,8 +685,8 @@ suite was already green". A fresh agent, a clean context, and the contract.
 - Needs the dev → `block T4 --reason "..."`. Blocked is a real state; leaving it `running`
   while you wait is how a graph lies.
 - `note <task> --text "..."` for what a later reader needs and the states cannot say.
-- Skipping review entirely is `"requireReview": false` in the plan, and only where the gate
-  genuinely does not apply.
+- Discussion/planning skip receipts never waive the independent reviewer. New Prumo work keeps review on;
+  `requireReview: false` is compatibility state for older runs, not a current routing recommendation.
 
 ## 4. What NOT to ask
 

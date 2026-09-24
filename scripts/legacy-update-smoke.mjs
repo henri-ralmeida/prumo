@@ -20,7 +20,7 @@ const oldRoot = join(home, '.local/share/graph-foreman/legacy')
 const newRoot = join(home, '.local/share/prumo/legacy')
 const env = { ...process.env, HOME: home, USERPROFILE: home, APPDATA: join(home, 'AppData/Roaming'),
   LOCALAPPDATA: join(home, 'AppData/Local'), CODEX_HOME: join(home, '.codex'),
-  CLAUDE_CONFIG_DIR: join(home, '.claude'), PRUMO_HOME: join(home, '.local/share/prumo'),
+  DSH_HOME: join(home, '.dsh'), CLAUDE_CONFIG_DIR: join(home, '.claude'), PRUMO_HOME: join(home, '.local/share/prumo'),
   PRUMO_LANG: 'en', npm_config_prefix: prefix, npm_config_cache: join(home, 'npm-cache'),
   npm_config_userconfig: join(home, 'npmrc'), npm_config_fetch_retries: '0' }
 for (const key of ['PRUMO_ROOT', 'GRAPH_ROOT', 'GRAPH_FOREMAN_HOME', 'NODE_OPTIONS']) delete env[key]
@@ -48,6 +48,7 @@ try {
   put(join(home, '.claude/settings.json'), {})
   put(join(home, '.kiro/steering/project.md'), '# Local fixture')
   put(join(home, '.codex/config.toml'), '')
+  put(join(home, '.dsh/AGENTS.md'), 'Keep this legacy DSH instruction.\n')
   put(join(home, '.local/share/prumo/dashboard.json'), { enabled: false })
   run('npm', ['install', '--global', '--ignore-scripts', '--no-audit', '--no-fund', archive])
   assert.equal(run(process.execPath, [cli, '-v']).trim(), fromVersion)
@@ -130,7 +131,14 @@ try {
   if (fromVersion === '1.3.3' || !phaseEra) assert.match(output, /Prumo v1\.3\.4/)
   assert.ok(output.includes(`Prumo v${pkg.version}`))
   assert.equal(JSON.parse(readFileSync(join(installed, 'package.json'), 'utf8')).version, pkg.version)
-  for (const harness of ['.claude', '.kiro', '.agents']) {
+  run(process.execPath, [cli, 'install', '--dsh', '--lang', 'en'])
+  const dshAgents = readFileSync(join(home, '.dsh/AGENTS.md'), 'utf8')
+  assert.match(dshAgents, /Keep this legacy DSH instruction/)
+  assert.match(dshAgents, /<!-- po-first:start -->/)
+  assert.equal(existsSync(join(home, '.dsh/cordis.patch.yml')), false)
+  assert.equal(existsSync(join(home, '.dsh/.credentials.yaml')), false)
+  assert.equal(existsSync(join(home, '.dsh/profiles')), false)
+  for (const harness of ['.claude', '.kiro', '.agents', '.dsh']) {
     const skill = join(home, harness, 'skills/prumo')
     assert.equal(JSON.parse(readFileSync(join(skill, '.prumo-install.json'), 'utf8')).version, pkg.version)
     assert.equal(readFileSync(join(skill, 'scripts/engine.mjs'), 'utf8'), readFileSync(engine, 'utf8'))
@@ -213,7 +221,7 @@ try {
   const completedState = readFileSync(join(newRoot, relativeState), 'utf8')
   modern('migrate')
   assert.equal(readFileSync(join(newRoot, relativeState), 'utf8'), completedState, 'migration is idempotent')
-  console.log(`Published ${fromVersion} updated to ${pkg.version}; notes, three harnesses, junctions, merged tasks and ${[...flows.keys()].join('/')} continuation verified`)
+  console.log(`Published ${fromVersion} updated to ${pkg.version}; notes, three legacy harnesses plus current DSH, junctions, merged tasks and ${[...flows.keys()].join('/')} continuation verified`)
 } finally {
   if (registry && registry.exitCode === null && registry.signalCode === null) { const closed = new Promise(resolve => registry.once('exit', resolve)); registry.kill(); await closed }
   put(join(repo, `.test-output/legacy-update-${fromVersion}.json`), evidence)

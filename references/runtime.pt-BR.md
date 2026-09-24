@@ -6,7 +6,9 @@ O motor é uma CLI Node.js, não um serviço que chama modelos. O ambiente de IA
 
 `npm install -g @henri-ralmeida/prumo` instala a CLI, a skill, o PO First e o serviço de dashboard do usuário. O `postinstall` global configura os ambientes suportados detectados; uma instalação npm local é inerte. Use `prumo install --all` quando os scripts do npm estavam desabilitados ou para reparar um novo ambiente. Instalação e atualização reiniciam o dashboard quando ele está habilitado e preservam a desativação explícita. O dashboard global é somente observador: apenas uma chamada explícita do orquestrador a `sync-plan` reconcilia um plano aprovado.
 
-`prumo update` atualiza a CLI, a skill, os dois READMEs, as referências, os scripts e a configuração PO First em todas as instalações registradas do Claude Code, Kiro e Codex. Ele compara o conteúdo gerenciado, retoma ativação pendente e nunca rebaixa uma CLI global mais nova que o `latest` do npm. Um marcador danificado só é recuperado para seu ambiente/caminho exato registrado e a partir de um backup Prumo conferido byte a byte.
+`prumo update` atualiza a CLI, a skill, os dois READMEs, as referências, os scripts e a configuração PO First em todas as instalações registradas do Claude Code, Kiro, Codex e DSH. Ele compara o conteúdo gerenciado, retoma ativação pendente e nunca rebaixa uma CLI global mais nova que o `latest` do npm. Um marcador danificado só é recuperado para seu ambiente/caminho exato registrado e a partir de um backup Prumo conferido byte a byte.
+
+O DSH precisa estar instalado e detectado antes de `prumo install --dsh`; o Prumo nunca instala o pacote externo `@deepseek-ai/dsh`. Um `DSH_HOME` não vazio prevalece; caso contrário, usa-se `~/.dsh`. Os destinos gerenciados são `<DSH_HOME>/skills/prumo` e o bloco PO First no `<DSH_HOME>/AGENTS.md` global. A instalação explícita retorna código diferente de zero sem gravar quando o DSH está ausente; `--all` e `postinstall` atuam apenas nos ambientes detectados, enquanto update pode reparar uma instalação Prumo exata detectada ou registrada.
 
 ## Armazenamento
 
@@ -43,8 +45,14 @@ Cada execução usa `.specs/graph/<run>/state.json` e `events.ndjson`. `CURRENT`
 
 ## Descoberta e planejamento por fase
 
-Há dois níveis. O modo Plan/Spec monta e aprova o grafo global. Runs novas com fases declaradas usam
-uma discussão visível e um planejador somente leitura por fase. O planejador produz um
+Há dois níveis. O modo Plan/Spec monta e aprova o grafo global, que permanece obrigatório. Em execuções
+com fases, discussão e planejamento são etapas opcionais e independentes. Antes de cada escolha, avalie
+tamanho e complexidade do escopo, ambiguidade, impacto, dependências, novidade, risco e suficiência do
+contrato e contexto aprovados. Recomende fazer ou pular cada etapa e aguarde a escolha explícita do usuário.
+Registre cada skip com `--reason` e `--confirmed-by-user`; executor e revisor independente continuam
+obrigatórios. Correções de homologação podem pular uma ou ambas as etapas somente por escolha explícita.
+Quando escolhidos, a discussão é uma conversa visível na sessão principal e o planejamento usa um
+planejador somente leitura por fase. O planejador produz um
 `task-plan-<id>.json` imutável e separado para cada tarefa alvo. Uma fase só abre quando todas as
 dependências externas de todos os membros não concluídos estão `done` ou `skipped`. Um membro bloqueado
 segura a fase inteira. Dependências internas à fase bloqueiam execução, não planejamento. O usuário pode
@@ -52,10 +60,10 @@ escolher fases independentes para discutir e planejar em paralelo, independentem
 Não mova tarefas de fase nem remova dependências para contornar bloqueios.
 Uma tarefa existente nomeada explicitamente é um limite rígido: pré-requisitos, lacunas de evidência e
 entregas internas permanecem em seu único plano; criar tarefas auxiliares ou planejar irmãs exige aprovação.
-A conversa executa
-`begin-phase-discussion <fase>` antes do prompt, pesquisa a fase e sempre faz uma pergunta contextual.
+Quando o usuário escolhe discutir, a conversa executa
+`begin-phase-discussion <fase>` antes do prompt, pesquisa a fase e faz ao menos uma pergunta contextual.
 
-Use a caixa nativa de perguntas do Codex, Claude Code ou Kiro quando disponível; caso contrário, use
+Use a caixa nativa de perguntas do Codex, Claude Code, Kiro ou DSH quando disponível; caso contrário, use
 um bloco estruturado na conversa principal. Reaproveite respostas atuais e faça rodadas adaptativas até
 fechar as áreas cinzentas que mudam comportamento, escopo, aceite ou execução. Ideias fora do escopo
 vão para `deferred`. A conversa principal grava um JSON de descoberta com pesquisa, perguntas e
@@ -86,6 +94,8 @@ as perguntas, e a ferramenta não deve ser presumida em subagentes. O
 [catálogo do Kiro](https://kiro.dev/docs/reference/built-in-tools/) não confirma uma ferramenta
 equivalente de caixinha: confira as capacidades reais da sessão. O usuário do Kiro CLI pode usar
 [`/reply`](https://kiro.dev/docs/cli/chat/responding/) para responder ponto a ponto.
+No DSH, também confira as ferramentas realmente expostas na sessão principal; não infira um wrapper de
+perguntas apenas pelo nome do harness.
 Sem ferramenta nativa permitida, apresente **O que entendi**, **Campos cinzentos**, **Sugestões** e
 **Perguntas** numeradas no chat. Preserve perguntas pendentes ao trocar de canal. Retorno assíncrono,
 timeout, resposta vazia e sugestão pré-selecionada não são respostas: aguarde a resposta real antes
@@ -183,13 +193,17 @@ Resolva `scripts/engine.mjs` a partir da skill instalada. Acrescente `--run <nom
 | `init --plan <arquivo> --run <nome>` | Inicializa execução do plano aprovado |
 | `migrate [--check]` | Migra com backup o schema legado seguro; `--check` apenas diagnostica |
 | `status`, `ready`, `graph`, `runs` | Consulta estado, trabalho pronto, JSON ou execuções |
-| `begin-phase-discussion <fase> [--adopt-legacy]` | Persiste a discussão da fase antes da primeira pergunta; a opção adota uma fase legada segura |
+| `begin-phase-discussion <fase> [--adopt-legacy]` | Persiste a discussão escolhida da fase antes da primeira pergunta; a opção adota uma fase legada segura |
+| `skip-phase-discussion <fase> --reason <texto> --confirmed-by-user` | Registra a escolha explícita de pular a discussão da fase |
 | `finish-phase-discussion <fase> --context <descoberta.json>` | Valida o recibo e as respostas da rodada atual |
 | `plan-phase <fase> --agent <nome>` | Registra o único planejador somente leitura da fase |
+| `skip-phase-planning <fase> --reason <texto> --confirmed-by-user` | Registra a escolha explícita de pular o planejamento da fase após a decisão de discussão |
 | `finish-phase-planning <fase> --plan-dir <diretório>` | Valida e grava atomicamente um plano imutável por tarefa alvo |
 | `begin-discussion <tarefa> [--adopt-legacy]` | Persiste discussão ativa; a opção adota somente uma tarefa legada elegível |
+| `skip-discussion <tarefa> --reason <texto> --confirmed-by-user` | Registra a escolha explícita de pular a discussão da tarefa |
 | `finish-discussion <tarefa> --context <descoberta.json>` | Valida respostas da rodada atual e libera o planejamento |
 | `plan-task <tarefa> --agent <nome>` | Registra o planejador após a discussão fechada |
+| `skip-planning <tarefa> --reason <texto> --confirmed-by-user` | Registra a escolha explícita de pular o planejamento da tarefa |
 | `finish-planning <tarefa> --plan <artefato.json>` | Confere e registra o plano específico; libera execução se não houver pausa preservada |
 | `start <tarefa> --agent <nome>` | Registra executor e inicia tentativa |
 | `progress <tarefa> --step <índice> --agent <executor>` | Registra o passo atual do plano durante a execução, começando em 1 |
@@ -240,6 +254,15 @@ ou reviewing, bloqueie, sincronize a mudança aprovada e dispare `plan-task` na 
 `unblock` explícito retoma a mesma tentativa. Não invente fail/retry para replanejar. Recibos do escopo
 anterior não aprovam o novo. Uma mudança somente de validação continua usando `refresh-contract`
 e nova verificação na mesma tentativa.
+
+Antes de qualquer passagem para revisão, o executor em execução continua responsável pelos obstáculos
+recuperáveis. Ele inspeciona a falha, faz pesquisa adicional direcionada quando necessário, muda a
+estratégia dentro do contrato aprovado, tenta alternativas seguras e repete as verificações relevantes
+até acreditar, com base nas evidências, que o plano completo satisfaz todos os critérios. A revisão é uma
+etapa de validação, não uma triagem de falhas. Bloqueio antes da passagem só é adequado por falta de
+autoridade, decisão consequencial ainda indefinida, risco destrutivo não autorizado, dependência externa
+indisponível após tentativas proporcionais ou impossibilidade comprovada. Essas rotações de estratégia
+reutilizam o mesmo plano imutável e nunca disparam outro planejador para o mesmo contrato.
 
 Bloquear durante planejamento preserva essa fase; desbloquear retoma a pesquisa, respeitando
 dependências, capacidade e disponibilidade do agente. Confira estado e agente reais após interrupções.

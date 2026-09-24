@@ -16,7 +16,7 @@ const globalPackage = join(globalPrefix, process.platform === 'win32' ? 'node_mo
 const globalExecutable = process.platform === 'win32' ? join(globalPrefix, 'prumo.cmd') : join(globalPrefix, 'bin', 'prumo')
 mkdirSync(join(cwd, '.git'), { recursive: true })
 writeFileSync(join(cwd, 'package.json'), JSON.stringify({ name: 'prumo-package-smoke', private: true, dependencies: { [name]: `file:${archive.replace(/\\/g, '/')}` } }))
-const env = { ...process.env, HOME: home, USERPROFILE: home, CODEX_HOME: join(home, '.codex'), CLAUDE_CONFIG_DIR: join(home, '.claude'), PRUMO_HOME: join(home, 'data'), PRUMO_LANG: 'en',
+const env = { ...process.env, HOME: home, USERPROFILE: home, CODEX_HOME: join(home, '.codex'), DSH_HOME: join(home, '.dsh'), CLAUDE_CONFIG_DIR: join(home, '.claude'), PRUMO_HOME: join(home, 'data'), PRUMO_LANG: 'en',
   APPDATA: join(home, 'AppData', 'Roaming'), LOCALAPPDATA: join(home, 'AppData', 'Local'),
   npm_config_cache: join(home, 'npm-cache'), npm_config_userconfig: join(home, 'npmrc'), npm_config_prefix: globalPrefix, BUN_INSTALL_CACHE_DIR: join(home, 'bun-cache') }
 delete env.PRUMO_ROOT
@@ -48,12 +48,13 @@ try {
   const address = await new Promise((resolve, reject) => { registry.once('message', resolve); registry.once('error', reject); registry.once('exit', () => reject(new Error('Test registry exited before startup'))) })
   env.npm_config_registry = address.url
   env.npm_config_fetch_retries = '0'
-  for (const harness of ['claude', 'kiro', 'codex']) mkdirSync(join(home, `.${harness}`), { recursive: true })
+  for (const harness of ['claude', 'kiro', 'codex', 'dsh']) mkdirSync(join(home, `.${harness}`), { recursive: true })
   writeFileSync(join(home, '.claude', 'settings.json'), '{}')
   writeFileSync(join(home, '.codex', 'config.toml'), '')
   mkdirSync(join(home, '.kiro', 'steering'), { recursive: true })
   writeFileSync(join(home, '.kiro', 'steering', 'project.md'), '# Project guidance')
-  assert.match(run('npm', ['exec', '--offline', '--', 'prumo', 'install', '--dry-run']), /Detected environments: claude, kiro, codex/)
+  writeFileSync(join(home, '.dsh', 'AGENTS.md'), 'Keep this DSH user instruction.\n')
+  assert.match(run('npm', ['exec', '--offline', '--', 'prumo', 'install', '--dry-run']), /Detected environments: claude, kiro, codex, dsh/)
   assert.equal(existsSync(join(home, '.local', 'share', 'prumo')), false)
   const autoHome = join(home, 'automatic-global')
   const autoPrefix = join(autoHome, 'npm-global')
@@ -62,6 +63,8 @@ try {
   const preload = join(autoHome, 'safe-autostart.mjs')
   mkdirSync(join(autoHome, '.codex'), { recursive: true })
   writeFileSync(join(autoHome, '.codex', 'config.toml'), '')
+  mkdirSync(join(autoHome, '.dsh'), { recursive: true })
+  writeFileSync(join(autoHome, '.dsh', 'AGENTS.md'), 'Keep this automatic DSH instruction.\n')
   writeFileSync(preload, `
 import childProcess from 'node:child_process'
 import net from 'node:net'
@@ -115,7 +118,7 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
   syncBuiltinESMExports()
 }
 `)
-  const autoEnv = { ...env, HOME: autoHome, USERPROFILE: autoHome, CODEX_HOME: join(autoHome, '.codex'),
+  const autoEnv = { ...env, HOME: autoHome, USERPROFILE: autoHome, CODEX_HOME: join(autoHome, '.codex'), DSH_HOME: join(autoHome, '.dsh'),
     APPDATA: join(autoHome, 'AppData', 'Roaming'), LOCALAPPDATA: join(autoHome, 'AppData', 'Local'),
     PRUMO_HOME: join(autoHome, 'data'), npm_config_prefix: autoPrefix,
     npm_config_allow_scripts: name,
@@ -127,6 +130,10 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
   writeFileSync(join(autoPackage, 'package.json'), JSON.stringify({ name, version: '1.2.2' }))
   run('npm', ['install', '--global', '--force', '--offline', '--no-audit', '--no-fund', archive], true, autoEnv)
   assert.ok(existsSync(join(autoHome, '.agents', 'skills', 'prumo', 'SKILL.md')), 'global postinstall configures the detected harness')
+  assert.ok(existsSync(join(autoHome, '.dsh', 'skills', 'prumo', 'SKILL.md')), 'global postinstall configures detected DSH')
+  assert.match(readFileSync(join(autoHome, '.dsh', 'AGENTS.md'), 'utf8'), /Keep this automatic DSH instruction/)
+  assert.equal(existsSync(join(autoHome, '.dsh', 'cordis.patch.yml')), false)
+  assert.equal(existsSync(join(autoHome, '.dsh', '.credentials.yaml')), false)
   assert.equal(JSON.parse(readFileSync(join(autoHome, '.local', 'share', 'prumo', 'dashboard.json'), 'utf8')).enabled, true)
   const startupCalls = readFileSync(autoEvents, 'utf8')
   assert.ok(process.platform === 'win32' ? startupCalls.includes('"wscript"') :
@@ -155,20 +162,27 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
   assert.equal(JSON.parse(readFileSync(join(home, '.claude', 'settings.json'), 'utf8')).outputStyle, 'PO First')
   assert.match(readFileSync(join(home, '.kiro', 'steering', 'po-first.md'), 'utf8'), /inclusion: always/)
   assert.match(readFileSync(join(home, '.codex', 'AGENTS.md'), 'utf8'), /<!-- po-first:start -->/)
-  for (const harness of ['.claude', '.kiro', '.agents']) {
+  const dshAgents = readFileSync(join(home, '.dsh', 'AGENTS.md'), 'utf8')
+  assert.match(dshAgents, /Keep this DSH user instruction/)
+  assert.equal([...dshAgents.matchAll(/<!-- po-first:start -->/g)].length, 1)
+  assert.equal(JSON.parse(readFileSync(join(home, '.dsh', 'skills', 'prumo', '.prumo-install.json'), 'utf8')).harness, 'dsh')
+  assert.equal(existsSync(join(home, '.dsh', 'cordis.patch.yml')), false)
+  assert.equal(existsSync(join(home, '.dsh', '.credentials.yaml')), false)
+  assert.equal(existsSync(join(home, '.dsh', 'profiles')), false)
+  for (const harness of ['.claude', '.kiro', '.agents', '.dsh']) {
     const skill = join(home, harness, 'skills', 'prumo')
     for (const file of ['SKILL.md', 'scripts/engine.mjs', 'scripts/serve.mjs', 'scripts/validation.mjs', 'scripts/atomic-state.mjs', 'scripts/storage.mjs', 'scripts/dashboard.html']) {
       assert.ok(existsSync(join(skill, file)), `${harness} installation must contain ${file}`)
     }
   }
-  rmSync(join(home, '.kiro', 'skills', 'prumo'), { recursive: true, force: true })
+  rmSync(join(home, '.dsh', 'skills', 'prumo'), { recursive: true, force: true })
   run('npm', ['install', '--global', '--force', '--offline', '--no-audit', '--no-fund', archive])
-  assert.ok(existsSync(join(home, '.kiro', 'skills', 'prumo', 'SKILL.md')), 'global postinstall configures detected harnesses')
+  assert.ok(existsSync(join(home, '.dsh', 'skills', 'prumo', 'SKILL.md')), 'global postinstall repairs detected DSH')
   const reinstallBackups = readdirSync(join(home, '.local', 'share', 'prumo', 'backups')).length
   assert.match(run(globalExecutable, ['install', '--all']), new RegExp(`Prumo v${version.replaceAll('.', '\\.')} is already installed`))
   assert.equal(readdirSync(join(home, '.local', 'share', 'prumo', 'backups')).length, reinstallBackups)
   console.log('Packaged npm and Bun entrypoints configured all adapters and exercised safe automatic dashboard startup in an isolated home')
-  const installedRoots = [join(home, '.claude', 'skills', 'prumo'), join(home, '.kiro', 'skills', 'prumo'), join(home, '.agents', 'skills', 'prumo')]
+  const installedRoots = [join(home, '.claude', 'skills', 'prumo'), join(home, '.kiro', 'skills', 'prumo'), join(home, '.agents', 'skills', 'prumo'), join(home, '.dsh', 'skills', 'prumo')]
   for (const destination of installedRoots) {
     const markerPath = join(destination, '.prumo-install.json')
     const marker = JSON.parse(readFileSync(markerPath, 'utf8'))
@@ -207,7 +221,7 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
     assert.equal(readFileSync(join(destination, 'scripts', 'engine.mjs'), 'utf8'), readFileSync(join(root, 'scripts', 'engine.mjs'), 'utf8'))
     assert.equal(readFileSync(join(destination, 'SKILL.md'), 'utf8'), readFileSync(join(root, 'SKILL.md'), 'utf8'))
   }
-  console.log('Public update refreshed the global CLI and three installed adapters from an isolated registry; preview and registry failure preserved existing files')
+  console.log('Public update refreshed the global CLI and four installed adapters from an isolated registry; preview and registry failure preserved existing files')
 } finally {
   if (registry && registry.exitCode === null && registry.signalCode === null) { const closed = new Promise(resolve => registry.once('exit', resolve)); registry.kill(); await closed }
   mkdirSync(join(root, '.test-output'), { recursive: true })

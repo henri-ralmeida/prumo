@@ -8,7 +8,7 @@ The plan defines the expected outcome; the engine enforces transitions and recor
 
 ## Install
 
-Requires **Node.js 22 or newer** and the chosen harness. The installer does not install Claude Code, Kiro or Codex, or expand their execution permissions.
+Requires **Node.js 22 or newer** and the chosen harness. The installer does not install Claude Code, Kiro, Codex or `@deepseek-ai/dsh`, or expand their execution permissions.
 
 Install the CLI, Prumo skill, PO First and the per-user dashboard service in one step:
 
@@ -29,10 +29,11 @@ You can also start the interactive installer, select a harness directly or previ
 | Claude Code | `bunx @henri-ralmeida/prumo@latest install --claude` |
 | Kiro | `bunx @henri-ralmeida/prumo@latest install --kiro` |
 | Codex | `bunx @henri-ralmeida/prumo@latest install --codex` |
+| DeepSeek Harness (DSH) | `bunx @henri-ralmeida/prumo@latest install --dsh` |
 | Repair after disabled npm scripts | `prumo install --all` |
 | Preview harness and dashboard changes | `prumo install --all --dry-run` |
 
-It detects available environments from real configuration or commands on `PATH` (`claude`, `kiro-cli` / `kiro`, `codex`). Empty `~/.claude`, `~/.kiro` and `~/.codex` directories are not enough. A checkbox menu shows only detected environments, initially all selected. Use the arrow keys to move, Space to toggle, A for all/none, Enter to install, or Esc to cancel. Installation is per user and available across projects; no changes are applied before selection.
+It detects available environments from real configuration or commands on `PATH` (`claude`, `kiro-cli` / `kiro`, `codex`, `dsh`). DSH can also be detected from its official global structure under a nonempty `DSH_HOME`, which falls back to `~/.dsh`; an empty `.dsh` directory or a project-local `.dsh/AGENTS.md` alone is not enough. Empty `~/.claude`, `~/.kiro` and `~/.codex` directories are likewise insufficient. A checkbox menu shows only detected environments, initially all selected. Use the arrow keys to move, Space to toggle, A for all/none, Enter to install, or Esc to cancel. Installation is per user and available across projects; no changes are applied before selection.
 
 To install in every detected environment without prompting, including from scripts:
 
@@ -40,12 +41,13 @@ To install in every detected environment without prompting, including from scrip
 bunx @henri-ralmeida/prumo@latest install --all
 ```
 
-Without an interactive terminal, use `--all` or an explicit harness flag. If nothing is detected, the installer reports it without writing files. To choose one environment directly:
+Without an interactive terminal, use `--all` or an explicit harness flag. If nothing is detected, the installer reports it without writing files. An explicit flag for a missing harness exits nonzero, identifies that harness and writes nothing. To choose one environment directly:
 
 ```sh
 bunx @henri-ralmeida/prumo@latest install --claude --lang en
 bunx @henri-ralmeida/prumo@latest install --kiro --lang en
 bunx @henri-ralmeida/prumo@latest install --codex --lang en
+bunx @henri-ralmeida/prumo@latest install --dsh --lang en
 ```
 
 Language is detected from the **country/region configured in the operating system**: Brazil selects Brazilian Portuguese; other regions or an unavailable setting select English. This uses Windows home region, macOS regional preferences, or Linux address locale, independently of display/browser language. It does not use IP geolocation. To override it explicitly, choose `--lang en` or `--lang pt-BR`. For example:
@@ -61,6 +63,7 @@ A real installation also installs the persistent global CLI through npm, so `pru
 ```sh
 bunx @henri-ralmeida/prumo@latest install --claude --lang en --dry-run
 bunx @henri-ralmeida/prumo@latest doctor --claude --lang en
+bunx @henri-ralmeida/prumo@latest doctor --dsh --lang en
 ```
 
 `--dry-run` only previews harness changes and dashboard service creation or restart. A real installation shows compact progress; the preview reports affected files, backups and conflicts. Repeat the command to repair or update; identical files, instruction blocks and startup records are not duplicated. Repeatable `--project <path>` registers additional projects and includes them when looking for existing installations and runs. Prumo does not scan your entire disk.
@@ -70,6 +73,13 @@ bunx @henri-ralmeida/prumo@latest doctor --claude --lang en
 | Claude Code | `/prumo` | Installs and selects an output style |
 | Kiro | `/prumo` | Always-included steering and explicit resources in discovered JSON agents |
 | Codex | `$prumo` / skill picker | Managed block in the effective global instructions file |
+| DeepSeek Harness (DSH) | `/prumo` | Skill in `<DSH_HOME>/skills/prumo` and managed PO First block in `<DSH_HOME>/AGENTS.md` |
+
+For DSH, `DSH_HOME` takes precedence when it is nonempty; otherwise the root is `~/.dsh`. Prumo writes only its skill under `<DSH_HOME>/skills/prumo` and its managed PO First block in the global `<DSH_HOME>/AGENTS.md`; with the fallback root, those paths are `~/.dsh/skills/prumo` and `~/.dsh/AGENTS.md`. `install --all` and global `postinstall` include DSH only when it is detected. Update and repair reuse detected or registered Prumo installations, including custom `DSH_HOME` paths, without creating a DSH installation from scratch.
+
+> **DSH status:** Prumo supports DSH as its fourth harness, but never installs `@deepseek-ai/dsh`. The upstream version validated during this integration was `0.1.6-alpha.2`, which is still alpha/developer preview and may change incompatibly. `install --dsh`, `doctor --dsh` and `dsh --profile headless --dump-config` can verify structural setup without a provider credential or model call. A real model conversation depends on the user's provider configuration and was not established by those checks.
+
+DSH already provides native skill discovery, global `AGENTS.md` instructions, subagents and workflows in applicable profiles. Prumo uses those capabilities when `/prumo` is invoked; it does not create or edit `cordis.patch.yml`, a DSH profile, plugin, subagent, workflow or credential, and it does not replace DSH's own orchestration.
 
 PO First also applies outside Prumo. It prioritizes outcomes, rules, scope, decisions and evidence without requiring other personal skills. It maps every material criterion to current evidence, asks for one independently derived counterexample against the highest applicable risk, and stops when the material criteria are covered. Final reports lead with the observable result. **Suggestions** appear only when a useful next action exists: one to three in priority order, with a fourth only to prevent a critical failure, loss or blockage. Claude's coding instructions stay enabled in the output style.
 
@@ -119,7 +129,7 @@ bunx @henri-ralmeida/prumo@latest install --all --dry-run
 bunx @henri-ralmeida/prumo@latest install --all
 ```
 
-Omit `--all` to choose with checkboxes, or use `--claude`, `--kiro` or `--codex` to select one directly. For a project-local installation, run from that project or add `--project "<project-path>"`. This first switch uses `install`; `update` only refreshes environments already containing Prumo. After migration, use `/prumo` (or `$prumo` in Codex); the legacy `/graph-foreman` skill is removed.
+Omit `--all` to choose with checkboxes, or use `--claude`, `--kiro`, `--codex` or `--dsh` to select one directly. For a project-local installation, run from that project or add `--project "<project-path>"`. This first switch uses `install`; `update` only refreshes environments already containing Prumo. After migration, use `/prumo` (or `$prumo` in Codex); the legacy `/graph-foreman` skill is removed.
 
 No manual data migration is required. Finish sessions that are actively loading files from the graph-foreman skill before installing; the installer never kills processes. It checks standard locations, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, supplied projects and ancestors of the current directory.
 
@@ -152,7 +162,7 @@ prumo migrate --run <run-name>
 
 ## Run an approved plan
 
-Present and approve the global plan in Plan/Spec mode in your AI harness. If that mode blocks writes or agent dispatch, leave it after approval. Then invoke `/prumo <plan-or-run>` in Claude Code or Kiro, or `$prumo` in Codex. The engine records dispatches; the harness creates agents. If dedicated planners, executors or independent reviewers are unavailable, the workflow must report that limitation.
+Present and approve the global plan in Plan/Spec mode in your AI harness. If that mode blocks writes or agent dispatch, leave it after approval. Then invoke `/prumo <plan-or-run>` in Claude Code, Kiro or DSH, or `$prumo` in Codex. The engine records dispatches; the harness creates agents. If dedicated planners, executors or independent reviewers are unavailable, the workflow must report that limitation.
 
 The current workflow has two planning levels. Global Plan/Spec mode defines and approves the graph. Each phase then follows **discuss → plan → execute → review**: the orchestrator first records the phase as discussing, researches it and asks at least one contextual question in the principal conversation. When consequential gray areas are closed, one dedicated read-only planner searches and reads the current project, then writes one separate immutable `task-plan-<id>.json` for every task in that phase. The planner does not edit product files or graph state.
 
@@ -181,6 +191,8 @@ node "$ENGINE" review T1 --agent reviewer-T1
 
 Discovery uses the host's native question UI when available and a structured principal-chat fallback otherwise. It records light research, real answers, PO First coverage, decisions, deferred ideas and why no consequential gray area remains. The planner consumes it without repeating the discussion. Material changes to scope, contract or shared phase decisions require fresh discussion/planning for the affected work; a reviewer-marked plan defect replans only that task. Ordinary executor findings and corrective retries reuse a sound, current immutable plan.
 
+Executors own recoverable obstacles: they inspect the failure, perform targeted additional research when needed, rotate to safe alternatives within the approved contract and rerun relevant checks until the whole plan is delivered. They hand off only when they reasonably believe every criterion passes. The reviewer is a validation gate, not failure triage. Early blocking is reserved for missing authority, an unresolved consequential decision, unauthorized destructive risk, an external dependency still unavailable after proportional attempts or evidenced impossibility. Strategy changes reuse the same plan; the planner still runs exactly once per approved contract.
+
 Existing task-scoped runs retain their lifecycle and history. Before continuing them, Prumo's skill inspects and normalizes every nonterminal legacy contract in the approved source and synchronizes the original run. Contract migration does not expand planning scope: an explicitly selected task keeps one task-scoped planner; otherwise eligible phases are adopted in order with `begin-phase-discussion <phase> --adopt-legacy`. It never creates a second run to avoid migration; unsafe adoption is refused atomically. See the [phase planning artifact and recovery rules](references/runtime.md#task-plan-artifact).
 
 For new work, select a central workspace. On macOS/Linux:
@@ -202,7 +214,7 @@ New-Item -ItemType Directory -Force -Path $env:PRUMO_ROOT | Out-Null
 
 Project-local plans preserve their original workspace. `GRAPH_FOREMAN_HOME` locates legacy data for discovery and migration; it does not select the destination for new plans. The default store is `~/.local/share/prumo`, overridable with `PRUMO_HOME`. Old `GRAPH_ROOT`/`PRUMO_ROOT` references follow a migrated central workspace when its old graph is gone and the new graph exists.
 
-Local harnesses running as the same user share the Prumo central store. These commands create missing directories. Access still depends on each harness's permissions; cloud sessions do not automatically share local files.
+Local Claude Code, Kiro, Codex and DSH sessions running as the same user share the Prumo central store. These commands create missing directories. Access still depends on each harness's permissions; cloud sessions do not automatically share local files.
 
 Scripts are under `scripts/` beside the installed skill. Resolve paths from that skill, not from the project directory. See the [engine reference](references/runtime.md) for commands, contracts and states.
 

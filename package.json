@@ -1,7 +1,7 @@
 {
   "name": "@henri-ralmeida/prumo",
   "version": "1.3.17",
-  "description": "Evidence-driven task orchestration with PO First for Claude Code, Kiro and Codex",
+  "description": "Evidence-driven task orchestration with PO First for Claude Code, Kiro, Codex and DeepSeek Harness",
   "type": "module",
   "bin": { "prumo": "bin/prumo.mjs" },
   "engines": { "node": ">=22" },
@@ -10,7 +10,7 @@
   "repository": { "type": "git", "url": "git+https://github.com/henri-ralmeida/prumo.git" },
   "homepage": "https://github.com/henri-ralmeida/prumo#readme",
   "bugs": "https://github.com/henri-ralmeida/prumo/issues",
-  "keywords": ["agent-skills", "claude-code", "kiro", "codex", "orchestration", "po-first"],
+  "keywords": ["agent-skills", "claude-code", "kiro", "codex", "deepseek-harness", "dsh", "orchestration", "po-first"],
   "files": ["bin/", "lib/", "scripts/*.mjs", "!scripts/*.test.mjs", "!scripts/*-smoke.mjs", "scripts/messages.json", "scripts/release-notes.json", "scripts/dashboard.html", "references/", "SKILL.md", "README.md", "README.pt-BR.md", "CHANGELOG.md", "LICENSE"],
   "scripts": {
     "test": "node --test scripts/*.test.mjs test/*.test.mjs",

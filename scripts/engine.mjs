@@ -34,12 +34,16 @@
  *   node $ENGINE migrate [--check] [--run <name>]
  *   node $ENGINE status|ready|graph [--run <name>]
  *   node $ENGINE begin-phase-discussion <phase> [--adopt-legacy]
+ *   node $ENGINE skip-phase-discussion <phase> --reason <text> --confirmed-by-user
  *   node $ENGINE finish-phase-discussion <phase> --context <discovery.json> [--accept-premature-work]
  *   node $ENGINE plan-phase <phase> --agent <name>
+ *   node $ENGINE skip-phase-planning <phase> --reason <text> --confirmed-by-user
  *   node $ENGINE finish-phase-planning <phase> --plan-dir <directory>
  *   node $ENGINE begin-discussion <task> [--adopt-legacy]
+ *   node $ENGINE skip-discussion <task> --reason <text> --confirmed-by-user
  *   node $ENGINE finish-discussion <task> --context <discovery.json> [--accept-premature-work]
  *   node $ENGINE plan-task <task> --agent <name> [--context <legacy-discovery.json>]
+ *   node $ENGINE skip-planning <task> --reason <text> --confirmed-by-user
  *   node $ENGINE finish-planning <task> --plan <task-plan.json>
  *   node $ENGINE start <task> --agent <name>   (max 3 executors)
  *   node $ENGINE progress <task> --step <1-based index> --agent <executor>
@@ -62,7 +66,7 @@ import { randomUUID } from 'node:crypto'
 import { writeAtomicState } from './atomic-state.mjs'
 import { runValidation, assertValidation, validationContract, validationDirectories, assertDiscovery, assertDiscussionBoundary, discoveryDigest, assertTaskPlan,
   planTaskFromState, planningContext, hasCurrentTaskPlan, hasCurrentTaskScope, currentPlanningScope, usesCurrentPlanning,
-  phasePlanningContext, phaseRequiredInputs, assertPhaseTaskPlan, executionInputReceipt } from './validation.mjs'
+  phasePlanningContext, phaseRequiredInputs, assertPhaseTaskPlan, executionInputReceipt, currentPlanningSkip } from './validation.mjs'
 
 import { basename, dirname, join, resolve } from 'node:path'
 
@@ -454,11 +458,13 @@ function taskFromPlan(t) {
     state: 'pending',
     discussionRequired: true,
     discussionAttempts: [],
+    discussionSkips: [],
     discoveryRequired: true,
     planningRequired: true,
     planner: null,
     planningAttempts: [],
     planningHistory: [],
+    planningSkips: [],
     agent: null,
     reviewer: null,
     attempts: [],
@@ -556,16 +562,62 @@ function currentPhaseDiscussion(state, phase) {
     phase.discovery.digest === discoveryDigest(phase.discovery)
 }
 
+function currentPhaseDiscussionSkip(state, phase) {
+  const decision = phase?.discussionSkips?.at(-1)
+  if (decision?.decision !== 'skipped' || decision.confirmedByUser !== true) return null
+  const targets = decision.targets?.map(id => state.tasks[id]).filter(Boolean)
+  const covered = new Set(decision.targets ?? [])
+  return targets?.length === decision.targets.length &&
+    phaseTargets(state, phase.id).every(task => covered.has(task.id)) &&
+    decision.context === phaseContext(state, phase.id, targets) ? decision : null
+}
+
+function currentPhaseDiscussionDecision(state, phase) {
+  const round = currentPhaseDiscussion(state, phase) ? phase.discussionAttempts.at(-1) : null
+  const skipped = currentPhaseDiscussionSkip(state, phase)
+  const discussionAt = round?.endedAt ?? ''
+  if (round && (!skipped || discussionAt > skipped.at)) return {
+    kind: 'discussed', id: round.roundId, digest: phase.discovery.digest, targets: round.targets,
+  }
+  if (skipped) return {
+    kind: 'skipped', id: skipped.decisionId, digest: skipped.digest, targets: skipped.targets,
+  }
+  return null
+}
+
+function currentTaskDiscussionSkip(state, task) {
+  const decision = task.discussionSkips?.at(-1)
+  return decision?.decision === 'skipped' && decision.confirmedByUser === true &&
+    decision.scope === phasePlanningContext(state, task) ? decision : null
+}
+
+function currentTaskDiscussionDecision(state, task) {
+  const round = currentDiscussion(state, task) ? task.discussionAttempts.at(-1) : null
+  const skipped = currentTaskDiscussionSkip(state, task)
+  if (round && (!skipped || (round.endedAt ?? '') > skipped.at)) return {
+    kind: 'discussed', id: round.roundId, digest: task.discovery.digest,
+  }
+  return skipped ? { kind: 'skipped', id: skipped.decisionId, digest: skipped.digest } : null
+}
+
+function explicitSkipDecision(scope) {
+  const reason = typeof args.reason === 'string' && args.reason.trim() ? args.reason.trim() :
+    die(`${scope} needs --reason <text>`)
+  if (args['confirmed-by-user'] !== true)
+    die(`${scope} needs --confirmed-by-user after the user explicitly chooses to skip`)
+  const decisionId = randomUUID(), at = new Date().toISOString()
+  return { decision: 'skipped', decisionId, digest: decisionId, reason, confirmedByUser: true, at }
+}
+
 function currentPhasePlanning(state, phase, round = phase?.planningAttempts?.at(-1)) {
   if (!round || round.endedAt || !Array.isArray(round.targets)) return false
-  const discussion = phase?.discussionAttempts?.at(-1)
+  const discussion = currentPhaseDiscussionDecision(state, phase)
   const targets = round.targets.map(id => state.tasks[id]).filter(Boolean)
   const liveTargets = phaseTargets(state, phase.id).map(task => task.id).sort()
-  return discussion?.roundId === round.discussionRoundId &&
-    currentPhaseDiscussion(state, phase) && targets.length === round.targets.length &&
+  return discussion?.id === round.discussionRoundId && discussion.digest === (round.discussionDigest ?? round.discoveryDigest) &&
+    targets.length === round.targets.length &&
     JSON.stringify([...round.targets].sort()) === JSON.stringify(liveTargets) &&
-    round.context === phaseContext(state, phase.id, discussion.targets.map(id => state.tasks[id])) &&
-    round.discoveryDigest === phase.discovery?.digest
+    round.context === phaseContext(state, phase.id, discussion.targets.map(id => state.tasks[id]))
 }
 
 function assertCurrentTaskScope(state, task) {
@@ -577,7 +629,7 @@ function assertCurrentExecutionInputs(state, task) {
   if (!task.attempts?.length) return
   const blockedBy = (task.deps ?? []).filter(id => !['done', 'skipped'].includes(state.tasks[id]?.state))
   if (blockedBy.length) die(task.id + ' still waiting on: ' + blockedBy.join(', '))
-  if (!task.taskPlan?.phaseId) return
+  if (!task.taskPlan?.phaseId && !currentPlanningSkip(state, task)) return
   let receipt
   try { receipt = executionInputReceipt(state, task) } catch (error) { die(error.message) }
   if (task.attempts.at(-1).inputDigest !== receipt.digest)
@@ -611,15 +663,16 @@ export function derive(state) {
           planningRound.targets.includes(t.id)
         effective = !phaseAdopted ? 'pending' : phaseDiscussing ? 'discussing' : hasCurrentTaskPlan(state, t) ?
           (blockedBy.length ? 'waiting' : 'ready') : phasePlanning ? 'planning' : planningBlockedBy.length ? 'waiting' :
-            (currentPhaseDiscussion(state, phase) ? 'ready_to_plan' : 'ready_for_discussion')
+            (currentPhaseDiscussionDecision(state, phase) ? 'ready_to_plan' : 'ready_for_discussion')
       } else {
         effective = blockedBy.length ? 'waiting' : !phaseAdopted ? 'pending' :
           hasCurrentTaskPlan(state, t) ? 'ready' :
-            t.discussionRequired && !currentDiscussion(state, t) ? 'ready_for_discussion' : 'ready_to_plan'
+            t.discussionRequired && !currentTaskDiscussionDecision(state, t) ? 'ready_for_discussion' : 'ready_to_plan'
       }
     }
     const planningStatus = !usesCurrentPlanning(state, t) ? 'legacy_lifecycle' :
-      state.legacyPhaseAdoption && !phase?.adoptedLegacy ? 'awaiting_phase_adoption' : hasCurrentTaskPlan(state, t) ? 'planned' :
+      state.legacyPhaseAdoption && !phase?.adoptedLegacy ? 'awaiting_phase_adoption' : currentPlanningSkip(state, t) ? 'planning_skipped' :
+      hasCurrentTaskPlan(state, t) ? 'planned' :
       phase?.state === 'discussing' ? 'phase_discussing' : phase?.state === 'planning' ? 'phase_planning' : 'awaiting_phase_plan'
     let inputStatus
     if (t.taskPlan?.phaseId && t.taskPlan.unresolvedInputs?.length) {
@@ -861,6 +914,11 @@ const commands = {
     const p = progress(state)
     log(`run: ${name}  plan: ${state.plan.name}  ${p.done}/${p.total} done`)
     log(`states: ${JSON.stringify(p.by)}`)
+    const countGateSkips = field => new Set([
+      ...Object.values(state.phaseWorkflows ?? {}).flatMap(phase => phase[field] ?? []),
+      ...Object.values(state.tasks).flatMap(task => task[field] ?? []),
+    ].map(decision => decision.decisionId).filter(Boolean)).size
+    log(`${tr('Discussion skipped')}: ${countGateSkips('discussionSkips')}  ${tr('Planning skipped')}: ${countGateSkips('planningSkips')}`)
     const width = Math.max(...Object.values(d).map((t) => t.id.length))
     const row = (t) => {
       const phasePlanner = t.effective === 'planning' && t.state !== 'planning' ? state.phaseWorkflows?.[t.phase]?.planner : null
@@ -974,6 +1032,28 @@ const commands = {
     log('[prumo] discussion guard: inspect local context and resolve decisions only; planner researches how, executor delivers every task')
   },
 
+  'skip-phase-discussion'() {
+    const name = runName()
+    const phaseId = args._[0] ?? die('skip-phase-discussion <phase> --reason <text> --confirmed-by-user')
+    const state = loadState(name)
+    if (state.plan.planningMode !== 'phase') die('this run uses task planning; use skip-discussion')
+    assertPhasePlanningOrder(state, phaseId)
+    const phase = getPhase(state, phaseId)
+    if (['discussing', 'planning'].includes(phase.state))
+      die(`${phaseId} has active ${phase.state}; finish or block it before changing the gate decision`)
+    const targets = phaseTargets(state, phaseId)
+    if (!targets.length) die(`${phaseId} has no task requiring a discussion decision`)
+    const decision = { ...explicitSkipDecision('skip-phase-discussion'), targets: targets.map(task => task.id),
+      context: phaseContext(state, phaseId, targets) }
+    phase.discussionSkips ??= []
+    phase.discussionSkips.push(decision)
+    phase.state = 'pending'
+    saveState(name, state)
+    emit(name, 'phase_discussion_skipped', null, { phase: phaseId, decisionId: decision.decisionId,
+      reason: decision.reason, confirmedByUser: true, members: decision.targets })
+    log(`[prumo] ${phaseId} discussion skipped by explicit user choice; ready for the planning decision (${targets.length} task(s))`)
+  },
+
   'finish-phase-discussion'() {
     const name = runName()
     const phaseId = args._[0] ?? die('finish-phase-discussion <phase> --context <discovery.json>')
@@ -1011,13 +1091,13 @@ const commands = {
     const agent = args.agent ?? die('plan-phase needs --agent <name>')
     const state = loadState(name), phase = getPhase(state, phaseId)
     assertPhasePlanningOrder(state, phaseId)
-    if (!currentPhaseDiscussion(state, phase)) die(`${phaseId} needs a completed current phase discussion`)
-    const discussion = phase.discussionAttempts.at(-1)
+    const discussion = currentPhaseDiscussionDecision(state, phase)
+    if (!discussion) die(`${phaseId} needs a completed current phase discussion or an explicit user-confirmed discussion skip`)
     const targets = discussion.targets.map(id => getTask(state, id)).filter(task => !hasCurrentTaskPlan(state, task))
     if (!targets.length) die(`${phaseId} has no task requiring a phase plan`)
     const context = phaseContext(state, phaseId, discussion.targets.map(id => getTask(state, id)))
     const open = phase.planningAttempts.at(-1)
-    if (phase.state === 'planning' && !open?.endedAt && open.context === context && open.discoveryDigest === phase.discovery.digest) {
+    if (phase.state === 'planning' && !open?.endedAt && open.context === context && open.discussionDigest === discussion.digest) {
       if (agent !== phase.planner) die(`${phaseId} already has planner "${phase.planner}" for the current round`)
       log(`[prumo] ${phaseId} already in planning with the same discovery; no new round recorded`)
       return
@@ -1028,7 +1108,9 @@ const commands = {
     const busy = agentBusy(state, agent)
     if (busy) die(`agent "${agent}" is already on ${busy.id} — one agent per task or phase`)
     const round = { n: phase.planningAttempts.length + 1, agent, startedAt: new Date().toISOString(), context,
-      discoveryDigest: phase.discovery.digest, discussionRoundId: discussion.roundId, targets: targets.map(task => task.id),
+      discussionDecision: discussion.kind, discussionDigest: discussion.digest, discussionRoundId: discussion.id,
+      ...(discussion.kind === 'discussed' ? { discoveryDigest: discussion.digest } : {}),
+      targets: targets.map(task => task.id),
       requiredInputs: Object.fromEntries(targets.map(task => [task.id, phaseRequiredInputs(state, task)])) }
     phase.planner = agent
     phase.planningAttempts.push(round)
@@ -1037,6 +1119,36 @@ const commands = {
     emit(name, 'phase_planning', null, { phase: phaseId, planner: agent, round: round.n, members: round.targets })
     log(`[prumo] ${phaseId} in planning (planner ${agent}, ${round.targets.length} task(s))`)
     log('[prumo] planner guard: read-only research may determine how to execute; task results and acceptance evidence belong to the executor')
+  },
+
+  'skip-phase-planning'() {
+    const name = runName()
+    const phaseId = args._[0] ?? die('skip-phase-planning <phase> --reason <text> --confirmed-by-user')
+    const state = loadState(name)
+    if (state.plan.planningMode !== 'phase') die('this run uses task planning; use skip-planning')
+    assertPhasePlanningOrder(state, phaseId)
+    const phase = getPhase(state, phaseId)
+    if (['discussing', 'planning'].includes(phase.state))
+      die(`${phaseId} has active ${phase.state}; finish or block it before changing the gate decision`)
+    const discussion = currentPhaseDiscussionDecision(state, phase)
+    if (!discussion) die(`${phaseId} needs a completed current phase discussion or an explicit user-confirmed discussion skip`)
+    const targets = discussion.targets.map(id => getTask(state, id)).filter(task => !hasCurrentTaskPlan(state, task))
+    if (!targets.length) die(`${phaseId} has no task requiring a planning decision`)
+    const decision = { ...explicitSkipDecision('skip-phase-planning'), phaseId,
+      targets: targets.map(task => task.id), context: phaseContext(state, phaseId, targets),
+      discussionDecision: discussion.kind, discussionDecisionId: discussion.id }
+    phase.planningSkips ??= []
+    phase.planningSkips.push(decision)
+    for (const task of targets) {
+      task.planningSkips ??= []
+      task.planningSkips.push({ ...decision, scope: phasePlanningContext(state, task), task: task.id })
+      delete task.retryPlan
+    }
+    phase.state = 'planned'
+    saveState(name, state)
+    emit(name, 'phase_planning_skipped', null, { phase: phaseId, decisionId: decision.decisionId,
+      reason: decision.reason, confirmedByUser: true, members: decision.targets })
+    log(`[prumo] ${phaseId} planning skipped by explicit user choice; ${targets.length} task(s) ready when dependencies allow`)
   },
 
   'finish-phase-planning'() {
@@ -1069,7 +1181,8 @@ const commands = {
       task.planner = phase.planner
       task.taskPlan = { ...artifact, planner: phase.planner, startedAt: round.startedAt, completedAt,
         context: round.context, scope: phasePlanningContext(state, task), phaseId,
-        phaseDiscoveryDigest: phase.discovery.digest, attempt: task.attempts.length + 1 }
+        phaseDecision: round.discussionDecision ?? 'discussed', phaseDecisionDigest: round.discussionDigest ?? round.discoveryDigest,
+        ...(round.discoveryDigest ? { phaseDiscoveryDigest: round.discoveryDigest } : {}), attempt: task.attempts.length + 1 }
       task.planningHistory ??= []
       task.planningHistory.push(task.taskPlan)
       delete task.phasePlanDefect
@@ -1140,6 +1253,25 @@ const commands = {
     log('[prumo] discussion guard: inspect local context and resolve decisions only; planner researches how, executor delivers the task')
   },
 
+  'skip-discussion'() {
+    const name = runName()
+    const id = args._[0] ?? die('skip-discussion <task> --reason <text> --confirmed-by-user')
+    const state = loadState(name)
+    if (state.plan.planningMode === 'phase') die('this run uses phase planning; use skip-phase-discussion')
+    const task = getTask(state, id)
+    const blockedBy = task.deps.filter(dep => !['done', 'skipped'].includes(state.tasks[dep]?.state))
+    if (blockedBy.length) die(id + ' still waiting on: ' + blockedBy.join(', '))
+    if (!['pending', 'failed'].includes(task.state)) die(`${id} must be pending or failed to skip discussion`)
+    if (!usesCurrentPlanning(state, task)) die(`${id} is a legacy task without current planning gates`)
+    const decision = { ...explicitSkipDecision('skip-discussion'), scope: phasePlanningContext(state, task) }
+    task.discussionSkips ??= []
+    task.discussionSkips.push(decision)
+    saveState(name, state)
+    emit(name, 'task_discussion_skipped', id, { decisionId: decision.decisionId,
+      reason: decision.reason, confirmedByUser: true })
+    log(`[prumo] ${id} discussion skipped by explicit user choice; ready for the planning decision`)
+  },
+
   'finish-discussion'() {
     const name = runName()
     const id = args._[0] ?? die('finish-discussion <task> --context <discovery.json>')
@@ -1186,10 +1318,11 @@ const commands = {
     const stale = t.state === 'planning' && t.planningAttempts?.at(-1)?.context !== planningContext(state, t)
     let discovery, digest
     if (t.discussionRequired) {
-      if (!currentDiscussion(state, t))
-        die(id + ' needs a completed current discussion before the planner is dispatched')
-      discovery = t.discovery
-      digest = t.discovery.digest
+      const discussion = currentTaskDiscussionDecision(state, t)
+      if (!discussion)
+        die(id + ' needs a completed current discussion or an explicit user-confirmed discussion skip before the planner is dispatched')
+      if (discussion.kind === 'discussed') discovery = t.discovery
+      digest = discussion.digest
     } else if (t.discoveryRequired) {
       if (typeof args.context !== 'string' || !args.context.trim())
         die('plan-task needs --context <discovery.json> before the planner is dispatched')
@@ -1200,7 +1333,9 @@ const commands = {
       } catch (error) { die(error.message) }
     }
     const roundDigest = t.planningAttempts?.at(-1)?.discoveryDigest
-    const storedDiscoveryCurrent = digest && digest === t.discovery?.digest && digest === discoveryDigest(t.discovery)
+    const skippedDiscussion = currentTaskDiscussionSkip(state, t)
+    const storedDiscoveryCurrent = digest && (skippedDiscussion?.digest === digest ||
+      (digest === t.discovery?.digest && digest === discoveryDigest(t.discovery)))
     const changedDiscovery = t.state === 'planning' && digest && (!storedDiscoveryCurrent || digest !== roundDigest)
     if (t.state === 'planning' && !stale && storedDiscoveryCurrent && digest === roundDigest) {
       log(`[prumo] ${id} already in planning with the same discovery; no new round recorded`)
@@ -1232,6 +1367,28 @@ const commands = {
     log('[prumo] planner guard: read-only research may determine how to execute; task results and acceptance evidence belong to the executor')
   },
 
+  'skip-planning'() {
+    const name = runName()
+    const id = args._[0] ?? die('skip-planning <task> --reason <text> --confirmed-by-user')
+    const state = loadState(name)
+    if (state.plan.planningMode === 'phase') die('this run uses phase planning; use skip-phase-planning')
+    const task = getTask(state, id)
+    if (!['pending', 'failed'].includes(task.state)) die(`${id} must be pending or failed to skip planning`)
+    if (!usesCurrentPlanning(state, task)) die(`${id} is a legacy task without current planning gates`)
+    if (task.discussionRequired && !currentTaskDiscussionDecision(state, task))
+      die(`${id} needs a completed discussion or an explicit user-confirmed discussion skip`)
+    const decision = { ...explicitSkipDecision('skip-planning'), task: id,
+      scope: phasePlanningContext(state, task) }
+    task.planningSkips ??= []
+    task.planningSkips.push(decision)
+    delete task.retryPlan
+    task.state = 'pending'
+    saveState(name, state)
+    emit(name, 'task_planning_skipped', id, { decisionId: decision.decisionId,
+      reason: decision.reason, confirmedByUser: true })
+    log(`[prumo] ${id} planning skipped by explicit user choice; ready to execute when dependencies allow`)
+  },
+
   'finish-planning'() {
     const name = runName()
     const id = args._[0] ?? die('finish-planning <task> --plan <task-plan.json>')
@@ -1243,7 +1400,8 @@ const commands = {
     const round = t.planningAttempts?.at(-1)
     if (!round || round.endedAt || round.agent !== t.planner) die('planning needs an open round and its recorded planner')
     if (round.context !== planningContext(state, t)) die('task planning is stale — run plan-task again and research the current contract')
-    if (t.discoveryRequired && (!t.discovery?.digest || t.discovery.digest !== discoveryDigest(t.discovery) ||
+    const skippedDiscussion = currentTaskDiscussionSkip(state, t)
+    if (t.discoveryRequired && !skippedDiscussion && (!t.discovery?.digest || t.discovery.digest !== discoveryDigest(t.discovery) ||
         round.discoveryDigest !== t.discovery.digest || t.discovery.context !== round.context ||
         t.discovery.attempt !== round.attempt))
       die('task planning used stale discovery — run plan-task with the current discovery context')
@@ -1256,7 +1414,9 @@ const commands = {
     const artifact = Object.fromEntries(['research', 'decisions', 'steps', 'verification', 'openQuestions'].map(field => [field, plan[field]]))
     t.taskPlan = { ...artifact, planner: t.planner, startedAt: round.startedAt, completedAt: new Date().toISOString(),
       context: round.context, scope: planningContext(state, t, { scopeOnly: true }), attempt: round.attempt,
-      ...(round.discoveryDigest ? { discoveryDigest: round.discoveryDigest } : {}) }
+      ...(round.discoveryDigest ? { discoveryDigest: round.discoveryDigest } : {}),
+      ...(skippedDiscussion ? { discussionDecision: 'skipped', discussionDecisionId: skippedDiscussion.decisionId,
+        discussionDecisionDigest: skippedDiscussion.digest } : {}) }
     t.planningHistory.push(t.taskPlan)
     delete t.retryPlan
     closePlanning(t, 'planned')
@@ -1286,7 +1446,7 @@ const commands = {
     }
     assertAvailable(state, t, 'running', agent)
     let inputReceipt
-    if (t.taskPlan?.phaseId) {
+    if (t.taskPlan?.phaseId || currentPlanningSkip(state, t)) {
       try { inputReceipt = executionInputReceipt(state, t) } catch (error) { die(error.message) }
     }
     t.state = 'running'
@@ -1525,15 +1685,18 @@ const commands = {
     if (t.attempts.length >= cap && !args.force)
       die(`${id} already has ${t.attempts.length} attempts (cap ${cap}) — escalate instead, or --force`)
     const failed = t.attempts.at(-1)
+    const planningSkipped = currentPlanningSkip(state, t)
     const planSourceAttempt = t.taskPlan?.attempt
-    const reuse = Boolean(t.planningRequired && failed?.failedFrom === 'reviewing' && !failed.planDefect &&
+    const reuse = Boolean(planningSkipped || (t.planningRequired && failed?.failedFrom === 'reviewing' && !failed.planDefect &&
       typeof failed.reason === 'string' && failed.reason.trim() && Number.isSafeInteger(planSourceAttempt) &&
-      hasCurrentTaskScope(state, t, planSourceAttempt))
+      hasCurrentTaskScope(state, t, planSourceAttempt)))
     if (reuse) {
       const attempt = t.attempts.length + 1
       t.retryPlan = {
-        planSourceAttempt, failedAttempt: t.attempts.length, attempt, reason: failed.reason,
-        discoveryDigest: t.discovery?.digest, planContext: t.taskPlan.context, planScope: t.taskPlan.scope,
+        ...(planningSkipped ? { skippedPlanning: true } : { planSourceAttempt }),
+        failedAttempt: t.attempts.length, attempt, reason: failed.reason,
+        ...(!planningSkipped ? { discoveryDigest: t.discovery?.digest,
+          planContext: t.taskPlan.context, planScope: t.taskPlan.scope } : {}),
         context: planningContext(state, t, { attempt }),
         scope: planningContext(state, t, { scopeOnly: true, attempt }),
       }
@@ -1545,9 +1708,11 @@ const commands = {
     t.agent = null
     t.reviewer = null
     saveState(name, state)
-    emit(name, 'task_retry', id, { nextAttempt: t.attempts.length + 1, reusedPlan: Boolean(reuse),
-      ...(reuse ? { reason: failed.reason, planSourceAttempt, failedAttempt: t.attempts.length } : {}) })
-    log(`[prumo] ${id} back to pending (attempt ${t.attempts.length + 1} when started; ${reuse ? 'approved plan reused' : 'planning required'})`)
+    emit(name, 'task_retry', id, { nextAttempt: t.attempts.length + 1,
+      reusedPlan: Boolean(reuse && !planningSkipped), reusedPlanningSkip: Boolean(planningSkipped),
+      ...(reuse ? { reason: failed.reason, ...(!planningSkipped ? { planSourceAttempt } : {}),
+        failedAttempt: t.attempts.length } : {}) })
+    log(`[prumo] ${id} back to pending (attempt ${t.attempts.length + 1} when started; ${planningSkipped ? 'approved planning skip reused' : reuse ? 'approved plan reused' : 'planning required'})`)
   },
 
   block() {

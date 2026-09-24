@@ -241,15 +241,31 @@ export function usesCurrentPlanning(state, task) {
   return !['phase', 'task'].includes(state.plan?.planningMode) && !(task.attempts?.length)
 }
 
+// An explicit user decision may waive the phase/task planning artifact without
+// turning the task into a legacy lifecycle. The decision remains current only
+// while the approved contract and dependency contracts are unchanged.
+export function currentPlanningSkip(state, task) {
+  const decision = task.planningSkips?.at(-1)
+  if (decision?.decision !== 'skipped' || decision.confirmedByUser !== true) return null
+  return decision.scope === phasePlanningContext(state, task) ? decision : null
+}
+
 export function hasCurrentTaskPlan(state, task) {
   if (state.legacyPhaseAdoption && !state.phaseWorkflows?.[task.phase]?.adoptedLegacy) return false
   // Legacy tasks keep the lifecycle they were already using.  The global
   // planning mode may have been introduced by a structural migration, but it
   // must not retroactively manufacture a task plan for an active attempt.
   if (!usesCurrentPlanning(state, task)) return true
+  if (currentPlanningSkip(state, task)) return true
   try { assertTaskPlan(task, task.taskPlan) } catch { return false }
   if (task.taskPlan?.phaseId) {
     const phase = state.phaseWorkflows?.[task.taskPlan.phaseId]
+    if (task.taskPlan.phaseDecision === 'skipped') {
+      const decision = phase?.discussionSkips?.find(item =>
+        item.decisionId === task.taskPlan.phaseBinding?.discussionRoundId)
+      return !task.phasePlanDefect && decision?.confirmedByUser === true && decision.digest === task.taskPlan.phaseDecisionDigest &&
+        task.taskPlan.scope === phasePlanningContext(state, task)
+    }
     const discussion = phase?.discussionAttempts?.find(round =>
       round.roundId === task.taskPlan.phaseBinding?.discussionRoundId)
     const discovery = discussion?.discovery ??
@@ -260,7 +276,10 @@ export function hasCurrentTaskPlan(state, task) {
       discovery.digest === discoveryDigest(discovery) &&
       task.taskPlan.scope === phasePlanningContext(state, task)
   }
-  const discoveryCurrent = !task.discoveryRequired || (nonempty(task.discovery?.digest) &&
+  const skippedDiscussion = task.taskPlan?.discussionDecision === 'skipped' ? task.discussionSkips?.find(decision =>
+    decision.decisionId === task.taskPlan.discussionDecisionId && decision.confirmedByUser === true &&
+    decision.digest === task.taskPlan.discussionDecisionDigest && decision.scope === phasePlanningContext(state, task)) : null
+  const discoveryCurrent = !task.discoveryRequired || Boolean(skippedDiscussion) || (nonempty(task.discovery?.digest) &&
     task.discovery.digest === discoveryDigest(task.discovery) &&
     task.taskPlan.discoveryDigest === task.discovery.digest &&
     task.discovery.context === task.taskPlan.context && task.discovery.attempt === task.taskPlan.attempt)
@@ -273,11 +292,18 @@ export function hasCurrentTaskScope(state, task, attempt = task.attempts.length)
   // See hasCurrentTaskPlan: per-task compatibility takes precedence over the
   // run-wide planning mode while legacy work is being completed.
   if (!usesCurrentPlanning(state, task)) return true
+  if (currentPlanningSkip(state, task)) return true
   const plan = task.taskPlan
   try { assertTaskPlan(task, plan) } catch { return false }
   if (!(nonempty(plan?.planner) && nonempty(plan.completedAt))) return false
   if (plan.phaseId) {
     const phase = state.phaseWorkflows?.[plan.phaseId]
+    if (plan.phaseDecision === 'skipped') {
+      const decision = phase?.discussionSkips?.find(item =>
+        item.decisionId === plan.phaseBinding?.discussionRoundId)
+      return !task.phasePlanDefect && decision?.confirmedByUser === true && decision.digest === plan.phaseDecisionDigest &&
+        plan.scope === phasePlanningContext(state, task)
+    }
     const discussion = phase?.discussionAttempts?.find(round => round.roundId === plan.phaseBinding?.discussionRoundId)
     const discovery = discussion?.discovery ??
       (phase?.discovery?.roundId === discussion?.roundId ? phase.discovery : null)
@@ -286,7 +312,10 @@ export function hasCurrentTaskScope(state, task, attempt = task.attempts.length)
       discovery?.digest === plan.phaseDiscoveryDigest &&
       discovery.digest === discoveryDigest(discovery) && plan.scope === phasePlanningContext(state, task)
   }
-  const discoveryCurrent = !task.discoveryRequired || (nonempty(task.discovery?.digest) &&
+  const skippedDiscussion = plan?.discussionDecision === 'skipped' ? task.discussionSkips?.find(decision =>
+    decision.decisionId === plan.discussionDecisionId && decision.confirmedByUser === true &&
+    decision.digest === plan.discussionDecisionDigest && decision.scope === phasePlanningContext(state, task)) : null
+  const discoveryCurrent = !task.discoveryRequired || Boolean(skippedDiscussion) || (nonempty(task.discovery?.digest) &&
     task.discovery.digest === discoveryDigest(task.discovery) && plan.discoveryDigest === task.discovery.digest &&
     task.discovery.context === plan.context && task.discovery.attempt === plan.attempt)
   if (!discoveryCurrent) return false
@@ -305,6 +334,8 @@ export function hasCurrentTaskScope(state, task, attempt = task.attempts.length)
 
 export function currentPlanningScope(state, task, attempt = task.attempts.length) {
   if (!usesCurrentPlanning(state, task) || !hasCurrentTaskScope(state, task, attempt)) return undefined
+  const skipped = currentPlanningSkip(state, task)
+  if (skipped) return skipped.scope
   return task.taskPlan.attempt === attempt ? task.taskPlan.scope : task.retryPlan.scope
 }
 

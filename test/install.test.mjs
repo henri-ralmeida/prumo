@@ -47,7 +47,7 @@ test('dashboard root names keep the selected legacy workspace unambiguous', t =>
 })
 
 function isolatedCli(f) {
-  const env = { ...process.env, HOME: f.home, USERPROFILE: f.home, CLAUDE_CONFIG_DIR: join(f.home, '.claude'), CODEX_HOME: join(f.home, '.codex'), PRUMO_HOME: join(f.home, 'data'), PRUMO_LANG: 'en' }
+  const env = { ...process.env, HOME: f.home, USERPROFILE: f.home, CLAUDE_CONFIG_DIR: join(f.home, '.claude'), CODEX_HOME: join(f.home, '.codex'), DSH_HOME: join(f.home, '.dsh'), PRUMO_HOME: join(f.home, 'data'), PRUMO_LANG: 'en' }
   for (const key of Object.keys(env)) if (/^path$/i.test(key) || ['GRAPH_ROOT', 'PRUMO_ROOT', 'GRAPH_FOREMAN_HOME'].includes(key)) delete env[key]
   const commands = join(f.home, 'test-commands')
   const commandLog = join(f.home, 'npm-commands')
@@ -59,6 +59,23 @@ function isolatedCli(f) {
   const invoke = (args, extraEnv = {}) => spawnSync(process.execPath, [join(source, 'bin', 'prumo.mjs'), ...args], { cwd: f.cwd, env: { ...env, ...extraEnv }, encoding: 'utf8', timeout: 20000, windowsHide: true })
   invoke.commandLog = commandLog
   return invoke
+}
+
+function snapshotTree(root) {
+  const entries = []
+  const visit = directory => {
+    for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const path = join(directory, entry.name)
+      const name = relative(root, path)
+      if (entry.isDirectory()) {
+        entries.push({ name, type: 'directory' })
+        visit(path)
+      } else if (entry.isFile()) entries.push({ name, type: 'file', bytes: readFileSync(path).toString('hex') })
+      else entries.push({ name, type: 'other' })
+    }
+  }
+  visit(root)
+  return entries
 }
 
 test('automatic detection uses existing configuration, local legacy skills and executable paths without running them', t => {
@@ -103,6 +120,134 @@ test('automatic detection uses existing configuration, local legacy skills and e
   }
 })
 
+test('DSH detection separates global configuration from project markers', async t => {
+  const f = fixture(t, 'dsh')
+  let sequence = 0
+  const scenario = () => {
+    const home = join(f.home, `dsh-detection-${++sequence}`)
+    const cwd = join(home, 'project')
+    const config = join(home, '.dsh')
+    mkdirSync(join(cwd, '.git'), { recursive: true })
+    return {
+      home,
+      cwd,
+      config,
+      detect: (env = {}) => detectHarnesses({ home, cwd, env }),
+    }
+  }
+  const managedMarker = { product: 'prumo', harness: 'dsh', version: packageVersion }
+  const arbitrarySkills = [
+    ['valid skill', '---\nname: valid-skill\ndescription: Valid DSH skill\n---\n'],
+    ['missing frontmatter', 'name: missing-frontmatter'],
+    ['invalid YAML', '---\nname: [unterminated\ndescription: Invalid YAML\n---\n'],
+    ['invalid name', '---\nname: Not-Kebab-Case\ndescription: Invalid official skill name\n---\n'],
+    ['duplicate YAML key', '---\nname: valid-name\ndescription: Looks valid\nmetadata:\n  owner: first\nmetadata:\n  owner: duplicate\n---\n'],
+  ]
+
+  await t.test('recognizes a PATH sentinel without executing it', () => {
+    const s = scenario()
+    const commands = join(s.home, 'commands')
+    const executionMarker = join(s.home, 'sentinel-was-executed')
+    const binary = join(commands, process.platform === 'win32' ? 'dsh.cmd' : 'dsh')
+    put(binary, process.platform === 'win32' ? `@echo executed>"${executionMarker}"\r\n` : `#!/bin/sh\nprintf executed > '${executionMarker}'\n`)
+    chmodSync(binary, 0o755)
+    assert.deepEqual(s.detect({ PATH: commands, PATHEXT: '.CMD;.EXE' }), ['dsh'])
+    assert.equal(existsSync(executionMarker), false)
+  })
+
+  await t.test('uses a custom DSH_HOME as the only global root', () => {
+    const s = scenario()
+    const custom = join(s.home, 'custom-dsh')
+    put(join(s.config, 'AGENTS.md'), 'default root must be hidden\n')
+    mkdirSync(custom)
+    assert.deepEqual(s.detect({ DSH_HOME: custom }), [], 'the populated default root must not leak through')
+    put(join(custom, 'cordis.patch.yml'), 'plugins: []\n')
+    assert.deepEqual(s.detect({ DSH_HOME: custom }), ['dsh'])
+  })
+
+  await t.test('treats blank DSH_HOME as absent and expands a home-relative root', () => {
+    const blank = scenario()
+    put(join(blank.config, 'AGENTS.md'), 'global instructions\n')
+    assert.deepEqual(blank.detect({ DSH_HOME: '   ' }), ['dsh'])
+    const relativeHome = scenario()
+    put(join(relativeHome.home, 'custom-dsh', '.credentials.yaml'), 'providers: {}\n')
+    assert.deepEqual(relativeHome.detect({ DSH_HOME: '~/custom-dsh' }), ['dsh'])
+  })
+
+  await t.test('rejects an empty DSH_HOME', () => {
+    const s = scenario()
+    mkdirSync(s.config)
+    assert.deepEqual(s.detect({}), [])
+  })
+
+  for (const [name, relativePath, value] of [
+    ['cordis patch', 'cordis.patch.yml', 'plugins: []\n'],
+    ['global instructions', 'AGENTS.md', 'Global DSH instructions\n'],
+    ['credentials', '.credentials.yaml', 'providers: {}\n'],
+  ]) await t.test(`recognizes the global ${name} file`, () => {
+    const s = scenario()
+    put(join(s.config, relativePath), value)
+    assert.deepEqual(s.detect({}), ['dsh'])
+  })
+
+  for (const [name, bundles] of [
+    ['nonempty profile bundles', ['@deepseek-ai/dsh-bundle-standard']],
+    ['explicitly empty profile bundles', []],
+  ]) await t.test(`recognizes ${name}`, () => {
+    const s = scenario()
+    put(join(s.config, 'profiles', 'standard', 'package.json'), { dsh: { profile: { bundles } } })
+    assert.deepEqual(s.detect({}), ['dsh'])
+  })
+
+  for (const [name, value] of [
+    ['invalid JSON', '{broken'],
+    ['missing dsh profile', {}],
+    ['non-array bundles', { dsh: { profile: { bundles: 'standard' } } }],
+    ['non-string bundle', { dsh: { profile: { bundles: [3] } } }],
+    ['empty bundle name', { dsh: { profile: { bundles: ['  '] } } }],
+  ]) await t.test(`rejects a profile with ${name}`, () => {
+    const s = scenario()
+    put(join(s.config, 'profiles', 'broken', 'package.json'), value)
+    assert.deepEqual(s.detect({}), [])
+  })
+
+  await t.test('recognizes an authentic managed global skill marker', () => {
+    const s = scenario()
+    put(join(s.config, 'skills', 'prumo', '.prumo-install.json'), managedMarker)
+    assert.deepEqual(s.detect({}), ['dsh'])
+  })
+
+  for (const [name, skill] of arbitrarySkills) await t.test(`rejects an arbitrary global skill with ${name}`, () => {
+    const s = scenario()
+    put(join(s.config, 'skills', 'other', 'SKILL.md'), skill)
+    assert.deepEqual(s.detect({}), [])
+  })
+
+  await t.test('recognizes only an authentic managed project skill marker', () => {
+    const s = scenario()
+    const global = join(s.home, 'empty-global-dsh')
+    put(join(s.cwd, '.dsh', 'skills', 'prumo', '.prumo-install.json'), managedMarker)
+    assert.deepEqual(s.detect({ DSH_HOME: global }), ['dsh'])
+  })
+
+  for (const [name, relativePath, value] of [
+    ['empty directory', '.', null],
+    ['AGENTS.md', 'AGENTS.md', 'Project-local instructions\n'],
+    ['cordis.patch.yml', 'cordis.patch.yml', 'plugins: []\n'],
+    ['credentials', '.credentials.yaml', 'providers: {}\n'],
+    ['valid profile', join('profiles', 'standard', 'package.json'), { dsh: { profile: { bundles: [] } } }],
+    ['invalid profile', join('profiles', 'broken', 'package.json'), '{broken'],
+    ...arbitrarySkills.map(([label, value]) => [`skill with ${label}`, join('skills', 'other', 'SKILL.md'), value]),
+    ['invalid managed marker', join('skills', 'prumo', '.prumo-install.json'), { product: 'other', harness: 'dsh', version: packageVersion }],
+  ]) await t.test(`rejects project-local ${name}`, () => {
+    const s = scenario()
+    const local = join(s.cwd, '.dsh')
+    if (value === null) mkdirSync(local, { recursive: true })
+    else put(join(local, relativePath), value)
+    assert.deepEqual(s.detect({ DSH_HOME: join(s.home, 'empty-global-dsh') }), [])
+  })
+})
+
 test('Codex uses one personal skill root while preserving a legacy installation', t => {
   const f = fixture(t, 'codex')
   const legacyRoot = join(f.config, 'skills')
@@ -136,6 +281,7 @@ test('automatic CLI installs only detected harnesses, preserves runs and backups
   const legacy = join(f.home, '.claude', 'skills', 'graph-foreman', 'SKILL.md')
   put(legacy, 'original legacy skill')
   put(join(f.home, '.kiro', 'steering', 'existing.md'), 'Keep this instruction')
+  put(join(f.home, '.dsh', 'profiles', 'standard', 'package.json'), { dsh: { profile: { bundles: ['@deepseek-ai/dsh-bundle-standard'] } } })
   const state = join(f.home, '.local', 'share', 'graph-foreman', 'work', '.specs', 'graph', 'active', 'state.json')
   const migratedState = join(f.home, 'data', 'work', '.specs', 'graph', 'active', 'state.json')
   put(state, { state: 'blocked', attempts: [1], evidence: 'keep', contract: 'approved' })
@@ -143,7 +289,7 @@ test('automatic CLI installs only detected harnesses, preserves runs and backups
   const marker = harness => join(f.home, harness === 'codex' ? '.agents' : `.${harness}`, 'skills', 'prumo', '.prumo-install.json')
   const preview = cli(['install', '--lang', 'pt-BR', '--dry-run'])
   assert.equal(preview.status, 0, preview.stdout + preview.stderr)
-  assert.match(preview.stdout, /Ambientes detectados: claude, kiro/)
+  assert.match(preview.stdout, /Ambientes detectados: claude, kiro, dsh/)
   assert.equal(existsSync(marker('claude')), false)
   assert.equal(existsSync(join(f.home, '.local', 'share', 'prumo')), false)
   const blocked = cli(['install'])
@@ -156,7 +302,8 @@ test('automatic CLI installs only detected harnesses, preserves runs and backups
   assert.match(installed.stdout, /Prumo instalado com sucesso/)
   assert.ok(installed.stdout.includes('Prumo v' + packageVersion))
   assert.doesNotMatch(installed.stdout, /Alterações \/|gravar:|Backup:/)
-  for (const harness of ['claude', 'kiro']) assert.equal(JSON.parse(read(marker(harness))).lang, 'pt-BR')
+  for (const harness of ['claude', 'kiro', 'dsh']) assert.equal(JSON.parse(read(marker(harness))).lang, 'pt-BR')
+  assert.equal(read(join(f.home, '.dsh', 'AGENTS.md')).split('<!-- po-first:start -->').length - 1, 1)
   const doctor = cli(['doctor', '--claude'])
   assert.equal(doctor.status, 0, doctor.stdout + doctor.stderr)
   assert.match(doctor.stdout, /dashboard: .*; .*; disabled/)
@@ -167,15 +314,92 @@ test('automatic CLI installs only detected harnesses, preserves runs and backups
   assert.equal(existsSync(legacy), false)
   const backups = join(f.home, '.local', 'share', 'prumo', 'backups')
   const count = readdirSync(backups).length
-  assert.equal(count, 2)
+  assert.equal(count, 3)
   const repeated = cli(['install'])
   assert.equal(repeated.status, 0, repeated.stdout + repeated.stderr)
-  assert.match(repeated.stdout, new RegExp(`Prumo v${packageVersion.replaceAll('.', '\\.')} is already installed in claude, kiro`))
+  assert.match(repeated.stdout, new RegExp(`Prumo v${packageVersion.replaceAll('.', '\\.')} is already installed in claude, kiro, dsh`))
   assert.equal(readdirSync(backups).length, count)
+  put(join(f.home, '.codex', 'config.toml'), 'model = "gpt"\n')
   const explicit = cli(['install', '--codex'])
   assert.equal(explicit.status, 0, explicit.stdout + explicit.stderr)
   assert.ok(existsSync(marker('codex')))
   assert.equal(read(migratedState), before)
+})
+
+test('explicit install refuses each absent harness before writing anything', async t => {
+  for (const [harness, label] of [
+    ['claude', 'Claude Code'],
+    ['kiro', 'Kiro'],
+    ['codex', 'Codex'],
+    ['dsh', 'DeepSeek Harness'],
+  ]) await t.test(`${harness} absent`, t => {
+    const f = fixture(t)
+    const cli = isolatedCli(f)
+    const emptyRoots = {
+      CLAUDE_CONFIG_DIR: join(f.home, 'absent-claude'),
+      KIRO_HOME: join(f.home, 'absent-kiro'),
+      CODEX_HOME: join(f.home, 'absent-codex'),
+      DSH_HOME: join(f.home, 'absent-dsh'),
+    }
+    const before = snapshotTree(f.home)
+    const result = cli(['install', `--${harness}`], emptyRoots)
+    assert.notEqual(result.status, 0, result.stdout + result.stderr)
+    assert.match(result.stderr, new RegExp(label))
+    assert.match(result.stderr, new RegExp(`--${harness}`))
+    assert.deepEqual(snapshotTree(f.home), before, `${harness} must not change names, types or file bytes`)
+    for (const path of [
+      cli.commandLog,
+      join(f.home, 'data'),
+      join(f.home, '.local', 'share', 'prumo'),
+      join(f.home, '.claude'),
+      join(f.home, '.kiro'),
+      join(f.home, '.codex'),
+      join(f.home, '.dsh'),
+      join(f.home, '.agents'),
+    ]) assert.equal(existsSync(path), false, `${harness} unexpectedly created ${path}`)
+  })
+})
+
+test('CLI install --dsh and doctor --dsh use custom DSH_HOME without extra orchestration config', t => {
+  const f = fixture(t, 'dsh')
+  const cli = isolatedCli(f)
+  const custom = join(f.home, 'custom dsh home')
+  put(join(f.home, '.local', 'share', 'prumo', 'dashboard.json'), { enabled: false, mechanism: process.platform === 'win32' ? 'schtasks' : process.platform === 'darwin' ? 'launchd' : 'xdg' })
+  put(join(custom, 'AGENTS.md'), 'Keep user instructions\n')
+  const installed = cli(['install', '--dsh'], { DSH_HOME: custom })
+  assert.equal(installed.status, 0, installed.stdout + installed.stderr)
+  assert.ok(existsSync(join(custom, 'skills', 'prumo', 'SKILL.md')))
+  const instructions = read(join(custom, 'AGENTS.md'))
+  assert.match(instructions, /^Keep user instructions/)
+  assert.equal(instructions.split('<!-- po-first:start -->').length - 1, 1)
+  assert.equal(existsSync(join(custom, 'cordis.patch.yml')), false)
+  assert.equal(existsSync(join(custom, 'profiles')), false)
+  const doctor = cli(['doctor', '--dsh'], { DSH_HOME: custom })
+  assert.equal(doctor.status, 0, doctor.stdout + doctor.stderr)
+  assert.match(doctor.stdout, /installed: yes; configured: yes/)
+  const repeated = cli(['install', '--dsh'], { DSH_HOME: custom })
+  assert.equal(repeated.status, 0, repeated.stdout + repeated.stderr)
+  assert.match(repeated.stdout, /already installed in dsh/)
+  assert.equal(read(join(custom, 'AGENTS.md')).split('<!-- po-first:start -->').length - 1, 1)
+})
+
+test('custom DSH_HOME is used consistently by registry discovery and restore', t => {
+  const f = fixture(t, 'dsh')
+  const custom = join(f.home, 'custom-dsh')
+  const env = { DSH_HOME: '~/custom-dsh' }
+  put(join(custom, 'AGENTS.md'), 'Keep original DSH instructions\n')
+  const plan = f.plan({ env })
+  assert.equal(plan.config, custom)
+  const installed = applyInstall(plan)
+  assert.ok(installed.groups.every(group => group.status !== 'conflict'), JSON.stringify(installed))
+  const discovered = discoverInstallations({ home: f.home, cwd: f.cwd, env })
+  assert.equal(discovered.length, 1)
+  assert.equal(discovered[0].harness, 'dsh')
+  assert.equal(discovered[0].config, custom)
+  assert.deepEqual(discovered[0].roots, [join(custom, 'skills')])
+  assert.ok(restoreInstall(installed.backup, { home: f.home, env }) > 0)
+  assert.equal(read(join(custom, 'AGENTS.md')), 'Keep original DSH instructions\n')
+  assert.equal(existsSync(join(custom, 'skills', 'prumo', 'SKILL.md')), false)
 })
 
 test('automatic CLI reports no detection and continues independent harnesses after a configuration conflict', t => {
@@ -188,6 +412,7 @@ test('automatic CLI reports no detection and continues independent harnesses aft
   assert.deepEqual(readdirSync(f.home), before)
   assert.equal(cli(['doctor']).status, 1)
   assert.equal(cli(['install', '--claude', '--kiro']).status, 1)
+  assert.equal(cli(['install', '--codex', '--dsh']).status, 1)
   assert.equal(cli(['install', '--all', '--claude']).status, 1)
   put(join(f.home, '.local', 'share', 'prumo', 'dashboard.json'), { enabled: false, mechanism: process.platform === 'win32' ? 'schtasks' : process.platform === 'darwin' ? 'launchd' : 'xdg' })
   put(join(f.home, '.claude', 'settings.json'), '{broken')
@@ -247,7 +472,7 @@ test('only an authentic postinstall child skips the recursive global CLI update'
   assert.equal(JSON.parse(read(join(f.home, '.local', 'share', 'prumo', 'dashboard.json'))).enabled, false, 'dashboard opt-out remains respected')
 })
 
-for (const harness of ['claude', 'kiro', 'codex']) test(`${harness}: persistent install, activation, idempotence and restore`, t => {
+for (const harness of ['claude', 'kiro', 'codex', 'dsh']) test(`${harness}: persistent install, activation, idempotence and restore`, t => {
   const f = fixture(t, harness)
   const before = readdirSync(f.home)
   const preview = applyInstall(f.plan(), { dryRun: true })
@@ -276,6 +501,7 @@ for (const harness of ['claude', 'kiro', 'codex']) test(`${harness}: persistent 
   if (harness === 'claude') assert.equal(JSON.parse(read(join(f.config, 'settings.json'))).outputStyle, 'PO First')
   if (harness === 'kiro') assert.match(read(join(f.config, 'steering', 'po-first.md')), /inclusion: always/)
   if (harness === 'codex') assert.equal(read(join(f.config, 'AGENTS.md')).split('<!-- po-first:start -->').length - 1, 1)
+  if (harness === 'dsh') assert.equal(read(join(f.config, 'AGENTS.md')).split('<!-- po-first:start -->').length - 1, 1)
   assert.ok(restoreInstall(result.backup, { home: f.home, env: {} }) > 0)
   assert.equal(existsSync(join(skill, 'SKILL.md')), false)
 })
@@ -299,7 +525,7 @@ test('restore supports an explicitly selected project outside the user home', t 
 })
 
 test('update recupera marcador nulo por backup integro e preserva idioma e dados', t => {
-  for (const harness of ['claude', 'kiro', 'codex']) {
+  for (const harness of ['claude', 'kiro', 'codex', 'dsh']) {
     const f = fixture(t, harness)
     f.install()
     const marker = join(f.skillRoot, 'prumo', '.prumo-install.json')
@@ -662,6 +888,16 @@ test('configuration preserves unrelated settings and uses effective Codex overri
   assert.match(override, /keep this suffix\n$/)
   assert.doesNotMatch(override, /old PO First/)
   assert.equal(read(join(codex.config, 'AGENTS.md')), 'lower priority instructions')
+  const dsh = fixture(t, 'dsh')
+  put(join(dsh.config, 'AGENTS.md'), 'keep prefix\n\n<!-- po-first:start -->\nold PO First\n<!-- po-first:end -->\nkeep suffix\n')
+  const dshInstalled = dsh.install()
+  const dshInstructions = read(join(dsh.config, 'AGENTS.md'))
+  assert.match(dshInstructions, /^keep prefix/)
+  assert.match(dshInstructions, /keep suffix\n$/)
+  assert.doesNotMatch(dshInstructions, /old PO First/)
+  assert.equal(dshInstructions.split('<!-- po-first:start -->').length - 1, 1)
+  restoreInstall(dshInstalled.backup, { home: dsh.home, env: {} })
+  assert.match(read(join(dsh.config, 'AGENTS.md')), /old PO First/)
 })
 
 test('Kiro JSON agents retain tools and hooks while receiving only missing resources', t => {
@@ -694,6 +930,10 @@ test('conflicts block only their configuration group, with pending activation re
   put(join(codex.config, 'AGENTS.md'), '<!-- po-first:start -->unfinished')
   const blocked = applyInstall(codex.plan())
   assert.equal(blocked.groups.find(group => group.name === 'po-first:codex').status, 'conflict')
+  const dsh = fixture(t, 'dsh')
+  put(join(dsh.config, 'AGENTS.md'), '<!-- po-first:start -->unfinished')
+  const dshBlocked = applyInstall(dsh.plan())
+  assert.equal(dshBlocked.groups.find(group => group.name === 'po-first:dsh').status, 'conflict')
 })
 
 test('explicit disabled skills and local output styles are not silently overridden', t => {
@@ -718,9 +958,9 @@ test('saved language persists during a subsequent install or doctor without --la
 })
 
 test('empty directory settings use the canonical defaults instead of the current directory', t => {
-  for (const harness of ['claude', 'kiro', 'codex']) {
+  for (const harness of ['claude', 'kiro', 'codex', 'dsh']) {
     const f = fixture(t, harness)
-    const env = { PRUMO_HOME: '', GRAPH_FOREMAN_HOME: '', CLAUDE_CONFIG_DIR: '', CODEX_HOME: '', KIRO_HOME: '' }
+    const env = { PRUMO_HOME: '', GRAPH_FOREMAN_HOME: '', CLAUDE_CONFIG_DIR: '', CODEX_HOME: '', KIRO_HOME: '', DSH_HOME: '   ' }
     const plan = f.plan({ env })
     assert.equal(plan.config, f.config)
     assert.equal(storageHome(env, f.home), join(f.home, '.local/share/prumo'))

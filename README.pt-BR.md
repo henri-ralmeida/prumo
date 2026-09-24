@@ -8,7 +8,7 @@ O plano define o resultado esperado; o motor controla estados e registros. O amb
 
 ## Instalação
 
-Requer **Node.js 22 ou superior** e o ambiente escolhido. O instalador não instala Claude Code, Kiro ou Codex, nem altera suas permissões de execução.
+Requer **Node.js 22 ou superior** e o ambiente escolhido. O instalador não instala Claude Code, Kiro, Codex ou `@deepseek-ai/dsh`, nem altera suas permissões de execução.
 
 Instale a CLI, a skill Prumo, o PO First e o serviço de dashboard do usuário em uma etapa:
 
@@ -29,10 +29,11 @@ Você também pode abrir o instalador interativo, escolher um ambiente ou confer
 | Claude Code | `bunx @henri-ralmeida/prumo@latest install --claude` |
 | Kiro | `bunx @henri-ralmeida/prumo@latest install --kiro` |
 | Codex | `bunx @henri-ralmeida/prumo@latest install --codex` |
+| DeepSeek Harness (DSH) | `bunx @henri-ralmeida/prumo@latest install --dsh` |
 | Reparar após scripts npm desabilitados | `prumo install --all` |
 | Conferir mudanças de ambientes e dashboard | `prumo install --all --dry-run` |
 
-Ele detecta ambientes por configurações reais ou comandos no `PATH` (`claude`, `kiro-cli` / `kiro`, `codex`). Pastas vazias como `~/.claude`, `~/.kiro` e `~/.codex` não bastam. O menu mostra somente os ambientes detectados, inicialmente todos marcados. Use as setas para navegar, Espaço para marcar/desmarcar, A para todos/nenhum, Enter para instalar ou Esc para cancelar. A instalação é por usuário e vale para seus projetos; nenhuma alteração é aplicada antes da seleção.
+Ele detecta ambientes por configurações reais ou comandos no `PATH` (`claude`, `kiro-cli` / `kiro`, `codex`, `dsh`). O DSH também pode ser detectado por sua estrutura global oficial sob um `DSH_HOME` não vazio, com fallback para `~/.dsh`; uma pasta `.dsh` vazia ou apenas `.dsh/AGENTS.md` dentro de um projeto não basta. Pastas vazias como `~/.claude`, `~/.kiro` e `~/.codex` também não bastam. O menu mostra somente os ambientes detectados, inicialmente todos marcados. Use as setas para navegar, Espaço para marcar/desmarcar, A para todos/nenhum, Enter para instalar ou Esc para cancelar. A instalação é por usuário e vale para seus projetos; nenhuma alteração é aplicada antes da seleção.
 
 Para instalar em todos os ambientes detectados sem perguntas, inclusive em scripts:
 
@@ -40,12 +41,13 @@ Para instalar em todos os ambientes detectados sem perguntas, inclusive em scrip
 bunx @henri-ralmeida/prumo@latest install --all
 ```
 
-Sem terminal interativo, use `--all` ou uma opção explícita de ambiente. Se nenhum ambiente for detectado, o instalador informa isso sem gravar arquivos. Para escolher um ambiente diretamente:
+Sem terminal interativo, use `--all` ou uma opção explícita de ambiente. Se nenhum ambiente for detectado, o instalador informa isso sem gravar arquivos. Uma flag explícita para um ambiente ausente encerra com código diferente de zero, identifica esse ambiente e não grava nada. Para escolher um ambiente diretamente:
 
 ```sh
 bunx @henri-ralmeida/prumo@latest install --claude --lang pt-BR
 bunx @henri-ralmeida/prumo@latest install --kiro --lang pt-BR
 bunx @henri-ralmeida/prumo@latest install --codex --lang pt-BR
+bunx @henri-ralmeida/prumo@latest install --dsh --lang pt-BR
 ```
 
 O idioma é detectado pelo **país/região configurado no sistema operacional**: Brasil seleciona português do Brasil; outras regiões ou configuração indisponível selecionam inglês. Usa a região residencial do Windows, as preferências regionais do macOS ou a localidade de endereços do Linux, independentemente do idioma de exibição/navegador. Não usa geolocalização por IP. Para escolher explicitamente, use `--lang pt-BR` ou `--lang en`. Por exemplo:
@@ -61,6 +63,7 @@ A instalação real também instala a CLI global persistente pelo npm; em um nov
 ```sh
 bunx @henri-ralmeida/prumo@latest install --claude --lang pt-BR --dry-run
 bunx @henri-ralmeida/prumo@latest doctor --claude --lang pt-BR
+bunx @henri-ralmeida/prumo@latest doctor --dsh --lang pt-BR
 ```
 
 `--dry-run` apenas mostra mudanças nos ambientes e a criação ou reinício do serviço do dashboard. A instalação real mostra progresso enxuto; a prévia informa arquivos, backups e conflitos. Repita o comando para reparar ou atualizar; arquivos, blocos e registros de inicialização idênticos não são duplicados. `--project <caminho>` registra um projeto adicional e o inclui na busca por instalações e runs; pode ser repetido. O Prumo não varre o disco inteiro.
@@ -70,6 +73,13 @@ bunx @henri-ralmeida/prumo@latest doctor --claude --lang pt-BR
 | Claude Code | `/prumo` | Output style instalado e selecionado nas configurações |
 | Kiro | `/prumo` | Steering permanente e recursos explícitos dos agentes JSON encontrados |
 | Codex | `$prumo` / seletor de skills | Bloco no arquivo global de instruções efetivamente carregado |
+| DeepSeek Harness (DSH) | `/prumo` | Skill em `<DSH_HOME>/skills/prumo` e bloco PO First gerenciado em `<DSH_HOME>/AGENTS.md` |
+
+No DSH, `DSH_HOME` prevalece quando não está vazio; caso contrário, a raiz é `~/.dsh`. O Prumo grava somente sua skill em `<DSH_HOME>/skills/prumo` e seu bloco PO First gerenciado no `<DSH_HOME>/AGENTS.md` global; com a raiz de fallback, esses caminhos são `~/.dsh/skills/prumo` e `~/.dsh/AGENTS.md`. `install --all` e o `postinstall` global incluem DSH somente quando ele é detectado. Update e reparo reutilizam instalações Prumo detectadas ou registradas, inclusive caminhos personalizados de `DSH_HOME`, sem criar uma instalação DSH do zero.
+
+> **Estado do DSH:** o Prumo oferece suporte ao DSH como quarto harness, mas nunca instala `@deepseek-ai/dsh`. A versão upstream validada nesta integração foi `0.1.6-alpha.2`, que ainda está em alpha/developer preview e pode mudar de forma incompatível. `install --dsh`, `doctor --dsh` e `dsh --profile headless --dump-config` podem verificar a configuração estrutural sem credencial de provedor ou chamada de modelo. Uma conversa real com modelo depende da configuração de provedor do usuário e não foi comprovada por essas verificações.
+
+O DSH já fornece descoberta nativa de skills, instruções globais em `AGENTS.md`, subagents e workflows nos perfis aplicáveis. O Prumo usa essas capacidades quando `/prumo` é invocado; não cria nem edita `cordis.patch.yml`, perfil DSH, plugin, subagent, workflow ou credencial e não substitui a orquestração própria do DSH.
 
 PO First vale também fora do Prumo. Prioriza resultado, regras, escopo, decisões e evidência; não depende de outras skills pessoais. Ele liga cada critério material a evidência atual, pede uma contraprova independente contra o maior risco aplicável e encerra a investigação quando os critérios relevantes estão cobertos. O relato final começa pelo resultado observável. **Sugestões** aparecem apenas quando existe uma próxima ação útil: de uma a três em ordem de prioridade, com uma quarta somente para evitar falha, perda ou bloqueio crítico. No Claude, as instruções de programação permanecem habilitadas no estilo.
 
@@ -119,7 +129,7 @@ bunx @henri-ralmeida/prumo@latest install --all --dry-run
 bunx @henri-ralmeida/prumo@latest install --all
 ```
 
-Omita `--all` para escolher pelas caixas de seleção, ou use `--claude`, `--kiro` ou `--codex` para selecionar um diretamente. Se a instalação estiver dentro de um projeto, execute na pasta dele ou acrescente `--project "<caminho-do-projeto>"`. Essa primeira troca usa `install`; `update` só atualiza ambientes que já contêm Prumo. Depois da migração, use `/prumo` (ou `$prumo` no Codex); a skill legada `/graph-foreman` é removida.
+Omita `--all` para escolher pelas caixas de seleção, ou use `--claude`, `--kiro`, `--codex` ou `--dsh` para selecionar um diretamente. Se a instalação estiver dentro de um projeto, execute na pasta dele ou acrescente `--project "<caminho-do-projeto>"`. Essa primeira troca usa `install`; `update` só atualiza ambientes que já contêm Prumo. Depois da migração, use `/prumo` (ou `$prumo` no Codex); a skill legada `/graph-foreman` é removida.
 
 Não é necessário migrar os dados manualmente. Encerre sessões que estejam carregando arquivos da skill graph-foreman antes de instalar; o instalador nunca encerra processos. Ele detecta os locais padrão, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, projetos informados e ancestrais do diretório atual.
 
@@ -152,7 +162,7 @@ prumo migrate --run <nome-da-run>
 
 ## Executar um plano
 
-Apresente e aprove o plano global no modo Plan/Spec do ambiente de IA. Se esse modo bloquear escrita ou despacho de agentes, saia dele depois da aprovação. Então invoque `/prumo <plano-ou-execução>` no Claude Code ou Kiro, ou `$prumo` no Codex. O motor registra despachos; quem cria agentes é o ambiente. Sem suporte a planejadores dedicados, executores ou revisores independentes, o fluxo deve informar a limitação.
+Apresente e aprove o plano global no modo Plan/Spec do ambiente de IA. Se esse modo bloquear escrita ou despacho de agentes, saia dele depois da aprovação. Então invoque `/prumo <plano-ou-execução>` no Claude Code, Kiro ou DSH, ou `$prumo` no Codex. O motor registra despachos; quem cria agentes é o ambiente. Sem suporte a planejadores dedicados, executores ou revisores independentes, o fluxo deve informar a limitação.
 
 O fluxo atual tem dois níveis de planejamento. O modo Plan/Spec global define e aprova o grafo. Cada fase então segue **discutir → planejar → executar → revisar**: primeiro o orquestrador registra a fase em discussão, pesquisa e faz ao menos uma pergunta contextual na conversa principal. Quando as áreas cinzentas relevantes estão fechadas, um planejador dedicado e somente leitura pesquisa o projeto e grava um `task-plan-<id>.json` separado e imutável para cada tarefa da fase. O planejador não edita arquivos do produto nem o estado do grafo.
 
@@ -181,6 +191,8 @@ node "$ENGINE" review T1 --agent reviewer-T1
 
 A descoberta usa a caixa nativa de perguntas do ambiente quando disponível e um bloco estruturado na conversa principal quando não estiver. Ela registra pesquisa leve, respostas reais, cobertura PO First, decisões, ideias adiadas e o motivo de não restar área cinzenta relevante. O planejador a consome sem repetir a discussão. Mudanças materiais de escopo, contrato ou decisões compartilhadas da fase exigem nova discussão e planejamento do trabalho afetado; um defeito de plano marcado pelo revisor replaneja somente aquela tarefa. Achados comuns do executor e retries corretivos reutilizam o plano imutável quando ele continua correto e atual.
 
+Obstáculos recuperáveis pertencem ao executor: ele inspeciona a falha, faz pesquisa adicional direcionada quando necessário, troca para alternativas seguras dentro do contrato aprovado e repete as verificações relevantes até entregar o plano inteiro. A passagem ocorre somente quando ele acredita, com base nas evidências, que todos os critérios passam. O revisor é uma etapa de validação, não uma triagem de falhas. Bloqueio antecipado fica reservado para falta de autoridade, decisão consequencial ainda indefinida, risco destrutivo não autorizado, dependência externa ainda indisponível após tentativas proporcionais ou impossibilidade comprovada. Mudanças de estratégia reutilizam o mesmo plano; o planejador continua executando exatamente uma vez por contrato aprovado.
+
 Runs existentes no modo por tarefa preservam fluxo e histórico. Antes de continuá-los, a skill do Prumo inspeciona e normaliza todos os contratos legados não terminais na fonte aprovada e sincroniza o run original. A migração de contratos não amplia o escopo do planejamento: uma tarefa escolhida explicitamente mantém um único planner por tarefa; nos demais casos, as fases elegíveis são adotadas em ordem com `begin-phase-discussion <fase> --adopt-legacy`. Ela não cria um segundo run para evitar a migração; adoção insegura é recusada de forma atômica. Consulte [artefato de planejamento por fase](references/runtime.pt-BR.md#descoberta-e-planejamento-por-fase) e [planos em andamento](references/runtime.pt-BR.md#planos-em-andamento).
 
 Para novos planos, selecione um workspace central. No PowerShell:
@@ -202,7 +214,7 @@ mkdir -p "$PRUMO_ROOT"
 
 Planos locais preservam o workspace original. `GRAPH_FOREMAN_HOME` localiza dados antigos para descoberta e migração; não escolhe o destino de planos novos. O armazenamento padrão é `~/.local/share/prumo`, configurável por `PRUMO_HOME`. Referências antigas em `GRAPH_ROOT`/`PRUMO_ROOT` acompanham um workspace central migrado quando o grafo antigo já não existe e o novo está presente.
 
-Claude Code, Kiro e Codex locais, executados pelo mesmo usuário, compartilham a pasta central do Prumo. Os comandos criam as pastas ausentes. O acesso depende das permissões de cada ambiente; sessões na nuvem não compartilham automaticamente os arquivos locais.
+Claude Code, Kiro, Codex e DSH locais, executados pelo mesmo usuário, compartilham a pasta central do Prumo. Os comandos criam as pastas ausentes. O acesso depende das permissões de cada ambiente; sessões na nuvem não compartilham automaticamente os arquivos locais.
 
 Os scripts ficam em `scripts/`, junto da skill. Resolva caminhos a partir dela. Consulte a [referência do motor](references/runtime.pt-BR.md) para comandos, contratos e estados.
 

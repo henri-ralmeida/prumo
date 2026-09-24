@@ -15,10 +15,10 @@ const read = path => readFileSync(path, 'utf8')
 const version = JSON.parse(read(join(source, 'package.json'))).version
 const put = (path, value) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, typeof value === 'string' ? value : JSON.stringify(value)) }
 
-test('update exits before npm only when Claude, Kiro and Codex are all already latest', async t => {
+test('update exits before npm only when Claude, Kiro, Codex and DSH are all already latest', async t => {
   const home = mkdtempSync(join(realpathSync(tmpdir()), 'prumo-current-test-'))
   t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
-  const installations = ['claude', 'kiro', 'codex'].map(harness => {
+  const installations = ['claude', 'kiro', 'codex', 'dsh'].map(harness => {
     const root = join(home, harness, 'skills')
     put(join(root, 'prumo', '.prumo-install.json'), { product: 'prumo', harness, version })
     return { harness, roots: [root] }
@@ -47,7 +47,7 @@ test('update exits before npm only when Claude, Kiro and Codex are all already l
   })
   assert.equal(launched, 1, 'an older global CLI must still launch the updater')
 
-  put(join(home, 'kiro', 'skills', 'prumo', '.prumo-install.json'), { product: 'prumo', harness: 'kiro', version: '0.0.9' })
+  put(join(home, 'dsh', 'skills', 'prumo', '.prumo-install.json'), { product: 'prumo', harness: 'dsh', version: '0.0.9' })
   const stale = await launchUpdate(request, {
     discover: () => installations, latestVersion: () => version,
     run: runUpdater,
@@ -134,12 +134,14 @@ test('update detects installed harnesses and custom paths, preserves preferences
   const cwd = join(home, 'project')
   mkdirSync(join(cwd, '.git'), { recursive: true })
   const customCodex = join(home, 'custom-codex')
+  const customDsh = join(home, 'custom-dsh')
   put(join(home, '.claude', 'settings.json'), { theme: 'dark' })
   put(join(customCodex, 'AGENTS.md'), 'Keep this user instruction.\n')
+  put(join(customDsh, 'AGENTS.md'), 'Keep this DSH user instruction.\n')
   const legacy = join(home, '.kiro', 'skills', 'graph-foreman', 'SKILL.md')
   put(legacy, 'Keep the active legacy installation.')
-  for (const harness of ['claude', 'codex']) {
-    const plan = planInstall({ harness, home, cwd, env: { CODEX_HOME: customCodex }, lang: harness === 'claude' ? 'pt-BR' : 'en' })
+  for (const harness of ['claude', 'codex', 'dsh']) {
+    const plan = planInstall({ harness, home, cwd, env: { CODEX_HOME: customCodex, DSH_HOME: customDsh }, lang: harness === 'codex' ? 'en' : 'pt-BR' })
     for (const item of plan.groups.flatMap(group => group.changes)) assert.ok(inside(home, item.file))
     assert.ok(applyInstall(plan).groups.every(group => group.status !== 'conflict'))
   }
@@ -148,11 +150,12 @@ test('update detects installed harnesses and custom paths, preserves preferences
   const projectMarker = join(projectSkill, '.prumo-install.json')
   put(projectMarker, { ...JSON.parse(read(projectMarker)), lang: 'en' })
   const installed = discoverInstallations({ home, cwd, env: {} })
-  assert.deepEqual(installed.map(entry => entry.harness).sort(), ['claude', 'codex'])
+  assert.deepEqual(installed.map(entry => entry.harness).sort(), ['claude', 'codex', 'dsh'])
   assert.equal(installed.find(entry => entry.harness === 'codex').config, customCodex)
+  assert.equal(installed.find(entry => entry.harness === 'dsh').config, customDsh)
   const markers = installed.flatMap(entry => entry.roots.map(root => join(root, 'prumo', '.prumo-install.json')))
   for (const marker of markers) { const value = JSON.parse(read(marker)); value.version = '0.0.9'; put(marker, value); put(join(dirname(marker), 'scripts', 'engine.mjs'), '// older installed engine\n') }
-  const env = { ...process.env, HOME: home, USERPROFILE: home, CODEX_HOME: join(home, '.codex'), CLAUDE_CONFIG_DIR: join(home, '.claude'), PRUMO_HOME: join(home, 'data'), PRUMO_LANG: 'en' }
+  const env = { ...process.env, HOME: home, USERPROFILE: home, CODEX_HOME: join(home, '.codex'), DSH_HOME: join(home, '.dsh'), CLAUDE_CONFIG_DIR: join(home, '.claude'), PRUMO_HOME: join(home, 'data'), PRUMO_LANG: 'en' }
   delete env.GRAPH_ROOT; delete env.PRUMO_ROOT; delete env.GRAPH_FOREMAN_HOME
   put(join(home, '.local', 'share', 'prumo', 'dashboard.json'), { enabled: false, mechanism: process.platform === 'win32' ? 'schtasks' : process.platform === 'darwin' ? 'launchd' : 'xdg' })
   const run = dryRun => spawnSync(process.execPath, [join(source, 'bin', 'prumo.mjs'), '_update'], { cwd, env: { ...env, PRUMO_UPDATE_REQUEST: JSON.stringify({ dryRun, cwd, projects: [], updateCli: false }) }, encoding: 'utf8', timeout: 120000, windowsHide: true })
@@ -171,9 +174,11 @@ test('update detects installed harnesses and custom paths, preserves preferences
     assert.equal(JSON.parse(read(marker)).version, version)
     assert.equal(read(join(dirname(marker), 'scripts', 'engine.mjs')), read(join(source, 'scripts', 'engine.mjs')))
   }
-  assert.deepEqual(markers.map(marker => JSON.parse(read(marker)).lang), ['pt-BR', 'en', 'en'])
+  assert.deepEqual(markers.map(marker => JSON.parse(read(marker)).lang), ['pt-BR', 'en', 'en', 'pt-BR'])
   assert.equal(JSON.parse(read(join(home, '.claude', 'settings.json'))).theme, 'dark')
   assert.match(read(join(customCodex, 'AGENTS.md')), /Keep this user instruction/)
+  assert.match(read(join(customDsh, 'AGENTS.md')), /Keep this DSH user instruction/)
+  assert.equal(existsSync(join(customDsh, 'skills', 'prumo', 'SKILL.md')), true)
   assert.equal(existsSync(join(home, '.codex', 'AGENTS.md')), false)
   assert.equal(read(legacy), 'Keep the active legacy installation.')
   assert.equal(existsSync(join(home, '.kiro', 'skills', 'prumo')), false)
@@ -186,14 +191,14 @@ test('update detects installed harnesses and custom paths, preserves preferences
   assert.throws(() => discoverInstallations({ home, cwd, env: {} }))
 })
 
-test('update recupera marcadores nulos dos tres ambientes por meio de backups integros', t => {
+test('update recupera marcadores nulos dos quatro ambientes por meio de backups integros', t => {
   const home = mkdtempSync(join(realpathSync(tmpdir()), 'prumo-recover-update-'))
   t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
   const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CONFIG_DIR: join(home, '.claude'),
-    KIRO_HOME: join(home, '.kiro'), CODEX_HOME: join(home, '.codex'), PRUMO_HOME: join(home, 'data'),
+    KIRO_HOME: join(home, '.kiro'), CODEX_HOME: join(home, '.codex'), DSH_HOME: join(home, '.dsh'), PRUMO_HOME: join(home, 'data'),
     GRAPH_ROOT: '', PRUMO_ROOT: '', GRAPH_FOREMAN_HOME: '', PRUMO_LANG: 'en' }
   const markers = []
-  for (const harness of ['claude', 'kiro', 'codex']) {
+  for (const harness of ['claude', 'kiro', 'codex', 'dsh']) {
     const first = planInstall({ harness, home, cwd: home, env })
     assert.ok(applyInstall(first).groups.every(group => group.status !== 'conflict'))
     const marker = join(first.groups.find(group => group.name.startsWith('skill:')).snapshots[0], '.prumo-install.json')
@@ -257,10 +262,10 @@ test('update reports a corrupt harness marker and still updates the other instal
   const home = mkdtempSync(join(realpathSync(tmpdir()), 'prumo-partial-update-'))
   t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
   const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CONFIG_DIR: join(home, '.claude'),
-    KIRO_HOME: join(home, '.kiro'), CODEX_HOME: join(home, '.codex'), PRUMO_HOME: join(home, 'data'),
+    KIRO_HOME: join(home, '.kiro'), CODEX_HOME: join(home, '.codex'), DSH_HOME: join(home, '.dsh'), PRUMO_HOME: join(home, 'data'),
     GRAPH_ROOT: '', PRUMO_ROOT: '', GRAPH_FOREMAN_HOME: '', PRUMO_LANG: 'en' }
   const markers = []
-  for (const harness of ['claude', 'kiro', 'codex']) {
+  for (const harness of ['claude', 'kiro', 'codex', 'dsh']) {
     const plan = planInstall({ harness, home, cwd: home, env })
     assert.ok(applyInstall(plan).groups.every(g => g.status !== 'conflict'))
     const marker = join(plan.groups.find(g => g.name.startsWith('skill:')).snapshots[0], '.prumo-install.json')
@@ -307,7 +312,7 @@ test('update reports a corrupt harness marker and still updates the other instal
   })
   assert.equal(conflict.status, 2)
   assert.equal(conflict.stderr.split('Legacy workspace conflicts with Prumo destination').length - 1, 1,
-    'the same workspace conflict is reported once across all three harnesses')
+    'the same workspace conflict is reported once across all four harnesses')
   assert.match(conflict.stdout, /Update incomplete/)
   assert.ok(conflict.stdout.includes(`Prumo v${version}`))
   assert.match(conflict.stdout, /Fixed — Legacy workspace migration/)

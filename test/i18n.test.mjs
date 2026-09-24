@@ -22,6 +22,15 @@ test('language selection and interpolation preserve data and placeholders', () =
     ['discussão da fase', 'planejamento da fase', 'aguardando plano da fase', 'entrada de fase posterior não resolvida', 'entrada validada', 'entrada dispensada'])
   assert.deepEqual(['Selected task', 'No task selected', 'Collapse sidebar', 'Open sidebar'].map(pt),
     ['Tarefa selecionada', 'Nenhuma tarefa selecionada', 'Recolher lateral', 'Abrir lateral'])
+  assert.equal(pt('Choose exactly one of --claude, --kiro, --codex or --dsh'), 'Escolha exatamente um: --claude, --kiro, --codex ou --dsh')
+  for (const [harness, label] of [['claude', 'Claude Code'], ['kiro', 'Kiro'], ['codex', 'Codex'], ['dsh', 'DeepSeek Harness']]) {
+    const flag = `--${harness}`
+    const key = '{0} is not installed or configured; install or configure it before running prumo install {1}'
+    assert.equal(en(key, label, flag), `${label} is not installed or configured; install or configure it before running prumo install ${flag}`)
+    assert.equal(pt(key, label, flag), `${label} não está instalado ou configurado; instale ou configure esse ambiente antes de executar prumo install ${flag}`)
+  }
+  assert.equal(pt('No supported environments detected; install or configure Claude Code, Kiro, Codex or DeepSeek Harness first'),
+    'Nenhum ambiente compatível foi detectado; instale ou configure Claude Code, Kiro, Codex ou DeepSeek Harness primeiro')
   for (const [key, value] of Object.entries(messages)) {
     const slots = text => [...new Set(text.match(/\{\d+\}/g) ?? [])].sort()
     assert.deepEqual(slots(key), slots(value), key)

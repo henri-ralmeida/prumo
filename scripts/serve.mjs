@@ -18,7 +18,7 @@ const ENGINE = join(HERE, 'engine.mjs')
 
 import { findRoot, storageHome, graphRoots as listRoots, globalGraphRoots } from './storage.mjs'
 import { language, localizeDashboard, log, errorLog, tr } from './i18n.mjs'
-import { discoveryDigest, hasCurrentTaskPlan, phasePlanningContext, planningContext, usesCurrentPlanning } from './validation.mjs'
+import { discoveryDigest, hasCurrentTaskPlan, phasePlanningContext, planningContext, usesCurrentPlanning, currentPlanningSkip } from './validation.mjs'
 import { dashboardDiagnostics } from './dashboard-diagnostics.mjs'
 
 const argv = process.argv.slice(2)
@@ -196,15 +196,38 @@ function currentPhaseDiscussion(state, phase) {
     phase.discovery.digest === discoveryDigest(phase.discovery)
 }
 
+function currentPhaseDiscussionSkip(state, phase) {
+  const decision = phase?.discussionSkips?.at(-1)
+  if (decision?.decision !== 'skipped' || decision.confirmedByUser !== true) return null
+  const targets = decision.targets?.map(id => state.tasks[id]).filter(Boolean)
+  return targets?.length === decision.targets.length &&
+    phaseTargets(state, phase.id).every(task => decision.targets.includes(task.id)) &&
+    decision.context === phaseContext(state, phase.id, targets) ? decision : null
+}
+
+function currentPhaseDiscussionDecision(state, phase) {
+  const round = currentPhaseDiscussion(state, phase) ? phase.discussionAttempts.at(-1) : null
+  const skipped = currentPhaseDiscussionSkip(state, phase)
+  if (round && (!skipped || (round.endedAt ?? '') > skipped.at))
+    return { id: round.roundId, digest: phase.discovery.digest, targets: round.targets }
+  return skipped ? { id: skipped.decisionId, digest: skipped.digest, targets: skipped.targets } : null
+}
+
+function currentTaskDiscussionDecision(state, task) {
+  if (currentDiscussion(state, task)) return true
+  const decision = task.discussionSkips?.at(-1)
+  return decision?.decision === 'skipped' && decision.confirmedByUser === true &&
+    decision.scope === phasePlanningContext(state, task)
+}
+
 function currentPhasePlanning(state, phase, round = phase?.planningAttempts?.at(-1)) {
   if (!round || round.endedAt || !Array.isArray(round.targets)) return false
-  const discussion = phase?.discussionAttempts?.at(-1)
+  const discussion = currentPhaseDiscussionDecision(state, phase)
   const targets = round.targets.map(id => state.tasks[id]).filter(Boolean)
   const liveTargets = phaseTargets(state, phase.id).map(task => task.id).sort()
-  return discussion?.roundId === round.discussionRoundId && currentPhaseDiscussion(state, phase) &&
+  return discussion?.id === round.discussionRoundId && discussion.digest === (round.discussionDigest ?? round.discoveryDigest) &&
     targets.length === round.targets.length && JSON.stringify([...round.targets].sort()) === JSON.stringify(liveTargets) &&
-    round.context === phaseContext(state, phase.id, discussion.targets.map(id => state.tasks[id])) &&
-    round.discoveryDigest === phase.discovery?.digest
+    round.context === phaseContext(state, phase.id, discussion.targets.map(id => state.tasks[id]))
 }
 
 function currentDiscussion(state, task) {
@@ -241,15 +264,16 @@ function derive(state) {
           planningRound.targets.includes(t.id)
         effective = !phaseAdopted ? 'pending' : phaseDiscussing ? 'discussing' : hasCurrentTaskPlan(state, t) ?
           (blockedBy.length ? 'waiting' : 'ready') : phasePlanning ? 'planning' : planningBlockedBy.length ? 'waiting' :
-            (currentPhaseDiscussion(state, phase) ? 'ready_to_plan' : 'ready_for_discussion')
+            (currentPhaseDiscussionDecision(state, phase) ? 'ready_to_plan' : 'ready_for_discussion')
       } else {
         effective = blockedBy.length ? 'waiting' : !phaseAdopted ? 'pending' :
           hasCurrentTaskPlan(state, t) ? 'ready' :
-            t.discussionRequired && !currentDiscussion(state, t) ? 'ready_for_discussion' : 'ready_to_plan'
+            t.discussionRequired && !currentTaskDiscussionDecision(state, t) ? 'ready_for_discussion' : 'ready_to_plan'
       }
     }
     const planningStatus = !usesCurrentPlanning(state, t) ? 'legacy_lifecycle' :
-      state.legacyPhaseAdoption && !phase?.adoptedLegacy ? 'awaiting_phase_adoption' : hasCurrentTaskPlan(state, t) ? 'planned' :
+      state.legacyPhaseAdoption && !phase?.adoptedLegacy ? 'awaiting_phase_adoption' : currentPlanningSkip(state, t) ? 'planning_skipped' :
+      hasCurrentTaskPlan(state, t) ? 'planned' :
       phase?.state === 'discussing' ? 'phase_discussing' : phase?.state === 'planning' ? 'phase_planning' : 'awaiting_phase_plan'
     let inputStatus
     if (t.taskPlan?.phaseId && t.taskPlan.unresolvedInputs?.length) {

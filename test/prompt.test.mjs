@@ -16,8 +16,8 @@ function terminal() {
 }
 
 test('checkbox menu supports all, a subset and one harness, restoring terminal state', async () => {
-  const names = ['claude', 'kiro', 'codex']
-  for (const [keys, expected] of [['\r', names], ['\u001b[B \r', ['claude', 'codex']], ['a\r\u001b[B \r', ['kiro']]]) {
+  const names = ['claude', 'kiro', 'codex', 'dsh']
+  for (const [keys, expected] of [['\r', names], ['\u001b[B \r', ['claude', 'codex', 'dsh']], ['a\r\u001b[B \r', ['kiro']]]) {
     const io = terminal()
     const result = selectHarnesses(names, io)
     assert.equal(io.input.isRaw, true)
