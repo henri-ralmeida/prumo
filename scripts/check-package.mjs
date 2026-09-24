@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url'
 import assert from 'node:assert/strict'
 import { Script } from 'node:vm'
 import { dashboardWithCatalog } from './build-dashboard.mjs'
+import { packageContentManifest } from './package-content.mjs'
+import { assertReleaseContentVersion } from './release-guard.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
@@ -13,12 +15,13 @@ assert.equal(pkg.bin.prumo, 'bin/prumo.mjs')
 assert.equal(pkg.engines.node, '>=22')
 assert.equal(pkg.dependencies, undefined)
 const releaseNotes = JSON.parse(readFileSync(join(root, 'scripts', 'release-notes.json'), 'utf8'))
-assert.deepEqual(releaseNotes[pkg.version]?.en?.map(section => section.title), [
-    'Fixed — Safe plan synchronization',
-    'Improved — Actionable graph diagnostics',
-    'Fixed — Partial run migration'
-])
+assert.ok(Array.isArray(releaseNotes[pkg.version]?.en) && releaseNotes[pkg.version].en.length > 0, `missing English release notes for ${pkg.version}`)
+assert.ok(releaseNotes[pkg.version].en.every(section => typeof section.title === 'string' && Array.isArray(section.items) && section.items.length > 0))
 assert.equal(releaseNotes[pkg.version]?.['pt-BR'], undefined)
+const releaseBaseline = JSON.parse(readFileSync(join(root, 'scripts', 'release-baseline.json'), 'utf8'))
+assert.equal(releaseBaseline.source, `npm registry tarball @henri-ralmeida/prumo@${releaseBaseline.version}`)
+assert.match(releaseBaseline.integrity, /^sha512-[A-Za-z0-9+/]+={0,2}$/)
+assertReleaseContentVersion(pkg.version, releaseBaseline, packageContentManifest(root))
 for (const file of ['SKILL.md', 'README.md', 'README.pt-BR.md', 'CHANGELOG.md', 'LICENSE', 'references/po-first.md', 'references/po-first.pt-BR.md', 'references/runtime.md', 'references/runtime.pt-BR.md']) assert.ok(existsSync(join(root, file)), file)
 const skill = readFileSync(join(root, 'SKILL.md'), 'utf8')
 assert.match(skill, /^---\nname: prumo\n/)

@@ -2,6 +2,24 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.0.0 — 2026-09-24
+
+### Fixed — Content-addressed installations
+
+- Identify same-version installations by the bytes in their distributed package and verify the full payload.
+- Compare registered installations in the same language, including DeepSeek Harness.
+
+### Fixed — Durable dashboard refresh
+
+- Expose the served package identity through `/api/about` and the dashboard footer.
+- Persist same-version CLI refreshes in the managed global package and verify the restarted server serves the expected identity.
+- Identify port occupants without terminating another process or changing ports.
+
+### Improved — Versioned package safety
+
+- Require a SemVer bump when distributed package bytes differ from the last-release baseline.
+- Validate local CLI archives in isolation and restore the previous global package if replacement verification fails.
+
 ## 1.3.17 — 2026-09-21
 
 ### Fixed — Safe plan synchronization

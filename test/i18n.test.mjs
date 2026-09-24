@@ -38,6 +38,11 @@ test('language selection and interpolation preserve data and placeholders', () =
   assert.equal(pt('contract confirmation required for phase F1: A, B'),
     'a fase F1 exige confirmação do contrato: A, B')
   assert.equal(pt('contract confirmation required for task T1'), 'a tarefa T1 exige confirmação do contrato')
+  assert.equal(pt('dsh'), 'dsh')
+  assert.equal(pt('English'), 'English')
+  assert.equal(pt('Miriam'), 'Miriam')
+  assert.equal(pt('15m'), '15 min')
+  assert.equal(pt('2h'), '2 h')
   assert.equal(pt('{0} requires a fresh answered contract confirmation; begin-discussion and ask the user before skipping discussion', 'T1'),
     'T1 exige uma nova confirmação respondida do contrato; execute begin-discussion e pergunte ao usuário antes de pular a discussão')
   for (const [key, value] of Object.entries(messages)) {

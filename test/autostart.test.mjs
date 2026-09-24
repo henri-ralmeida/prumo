@@ -11,14 +11,11 @@ function fixture(t, platform, extra = {}) {
   const calls = []
   let task = false
   let running = false
+  const contentId = extra.contentId ?? 'fixture-content'
   const node = join(home, 'Node JS', platform === 'win32' ? 'node.exe' : 'node')
   const script = join(home, 'Prumo Package', 'scripts', 'serve.mjs')
   const options = {
-    platform, home, node, script, version: '1.3.0', env: {}, uid: () => 1234,
-    fetch: async () => {
-      if (!running) throw new Error('not running')
-      return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0' }) }
-    },
+    platform, home, node, script, version: '1.3.0', contentId, env: {}, uid: () => 1234,
     portAvailable: async () => true,
     listProcessIds: () => [],
     delay: async () => {},
@@ -38,6 +35,15 @@ function fixture(t, platform, extra = {}) {
       return { status: 0, stdout: '' }
     },
     ...extra,
+    fetch: async (url, init) => {
+      if (String(url).endsWith('/api/about')) {
+        if (extra.fetchAbout) return extra.fetchAbout(url, init)
+        return { ok: true, json: async () => ({ product: 'prumo', version: '1.3.0', origin: 'global', contentId: options.contentId, path: home }) }
+      }
+      if (extra.fetch) return extra.fetch(url, init)
+      if (!running) throw new Error('not running')
+      return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0' }) }
+    },
   }
   return { home, node, script, calls, options }
 }
@@ -72,6 +78,7 @@ test('doctor policy distinguishes opt-out from missing, stopped and conflicting 
   assert.equal(dashboardNeedsRepair({ disabled: false, registered: true, process: 'stopped', conflict: false }), true)
   assert.equal(dashboardNeedsRepair({ disabled: false, registered: true, process: 'conflict', conflict: true }), true)
   assert.equal(dashboardNeedsRepair({ disabled: false, registered: true, process: 'running', conflict: false }), false)
+  assert.equal(dashboardNeedsRepair({ disabled: false, registered: true, process: 'running', conflict: false, contentCurrent: false }), true)
 })
 
 test('status registra uma única observação quando o processo habilitado desaparece', async t => {
@@ -312,6 +319,28 @@ test('enable restarts a stale service that starts after the initial health probe
   const result = await enableDashboard(f.options)
   assert.equal(result.ok, true, JSON.stringify(result))
   assert.equal(result.version, '1.3.0')
+  assert.ok(f.calls.some(([file, args]) => file === 'systemctl' && args.join(' ') === '--user restart prumo-dashboard.service'))
+})
+
+test('enable repairs a same-version dashboard whose content identifier is stale', async t => {
+  let liveContent = 'old-content'
+  const f = fixture(t, 'linux', {
+    contentId: 'new-content',
+    fetch: async () => ({ ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0' }) }),
+    fetchAbout: async () => ({ ok: true, json: async () => ({ product: 'prumo', version: '1.3.0', origin: 'global', contentId: liveContent, path: f.script }) }),
+    exec(file, args) {
+      f.calls.push([file, args])
+      if (file === 'systemctl' && args.join(' ') === '--user restart prumo-dashboard.service') {
+        liveContent = 'new-content'
+      }
+      return { status: 0, stdout: '' }
+    },
+  })
+  const result = await enableDashboard(f.options)
+  assert.equal(result.ok, true, JSON.stringify(result))
+  assert.equal(result.version, '1.3.0')
+  assert.equal(result.contentId, 'new-content')
+  assert.equal(result.contentCurrent, true)
   assert.ok(f.calls.some(([file, args]) => file === 'systemctl' && args.join(' ') === '--user restart prumo-dashboard.service'))
 })
 
@@ -605,7 +634,7 @@ test('XDG disable refuses to signal an unverified process', async t => {
     spawn: () => { running = true; return { pid: 9000 } },
     fetch: async () => {
       if (!running) throw new Error('stopped')
-      return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true }) }
+      return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0' }) }
     },
     readProcessCommand: () => ['/usr/bin/node', '/foreign/server.mjs'],
     kill: () => { killed = true },
@@ -624,7 +653,7 @@ test('enable waits for bounded health readiness', async t => {
     fetch: async () => {
       probes += 1
       if (probes < 3) throw new Error('starting')
-      return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true }) }
+      return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0' }) }
     },
     delay: async () => { delays += 1 },
   })
@@ -681,7 +710,7 @@ test('enable reports a post-start port conflict and preserves registration', asy
 test('XDG recovers and persists a login-started process with the exact command', async t => {
   const f = fixture(t, 'linux', {
     exec: () => ({ status: 1, stdout: '' }),
-    fetch: async () => ({ ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true }) }),
+    fetch: async () => ({ ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0' }) }),
     listProcessIds: () => [111, 7654],
     readProcessCommand(pid) {
       return pid === 7654 ? [f.node, f.script, '--global', '--port', '4949'] : ['/usr/bin/node', '/tmp/other.mjs']
@@ -701,7 +730,7 @@ test('XDG refuses a PID whose command has the managed argv plus extra arguments'
     spawn: () => { running = true; return { pid: 9876 } },
     fetch: async () => {
       if (!running) throw new Error('stopped')
-      return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true }) }
+      return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0' }) }
     },
     readProcessCommand: () => [
       f.node, f.script, '--global', '--port', '4949',
@@ -730,7 +759,7 @@ test('Linux keeps the persisted systemd or XDG mechanism when detection changes'
     },
     fetch: async () => {
       if (!systemdRunning) throw new Error('stopped')
-      return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true }) }
+      return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0' }) }
     },
   })
 
@@ -753,7 +782,7 @@ test('Linux keeps the persisted systemd or XDG mechanism when detection changes'
     spawn: () => { xdgRunning = true; return { pid: 6789 } },
     fetch: async () => {
       if (!xdgRunning) throw new Error('stopped')
-      return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true }) }
+      return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0' }) }
     },
     readProcessCommand: () => [xdg.node, xdg.script, '--global', '--port', '4949'],
     kill(pid) { killed.push(pid); xdgRunning = false },

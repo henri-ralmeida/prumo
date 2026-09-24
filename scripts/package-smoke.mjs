@@ -71,7 +71,11 @@ import net from 'node:net'
 import { appendFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { syncBuiltinESMExports } from 'node:module'
+import { pathToFileURL } from 'node:url'
 if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
+  const packageRoot = join(dirname(process.argv[1]), '..')
+  const { contentId } = await import(pathToFileURL(join(packageRoot, 'scripts', 'installation-bundle.mjs')).href)
+  const expectedContentId = contentId('en', { packageRoot })
   let registered = false
   let running = false
   const original = childProcess.execFileSync
@@ -111,9 +115,11 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
     listen(port, host, ready) { ready(); return this },
     close(done) { done() },
   })
-  globalThis.fetch = async () => {
+  globalThis.fetch = async url => {
     if (!running) throw new Error('stopped')
-    return { ok: true, json: async () => ({ product: 'prumo', version: ${JSON.stringify(version)}, mode: 'global', readOnly: true }) }
+    return { ok: true, json: async () => String(url).endsWith('/api/about')
+      ? ({ product: 'prumo', version: ${JSON.stringify(version)}, origin: 'global', contentId: expectedContentId, path: packageRoot })
+      : ({ product: 'prumo', version: ${JSON.stringify(version)}, mode: 'global', readOnly: true }) }
   }
   syncBuiltinESMExports()
 }
@@ -190,9 +196,12 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
   }
   for (const harness of ['.claude', '.kiro', '.agents', '.dsh']) {
     const skill = join(home, harness, 'skills', 'prumo')
-    for (const file of ['SKILL.md', 'references/po-first.md', 'references/po-first.pt-BR.md', 'scripts/engine.mjs', 'scripts/serve.mjs', 'scripts/validation.mjs', 'scripts/atomic-state.mjs', 'scripts/storage.mjs', 'scripts/dashboard.html']) {
+    for (const file of ['SKILL.md', 'references/po-first.md', 'references/po-first.pt-BR.md', 'scripts/engine.mjs', 'scripts/serve.mjs', 'scripts/installation-bundle.mjs', 'scripts/validation.mjs', 'scripts/atomic-state.mjs', 'scripts/storage.mjs', 'scripts/dashboard.html']) {
       assert.ok(existsSync(join(skill, file)), `${harness} installation must contain ${file}`)
     }
+    const marker = JSON.parse(readFileSync(join(skill, '.prumo-install.json'), 'utf8'))
+    assert.match(marker.contentId, /^[a-f0-9]{12}$/)
+    assert.match(marker.engineHash, /^[a-f0-9]{64}$/)
   }
   rmSync(join(home, '.dsh', 'skills', 'prumo'), { recursive: true, force: true })
   run('npm', ['install', '--global', '--force', '--offline', '--no-audit', '--no-fund', archive])

@@ -19,8 +19,9 @@ export function localizeDashboard(html, lang) {
 export function createTranslator(dictionary, lang) {
   const templates = Object.entries(dictionary).filter(([key]) => /\{\d+\}/.test(key)).map(([key, translated]) => {
     const slots = []
+    const numericDuration = /^\{0\}[smh]$/.test(key)
     const pattern = key.split(/(\{\d+\})/).map(part => {
-      if (/^\{\d+\}$/.test(part)) { slots.push(Number(part.slice(1, -1))); return '(.*?)' }
+      if (/^\{\d+\}$/.test(part)) { slots.push(Number(part.slice(1, -1))); return numericDuration ? '(\\d+)' : '(.*?)' }
       return part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     }).join('')
     return { pattern: new RegExp(`^${pattern}$`, 's'), slots, translated }

@@ -234,6 +234,26 @@ test('dashboard marks declared manual inspection as pending and displays plan wr
   }
 })
 
+test('dashboard footer shows package version, origin, content ID and path, with an unavailable fallback', async () => {
+  for (const lang of ['en', 'pt-BR']) {
+    const ui = dashboard(lang)
+    const about = { version: '2.0.0', origin: 'global', contentId: 'a1b2c3d4e5f6', path: 'C:\\Prumo\\global\\package' }
+    await ui.run('loadIdentity()', { fetch: async url => {
+      assert.equal(url, '/api/about')
+      return { ok: true, json: async () => about }
+    } })
+    const identity = ui.nodes.get('#identity')
+    const expected = ui.run("tr('Prumo v{0} · {1} · content {2} · path {3}', '2.0.0', tr('global package'), 'a1b2c3d4e5f6', 'C:\\\\Prumo\\\\global\\\\package')")
+    assert.equal(identity.textContent, expected)
+    assert.equal(identity.getAttribute('title'), expected)
+    assert.equal(identity.getAttribute('aria-label'), expected)
+
+    const unavailable = dashboard(lang)
+    await unavailable.run('loadIdentity()', { fetch: async () => { throw new Error('offline') } })
+    assert.equal(unavailable.nodes.get('#identity').textContent, unavailable.run("tr('Package identity unavailable')"))
+  }
+})
+
 test('dashboard renders separate planning queues, active planner hub and execution readiness in both languages', () => {
   const tasks = {
     P: task('P', 'pending', { planningRequired: true }),

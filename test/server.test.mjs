@@ -5,7 +5,9 @@ import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn, execFileSync } from 'node:child_process'
+import { createServer } from 'node:http'
 import { setTimeout } from 'node:timers/promises'
+import { contentId } from '../lib/install.mjs'
 
 test('dashboard selects legacy and central data without writes or translation of user content', async t => {
   const base = realpathSync(tmpdir())
@@ -105,6 +107,13 @@ test('dashboard selects legacy and central data without writes or translation of
   assert.equal(health.product, 'prumo')
   assert.equal(health.mode, 'workspace')
   assert.equal(health.readOnly, true)
+  const about = await (await get('/api/about')).json()
+  assert.equal(about.product, 'prumo')
+  assert.equal(about.version, JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version)
+  assert.equal(about.origin, 'workspace')
+  assert.equal(about.contentId, contentId('pt-BR'))
+  assert.equal(about.path, dirname(dirname(fileURLToPath(import.meta.url))))
+  assert.match(about.contentId, /^[a-f0-9]{12}$/)
   const runs = await (await get('/api/runs')).json()
   assert.equal(runs.currentRoot, 'work')
   assert.equal(runs.runs.length, 3)
@@ -140,6 +149,59 @@ test('dashboard selects legacy and central data without writes or translation of
   terminal.tasks.EXEC.state = 'done'
   writeFileSync(planningPath, JSON.stringify(terminal))
   assert.equal((await (await get('/api/state?root=work&run=planning-demo')).json()).derived.EXEC.planningStatus, undefined)
+})
+
+test('EADDRINUSE identifies a Prumo dashboard through /api/about and leaves it running', async t => {
+  const about = { product: 'prumo', version: '1.3.17', origin: 'global', contentId: 'abc123def456', path: 'C:/prumo/global' }
+  const occupant = createServer((req, res) => {
+    if (req.url === '/api/about') {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(about))
+    } else { res.writeHead(404); res.end() }
+  })
+  await new Promise(resolve => occupant.listen(0, '127.0.0.1', resolve))
+  const port = occupant.address().port
+  const script = fileURLToPath(new URL('../scripts/serve.mjs', import.meta.url))
+  const child = spawn(process.execPath, [script, '--global', '--port', String(port), '--lang', 'pt-BR'], {
+    env: { ...process.env, PRUMO_LANG: 'pt-BR' }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
+  })
+  let output = ''
+  child.stderr.on('data', chunk => { output += chunk })
+  child.stdout.on('data', chunk => { output += chunk })
+  t.after(async () => {
+    if (child.exitCode === null) child.kill()
+    await new Promise(resolve => occupant.close(resolve))
+  })
+  const code = await new Promise((resolve, reject) => {
+    child.once('error', reject)
+    child.once('close', resolve)
+  })
+  assert.equal(code, 1, output)
+  assert.match(output, /Prumo 1\.3\.17 .*abc123def456.*C:\/prumo\/global/)
+  assert.equal(occupant.listening, true, 'the existing server must not be stopped')
+})
+
+test('EADDRINUSE reports an unknown occupant when /api/about is unavailable', async t => {
+  const occupant = createServer((_req, res) => { res.writeHead(404); res.end() })
+  await new Promise(resolve => occupant.listen(0, '127.0.0.1', resolve))
+  const port = occupant.address().port
+  const script = fileURLToPath(new URL('../scripts/serve.mjs', import.meta.url))
+  const child = spawn(process.execPath, [script, '--global', '--port', String(port), '--lang', 'pt-BR'], {
+    env: { ...process.env, PRUMO_LANG: 'pt-BR' }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
+  })
+  let output = ''
+  child.stderr.on('data', chunk => { output += chunk })
+  const closed = new Promise((resolve, reject) => {
+    child.once('error', reject)
+    child.once('close', resolve)
+  })
+  t.after(async () => {
+    if (child.exitCode === null) child.kill()
+    await new Promise(resolve => occupant.close(resolve))
+  })
+  assert.equal(await closed, 1, output)
+  assert.match(output, /processo não identificado/)
+  assert.equal(occupant.listening, true)
 })
 
 test('dashboard projection matches the engine for mixed legacy and current tasks', async t => {

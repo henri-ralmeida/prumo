@@ -89,6 +89,22 @@ test('update na versão atual recupera dashboard parado e respeita prévia e des
   assert.equal(current, 2, 'Não informar sucesso quando o reparo falha')
 })
 
+test('update repairs a managed dashboard when its content is stale at the same version', async t => {
+  const home = mkdtempSync(join(realpathSync(tmpdir()), 'prumo-dashboard-content-'))
+  t.after(() => rmSync(home, { recursive: true, force: true }))
+  const root = join(home, 'skills')
+  put(join(root, 'prumo/.prumo-install.json'), { product: 'prumo', harness: 'claude', version })
+  let repairs = 0
+  const result = await launchUpdate({ dryRun: false, cwd: home, projects: [], sourceVersion: version, globalVersion: version }, {
+    discover: () => [{ harness: 'claude', roots: [root] }], latestVersion: () => version,
+    filesCurrent: () => true, run: () => assert.fail('same-version content repair must not download a package'),
+    status: async () => ({ enabled: true, process: 'running', registered: true, version, contentCurrent: false }),
+    repair: async () => { repairs++; return { ok: true, process: 'running', version, contentCurrent: true } },
+  })
+  assert.equal(result, 0)
+  assert.equal(repairs, 1)
+})
+
 test('update recusa downgrade da CLI global mesmo iniciado por uma versão local antiga', async () => {
   let launched = false
   await assert.rejects(launchUpdate({ dryRun: false, cwd: source, projects: [], updateCli: true,

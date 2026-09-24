@@ -3,10 +3,14 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, rmSync, cpSync, realpathSync, chmodSync, symlinkSync, lstatSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname, resolve, relative } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { spawnSync, spawn } from 'node:child_process'
 import { setTimeout } from 'node:timers/promises'
-import { planInstall, applyInstall, restoreInstall, installationStatus, detectHarnesses, discoverInstallations, reconcileDashboardInstall } from '../lib/install.mjs'
+import { createServer } from 'node:net'
+import { planInstall, applyInstall, restoreInstall, installationStatus, detectHarnesses, discoverInstallations, reconcileDashboardInstall, dashboardPackageRoot, contentId, packageIdentity, inspectInstallation, installationFilesCurrent } from '../lib/install.mjs'
+import { installationBundle } from '../scripts/installation-bundle.mjs'
+import { ensureGlobalCliContent, globalCliContentCurrent, globalCliState, updateGlobalCliFromPackage, npmProcess } from '../lib/update.mjs'
+import { enableDashboard } from '../lib/autostart.mjs'
 import { runPostinstall } from '../scripts/postinstall.mjs'
 import { inside, findRoot, storageHome, graphRoots } from '../scripts/storage.mjs'
 
@@ -51,13 +55,54 @@ function isolatedCli(f) {
   for (const key of Object.keys(env)) if (/^path$/i.test(key) || ['GRAPH_ROOT', 'PRUMO_ROOT', 'GRAPH_FOREMAN_HOME'].includes(key)) delete env[key]
   const commands = join(f.home, 'test-commands')
   const commandLog = join(f.home, 'npm-commands')
+  const prefix = join(f.home, 'test-npm-prefix')
+  const moduleRoot = join(prefix, process.platform === 'win32' ? 'node_modules' : 'lib/node_modules')
+  const globalPackage = join(moduleRoot, '@henri-ralmeida', 'prumo')
+  const npmStub = join(commands, 'npm-stub.mjs')
   const npm = join(commands, process.platform === 'win32' ? 'npm.cmd' : 'npm')
-  put(npm, process.platform === 'win32' ? `@echo %*>>"${commandLog}"\r\n@exit /b 0\r\n` : `#!/bin/sh\nprintf '%s\\n' "$*" >> '${commandLog}'\n`)
+  copyPrumoPackage(source, globalPackage)
+  env.npm_config_prefix = prefix
+  env.npm_config_cache = join(f.home, 'npm-cache')
+  env.PRUMO_TEST_NPM_ROOT = moduleRoot
+  env.PRUMO_TEST_NPM_PACKAGE = globalPackage
+  env.PRUMO_TEST_PACKAGE_ROOT = source
+  env.PRUMO_TEST_NPM_LOG = commandLog
+  env.PRUMO_TEST_NPM_HOME = f.home
+  put(npmStub, `
+import { appendFileSync, copyFileSync, mkdirSync, rmSync } from 'node:fs'
+import { isAbsolute, relative, resolve, dirname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
+const args = process.argv.slice(2)
+appendFileSync(process.env.PRUMO_TEST_NPM_LOG, args.join(' ') + '\\n')
+if (args[0] === 'root' && args.includes('--global')) {
+  process.stdout.write(process.env.PRUMO_TEST_NPM_ROOT + '\\n')
+} else if (args[0] === 'install' && args.includes('--global')) {
+  const root = resolve(process.env.PRUMO_TEST_NPM_HOME)
+  const target = resolve(process.env.PRUMO_TEST_NPM_PACKAGE)
+  const source = resolve(process.env.PRUMO_TEST_PACKAGE_ROOT)
+  const path = relative(root, target)
+  if (path.startsWith('..') || isAbsolute(path)) throw new Error('test npm target escaped its temporary home')
+  if (process.env.PRUMO_TEST_NPM_FAIL === '1') process.exit(1)
+  rmSync(target, { recursive: true, force: true })
+  for (const name of (await import(pathToFileURL(join(source, 'scripts', 'package-content.mjs')).href)).packageDistributionFiles(source)) {
+    const destination = join(target, name)
+    mkdirSync(dirname(destination), { recursive: true })
+    copyFileSync(join(source, name), destination)
+  }
+} else {
+  process.stderr.write('unsupported test npm command')
+  process.exitCode = 1
+}
+`)
+  put(npm, process.platform === 'win32'
+    ? `@echo off\r\n"${process.execPath}" "${npmStub}" %*\r\n@exit /b %errorlevel%\r\n`
+    : `#!/bin/sh\nexec '${process.execPath.replaceAll("'", "'\\''")}' '${npmStub.replaceAll("'", "'\\''")}' "$@"\n`)
   chmodSync(npm, 0o755)
   env.PATH = commands
   if (process.platform === 'win32') env.PATHEXT = '.CMD;.EXE'
   const invoke = (args, extraEnv = {}) => spawnSync(process.execPath, [join(source, 'bin', 'prumo.mjs'), ...args], { cwd: f.cwd, env: { ...env, ...extraEnv }, encoding: 'utf8', timeout: 20000, windowsHide: true })
   invoke.commandLog = commandLog
+  invoke.globalPackage = globalPackage
   return invoke
 }
 
@@ -77,6 +122,76 @@ function snapshotTree(root) {
   visit(root)
   return entries
 }
+
+function copyPrumoPackage(sourceRoot, destinationRoot) {
+  mkdirSync(destinationRoot, { recursive: true })
+  for (const name of ['bin', 'lib', 'references']) cpSync(join(sourceRoot, name), join(destinationRoot, name), { recursive: true })
+  for (const name of ['package.json', 'SKILL.md', 'README.md', 'README.pt-BR.md', 'CHANGELOG.md', 'LICENSE']) {
+    const sourceFile = join(sourceRoot, name)
+    if (existsSync(sourceFile)) cpSync(sourceFile, join(destinationRoot, name))
+  }
+  const scriptsRoot = join(sourceRoot, 'scripts')
+  mkdirSync(join(destinationRoot, 'scripts'), { recursive: true })
+  for (const entry of readdirSync(scriptsRoot, { withFileTypes: true })) {
+    if (!entry.isFile()) continue
+    const name = entry.name
+    if ((name.endsWith('.mjs') && !name.endsWith('.test.mjs') && !name.endsWith('-smoke.mjs')) || ['messages.json', 'release-notes.json', 'dashboard.html'].includes(name)) {
+      cpSync(join(scriptsRoot, name), join(destinationRoot, 'scripts', name))
+    }
+  }
+  if (existsSync(join(scriptsRoot, 'release-baseline.json'))) cpSync(join(scriptsRoot, 'release-baseline.json'), join(destinationRoot, 'scripts', 'release-baseline.json'))
+}
+
+test('installation markers identify localized bundle bytes and still accept legacy markers', t => {
+  const f = fixture(t)
+  f.install()
+  const root = f.skillRoot
+  const markerFile = join(root, 'prumo', '.prumo-install.json')
+  const marker = JSON.parse(read(markerFile))
+  assert.match(marker.contentId, /^[a-f0-9]{12}$/)
+  assert.equal(marker.contentId, contentId('en'))
+  assert.match(marker.engineHash, /^[a-f0-9]{64}$/)
+  assert.equal(inspectInstallation(root, marker).filesCurrent, true)
+  assert.notEqual(contentId('en'), contentId('pt-BR'), 'localized dashboard bytes belong to the identity')
+
+  const legacy = { ...marker }
+  delete legacy.contentId
+  delete legacy.engineHash
+  put(markerFile, legacy)
+  assert.equal(installationFilesCurrent(root, legacy), true)
+  assert.equal(inspectInstallation(root, legacy).legacyMarker, true)
+
+  const localized = applyInstall(f.plan({ lang: 'pt-BR' }))
+  assert.ok(localized.groups.every(group => group.status !== 'conflict'), JSON.stringify(localized))
+  const ptMarker = JSON.parse(read(markerFile))
+  assert.equal(ptMarker.lang, 'pt-BR')
+  assert.equal(ptMarker.contentId, contentId('pt-BR'))
+})
+
+test('installation identity and full verification detect one changed distributed byte', t => {
+  const f = fixture(t)
+  f.install()
+  const root = f.skillRoot
+  const marker = JSON.parse(read(join(root, 'prumo', '.prumo-install.json')))
+  const engine = join(root, 'prumo', 'scripts', 'engine.mjs')
+  put(engine, read(engine) + '\n// byte changed')
+  const report = inspectInstallation(root, marker)
+  assert.notEqual(report.contentId, marker.contentId)
+  assert.notEqual(report.engineHash, marker.engineHash)
+  assert.equal(report.markerEngineCurrent, false)
+  assert.equal(report.packageContentCurrent, false)
+  assert.equal(report.filesCurrent, false)
+})
+
+test('installed skill exposes the shared identity helper beside its server', async t => {
+  const f = fixture(t)
+  f.install()
+  const packageRoot = join(f.skillRoot, 'prumo')
+  const marker = JSON.parse(read(join(packageRoot, '.prumo-install.json')))
+  const identity = await import(pathToFileURL(join(packageRoot, 'scripts', 'installation-bundle.mjs')).href)
+  assert.equal(identity.contentId(marker.lang, { packageRoot }), marker.contentId)
+  assert.match(read(join(packageRoot, 'scripts', 'serve.mjs')), /from '\.\/installation-bundle\.mjs'/)
+})
 
 test('automatic detection uses existing configuration, local legacy skills and executable paths without running them', t => {
   const f = fixture(t)
@@ -377,10 +492,52 @@ test('CLI install --dsh and doctor --dsh use custom DSH_HOME without extra orche
   const doctor = cli(['doctor', '--dsh'], { DSH_HOME: custom })
   assert.equal(doctor.status, 0, doctor.stdout + doctor.stderr)
   assert.match(doctor.stdout, /installed: yes; configured: yes/)
+  assert.match(doctor.stdout, /dsh: version \d+\.\d+\.\d+; content [a-f0-9]{12}; language en;/)
+  const verified = cli(['status', '--verify-install'], { DSH_HOME: custom })
+  assert.equal(verified.status, 0, verified.stdout + verified.stderr)
+  assert.match(verified.stdout, /Installation files match the current package/)
   const repeated = cli(['install', '--dsh'], { DSH_HOME: custom })
   assert.equal(repeated.status, 0, repeated.stdout + repeated.stderr)
   assert.match(repeated.stdout, /already installed in dsh/)
   assert.equal(read(join(custom, 'AGENTS.md')).split('<!-- po-first:start -->').length - 1, 1)
+  const markerFile = join(custom, 'skills', 'prumo', '.prumo-install.json')
+  const legacy = JSON.parse(read(markerFile))
+  delete legacy.contentId
+  delete legacy.engineHash
+  put(markerFile, legacy)
+  const status = cli(['status'], { DSH_HOME: custom })
+  assert.equal(status.status, 0, status.stdout + status.stderr)
+  assert.match(status.stdout, /Warning: installation marker is old and has no content identity/)
+  const statusPt = cli(['status'], { DSH_HOME: custom, PRUMO_LANG: 'pt-BR' })
+  assert.equal(statusPt.status, 0, statusPt.stdout + statusPt.stderr)
+  assert.match(statusPt.stdout, /Aviso: o marcador da instalação é antigo/)
+  const engine = join(custom, 'skills', 'prumo', 'scripts', 'engine.mjs')
+  put(engine, read(engine) + '\n// tampered after verification')
+  const drifted = cli(['status', '--verify-install'], { DSH_HOME: custom })
+  assert.equal(drifted.status, 2, drifted.stdout + drifted.stderr)
+  assert.match(drifted.stdout, /installation package is incomplete or differs/)
+})
+
+test('doctor compares same-language installations across Claude and DSH', t => {
+  const f = fixture(t, 'claude')
+  const cli = isolatedCli(f)
+  const custom = join(f.home, 'custom dsh home')
+  put(join(f.home, '.claude', 'settings.json'), {})
+  put(join(custom, 'AGENTS.md'), 'DSH user instructions\n')
+  put(join(f.home, '.local', 'share', 'prumo', 'dashboard.json'), { enabled: false, mechanism: process.platform === 'win32' ? 'schtasks' : process.platform === 'darwin' ? 'launchd' : 'xdg' })
+
+  const claude = cli(['install', '--claude', '--lang', 'en'])
+  assert.equal(claude.status, 0, claude.stdout + claude.stderr)
+  const dsh = cli(['install', '--dsh', '--lang', 'en'], { DSH_HOME: custom })
+  assert.equal(dsh.status, 0, dsh.stdout + dsh.stderr)
+  const doctor = cli(['doctor', '--dsh', '--lang', 'en'], { DSH_HOME: custom })
+  assert.equal(doctor.status, 0, doctor.stdout + doctor.stderr)
+  assert.match(doctor.stdout, /Registered en installations share content [a-f0-9]{12}/)
+
+  const engine = join(custom, 'skills', 'prumo', 'scripts', 'engine.mjs')
+  put(engine, read(engine) + '\n// DSH copy changed')
+  const diverged = cli(['doctor', '--dsh', '--lang', 'en'], { DSH_HOME: custom })
+  assert.match(diverged.stdout, /Registered en installations have different contents/)
 })
 
 test('custom DSH_HOME is used consistently by registry discovery and restore', t => {
@@ -440,6 +597,231 @@ test('dashboard reconciliation is partial-safe, resumable, dry-run inert and res
   assert.deepEqual(calls.map(([action]) => action), ['enable', 'restart'])
 })
 
+test('same-version CLI refresh persists new dashboard content across source removal and later enable', { timeout: 90000 }, async t => {
+  const home = mkdtempSync(join(realpathSync(tmpdir()), 'prumo-content-reconcile-'))
+  const prefix = join(home, 'npm-prefix')
+  const checkout = join(home, 'temporary-checkout')
+  const oldPackage = join(home, 'old-package')
+  let active
+  const children = new Map()
+  const commands = new Map()
+  t.after(async () => {
+    if (active?.exitCode === null) await new Promise(resolve => { active.once('exit', resolve); active.kill() })
+    assert.ok(home.startsWith(join(realpathSync(tmpdir()), 'prumo-content-reconcile-')))
+    rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  })
+
+  copyPrumoPackage(source, checkout)
+  rmSync(join(checkout, 'scripts', 'release-baseline.json'), { force: true })
+  assert.equal(existsSync(join(checkout, 'scripts', 'release-baseline.json')), false,
+    'an installed npm package does not carry release metadata')
+  const checkoutDashboard = join(checkout, 'scripts', 'dashboard.html')
+  writeFileSync(checkoutDashboard, `${read(checkoutDashboard)}\n<!-- checkout dashboard bundle -->\n`)
+  copyPrumoPackage(checkout, oldPackage)
+  const oldDashboard = join(oldPackage, 'scripts', 'dashboard.html')
+  writeFileSync(oldDashboard, `${read(oldDashboard)}\n<!-- older dashboard bundle -->\n`)
+
+  const reserve = createServer()
+  await new Promise(resolve => reserve.listen(0, '127.0.0.1', resolve))
+  const port = reserve.address().port
+  await new Promise(resolve => reserve.close(resolve))
+  const wrapperName = 'prumo-test-serve.mjs'
+  const wrapper = `const index = process.argv.indexOf('--port');\nif (index >= 0) process.argv[index + 1] = ${JSON.stringify(String(port))};\nawait import('./serve.mjs');\n`
+  for (const root of [checkout, oldPackage]) writeFileSync(join(root, 'scripts', wrapperName), wrapper)
+
+  const env = { ...process.env, HOME: home, USERPROFILE: home, PRUMO_HOME: join(home, 'data'), PRUMO_LANG: 'en',
+    XDG_CONFIG_HOME: join(home, 'xdg'), npm_config_prefix: prefix, npm_config_cache: join(home, 'npm-cache'),
+    npm_config_userconfig: join(home, '.npmrc'), CLAUDE_CONFIG_DIR: join(home, '.claude'), CODEX_HOME: join(home, '.codex'), DSH_HOME: join(home, '.dsh') }
+  for (const key of ['PRUMO_ROOT', 'GRAPH_ROOT', 'GRAPH_FOREMAN_HOME']) delete env[key]
+
+  const newContentId = packageIdentity('en', { packageRoot: checkout }).contentId
+  const oldContentId = packageIdentity('en', { packageRoot: oldPackage }).contentId
+  assert.equal(JSON.parse(read(join(checkout, 'package.json'))).version, JSON.parse(read(join(oldPackage, 'package.json'))).version)
+  assert.notEqual(newContentId, oldContentId)
+  const installedOld = await updateGlobalCliFromPackage(oldPackage, { lang: 'en', env })
+  const globalRoot = installedOld.packageRoot
+  assert.equal(installedOld.version, packageVersion)
+  assert.equal(installedOld.contentId, oldContentId)
+  assert.throws(() => dashboardPackageRoot(checkout, globalRoot, 'en'), /content is incomplete or differs/)
+
+  const url = `http://127.0.0.1:${port}/api/about`
+  async function waitForAbout(child) {
+    for (let attempt = 0; attempt < 100; attempt++) {
+      if (child.startupError) throw child.startupError
+      if (child.exitCode !== null) throw new Error(`Dashboard process exited early with code ${child.exitCode}`)
+      try {
+        const response = await fetch(url, { signal: AbortSignal.timeout(250) })
+        if (response.ok) return response.json()
+      } catch { /* wait for the isolated server to start */ }
+      await setTimeout(40)
+    }
+    throw new Error('Isolated dashboard did not become ready')
+  }
+  const globalWrapper = join(globalRoot, 'scripts', wrapperName)
+  const dashboardOptions = {
+    platform: 'linux', home, packageRoot: globalRoot, script: globalWrapper, lang: 'en', env,
+    exec: () => ({ status: 1, stdout: '' }), fetch: (target, init) => fetch(String(target).replace('127.0.0.1:4949', `127.0.0.1:${port}`), init),
+    portAvailable: async () => true, delay: milliseconds => setTimeout(milliseconds), readinessAttempts: 100, readinessInterval: 40,
+    spawn(node, args, settings) {
+      const child = spawn(node, args, settings)
+      active = child
+      if (child.pid) {
+        children.set(child.pid, child)
+        commands.set(child.pid, [node, ...args])
+        child.once('exit', () => { children.delete(child.pid); commands.delete(child.pid) })
+      }
+      if (settings.detached) child.unref()
+      return child
+    },
+    listProcessIds: script => [...commands].filter(([, args]) => args.includes(script)).map(([pid]) => pid),
+    readProcessCommand: pid => { if (!commands.has(pid)) throw new Error('unknown test process'); return commands.get(pid) },
+    kill(pid) { const child = children.get(pid); if (child) { child.kill(); return true } return process.kill(pid) },
+  }
+
+  const startedOld = await enableDashboard({ ...dashboardOptions, packageRoot: globalRoot })
+  assert.equal(startedOld.ok, true, JSON.stringify(startedOld))
+  const oldAbout = await (await fetch(url)).json()
+  assert.equal(oldAbout.contentId, oldContentId)
+  assert.equal(oldAbout.path, globalRoot)
+
+  const oldState = globalCliState(checkout, { env })
+  assert.equal(oldState.version, packageVersion)
+  const refreshed = await ensureGlobalCliContent(checkout, oldState, 'en', { env })
+  assert.equal(refreshed.contentRefreshed, true)
+  assert.equal(refreshed.packageRoot, globalRoot)
+  assert.equal(refreshed.contentId, newContentId)
+  assert.equal(packageIdentity('en', { packageRoot: globalRoot }).contentId, newContentId)
+  assert.equal(read(join(globalRoot, 'lib', 'autostart.mjs')), read(join(checkout, 'lib', 'autostart.mjs')))
+  const autostartFile = join(globalRoot, 'lib', 'autostart.mjs')
+  const autostartBytes = readFileSync(autostartFile)
+  rmSync(autostartFile)
+  assert.equal(globalCliContentCurrent(checkout, globalRoot, 'en'), false, 'an incomplete global package cannot be treated as current')
+  writeFileSync(autostartFile, autostartBytes)
+  assert.equal((await (await fetch(url)).json()).contentId, oldContentId, 'an already running process remains the old instance until managed restart')
+  assert.equal(dashboardPackageRoot(checkout, globalRoot, 'en'), globalRoot)
+
+  const updatedGlobalInstall = await import(pathToFileURL(join(globalRoot, 'lib', 'install.mjs')).href)
+  const reconciliation = await updatedGlobalInstall.reconcileDashboardInstall(1, {
+    sourcePackageRoot: checkout, globalPackageRoot: globalRoot, lang: 'en', dashboardOptions,
+  })
+  assert.equal(reconciliation.action, 'restart')
+  assert.equal(reconciliation.ok, true)
+  assert.equal(reconciliation.status.contentId, newContentId)
+  const preferenceFile = join(home, '.local', 'share', 'prumo', 'dashboard.json')
+  const preference = JSON.parse(read(preferenceFile))
+  assert.equal(preference.script, globalWrapper)
+  const restartedAbout = await (await fetch(url)).json()
+  assert.equal(restartedAbout.contentId, newContentId)
+  assert.equal(restartedAbout.origin, 'global')
+  assert.equal(restartedAbout.path, globalRoot)
+
+  rmSync(checkout, { recursive: true, force: true })
+  rmSync(oldPackage, { recursive: true, force: true })
+  assert.equal(existsSync(checkout), false)
+  assert.equal(existsSync(preference.script), true)
+  assert.equal(dashboardPackageRoot(globalRoot, globalRoot, 'en'), globalRoot)
+
+  const updatedGlobalApi = await import(pathToFileURL(join(globalRoot, 'lib', 'update.mjs')).href)
+  const noRevert = await updatedGlobalApi.ensureGlobalCliContent(globalRoot, globalCliState(globalRoot, { env }), 'en', { env })
+  assert.equal(noRevert.contentRefreshed, false, 'a later command from the updated global CLI keeps the durable package')
+
+  const currentPreference = JSON.parse(read(preferenceFile))
+  const currentChild = children.get(currentPreference.pid)
+  assert.ok(currentChild, 'the restarted process is owned by the isolated service')
+  await new Promise(resolve => { currentChild.once('exit', resolve); currentChild.kill() })
+  await setTimeout(80)
+  const updatedGlobalAutostart = await import(pathToFileURL(join(globalRoot, 'lib', 'autostart.mjs')).href)
+  const reopened = await updatedGlobalAutostart.enableDashboard({ ...dashboardOptions, packageRoot: globalRoot, script: currentPreference.script })
+  assert.equal(reopened.ok, true, JSON.stringify(reopened))
+  const reopenedAbout = await (await fetch(url)).json()
+  assert.equal(reopenedAbout.contentId, newContentId)
+  assert.equal(reopenedAbout.origin, 'global')
+  assert.equal(reopenedAbout.path, globalRoot)
+  assert.equal(JSON.parse(read(preferenceFile)).script, preference.script)
+  assert.equal((await updatedGlobalAutostart.disableDashboard({ ...dashboardOptions, packageRoot: globalRoot, script: currentPreference.script })).ok, true)
+})
+
+test('local CLI refresh keeps shell metacharacters in paths out of npm arguments and restores the old package on failed verification', { timeout: 180000 }, async t => {
+  const base = realpathSync(tmpdir())
+  const metacharacters = process.platform === 'win32' ? 'prumo & caret^ spaces-' : 'prumo & pipe| caret^ spaces-'
+  const home = mkdtempSync(join(base, metacharacters))
+  const checkout = join(home, process.platform === 'win32' ? 'a&b^ checkout with spaces' : 'a&b|c^ checkout with spaces')
+  const oldPackage = join(home, 'old package')
+  const shellMeta = process.platform === 'win32' ? '& caret^' : '& pipe| caret^'
+  const prefix = join(home, `npm ${shellMeta} prefix`)
+  const tempRoot = join(home, `TMP ${shellMeta} files`)
+  const globalRoot = join(prefix, process.platform === 'win32' ? 'node_modules' : 'lib/node_modules')
+  const globalPackage = join(globalRoot, '@henri-ralmeida', 'prumo')
+  mkdirSync(tempRoot, { recursive: true })
+  const env = { ...process.env, npm_config_prefix: prefix, npm_config_cache: join(home, 'npm cache') }
+  for (const key of Object.keys(env)) {
+    if (key.toLowerCase() === 'npm_config_prefix' && key !== 'npm_config_prefix') delete env[key]
+    if (key.toLowerCase() === 'npm_config_cache' && key !== 'npm_config_cache') delete env[key]
+  }
+  env.npm_config_prefix = prefix
+  env.npm_config_cache = join(home, 'npm cache')
+  t.after(() => {
+    assert.equal(dirname(home), base)
+    assert.ok(home.startsWith(join(base, metacharacters)))
+    rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  })
+
+  copyPrumoPackage(source, checkout)
+  writeFileSync(join(checkout, 'scripts', 'dashboard.html'), `${read(join(checkout, 'scripts', 'dashboard.html'))}\n<!-- refreshed dashboard -->\n`)
+  copyPrumoPackage(source, oldPackage)
+  writeFileSync(join(oldPackage, 'scripts', 'dashboard.html'), `${read(join(oldPackage, 'scripts', 'dashboard.html'))}\n<!-- installed old dashboard -->\n`)
+  const old = await updateGlobalCliFromPackage(oldPackage, { lang: 'en', env, temporaryRoot: tempRoot })
+  const before = snapshotTree(old.packageRoot)
+  const oldContentId = packageIdentity('en', { packageRoot: old.packageRoot }).contentId
+  let corruptedAfterInstall = false
+  const run = (command, args, options) => {
+    const commandLine = [command, ...args].join(' ')
+    assert.doesNotMatch(commandLine, new RegExp(checkout.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+    assert.doesNotMatch(commandLine, new RegExp(tempRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+    assert.doesNotMatch(commandLine, new RegExp(prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+    const child = spawn(command, args, options)
+    if (args.includes('install') && args.includes('--global') && options.env.npm_config_prefix === prefix) {
+      child.once('exit', code => {
+        if (code === 0) {
+          writeFileSync(join(globalPackage, 'scripts', 'dashboard.html'), `${read(join(globalPackage, 'scripts', 'dashboard.html'))}\n<!-- injected verification failure -->\n`)
+          corruptedAfterInstall = true
+        }
+      })
+    }
+    return child
+  }
+  await assert.rejects(updateGlobalCliFromPackage(checkout, { lang: 'en', env, run, temporaryRoot: tempRoot }), /Global Prumo CLI package verification failed after installation/)
+  assert.equal(corruptedAfterInstall, true)
+  assert.deepEqual(snapshotTree(old.packageRoot), before, 'failed post-install verification must restore every old package byte')
+  assert.equal(packageIdentity('en', { packageRoot: globalPackage }).contentId, oldContentId)
+})
+
+test('local CLI package links fail preflight before npm or global package writes', async t => {
+  const home = mkdtempSync(join(realpathSync(tmpdir()), 'prumo-linked-cli-'))
+  const checkout = join(home, 'checkout')
+  const target = join(home, 'external directory')
+  mkdirSync(target, { recursive: true })
+  copyPrumoPackage(source, checkout)
+  symlinkSync(target, join(checkout, 'lib', 'linked-data'), process.platform === 'win32' ? 'junction' : 'dir')
+  let npmCalls = 0
+  const env = { ...process.env }
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
+  await assert.rejects(updateGlobalCliFromPackage(checkout, {
+    env,
+    runSync() { npmCalls++; return { status: 0, stdout: join(home, 'global', 'node_modules'), stderr: '' } },
+    run() { npmCalls++; throw new Error('npm must not run for a linked source package') },
+  }), /Distributed package contains a linked path: lib\/linked-data/)
+  assert.equal(npmCalls, 0)
+  assert.equal(existsSync(join(home, 'global')), false)
+})
+
+test('Windows npm command construction never includes checkout, temp or prefix paths', () => {
+  const unsafe = ['C:\\checkout &x', 'C:\\checkout|x', 'C:\\checkout^x', 'C:\\checkout with spaces']
+  const npm = npmProcess(['pack', '--json'], { platform: 'win32', env: {} })
+  assert.equal(npm.command, 'cmd.exe')
+  for (const value of unsafe) assert.equal(npm.args.some(argument => argument.includes(value)), false)
+})
+
 test('postinstall is inert locally and delegates global setup to the current absolute CLI', () => {
   const calls = []
   const root = resolve(source)
@@ -459,6 +841,7 @@ test('only an authentic postinstall child skips the recursive global CLI update'
   put(join(f.home, '.codex', 'config.toml'), '')
   put(join(f.home, '.local', 'share', 'prumo', 'dashboard.json'), { enabled: false, mechanism: 'xdg' })
   const cli = isolatedCli(f)
+  put(join(cli.globalPackage, 'package.json'), { name: '@henri-ralmeida/prumo', version: '0.0.1' })
   const markerOnly = cli(['install', '--all'], { PRUMO_POSTINSTALL_LIFECYCLE: '1' })
   assert.equal(markerOnly.status, 0, markerOnly.stdout + markerOnly.stderr)
   assert.match(read(cli.commandLog), /install --global --ignore-scripts/)
@@ -548,7 +931,7 @@ test('update recupera marcador nulo por backup integro e preserva idioma e dados
     assert.equal(plan.lang, 'pt-BR')
     const result = applyInstall(plan)
     assert.ok(result.groups.every(group => group.status !== 'conflict'))
-    assert.deepEqual(JSON.parse(read(marker)), { product: 'prumo', harness, version: packageVersion, lang: 'pt-BR' })
+    assert.deepEqual(JSON.parse(read(marker)), { product: 'prumo', harness, version: packageVersion, lang: 'pt-BR', ...packageIdentity('pt-BR') })
     assert.equal(read(state), before)
     const manifest = JSON.parse(read(join(result.backup, 'manifest.json')))
     const saved = manifest.files.find(entry => entry.file === marker)

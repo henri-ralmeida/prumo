@@ -20,6 +20,7 @@ import { findRoot, storageHome, graphRoots as listRoots, globalGraphRoots } from
 import { language, localizeDashboard, log, errorLog, tr } from './i18n.mjs'
 import { discoveryDigest, hasCurrentTaskPlan, phasePlanningContext, planningContext, usesCurrentPlanning, currentPlanningSkip } from './validation.mjs'
 import { dashboardDiagnostics } from './dashboard-diagnostics.mjs'
+import { contentId } from './installation-bundle.mjs'
 
 const argv = process.argv.slice(2)
 const flag = (name, fallback) => {
@@ -311,6 +312,11 @@ function productVersion() {
 }
 
 const VERSION = productVersion()
+const PACKAGE_ROOT = dirname(HERE)
+const LANG = language(flag('lang', undefined))
+let CONTENT_ID = null
+try { CONTENT_ID = contentId(LANG, { packageRoot: PACKAGE_ROOT }) }
+catch { /* a partial development fixture can serve runs while reporting unknown package identity */ }
 const diagnostic = GLOBAL ? dashboardDiagnostics({ version: VERSION, port: PORT }) : () => {}
 diagnostic('startup', { node: process.version, platform: process.platform })
 const EMPTY_STATE = { plan: { name: '', phases: [] }, tasks: {}, derived: {}, empty: true }
@@ -323,6 +329,10 @@ const server = createServer((req, res) => {
   if (url.pathname === '/api/health') return json(res, 200, {
     product: 'prumo', version: VERSION, pid: process.pid, mode: GLOBAL ? 'global' : 'workspace',
     readOnly: true, host: '127.0.0.1', port: server.address().port,
+  })
+  if (url.pathname === '/api/about') return json(res, 200, {
+    product: 'prumo', version: VERSION, origin: GLOBAL ? 'global' : 'workspace',
+    contentId: CONTENT_ID, path: PACKAGE_ROOT,
   })
 
   const selected = selectedGraph(url)
@@ -386,16 +396,22 @@ const server = createServer((req, res) => {
     `[prumo] dashboard on http://localhost:${server.address().port} (run: ${selected ?? '—'}, ` +
       `auto-sync: ${SYNC_PLAN ? 'on' : 'off'})`,
   )
-}).on('error', (e) => {
+}).on('error', async (e) => {
   diagnostic('server-error', { code: e.code, message: e.message })
-  /* A taken port is the NORMAL second-run case (the previous dashboard is still up and
-     already follows CURRENT) — say that, instead of dying with a stack trace. */
   if (e.code === 'EADDRINUSE') {
-    errorLog(
-      `[prumo] port ${PORT} is already in use — an earlier dashboard is likely still serving ` +
-        `http://localhost:${PORT} (it follows CURRENT). To run a SECOND one: --port <other>` +
-        `${RUN_FLAG ? '' : ' (add --run <name> to pin it to one run)'}`,
-    )
+    let occupant = null
+    try {
+      const response = await fetch(`http://127.0.0.1:${PORT}/api/about`, { signal: AbortSignal.timeout(900) })
+      if (response.ok) {
+        const about = await response.json()
+        if (about?.product === 'prumo') occupant = about
+      }
+    } catch { /* the port may belong to a non-HTTP or unknown process */ }
+    if (occupant) errorLog(tr('Port {0} is used by Prumo {1} ({2}; content {3}; path {4})', PORT,
+      occupant.version ?? tr('unknown'), tr(occupant.origin === 'global' ? 'global package' : occupant.origin === 'workspace' ? 'workspace source' : 'unknown'),
+      occupant.contentId ?? tr('unknown'), occupant.path ?? tr('unknown')))
+    else errorLog(tr('Port {0} is used by an unidentified process', PORT))
+    errorLog(`${tr('To run a second dashboard, use --port <other>')}${RUN_FLAG ? '' : ` (${tr('add --run <name> to pin it to one run')})`}`)
     process.exit(1)
   }
   throw e
