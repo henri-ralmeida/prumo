@@ -476,7 +476,7 @@ test('responsive layout selects density and sizes phase lanes from their cards',
   for (const [count, expected] of [[6, 'detailed'], [24, 'detailed'], [25, 'compact'], [48, 'compact'], [100, 'compact'], [101, 'dense'], [206, 'dense']]) {
     const ui = dashboard('en', 960)
     const state = graphState(count)
-    const result = JSON.parse(ui.run("STATE = input; JSON.stringify(layout(STATE.tasks, 'phase'))", { input: state }))
+    const result = JSON.parse(ui.run("STATE = input; JSON.stringify(layout(STATE.tasks))", { input: state }))
     assert.equal(result.density, expected, `${count} tasks`)
     const cardDrivenWidth = Math.max(636, 80 + result.capacity * result.metrics.nodeW + (result.capacity - 1) * 16)
     assert.equal(result.w, cardDrivenWidth)
@@ -488,27 +488,33 @@ test('responsive layout selects density and sizes phase lanes from their cards',
     assert.equal(ui.nodes.get('#canvas').dataset.density, expected)
   }
 
-  for (const mode of ['phase', 'depth']) {
-    const ui = dashboard('en', 700)
-    const state = graphState(48, mode === 'phase' ? 4 : 1)
-    const result = JSON.parse(ui.run('STATE = input; JSON.stringify(layout(STATE.tasks, inputMode))', { input: state, inputMode: mode }))
-    assert.ok(new Set(Object.values(result.pos).map(({ y }) => y)).size > 1, `${mode} wraps vertically`)
-  }
+  const phasedUi = dashboard('en', 700)
+  const phased = JSON.parse(phasedUi.run('STATE = input; JSON.stringify(layout(STATE.tasks))', { input: graphState(48, 4) }))
+  assert.ok(new Set(Object.values(phased.pos).map(({ y }) => y)).size > 1, 'phase bands wrap vertically')
+
+  const unphasedState = graphState(48, 1)
+  unphasedState.plan.phases = []
+  const unphasedUi = dashboard('en', 700)
+  const unphased = JSON.parse(unphasedUi.run('STATE = input; JSON.stringify(layout(STATE.tasks))', { input: unphasedState }))
+  assert.equal(unphased.lanes.length, 0, 'a plan without phases renders one unlabelled band')
+  assert.equal(unphased.metrics.nodeW, phased.metrics.nodeW, 'the phase layout is the only layout')
+  assert.ok(new Set(Object.values(unphased.pos).map(({ y }) => y)).size > 1, 'the single band wraps vertically')
+  assert.doesNotMatch(html, /layoutBtn|toggleLayout|graphLayout/, 'no way to switch the graph layout')
 
   const tallState = graphState(28, 23)
   const tallTasks = Object.values(tallState.tasks)
   tallTasks.slice(0, 6).forEach(task => { task.phase = 'P1' })
   tallTasks.slice(6).forEach((task, index) => { task.phase = `P${index + 2}` })
   const tallUi = dashboard('en', 1000)
-  const tallLayout = JSON.parse(tallUi.run("STATE = input; JSON.stringify(layout(STATE.tasks, 'phase'))", { input: tallState }))
+  const tallLayout = JSON.parse(tallUi.run("STATE = input; JSON.stringify(layout(STATE.tasks))", { input: tallState }))
   assert.equal(tallLayout.capacity, 6, 'many phases must not force a six-card phase into one column')
   assert.equal(new Set(tallTasks.slice(0, 6).map(task => tallLayout.pos[task.id].y)).size, 1)
 
   const state = graphState(206)
   const wide = dashboard('en', 1200)
   const narrow = dashboard('en', 700)
-  const wideLayout = JSON.parse(wide.run("STATE = input; JSON.stringify(layout(STATE.tasks, 'phase'))", { input: state }))
-  const narrowLayout = JSON.parse(narrow.run("STATE = input; JSON.stringify(layout(STATE.tasks, 'phase'))", { input: state }))
+  const wideLayout = JSON.parse(wide.run("STATE = input; JSON.stringify(layout(STATE.tasks))", { input: state }))
+  const narrowLayout = JSON.parse(narrow.run("STATE = input; JSON.stringify(layout(STATE.tasks))", { input: state }))
   assert.ok(wideLayout.capacity >= narrowLayout.capacity)
   assert.ok(wideLayout.w >= narrowLayout.w)
   assert.ok(narrowLayout.lanes.every((lane, i, lanes) => i === 0 || lanes[i - 1].y + lanes[i - 1].height < lane.y))
@@ -520,16 +526,15 @@ test('resize relayout preserves state and refits the board to the live viewport'
   ui.render(state)
   ui.run("setFilter('running'); toggleDependencies(); openTask('T013'); FOCUS = 'T013'; SELECTED_RUN = 'fixture-48'; Object.assign(VIEW, { x: 91, y: -37, k: .8 })")
   assert.equal(ui.run('FILTER'), 'all', 'opening a filtered-out task reveals its card and popover anchor')
-  const before = JSON.parse(ui.run("JSON.stringify({ filter: FILTER, deps: SHOW_DEPS, pop: POP, focus: FOCUS, selected: SELECTED_RUN, layout: LAYOUT, fitted, view: VIEW, h: CANVAS_H, pos: LAST_POS })"))
+  const before = JSON.parse(ui.run("JSON.stringify({ filter: FILTER, deps: SHOW_DEPS, pop: POP, focus: FOCUS, selected: SELECTED_RUN, fitted, view: VIEW, h: CANVAS_H, pos: LAST_POS })"))
   const beforeAnchor = JSON.parse(ui.run("JSON.stringify(document.querySelector('.node[data-id=\\\"T013\\\"]')?.getBoundingClientRect())"))
   ui.resize(700)
-  const after = JSON.parse(ui.run("JSON.stringify({ filter: FILTER, deps: SHOW_DEPS, pop: POP, focus: FOCUS, selected: SELECTED_RUN, layout: LAYOUT, fitted, view: VIEW, w: CANVAS_W, h: CANVAS_H, metrics: LAST_METRICS, pos: LAST_POS })"))
+  const after = JSON.parse(ui.run("JSON.stringify({ filter: FILTER, deps: SHOW_DEPS, pop: POP, focus: FOCUS, selected: SELECTED_RUN, fitted, view: VIEW, w: CANVAS_W, h: CANVAS_H, metrics: LAST_METRICS, pos: LAST_POS })"))
   assert.equal(after.filter, before.filter)
   assert.equal(after.deps, before.deps)
   assert.deepEqual(after.pop, before.pop)
   assert.equal(after.focus, before.focus)
   assert.equal(after.selected, before.selected)
-  assert.equal(after.layout, before.layout)
   assert.equal(after.fitted, before.fitted)
   assert.notDeepEqual(after.view, before.view)
   assert.ok(after.w * after.view.k <= 644)
@@ -714,12 +719,59 @@ test('discovery, planner identity and task plan render as escaped text, includin
     executionBoundary: { deferredToExecutor: ['T'], prematureTaskWork: [] } }
   const ui = dashboard('pt-BR')
   ui.render({ run: 'safe-plan', plan: {}, tasks: { T: task('T', 'pending', { discovery: hostileDiscovery, planner: hostile, taskPlan: recorded }) }, derived: { T: { effective: 'ready' } } })
-  ui.run("fillPop('T')")
+  ui.run("POP_MODE = 'detail'; fillPop('T')")
   const body = ui.nodes.get('#popBody').innerHTML
   assert.doesNotMatch(body, /<img|onerror="/)
   assert.match(body, /&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt;&amp;&#39;text/)
   for (const text of ['Descoberta da tarefa', 'Pesquisa da descoberta', 'Discussão', 'Cobertura PO First', 'Decisões da descoberta', 'Ideias adiadas',
     'Planejador', 'Plano registrado da tarefa', 'Pesquisa', 'Decisões', 'Passos de execução', 'Verificação', 'Perguntas', 'verificação 1', 'não bloqueante']) assert.ok(body.includes(text), text)
+})
+
+test('lean popover shows role-written summaries, escaped, and never the full plan', () => {
+  const hostile = '<img src=x onerror="alert(1)">'
+  const ui = dashboard('pt-BR')
+  ui.render({ run: 'lean', plan: {}, tasks: { T: task('T', 'done', {
+    summary: `Checkout avisado ${hostile}`, validationSummary: 'O aviso chega com 200',
+    validation: [{ run: 'bun test', expect: 'doze testes passam' }],
+    taskPlan: { ...plan, summary: 'caminho do planejador', steps: ['passo secreto do plano'] },
+    attempts: [{ n: 1, agent: 'exec-1', startedAt: instant(1), endedAt: instant(5), result: 'passed' }],
+    validations: [{ ok: false, at: instant(3), evidence: 'evidencia longa', summary: 'reprovado: HTTP 500' }],
+  }) }, derived: { T: { effective: 'done' } } })
+  ui.run("POP_MODE = 'lean'; fillPop('T')")
+  const lean = ui.nodes.get('#popBody').innerHTML
+  assert.doesNotMatch(lean, /<img|onerror="/)
+  assert.ok(lean.includes('Checkout avisado &lt;img'), 'task summary wins over the planner summary')
+  assert.ok(lean.includes('O aviso chega com 200'))
+  assert.ok(lean.includes('reprovado: HTTP 500'), 'the journey uses the verdict summary')
+  assert.ok(!lean.includes('passo secreto do plano') && !lean.includes('doze testes passam'), 'lean hides the full text')
+  assert.ok(!lean.includes('No summary recorded'))
+
+  ui.run("POP_MODE = 'detail'; fillPop('T')")
+  const detail = ui.nodes.get('#popBody').innerHTML
+  for (const text of ['passo secreto do plano', 'doze testes passam', 'caminho do planejador', 'evidencia longa', 'reprovado: HTTP 500']) assert.ok(detail.includes(text), text)
+})
+
+test('lean popover falls back to clamped full text when no summary was recorded', () => {
+  const ui = dashboard('pt-BR')
+  ui.render({ run: 'old', plan: {}, tasks: { T: task('T', 'pending', { summary: '   ', validation: 'contrato antigo em prosa' }) }, derived: { T: { effective: 'ready' } } })
+  ui.run("POP_MODE = 'lean'; fillPop('T')")
+  const lean = ui.nodes.get('#popBody').innerHTML
+  assert.match(lean, /class="lead clamp">Task T/)
+  assert.match(lean, /class="ptxt clamp">contrato antigo em prosa/)
+  assert.equal((lean.match(/class="nosum"/g) ?? []).length, 2, 'a blank summary counts as absent')
+})
+
+test('expanding the popover pins it, switches to detail and closing resets it', () => {
+  const ui = dashboard('pt-BR')
+  ui.render({ run: 'x', plan: {}, tasks: { T: task('T') }, derived: { T: { effective: 'ready' } } })
+  ui.run("POP = { id: 'T', pinned: false }; POP_MODE = 'lean'; togglePopExpand(true)")
+  assert.equal(ui.run('POP.pinned && POP_MODE === "detail" && POP_EXPANDED'), true)
+  assert.equal(ui.nodes.get('#pop').classList.contains('expanded'), true)
+  assert.equal(ui.nodes.get('#popScrim').classList.contains('on'), true)
+  ui.run('closePop()')
+  assert.equal(ui.run('POP_EXPANDED'), false)
+  assert.equal(ui.nodes.get('#pop').classList.contains('expanded'), false)
+  assert.equal(ui.nodes.get('#popScrim').classList.contains('on'), false)
 })
 
 test('results count planning intervals and exclude human blocks and planning from execution queue time', () => {

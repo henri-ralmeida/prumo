@@ -260,8 +260,6 @@
   "dependencies off": "dependências desligadas",
   "dependencies on": "dependências ligadas",
   "filter results {0}/{1}": "resultado do filtro {0}/{1}",
-  "layout: phase": "layout: fase",
-  "layout: depth": "layout: profundidade",
   "fit to screen (0)": "ajustar à tela (0)",
   "show at 100%": "mostrar em 100%",
   "run metrics (r)": "métricas da execução (r)",
@@ -451,5 +449,18 @@
   "Phase plan": "Plano da fase",
   "Update incomplete; resolve the reported issues and run prumo update again": "Atualização incompleta; resolva as pendências informadas e execute prumo update novamente",
   "Migration deferred: finish or resume started legacy tasks before planning new work": "Migração adiada: conclua ou retome as tarefas legadas já iniciadas antes de planejar novos trabalhos",
-  "awaiting run migration": "aguardando migração do plano"
+  "awaiting run migration": "aguardando migração do plano",
+  "Reading mode": "Modo de leitura",
+  "lean": "enxuto",
+  "detail": "detalhe",
+  "Expand": "Expandir",
+  "Collapse": "Recolher",
+  "Close": "Fechar",
+  "Summary": "Resumo",
+  "To pass": "Para passar",
+  "Journey": "Jornada",
+  "see detail →": "ver detalhe →",
+  "No summary recorded — the detail view has the full text.": "Sem resumo registrado — o detalhe traz o texto completo.",
+  "unlocks": "libera",
+  "Chosen approach": "Caminho escolhido"
 }
