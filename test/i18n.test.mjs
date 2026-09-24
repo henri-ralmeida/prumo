@@ -59,7 +59,12 @@ test('region detection is independent of display language and defaults to Englis
 
 test('dashboard embeds the current translator and remains valid JavaScript', () => {
   const html = readFileSync(new URL('../scripts/dashboard.html', import.meta.url), 'utf8')
-  assert.equal(dashboardWithCatalog(html), html)
+  const rebuilt = dashboardWithCatalog(html)
+  assert.equal(rebuilt, html)
+  const embeddedMessages = JSON.parse(rebuilt.match(/const PRUMO_MESSAGES = ([^\r\n]+)/)[1])
+  for (const [lang, expected] of [['en', 'reviewer rejected T5'], ['pt-BR', 'revisor reprovou T5']]) {
+    assert.equal(createTranslator(embeddedMessages, lang)('{0} rejected {1}', lang === 'en' ? 'reviewer' : 'revisor', 'T5'), expected)
+  }
   assert.doesNotMatch(html, /id="language"|prumoLanguage|navigator.language|function setLanguage/)
   for (const lang of ['en', 'pt-BR']) {
     const installed = localizeDashboard(html, lang)
@@ -75,4 +80,23 @@ test('dashboard embeds the current translator and remains valid JavaScript', () 
   assert.doesNotMatch(html, /Graph Engine/)
   assert.match(html, /\.par > span:not\(\.empty\)/, 'Empty state and nested labels must not receive task borders')
   assert.match(script, /if \(generation !== TICK_GENERATION\) return/, 'A superseded run response must not repaint the dashboard')
+})
+
+test('favicon uses the inline header mark path, weight and amber color', () => {
+  const html = readFileSync(new URL('../scripts/dashboard.html', import.meta.url), 'utf8')
+  const encoded = html.match(/<link rel="icon" href="data:image\/svg\+xml,([^"]+)"/)[1]
+  const favicon = decodeURIComponent(encoded)
+  const header = html.match(/<h1>(<svg[\s\S]*?<\/svg>)/)[1]
+  const attribute = (svg, name) => svg.match(new RegExp(name + "=['\\\"]([^'\\\"]+)['\\\"]"))?.[1]
+  const path = (svg) => svg.match(/<path d=['\"]([^'\"]+)['\"]/)[1]
+  const line = (svg) => svg.match(/<line\b[^>]*>/)[0]
+  const mark = (svg) => svg.match(/<path\b[^>]*>/)[0]
+  assert.equal(attribute(favicon, 'viewBox'), attribute(header, 'viewBox'))
+  assert.equal(path(favicon), path(header))
+  assert.equal(attribute(line(favicon), 'stroke-width'), attribute(line(header), 'stroke-width'))
+  assert.deepEqual([attribute(line(favicon), 'stroke'), attribute(mark(favicon), 'fill')],
+    [attribute(line(header), 'stroke'), attribute(mark(header), 'fill')])
+  assert.equal(attribute(mark(favicon), 'fill'), '#e8b04b')
+  assert.equal(attribute(line(favicon), 'stroke'), '#e8b04b')
+  assert.match(favicon, /viewBox=['"]0 0 22 30['"]/)
 })

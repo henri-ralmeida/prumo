@@ -679,7 +679,7 @@ test('phase boards expand for their cards and open with the complete graph visib
   assert.ok(wideView.metrics.nodeW * wideView.view.k >= 72, 'cards at 100% stay legible')
 })
 
-test('legend follows the workflow and colored role counters and events show actual progress', () => {
+test('legend follows the workflow and event history names actions with their colored roles', () => {
   const legend = html.match(/<div class="legend">([\s\S]*?)<\/div>/)[1]
   const order = [...legend.matchAll(/data-i18n="([^"]+)"/g)].map(m => m[1])
   assert.deepEqual(order.slice(0, 11), ['waiting for dependencies', 'ready for discussion', 'discussion · orchestrator', 'ready for planning', 'planning · planner',
@@ -688,26 +688,83 @@ test('legend follows the workflow and colored role counters and events show actu
   assert.ok(order.includes('skipped'))
   for (const lang of ['en', 'pt-BR']) {
     const ui = dashboard(lang)
+    const taskValue = task('T4', 'reviewing', { validations: [
+      { by: 'review', ok: false, evidence: 'The reviewer checked the current result.', summary: 'Reviewer found a missing acceptance condition.' },
+      { by: 'review', ok: true, evidence: 'All required checks passed.' },
+    ] })
     const events = [
       { type: 'task_start', task: 'T4', at: instant(1), current: 1, total: 4 },
       { type: 'task_progress', task: 'T4', at: instant(2), current: 2, total: 4 },
       { type: 'task_check', task: 'T4', at: instant(3), current: 1, total: 4, status: 'started', kind: 'functional', by: 'review' },
       { type: 'task_check', task: 'T4', at: instant(4), current: 2, total: 4, status: 'failed', kind: 'functional', by: 'review' },
+      { type: 'task_review', task: 'T4', at: instant(5), reviewer: 'reviewer-1' },
+      { type: 'task_validate', task: 'T4', at: instant(6), by: 'review', ok: false, evidence: 'The reviewer checked the current result.' },
+      { type: 'task_validate', task: 'T4', at: instant(7), by: 'review', ok: true, evidence: 'All required checks passed.' },
+      { type: 'phase_planning', phase: 'P2', at: instant(8), planner: 'planner-2' },
       { type: 'task_start', task: 'OLD', at: instant(0) },
     ]
-    ui.render({ run: 'events', plan: {}, tasks: { T4: task('T4') }, derived: { T4: { effective: 'ready' } } }, events)
+    ui.render({ run: 'events', plan: {}, tasks: { T4: taskValue }, derived: { T4: { effective: 'ready' } } }, events)
     const title = ui.nodes.get('#parTitle').innerHTML
     for (const color of ['discussion', 'planning', 'running', 'review']) assert.ok(title.includes(`color:var(--${color})`))
     assert.equal((title.match(/<b>/g) ?? []).length, 4)
     assert.doesNotMatch(title, / · /)
     if (lang === 'pt-BR') assert.ok(ui.labels.some(node => node.textContent === 'discussão · orquestrador'))
     const log = ui.nodes.get('#events').innerHTML
-    assert.match(log, /T4 \[1\/4\]/)
-    assert.match(log, /T4 \[2\/4\]/)
-    assert.doesNotMatch(log, /OLD \[/)
-    assert.ok(log.includes(lang === 'en' ? 'Working' : 'Executando'))
-    assert.ok(log.includes(lang === 'en' ? 'Review' : 'Revisão'))
+    const visibleLog = log.replace(/<[^>]*>/g, '')
+    assert.match(visibleLog, /T4 \[1\/4\]/)
+    assert.match(visibleLog, /T4 \[2\/4\]/)
+    assert.doesNotMatch(visibleLog, /OLD \[/)
+    assert.ok(visibleLog.includes(lang === 'en' ? 'executor started task T4' : 'executor iniciou a tarefa T4'))
+    assert.ok(visibleLog.includes(lang === 'en' ? 'reviewer began the functional check for task T4' : 'revisor iniciou a verificação funcional da tarefa T4'))
+    assert.ok(visibleLog.includes(lang === 'en' ? 'orchestrator sent T4 to reviewer @reviewer-1' : 'orquestrador encaminhou T4 ao revisor @reviewer-1'))
+    assert.ok(visibleLog.includes(lang === 'en' ? 'reviewer approved T4' : 'revisor aprovou T4'))
+    assert.ok(visibleLog.includes(lang === 'en' ? 'reviewer rejected T4' : 'revisor reprovou T4'))
+    assert.ok(visibleLog.includes(lang === 'en' ? 'planner started planning for phase P2' : 'planejador iniciou o planejamento da fase P2'))
+    assert.match(log, /class="ev-phase" style="color:var\(--planning\)">P2/)
+    assert.match(log, /class="t-task_validate" data-ok="true"/)
+    assert.match(log, /class="t-task_validate" data-ok="false"/)
+    assert.doesNotMatch(visibleLog, /\b(?:phase|task)_[a-z_]+\b/)
   }
+})
+
+test('review rejection history prefers its validation summary and truncates evidence as fallback', () => {
+  const evidence = 'A'.repeat(80) + 'UNTRUNCATED_SENTINEL'
+  const repeatedEvidence = 'The same reviewer evidence was recorded twice.'
+  const firstSummary = '1'.repeat(95)
+  const secondSummary = '2'.repeat(95)
+  const state = { run: 'rejection-history', plan: {}, tasks: {
+    SUMMARY: task('SUMMARY', 'pending', { validations: [
+      { by: 'review', ok: false, evidence: 'Raw evidence replaced by summary.', summary: 'Reviewer summary is shown first.' },
+    ] }),
+    FALLBACK: task('FALLBACK', 'pending', { validations: [
+      { by: 'review', ok: false, evidence, summary: '' },
+    ] }),
+    REPEAT: task('REPEAT', 'pending', { validations: [
+      { by: 'review', ok: false, evidence: repeatedEvidence, summary: firstSummary, at: instant(10) },
+      { by: 'review', ok: false, evidence: repeatedEvidence, summary: secondSummary, at: instant(12) },
+    ] }),
+  }, derived: {
+    SUMMARY: { effective: 'pending', blockedBy: [] },
+    FALLBACK: { effective: 'pending', blockedBy: [] },
+    REPEAT: { effective: 'pending', blockedBy: [] },
+  } }
+  const events = [
+    { type: 'task_validate', task: 'SUMMARY', at: instant(1), by: 'review', ok: false, evidence: 'Raw evidence replaced by summary.' },
+    { type: 'task_validate', task: 'FALLBACK', at: instant(2), by: 'review', ok: false, evidence },
+    { type: 'task_validate', task: 'REPEAT', at: instant(11), by: 'review', ok: false, evidence: repeatedEvidence },
+    { type: 'task_validate', task: 'REPEAT', at: instant(13), by: 'review', ok: false, evidence: repeatedEvidence },
+  ]
+  const ui = dashboard('en')
+  ui.render(state, events)
+  const log = ui.nodes.get('#events').innerHTML
+  assert.ok(log.includes('Reviewer summary is shown first.'))
+  assert.doesNotMatch(log, /Raw evidence replaced by summary\./)
+  assert.ok(log.includes('A'.repeat(80)))
+  assert.doesNotMatch(log, /UNTRUNCATED_SENTINEL/)
+  const repeatLines = log.match(/<div class="ev">[\s\S]*?<\/div>/g).filter(line => line.includes('REPEAT'))
+  assert.equal(repeatLines.length, 2)
+  assert.ok(repeatLines[0].includes(secondSummary), 'the latest rejection keeps its full summary')
+  assert.ok(repeatLines[1].includes(firstSummary), 'the earlier rejection keeps its own full summary')
 })
 
 test('visual polish keeps arrowless curves, full card labels and a controllable responsive sidebar', () => {
