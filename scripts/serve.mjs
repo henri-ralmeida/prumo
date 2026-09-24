@@ -339,7 +339,7 @@ const server = createServer((req, res) => {
        * 'unsafe-inline' is required: the dashboard is a single self-contained file. */
       'Content-Security-Policy':
         "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; " +
-        "connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'",
+        "connect-src 'self'; img-src 'self' data:; font-src data:; base-uri 'none'; form-action 'none'",
     })
     return res.end(page)
   }

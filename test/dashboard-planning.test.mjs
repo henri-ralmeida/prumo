@@ -225,10 +225,12 @@ test('dashboard renders separate planning queues, active planner hub and executi
     assert.equal(new Set(colors).size, 3)
     const values = colors.map((cssVar) => html.match(new RegExp(`${cssVar.slice(4, -1)}: (#[a-f0-9]+)`))[1])
     assert.deepEqual([...values], ['#8a7bd6', '#b69cff', '#f5b58a'])
+    assert.notEqual(ui.run('ST_COLOR.ready_for_discussion'), ui.run('ST_COLOR.discussing'), 'a queued discussion must not look like one in progress')
     assert.match(ui.nodes.get('#parallel').innerHTML, /class="plan"[^>]*openTask\('A'\)[\s\S]*@planner-1/)
     assert.doesNotMatch(ui.nodes.get('#parallel').innerHTML, /openTask\('[PEWDFBS]'\)/)
     assert.match(ui.nodes.get('#planSub').textContent, /1: A/)
-    assert.match(ui.nodes.get('#edgePaths').innerHTML, /class="e-planning" data-from="__plan" data-to="A"/)
+    assert.equal(ui.nodes.get('#planNode').classList.contains('live'), true)
+    assert.doesNotMatch(ui.nodes.get('#edgePaths').innerHTML, /data-from="__/, 'roles light up in the hub; only dependencies draw lines')
     assert.equal(ui.nodes.get('#bar .seg-plan').style.width, `${100 / 9}%`)
     assert.equal(ui.nodes.get('#bar .seg-review').style.width, `${100 / 9}%`)
     assert.ok(Number.parseFloat(ui.nodes.get('#planNode').style.left) >= 0)
@@ -274,12 +276,10 @@ test('dashboard observes phase discussion, phase planning and per-task input rea
       'the phase owns the planner relationship; member cards expose only their active state')
     assert.match(ui.nodes.get('#nodes').innerHTML, /data-st="discussing"[^>]*data-id="A"/,
       'an open phase discussion owns the active visual state before execution readiness')
-    assert.match(ui.nodes.get('#edgePaths').innerHTML, /e-discussion[^>]*data-to="__phase-F1"[^>]*data-members="A,B"/)
-    assert.equal((ui.nodes.get('#edgePaths').innerHTML.match(/class="e-discussion"/g) ?? []).length, 1,
-      'one phase discussion connects to the phase board, not every member card')
-    assert.match(ui.nodes.get('#edgePaths').innerHTML, /e-planning[^>]*data-to="__phase-F2"[^>]*data-members="C"/)
-    assert.equal((ui.nodes.get('#edgePaths').innerHTML.match(/class="e-planning"/g) ?? []).length, 1,
-      'one phase planner connects to the phase board, not every member card')
+    assert.equal(ui.nodes.get('#orchNode').classList.contains('discussing'), true)
+    assert.equal(ui.nodes.get('#planNode').classList.contains('live'), true)
+    assert.doesNotMatch(ui.nodes.get('#edgePaths').innerHTML, /__phase-/,
+      'the phase board carries its own state pill; no role line crosses the board')
   }
   assert.doesNotMatch(html, /fetch\([^)]*begin-phase|onclick="[^"]*phase-(?:discussion|planning)/,
     'phase workflow remains observer-only')
@@ -301,12 +301,12 @@ test('summary counts include discussion and legacy pending tasks', () => {
   }
 })
 
-test('height-only resize keeps the entire board inside the viewport', () => {
+test('height-only resize keeps the untouched board at 100% anchored at the top', () => {
   const ui = dashboard('en', 1000)
   ui.render(graphState(48, 8))
   ui.resize(1000, 350)
-  assert.ok(ui.run('CANVAS_H * VIEW.k') <= 294)
-  assert.ok(ui.run('VIEW.y') >= 0)
+  assert.equal(ui.run('VIEW.k'), 1)
+  assert.equal(ui.run('VIEW.y'), 0)
 })
 
 test('dashboard keeps an unadopted legacy phase pending until explicit adoption', () => {
@@ -362,7 +362,7 @@ test('status filters use effective state and add only direct dependency context'
   assert.equal(ui.run("JSON.stringify([...filterSets(STATE.tasks, 'missing', false).matches])"), '[]')
 
   assert.equal(ui.cards.length, Object.keys(tasks).length)
-  for (const endpoints of [['A', 'B'], ['B', 'C'], ['C', 'D'], ['__exec', 'B'], ['__plan', 'L'], ['R', '__rev']])
+  for (const endpoints of [['A', 'B'], ['B', 'C'], ['C', 'D']])
     assert.ok(edge(...endpoints), endpoints.join(' → '))
   const originalState = JSON.stringify(state)
 
@@ -373,9 +373,6 @@ test('status filters use effective state and add only direct dependency context'
   assert.equal(ui.nodes.get('#depsBtn').getAttribute('aria-pressed'), 'false')
   assert.equal(ui.nodes.get('#filterCount').textContent, 'filter results 1/12')
   assert.equal(hidden('A', 'B'), true)
-  assert.equal(hidden('__exec', 'B'), false)
-  assert.equal(hidden('__plan', 'L'), true)
-  assert.equal(hidden('R', '__rev'), true)
 
   ui.run("openTask('B'); setFilter('reviewing')")
   assert.equal(ui.run('POP === null'), true)
@@ -398,12 +395,7 @@ test('status filters use effective state and add only direct dependency context'
   assert.equal(edge('B', 'C').classList.contains('lit'), true)
   assert.equal(edge('C', 'D').classList.contains('filter-hidden'), true)
 
-  ui.run("setFilter('planning')")
-  assert.equal(hidden('__plan', 'L'), false)
-  assert.equal(hidden('__exec', 'B'), true)
   ui.run("setFilter('reviewing')")
-  assert.equal(hidden('R', '__rev'), false)
-  assert.equal(hidden('__plan', 'L'), true)
   ui.run("openTask('R')")
   const completed = structuredClone(state)
   completed.tasks.R.status = 'done'
@@ -457,8 +449,8 @@ test('filters preserve the full graph and disable nonmatching cards', () => {
   assert.equal(ui.cards.some(card => card.classList.contains('filtered-out')), false)
 })
 
-test('opening and closing the legend preserves fit, actual and manual zoom', () => {
-  for (const setup of ['', 'toggleFitView()', 'zoomAt(100, 100, 1.4)']) {
+test('opening and closing the legend preserves the 100% and the manual zoom', () => {
+  for (const setup of ['', 'zoomAt(100, 100, 0.6)', 'zoomAt(100, 100, 1.4)']) {
     const ui = dashboard('en', 1000)
     ui.render(graphState(30))
     if (setup) ui.run(setup)
@@ -520,7 +512,7 @@ test('responsive layout selects density and sizes phase lanes from their cards',
   assert.ok(narrowLayout.lanes.every((lane, i, lanes) => i === 0 || lanes[i - 1].y + lanes[i - 1].height < lane.y))
 })
 
-test('resize relayout preserves state and refits the board to the live viewport', () => {
+test('resize relayout preserves state and re-centres the untouched 100% board', () => {
   const ui = dashboard('en', 1200)
   const state = graphState(48)
   ui.render(state)
@@ -537,8 +529,10 @@ test('resize relayout preserves state and refits the board to the live viewport'
   assert.equal(after.selected, before.selected)
   assert.equal(after.fitted, before.fitted)
   assert.notDeepEqual(after.view, before.view)
-  assert.ok(after.w * after.view.k <= 644)
-  assert.ok(after.h * after.view.k <= 644)
+  assert.equal(after.view.k, 1)
+  assert.equal(after.view.y, 0)
+  const viewportW = ui.run("$('#viewport').getBoundingClientRect().width")
+  assert.equal(after.view.x, after.w <= viewportW ? (viewportW - after.w) / 2 : 0)
   assert.ok(after.metrics.nodeW * after.view.k >= 72)
   const afterAnchor = JSON.parse(ui.run("JSON.stringify(document.querySelector('.node[data-id=\\\"T013\\\"]')?.getBoundingClientRect())"))
   const popPosition = JSON.parse(ui.run("JSON.stringify({ left: parseFloat($('#pop').style.left), top: parseFloat($('#pop').style.top) })"))
@@ -554,24 +548,16 @@ test('phase boards expand for their cards and open with the complete graph visib
   assert.ok(initial.metrics.nodeW >= 120)
   assert.ok(initial.metrics.nodeW < 202)
   assert.equal(Math.max(...Object.values(initial.pos).map(point => point.x)) + initial.metrics.nodeW, initial.width - 40)
-  assert.ok(initial.view.k < 0.944)
-  assert.ok(initial.width * initial.view.k <= 944)
-  assert.ok(initial.height * initial.view.k <= 644)
-  assert.ok(initial.view.x >= 28)
-  assert.ok(initial.view.y >= 28)
-  assert.equal(ui.run("$('#fitBtn').textContent"), '100%')
-  ui.run('toggleFitView()')
-  const actual = JSON.parse(ui.run("JSON.stringify({ view: VIEW, mode: VIEW_MODE, label: $('#fitBtn').textContent, width: CANVAS_W, height: CANVAS_H })"))
-  assert.equal(actual.view.k, 1)
-  assert.equal(actual.mode, 'actual')
-  assert.equal(actual.label, 'fit')
-  assert.equal(actual.view.y, 0, '100% starts at the top when the board is taller than the viewport')
-  assert.ok(actual.view.x >= 0, '100% never hides the hierarchy to the left of the viewport')
-  ui.run('toggleFitView()')
-  const refitted = JSON.parse(ui.run("JSON.stringify({ view: VIEW, mode: VIEW_MODE, label: $('#fitBtn').textContent })"))
-  assert.equal(refitted.mode, 'fit')
-  assert.equal(refitted.label, '100%')
-  assert.deepEqual(refitted.view, initial.view)
+  assert.equal(initial.view.k, 1, 'the board always opens at 100%')
+  assert.equal(initial.view.y, 0, '100% starts at the top when the board is taller than the viewport')
+  assert.ok(initial.view.x >= 0, '100% never hides the hierarchy to the left of the viewport')
+  assert.doesNotMatch(html, /id="fitBtn"|toggleFitView|fitView\(/, 'no fit button: zoom is the wheel or the pinch only')
+  ui.run('zoomAt(500, 300, 0.5)')
+  assert.deepEqual(JSON.parse(ui.run('JSON.stringify({ k: VIEW.k, mode: VIEW_MODE })')), { k: 0.5, mode: 'manual' })
+  ui.run('actualView()')
+  const back = JSON.parse(ui.run('JSON.stringify({ view: VIEW, mode: VIEW_MODE })'))
+  assert.equal(back.mode, 'actual')
+  assert.deepEqual(back.view, initial.view, 'the 0 key returns to the opening 100% view')
 
   const screenshotState = graphState(25, 6)
   const screenshotTasks = Object.values(screenshotState.tasks)
@@ -585,7 +571,7 @@ test('phase boards expand for their cards and open with the complete graph visib
   const wideView = JSON.parse(wide.run("JSON.stringify({ view: VIEW, width: CANVAS_W, metrics: LAST_METRICS })"))
   const cardCapacity = wide.run("layout(STATE.tasks, 'phase').capacity")
   assert.equal(wideView.width, Math.max(636, 80 + wideView.metrics.nodeW * cardCapacity + 16 * (cardCapacity - 1)))
-  assert.ok(wideView.metrics.nodeW * wideView.view.k >= 72, 'fitted cards should stay legible')
+  assert.ok(wideView.metrics.nodeW * wideView.view.k >= 72, 'cards at 100% stay legible')
 })
 
 test('legend follows the workflow and colored role counters and events show actual progress', () => {
@@ -619,8 +605,8 @@ test('legend follows the workflow and colored role counters and events show actu
   }
 })
 
-test('visual polish keeps fixed arrows, full card labels and a controllable responsive sidebar', () => {
-  assert.match(html, /markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse"/)
+test('visual polish keeps arrowless curves, full card labels and a controllable responsive sidebar', () => {
+  assert.doesNotMatch(html, /marker-end|<marker/, 'dependency curves end on the card without arrowheads')
   assert.match(html, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\*, \*::before, \*::after[\s\S]*animation: none !important/)
   assert.match(html, /\.phase-task-state \{ display: inline;/)
   const sectionOrder = ['id="parTitle"', 'data-i18n="Selected task"', 'data-i18n="Failures &amp; retries"', 'data-i18n="Event log"', 'data-i18n="Legend"']
@@ -693,15 +679,54 @@ test('visual polish keeps fixed arrows, full card labels and a controllable resp
   assert.match(linked.nodes.get('#edgePaths').innerHTML, /<path class="e-hot"[^>]* d="M [^"]* C [^"]*"/)
 })
 
-test('discussion uses the orchestrator brass and connects the active orchestrator without motion when reduced', () => {
+test('discussion uses the orchestrator brass and lights the active orchestrator without motion when reduced', () => {
   assert.match(html, /--discussion:\s*#e8b04b/)
-  assert.match(html, /path\.e-discussion[\s\S]*stroke:\s*var\(--discussion\)/)
+  assert.match(html, /\.node\[data-st="discussing"\][^{]*\{[^}]*--st:\s*var\(--discussion\)/)
   assert.match(html, /@media \(prefers-reduced-motion: reduce\)[\s\S]*animation:\s*none !important/)
   const ui = dashboard('pt-BR')
   ui.render({ run: 'discussion', plan: { maxParallel: 4 }, tasks: { T1: task('T1', 'discussing') }, derived: { T1: { effective: 'discussing' } } })
   assert.equal(ui.nodes.get('#orchNode').classList.contains('discussing'), true)
-  assert.ok(ui.paths.some(path => path.classList.contains('e-discussion') && path.dataset.to === 'T1'))
+  assert.match(ui.nodes.get('#nodes').innerHTML, /data-st="discussing"[^>]*data-id="T1"/)
   assert.match(ui.nodes.get('#orchSub').textContent, /discutindo 1: T1/)
+  ui.render({ run: 'discussion', plan: { maxParallel: 4 }, tasks: { T1: task('T1', 'discussing', { discussionAttempts: [{ startedAt: instant(28) }] }) }, derived: { T1: { effective: 'discussing' } } })
+  assert.match(ui.nodes.get('#nodes').innerHTML, /orquestrador<\/span><span class="beat"><\/span><span class="elapsed">1:12</,'the card counts the open discussion round')
+})
+
+test('the dashboard ships its own licensed fonts and the page policy allows only inline data fonts', () => {
+  for (const family of ['Bricolage Grotesque', 'JetBrains Mono'])
+    assert.match(html, new RegExp(`@font-face \\{ font-family: "${family}"[^}]*src: url\\(data:font/woff2;base64,`))
+  assert.match(html, /SIL Open Font License, Version 1\.1/)
+  assert.doesNotMatch(html, /fonts\.googleapis|fonts\.gstatic/, 'no font request leaves the machine')
+  const serve = readFileSync(new URL('../scripts/serve.mjs', import.meta.url), 'utf8')
+  assert.match(serve, /font-src data:;/)
+})
+
+test('available tasks say who moves each one next and give way to the selected task', () => {
+  const tasks = {
+    K: task('K', 'blocked', { blockReason: 'pick <the> API version' }),
+    E: task('E', 'pending', { validation: [{ run: 'bun test auth', expect: '12 tests pass' }] }),
+    P: task('P', 'pending', { planningRequired: true }),
+    D: task('D', 'done'),
+  }
+  const derived = { K: { effective: 'blocked' }, E: { effective: 'ready' }, P: { effective: 'ready_to_plan' }, D: { effective: 'done' } }
+  for (const lang of ['en', 'pt-BR']) {
+    const ui = dashboard(lang)
+    ui.render({ run: 'available', plan: { phases: [] }, tasks, derived })
+    const list = ui.nodes.get('#available').innerHTML
+    assert.equal(ui.nodes.get('#availableBox').hidden, false)
+    assert.equal(ui.nodes.get('#selectedBox').hidden, true)
+    assert.deepEqual([...list.matchAll(/openTask\('(\w+)'\)/g)].map(m => m[1]), ['K', 'E', 'P'], 'needs-you first, then the next role in the flow')
+    assert.match(list, /--role:var\(--blocked\)[\s\S]*pick &lt;the&gt; API version/)
+    assert.match(list, /--role:var\(--running\)[\s\S]*\$ bun test auth[\s\S]*12 tests pass/)
+    assert.match(list, /--role:var\(--planning\)/)
+    assert.match(list, lang === 'en' ? /needs you/ : /precisa de você/)
+    ui.run("openTask('E')")
+    assert.equal(ui.nodes.get('#availableBox').hidden, true)
+    assert.equal(ui.nodes.get('#selectedBox').hidden, false)
+    assert.match(ui.nodes.get('#selectedTask').innerHTML, /E · Task E/)
+    ui.run('closePop()')
+    assert.equal(ui.nodes.get('#availableBox').hidden, false)
+  }
 })
 
 test('discovery, planner identity and task plan render as escaped text, including answers and checks', () => {
