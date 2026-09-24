@@ -462,5 +462,10 @@
   "see detail →": "ver detalhe →",
   "No summary recorded — the detail view has the full text.": "Sem resumo registrado — o detalhe traz o texto completo.",
   "unlocks": "libera",
-  "Chosen approach": "Caminho escolhido"
+  "Chosen approach": "Caminho escolhido",
+  "Active agents": "Agentes ativos",
+  "in prumo": "no prumo",
+  "phases and linked tasks": "fases e tarefas vinculadas",
+  "{0} of {1} in prumo": "{0} de {1} no prumo",
+  "a task only enters prumo after the independent reviewer": "tarefa só entra no prumo depois do revisor independente"
 }

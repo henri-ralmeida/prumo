@@ -362,7 +362,7 @@ test('status filters use effective state and add only direct dependency context'
   assert.equal(ui.run("JSON.stringify([...filterSets(STATE.tasks, 'missing', false).matches])"), '[]')
 
   assert.equal(ui.cards.length, Object.keys(tasks).length)
-  for (const endpoints of [['A', 'B'], ['B', 'C'], ['C', 'D'], ['__orch', 'B'], ['__plan', 'L'], ['R', '__rev']])
+  for (const endpoints of [['A', 'B'], ['B', 'C'], ['C', 'D'], ['__exec', 'B'], ['__plan', 'L'], ['R', '__rev']])
     assert.ok(edge(...endpoints), endpoints.join(' → '))
   const originalState = JSON.stringify(state)
 
@@ -373,7 +373,7 @@ test('status filters use effective state and add only direct dependency context'
   assert.equal(ui.nodes.get('#depsBtn').getAttribute('aria-pressed'), 'false')
   assert.equal(ui.nodes.get('#filterCount').textContent, 'filter results 1/12')
   assert.equal(hidden('A', 'B'), true)
-  assert.equal(hidden('__orch', 'B'), false)
+  assert.equal(hidden('__exec', 'B'), false)
   assert.equal(hidden('__plan', 'L'), true)
   assert.equal(hidden('R', '__rev'), true)
 
@@ -400,7 +400,7 @@ test('status filters use effective state and add only direct dependency context'
 
   ui.run("setFilter('planning')")
   assert.equal(hidden('__plan', 'L'), false)
-  assert.equal(hidden('__orch', 'B'), true)
+  assert.equal(hidden('__exec', 'B'), true)
   ui.run("setFilter('reviewing')")
   assert.equal(hidden('R', '__rev'), false)
   assert.equal(hidden('__plan', 'L'), true)
@@ -623,7 +623,7 @@ test('visual polish keeps fixed arrows, full card labels and a controllable resp
   assert.match(html, /markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse"/)
   assert.match(html, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\*, \*::before, \*::after[\s\S]*animation: none !important/)
   assert.match(html, /\.phase-task-state \{ display: inline;/)
-  const sectionOrder = ['data-i18n="Legend"', 'id="parTitle"', 'data-i18n="Selected task"', 'data-i18n="Failures &amp; retries"', 'data-i18n="Event log"']
+  const sectionOrder = ['id="parTitle"', 'data-i18n="Selected task"', 'data-i18n="Failures &amp; retries"', 'data-i18n="Event log"', 'data-i18n="Legend"']
   assert.deepEqual(sectionOrder.map((part) => html.indexOf(part)), [...sectionOrder.map((part) => html.indexOf(part))].sort((a, b) => a - b))
 
   for (const [count, density] of [[6, 'detailed'], [48, 'compact'], [101, 'dense']]) {

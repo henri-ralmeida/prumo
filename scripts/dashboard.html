@@ -22,19 +22,19 @@
   * { box-sizing: border-box; margin: 0; }
   body { background: var(--bg); color: var(--text); font: 13px/1.45 var(--font-mono);
          overflow: hidden; height: 100vh; display: grid; grid-template: auto minmax(0, 1fr) 44px / minmax(0, 1fr); }
-  header { grid-area: 1 / 1; display: flex; flex-wrap: wrap; align-items: center; row-gap: 8px;
-           padding: 12px 18px; border-bottom: 1px solid var(--line); min-height: 50px; background: var(--panel); }
-  header h1 { display: flex; align-items: center; gap: 9px; margin-right: 16px;
-              font: 800 22px/1 var(--font-display); letter-spacing: -.02em; color: var(--text); }
-  header h1 svg { width: 16px; height: 22px; animation: sway 6s ease-in-out infinite; transform-origin: 50% 0; }
-  @keyframes sway { 50% { transform: rotate(4deg); } 0%, 100% { transform: rotate(-4deg); } }
-  header .run { color: var(--dim); color-scheme: dark; margin-right: auto; max-width: 360px; background: var(--panel);
-                border: 1px solid transparent; border-radius: 5px; padding: 3px 22px 3px 6px;
-                font: inherit; font-size: 12px; cursor: pointer; }
-  header .run:hover, header .run:focus { color: var(--text); border-color: var(--line); outline: none; }
+  header { grid-area: 1 / 1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+           padding: 12px 24px; border-bottom: 1px solid var(--line); min-height: 64px; background: var(--bg); }
+  header h1 { display: flex; align-items: center; gap: 10px; margin-right: 8px;
+              font: 800 26px/1 var(--font-display); letter-spacing: -.04em; color: var(--text); }
+  header h1 svg { width: 22px; height: 30px; }
+  header .run { color: var(--text); color-scheme: dark; margin-right: auto; max-width: 380px; height: 36px;
+                background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 0 28px 0 12px;
+                font: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+                transition: border-color .2s var(--ease), background-color .2s var(--ease); }
+  header .run:hover, header .run:focus { border-color: color-mix(in srgb, var(--text) 26%, var(--line)); outline: none; }
   header .run option { color: var(--text); background: var(--panel); }
-  .counts { display: flex; flex-basis: 100%; flex-wrap: wrap; gap: 4px 16px; }
-  .counts span { color: var(--dim); font-size: 12px; white-space: nowrap; }
+  .counts { display: flex; margin-left: auto; flex-wrap: wrap; gap: 4px 16px; }
+  .counts span { color: var(--dim); font-size: 11px; white-space: nowrap; }
   .counts b { color: var(--text); font-weight: 600; }
   main { grid-area: 2 / 1; display: grid; grid-template-columns: minmax(0, 1fr) 330px; min-height: 0; position: relative; }
   main.sidebar-collapsed { grid-template-columns: minmax(0, 1fr) 0; }
@@ -50,8 +50,9 @@
   #canvas[data-lod="far"] .node .elapsed { display: none; }
   #canvas[data-lod="far"] .node .id { font-size: 19px; line-height: 30px; }
   #canvas[data-lod="far"] .lane-h { font-size: 17px; }
-  #canvas[data-lod="far"] #orchNode .os { font-size: 15px; }
-  #canvas[data-lod="far"] #orchNode .oh { font-size: 18px; }
+  #canvas[data-lod="far"] .node .nt { display: none; }
+  #canvas[data-lod="far"] .role .os { font-size: 15px; }
+  #canvas[data-lod="far"] .role .oh { font-size: 20px; }
 
   /* ---- edges: one <path> per dependency so lineage focus can light them individually */
   svg#edges { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
@@ -80,33 +81,55 @@
 
   /* ---- orchestrator hub: the DAG still reads left-to-right (causality), but the
      orchestrator gets a real presence, radiating a live line to each task it is running */
-  /* One card language for every role: a colour (--role), a heartbeat, and a 2px activity
-     bar along the bottom that fills with a moving shimmer only while the role is working. */
-  #orchNode, #planNode, #revNode { --role: var(--accent);
-              position: absolute; width: 168px; height: 60px; border-radius: 14px; overflow: hidden;
-              background: linear-gradient(180deg, #1c1a17, #161512); border: 1px solid var(--line);
-              padding: 9px 12px;
-              transition: border-color .3s var(--ease), box-shadow .3s var(--ease), background-color .3s var(--ease); }
-  #planNode { --role: var(--planning); }
-  #revNode { --role: var(--review); }
-  #orchNode::after, #planNode::after, #revNode::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
-              background: color-mix(in srgb, var(--role) 14%, transparent); transition: background-color .3s var(--ease); }
-  :is(#orchNode, #planNode, #revNode).live { border-color: color-mix(in srgb, var(--role) 55%, var(--line));
-              background: linear-gradient(180deg, color-mix(in srgb, var(--role) 10%, #1c1a17), #161512);
-              box-shadow: 0 0 26px color-mix(in srgb, var(--role) 16%, transparent); }
-  :is(#orchNode, #planNode, #revNode).live::after {
-              background: linear-gradient(90deg, transparent 0 30%, var(--role) 50%, transparent 70% 100%) 0 0 / 250% 100%,
-                          color-mix(in srgb, var(--role) 22%, transparent);
-              animation: shimmer 1.6s linear infinite; animation-delay: var(--epoch, 0s); }
-  :is(#orchNode, #planNode, #revNode) .oh { display: block; font: 700 12px/1.2 var(--font-display); letter-spacing: .08em;
-              text-transform: uppercase; color: color-mix(in srgb, var(--role) 70%, var(--text)); }
-  :is(#orchNode, #planNode, #revNode) .os { font-size: 9.5px; color: var(--dim); display: block; margin-top: 4px;
-              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  :is(#orchNode, #planNode, #revNode) .obeat { position: absolute; right: 11px; top: 11px; width: 7px; height: 7px;
-              border-radius: 50%; background: var(--waiting); transition: background-color .3s var(--ease); }
-  :is(#orchNode, #planNode, #revNode).live .obeat { background: var(--role); animation: beat 1.1s ease-in-out infinite; }
-  /* the orchestrator talking with the dev is still the orchestrator: same brass, stronger glow */
-  #orchNode.live.discussing { box-shadow: 0 0 34px color-mix(in srgb, var(--role) 26%, transparent); }
+  /* Gravidade: the orchestrator hangs at the top; planner, executor and reviewer hang from
+     it. Each role owns one colour (--role) and, while it works, a 2px activity bar whose
+     light slides along the card's bottom edge. Idle roles stay graphite. */
+  .role { --role: var(--accent); --role-bg: #211a0e; --role-line: #6a5222; --role-track: #2e2413;
+          position: absolute; width: 172px; height: 58px; padding: 9px 12px; border-radius: 12px;
+          display: flex; align-items: center; gap: 11px; overflow: hidden;
+          background: var(--card); border: 1px solid var(--line);
+          transition: border-color .3s var(--ease), background-color .3s var(--ease), box-shadow .3s var(--ease); }
+  #orchNode { width: 240px; height: 62px; border-radius: 14px; padding: 10px 14px; }
+  #planNode { --role: var(--planning); --role-bg: #18142a; --role-line: #57489a; --role-track: #241d3d; }
+  #execNode { --role: var(--running); --role-bg: #22150e; --role-line: #8a4f2c; --role-track: #34200f; }
+  #revNode  { --role: var(--review); --role-bg: #0d1822; --role-line: #24587a; --role-track: #12293a; }
+  .role .ric { flex: none; width: 22px; height: 22px; color: var(--faint); transition: color .3s var(--ease); }
+  #orchNode .ric { width: 28px; height: 28px; }
+  .role .ric :is(path, circle, line) { stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+  .role .ric .f { fill: currentColor; stroke: none; }
+  .role .rt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .role .oh { display: flex; align-items: center; gap: 6px; font: 600 14px/1.15 var(--font-display); color: var(--text); }
+  .role .oh [data-i18n] { text-transform: capitalize; }
+  #orchNode .oh { font-weight: 800; font-size: 16px; letter-spacing: -.02em; }
+  .role .rn { font: 700 10px/1.3 var(--font-mono); color: var(--bg); background: var(--role); border-radius: 4px; padding: 0 5px; }
+  .role .rn:empty { display: none; }
+  .role .os { font-size: 10px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .role .obeat { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--waiting);
+                 transition: background-color .3s var(--ease); }
+  .role .obar, .node .nbar, .par .rbar { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; overflow: hidden; }
+  :is(.role .obar, .node .nbar, .par .rbar)::after { content: ''; position: absolute; top: 0; left: 0; width: 40%; height: 2px;
+                 background: var(--role); opacity: 0; transform: translateX(-100%); }
+  .role.live { background: var(--role-bg); border-color: var(--role-line); }
+  #orchNode.live { border-color: var(--role); animation: glow 2.4s ease-in-out infinite; }
+  .role.live .ric { color: var(--role); }
+  .role.live .os { color: color-mix(in srgb, var(--role) 78%, var(--text)); }
+  .role.live .obeat { background: var(--role); animation: beat 1.2s ease-in-out infinite; }
+  .role.live .obar { background: var(--role-track); }
+  :is(.role.live .obar, .node .nbar, .par .rbar)::after { opacity: 1; animation: slide 1.8s ease-in-out infinite; }
+  #planNode.live .obar::after, .node[data-st="planning"] .nbar::after, .par .plan .rbar::after { animation-duration: 2.6s; }
+  @keyframes slide { to { transform: translateX(260%); } }
+  @keyframes glow { 0%, 100% { box-shadow: 0 0 0 4px rgba(232, 176, 75, .10), 0 14px 40px rgba(232, 176, 75, .14); }
+                    50% { box-shadow: 0 0 0 6px rgba(232, 176, 75, .18), 0 14px 48px rgba(232, 176, 75, .24); } }
+  /* the frame the roles hang from, and the plumb line the phases hang from */
+  svg#edges #structPaths path, svg#edges #structPaths line { fill: none; stroke-width: 1.5; }
+  svg#edges .s-frame { stroke: #6a5222; }
+  svg#edges .s-base { stroke: #3a362f; }
+  svg#edges .s-flow { stroke-dasharray: 3 6; stroke-linecap: round; animation: flow9 .7s linear infinite; }
+  svg#edges .s-bob { fill: var(--accent); stroke: none; }
+  svg#edges .s-sway { animation: sway 6s ease-in-out infinite; }
+  svg#edges .s-ring { fill: none; stroke: var(--accent); stroke-width: 1.5; animation: ring 1.6s ease-out infinite; }
+  @keyframes sway { 0%, 100% { transform: rotate(-1deg); } 50% { transform: rotate(1deg); } }
+  @keyframes ring { 0% { r: 6; opacity: .8; } 100% { r: 16; opacity: 0; } }
   svg#edges path.e-discussion { stroke: var(--discussion); stroke-width: 1.5; opacity: .95;
                                stroke-dasharray: 3 6; stroke-linecap: round;
                                animation: flow9 .7s linear infinite; marker-end: url(#m-discussion); }
@@ -119,110 +142,107 @@
   svg#edges path.e-planning { stroke: var(--planning); stroke-width: 1.5; opacity: .9;
                               stroke-dasharray: 3 6; stroke-linecap: round;
                               animation: flow9 .7s linear infinite; marker-end: url(#m-planning); }
-  #canvas[data-lod="far"] :is(#revNode, #planNode) .os { font-size: 15px; }
-  #canvas[data-lod="far"] :is(#revNode, #planNode) .oh { font-size: 18px; }
 
   /* ---- phase swimlanes */
   #lanes { position: absolute; inset: 0; pointer-events: none; }
-  .lane { position: absolute; left: 0; right: 0; border-radius: 14px;
-          background: rgba(241, 236, 227, .018); border: 1px solid rgba(241, 236, 227, .045);
-          transition: top .3s var(--ease), height .3s var(--ease); }
-  .lane-h { position: absolute; top: 6px; left: 14px;
-            font: 700 10px/1.4 var(--font-display); color: var(--dim); text-transform: uppercase; letter-spacing: .12em;
-            white-space: nowrap; max-width: calc(50% - 96px); overflow: hidden; text-overflow: ellipsis; }
-  .lane-state { position: absolute; top: 4px; left: 50%; transform: translateX(-50%);
+  .lane { position: absolute; left: 36px; right: 0; transition: top .3s var(--ease), height .3s var(--ease); }
+  .lane-h { position: absolute; top: 4px; left: 4px; display: flex; align-items: baseline; gap: 10px;
+            white-space: nowrap; max-width: calc(100% - 190px); overflow: hidden; }
+  .lane-h .ln { font-weight: 700; font-size: 12px; color: var(--dim); }
+  .lane-h .lt { font: 600 15px/1.2 var(--font-display); color: #bdb5a8; overflow: hidden; text-overflow: ellipsis; }
+  .lane-h .ls { font-size: 11px; color: var(--dim); }
+  .lane.done .ln { color: var(--done); } .lane.done .lt, .lane.live .lt { color: var(--text); }
+  .lane.live .ln { color: var(--accent); }
+  .lanes-cap { position: absolute; left: 40px; color: #6b645a; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }
+  .lanes-cap [data-i18n] { text-transform: inherit; }
+  .run-sum { position: absolute; left: 40px; display: flex; flex-direction: column; gap: 4px; }
+  .run-sum b { font: 800 28px/1 var(--font-display); letter-spacing: -.03em; color: var(--text); }
+  .run-sum span { color: var(--dim); font-size: 11px; }
+  .lane-state { position: absolute; top: 4px; right: 14px;
                 padding: 1px 8px; border-radius: 999px; background: var(--bg); font-size: 9px;
                 letter-spacing: .04em; white-space: nowrap; }
   .lane-state.discussion { color: var(--discussion); border: 1px solid color-mix(in srgb, var(--discussion) 45%, transparent); }
   .lane-state.planning { color: var(--planning); border: 1px solid color-mix(in srgb, var(--planning) 45%, transparent); }
   .phase-task-state { display: inline; margin-left: 4px; color: var(--dim); font-size: 8px; }
-  .lbtn { background: var(--card); color: var(--dim); border: 1px solid var(--line);
-          border-radius: 999px; padding: 4px 12px; font: inherit; font-size: 11px;
-          cursor: pointer; margin-right: 8px;
+  .lbtn { height: 32px; background: transparent; color: var(--text); border: 1px solid var(--line);
+          border-radius: 8px; padding: 0 13px; font: inherit; font-size: 11.5px; cursor: pointer; margin-right: 0;
           transition: color .2s var(--ease), border-color .2s var(--ease), background-color .2s var(--ease); }
-  .lbtn:hover { color: var(--text); border-color: color-mix(in srgb, var(--text) 30%, var(--line)); }
+  .lbtn:hover { background: var(--card); border-color: color-mix(in srgb, var(--text) 26%, var(--line)); }
   .lbtn:focus-visible, .filters select:focus-visible, header .run:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-  /* the one call to action in the header: brass, like the orchestrator that produced it */
-  #resBtn { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
-            background: color-mix(in srgb, var(--accent) 9%, var(--card)); font-weight: 700; }
-  #resBtn:hover { background: color-mix(in srgb, var(--accent) 16%, var(--card)); border-color: var(--accent); }
+  /* the one call to action in the header: solid brass, like the orchestrator that produced it */
+  #resBtn { color: #1a1408; background: var(--accent); border-color: var(--accent); font-weight: 700; }
+  #resBtn:hover { background: #f2c06a; border-color: #f2c06a; }
   .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-  .filters select { color: var(--text); background: var(--card); border: 1px solid var(--line);
-                    border-radius: 999px; padding: 3px 24px 3px 10px; font: inherit; font-size: 11px; }
+  .filters select { height: 32px; color: var(--text); background: transparent; border: 1px solid var(--line);
+                    border-radius: 8px; padding: 0 26px 0 12px; font: inherit; font-size: 11.5px; color-scheme: dark; }
   .filters select:focus { outline: none; border-color: var(--dim); }
   #filterCount { color: var(--dim); font-size: 11px; min-width: 38px; }
   #zoomLvl { color: var(--dim); font-size: 11px; margin-right: 12px; min-width: 34px;
              display: inline-block; text-align: right; }
 
   /* ---- lineage focus: hover/selection dims everything outside the chain */
-  .focus svg#edges path:not(.lit) { opacity: .07; animation: none; }
+  .focus svg#edges #edgePaths path:not(.lit) { opacity: .07; animation: none; }
   .focus .node:not(.lit) { opacity: .16; }
   svg#edges path.filter-hidden { display: none; }
   .node.lit-self { border-color: var(--accent) !important;
                    box-shadow: 0 0 0 1px var(--accent), 0 0 18px color-mix(in srgb, var(--accent) 25%, transparent); }
 
-  .node { position: absolute; width: var(--node-w, 212px); height: var(--node-h, 52px); background: var(--card);
-          border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px 6px 30px;
-          cursor: pointer; transition: border-color .24s var(--ease), box-shadow .24s var(--ease),
-                                        background-color .2s var(--ease), opacity .24s var(--ease); }
-  #canvas[data-density="compact"] .node { width: var(--node-w, 202px); height: var(--node-h, 48px); padding: 5px 8px 5px 27px; }
-  #canvas[data-density="compact"] .node .dot { left: 8px; width: 12px; height: 12px; }
+  .node { --st: var(--dim); position: absolute; width: var(--node-w, 212px); height: var(--node-h, 52px);
+          display: flex; flex-direction: column; gap: 3px; overflow: hidden; padding: 7px 10px;
+          background: var(--card); border: 1px solid var(--line); border-radius: 10px; cursor: pointer;
+          transition: border-color .24s var(--ease), box-shadow .24s var(--ease),
+                      background-color .24s var(--ease), opacity .24s var(--ease); }
+  #canvas[data-density="compact"] .node { padding: 6px 9px; }
   #canvas[data-density="compact"] .node .id { font-size: 11px; }
-  #canvas[data-density="compact"] .node .sub { font-size: 9px; }
-  #canvas[data-density="dense"] .node { width: var(--node-w, 194px); height: var(--node-h, 44px); padding: 5px 7px 5px 24px; }
-  #canvas[data-density="dense"] .node .dot { left: 7px; width: 10px; height: 10px; font-size: 7px; }
-  #canvas[data-density="dense"] .node .id { font-size: 10px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #canvas[data-density="dense"] .node .sub { font-size: 8.5px; }
+  #canvas:is([data-density="compact"], [data-density="dense"]) .node .sub { display: none; }
+  #canvas[data-density="dense"] .node { padding: 5px 8px; gap: 2px; }
+  #canvas[data-density="dense"] .node .id { font-size: 10px; }
+  #canvas[data-density="dense"] .node .nt { font-size: 11px; }
   #canvas[data-density="dense"] .node .elapsed { display: none; }
-  .node:hover { background: var(--card-hi); border-color: var(--dim); }
-  .node .dot { position: absolute; left: 9px; top: 50%; transform: translateY(-50%);
-               width: 13px; height: 13px; border-radius: 50%; display: flex;
-               align-items: center; justify-content: center; font-size: 9px; color: var(--bg); font-weight: 800; }
-  .node .id { font-weight: 700; font-size: 12px; letter-spacing: -.01em; }
-  .node .sub { color: var(--dim); font-size: 10px; white-space: nowrap; overflow: hidden;
-               text-overflow: ellipsis; display: block; }
-  .node .ag { color: var(--accent); font-size: 10px; }
-  .node .elapsed { position: absolute; right: 8px; top: 5px; font-size: 9px; color: var(--running); }
-  .node[data-st="done"]    { border-color: color-mix(in srgb, var(--done) 45%, var(--line)); }
-  .node[data-st="done"] .dot    { background: var(--done); }
-  /* Running/reviewing cards hold a STEADY glow — motion belongs to the edges and the
-     typing dots; a repeating box-shadow pulse makes the card text shimmer (dev, 2026-08-25). */
-  .node[data-st="running"] { border-color: var(--running); box-shadow: 0 0 14px 0 color-mix(in srgb, var(--running) 22%, transparent); }
-  .node[data-st="running"] .dot { background: var(--running); }
-  .node[data-st="ready_for_discussion"] .dot { background: var(--discussion); }
-  .node[data-st="ready_for_discussion"] { border-color: color-mix(in srgb, var(--discussion) 55%, var(--line)); }
-  .node[data-st="discussing"] { border-color: var(--discussion); box-shadow: 0 0 10px color-mix(in srgb, var(--discussion) 28%, transparent); }
-  .node[data-st="discussing"] .dot { background: var(--discussion); }
-  .node[data-st="discussing"] :is(.ag, .elapsed) { color: var(--discussion); }
-  .node[data-st="ready_to_plan"] .dot { background: var(--ready-plan); }
-  .node[data-st="ready_to_plan"] { border-color: color-mix(in srgb, var(--ready-plan) 55%, var(--line)); }
-  .node[data-st="planning"] { border-color: var(--planning); box-shadow: 0 0 14px 0 color-mix(in srgb, var(--planning) 22%, transparent); }
-  .node[data-st="planning"] .dot { background: var(--planning); }
-  .node[data-st="planning"] :is(.ag, .elapsed) { color: var(--planning); }
+  .node:hover { background: var(--card-hi); border-color: color-mix(in srgb, var(--text) 24%, var(--line)); }
+  .node .nh { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; }
+  .node .id { font-weight: 700; font-size: 12px; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .node .id small { color: var(--faint); font-weight: 400; }
+  .node .tag { flex: none; display: flex; align-items: center; gap: 4px; color: var(--st);
+               font-size: 8.5px; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
+  .node .tag [data-i18n] { text-transform: inherit; }
+  .node .tag svg { width: 10px; height: 10px; }
+  .node .tag svg path { stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+  .node .tag .beat { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: beat 1.2s ease-in-out infinite; }
+  .node .elapsed { font-size: 9.5px; letter-spacing: 0; color: var(--st); }
+  .node .nt { font: 13px/1.2 var(--font-display); color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .node .sub { color: var(--faint); font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+  .node .ag { color: var(--st); }
+  .node .nbar { display: none; }
+  .node .nbar::after { background: var(--st); }
+  /* waiting work sits back on a darker card; live work lights up in its role's colour */
+  .node:is([data-st="waiting"], [data-st="pending"], [data-st="ready_for_discussion"], [data-st="ready_to_plan"], [data-st="ready"]) { background: #141310; }
+  .node:is([data-st="waiting"], [data-st="pending"]) :is(.id, .nt) { color: #bdb5a8; }
+  .node[data-st="ready_for_discussion"] { --st: var(--discussion); border-color: color-mix(in srgb, var(--discussion) 40%, var(--line)); }
+  .node[data-st="ready_to_plan"] { --st: var(--ready-plan); border-color: color-mix(in srgb, var(--ready-plan) 45%, var(--line)); }
+  .node[data-st="ready"] { --st: var(--ready); border-color: color-mix(in srgb, var(--ready) 45%, var(--line)); }
+  .node[data-st="done"] { --st: var(--done); }
+  .node[data-st="done"] .sub { display: none; }
+  .node:is([data-st="discussing"], [data-st="planning"], [data-st="running"], [data-st="reviewing"]) .nbar { display: block; }
+  .node[data-st="discussing"] { --st: var(--discussion); background: #211a0e; border-color: var(--discussion);
+                                box-shadow: 0 0 0 4px rgba(232, 176, 75, .10), 0 10px 30px rgba(232, 176, 75, .12); }
+  .node[data-st="planning"] { --st: var(--planning); background: #18142a; border: 1px dashed var(--planning); }
   .node[data-st="planning"] .work i { background: var(--planning); }
-  .node[data-st="ready"] .dot   { background: var(--ready); box-shadow: 0 0 6px 1px color-mix(in srgb, var(--ready) 45%, transparent); }
-  .node[data-st="ready"]   { border-color: color-mix(in srgb, var(--ready) 55%, var(--line)); }
-  .node[data-st="failed"]  { border-color: var(--failed); background: color-mix(in srgb, var(--failed) 7%, var(--card)); }
-  .node[data-st="failed"] .dot  { background: var(--failed); color: #fff; }
-  .node[data-st="waiting"] .dot { background: var(--waiting); }
-  .node[data-st="waiting"] { opacity: .72; }
-  .node[data-st="reviewing"] { border-color: var(--review); box-shadow: 0 0 14px 0 color-mix(in srgb, var(--review) 22%, transparent); }
-  .node[data-st="reviewing"] .dot { background: var(--review); }
-  .node[data-st="reviewing"] .ag { color: var(--review); }
-  .node[data-st="blocked"] { border: 1px dashed color-mix(in srgb, var(--blocked) 70%, var(--line)); }
-  .node[data-st="blocked"] .dot { background: var(--blocked); }
+  .node[data-st="running"] { --st: var(--running); background: #22150e; border-color: var(--running);
+                             box-shadow: 0 0 0 4px rgba(242, 140, 82, .10), 0 10px 30px rgba(242, 140, 82, .12); }
+  .node[data-st="reviewing"] { --st: var(--review); background: #0d1822; border-color: var(--review);
+                               box-shadow: 0 0 0 4px rgba(79, 195, 247, .14), 0 10px 30px rgba(79, 195, 247, .10); }
+  .node[data-st="failed"] { --st: var(--failed); background: #221014; border-color: #7a2432; }
+  .node[data-st="blocked"] { --st: var(--blocked); background: #141310; border: 1px dashed #4e4a66; }
+  .node[data-st="blocked"] :is(.id, .nt) { color: #bdb5a8; }
   /* blocked = a QUESTION for the dev, and the dev is exactly who is looking at this screen —
      so the card itself says so; a legend colour alone asks to be decoded */
   .ask { color: var(--blocked); font-weight: 600; }
   .node[data-st="skipped"] { opacity: .38; }
-  .node[data-st="skipped"] .dot { background: var(--skipped); }
   /* Filter state comes after task-state opacity so excluded cards always look disabled. */
   .node.filtered-out, .focus .node.filtered-out { opacity: .12; pointer-events: none; }
 
   /* ---- subagent at work: orbiting ring on the dot + typing dots beside the agent name */
-  .node[data-st="running"] .dot::before { content: ''; position: absolute; inset: -5px; border-radius: 50%;
-               border: 1px dashed color-mix(in srgb, var(--running) 75%, transparent); border-left-color: transparent;
-               animation: spin 2.4s linear infinite; animation-delay: var(--epoch, 0s); }
   @keyframes spin { to { transform: rotate(360deg); } }
   .work { display: inline-block; margin-left: 4px; }
   .work i { display: inline-block; width: 3px; height: 3px; border-radius: 50%; background: var(--accent);
@@ -236,9 +256,7 @@
   .vbadge { font-size: 9.5px; margin-left: 4px; }
   .vbadge.ok { color: var(--validated); }
   .vbadge.bad { color: var(--failed); }
-  .node[data-sub="validated"] { border-color: var(--validated); animation: none; }
-  .node[data-sub="validated"] .dot { background: var(--validated); }
-  .node[data-sub="validated"] .dot::before, .node[data-sub="validated"] .dot::after { display: none; }
+  .node[data-sub="validated"] { --st: var(--validated); border-color: var(--validated); animation: none; }
 
   /* ---- one-shot flashes when an event lands on a node (start/validate/done/fail) */
   .node.flash-start { animation: fstart 1.1s ease-out; }
@@ -251,19 +269,19 @@
   @keyframes fbad   { 0% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--failed) 70%, transparent), 0 0 26px var(--failed); } }
 
   /* ---- orchestrator heartbeat in the header */
-  .orch { display: inline-flex; align-items: center; margin-right: 12px; font-size: 11px; color: var(--dim);
-          border: 1px solid var(--line); border-radius: 999px; padding: 4px 11px; white-space: nowrap;
+  .orch { display: inline-flex; align-items: center; height: 30px; font-size: 11px; color: var(--dim);
+          border: 1px solid var(--line); border-radius: 999px; padding: 0 12px; white-space: nowrap;
           transition: border-color .3s var(--ease), color .3s var(--ease); }
   .orch .hb { width: 7px; height: 7px; border-radius: 50%; background: var(--waiting); margin-right: 7px; }
-  .orch.live { color: var(--text); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+  .orch.live { color: var(--accent); border-color: #6a5222; background: #211a0e; }
   .orch.live .hb { background: var(--accent); animation: beat 1.1s ease-in-out infinite; animation-delay: var(--epoch, 0s); }
   @keyframes beat { 50% { transform: scale(1.7); opacity: .5; } }
-  .orch b { color: var(--text); margin: 0 4px; font-weight: 600; }
+  .orch b { color: inherit; margin: 0 4px; font-weight: 700; }
 
-  footer { grid-area: 3 / 1; height: 44px; display: flex; align-items: center; padding: 0 18px;
-           border-top: 1px solid var(--line); background: var(--panel); }
-  footer .lbl { color: var(--done); margin-right: 14px; font: 800 13px/1 var(--font-display); letter-spacing: -.01em; }
-  #bar { flex: 1; height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; display: flex; }
+  footer { grid-area: 3 / 1; height: 48px; display: flex; align-items: center; gap: 18px; padding: 0 24px;
+           border-top: 1px solid var(--line); background: var(--bg); }
+  footer .lbl { color: var(--text); font-weight: 700; font-size: 12px; }
+  #bar { flex: 1; height: 6px; border-radius: 999px; background: #1e1c18; overflow: hidden; display: flex; gap: 2px; }
   #bar .seg-done { background: var(--done); transition: width .5s var(--ease); }
   #bar .seg-plan { background: var(--planning); transition: width .5s var(--ease); }
   #bar .seg-review { background: var(--review); transition: width .5s var(--ease); }
@@ -272,26 +290,34 @@
                    background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
   #bar .seg-fail { background: var(--failed); transition: width .5s var(--ease); }
   @keyframes shimmer { to { background-position: -200% 0; } }
-  footer .n { margin-left: 14px; color: var(--dim); font-size: 12px; }
+  footer .n { color: var(--dim); font-size: 11.5px; }
   footer .n b { color: var(--done); }
 
   /* ---- right panel: run state + logs ONLY (task details live in the modal) */
-  aside { border-left: 1px solid var(--line); background: var(--panel); padding: 12px 14px; overflow-y: auto; }
+  aside { border-left: 1px solid var(--line); background: var(--panel); padding: 22px 20px; overflow-y: auto; }
   #sidebarToggle { position: absolute; z-index: 12; right: 330px; top: 12px; width: 24px; height: 34px;
                    padding: 0; margin: 0; border-radius: 8px 0 0 8px; background: var(--panel); }
   main.sidebar-collapsed #sidebarToggle { right: 0; }
-  #selectedTask { border: 1px solid var(--line); border-left: 3px solid var(--line); border-radius: 10px; padding: 9px 11px;
-                  background: var(--card); color: var(--dim); font-size: 11px; cursor: pointer;
+  #selectedTask { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border-radius: 12px;
+                  background: #0d1822; border: 1px solid #1b3e57; color: #bdb5a8; font-size: 11px; cursor: pointer;
                   transition: border-color .24s var(--ease), background-color .24s var(--ease); }
-  #selectedTask:hover { background: var(--card-hi); }
-  #selectedTask b { display: block; color: var(--text); font-size: 12px; margin-bottom: 2px; }
-  aside h3 { font: 700 10px/1.4 var(--font-display); color: var(--faint); margin: 18px 0 8px; text-transform: uppercase; letter-spacing: .14em; }
+  #selectedTask:hover { border-color: #24587a; }
+  #selectedTask b { display: block; font: 600 18px/1.25 var(--font-display); letter-spacing: -.02em; color: var(--text); }
+  #selectedTask .sk { display: flex; justify-content: space-between; color: var(--review); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; }
+  #selectedTask .sk span { color: var(--dim); letter-spacing: 0; text-transform: none; }
+  #selectedTask .cmd { padding: 9px 10px; border-radius: 8px; background: #0a121a; border: 1px solid #173247; color: var(--review);
+                       font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  aside h3 { font-size: 10px; font-weight: 500; color: var(--dim); margin: 22px 0 8px; text-transform: uppercase; letter-spacing: .14em; }
   aside h3:first-child { margin-top: 0; }
-  .ev { padding: 5px 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent); font-size: 11px; }
-  .ev time { color: var(--faint); margin-right: 5px; }
+  .ev { padding: 3px 0; font-size: 11px; color: #bdb5a8; }
+  .ev time { display: inline-block; width: 58px; color: #6b645a; }
+  .fcard { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; margin-bottom: 6px; border-radius: 8px;
+           background: #221014; border: 1px solid #5a1d29; font-size: 11px; color: #bdb5a8; }
+  .fcard > div { display: flex; justify-content: space-between; gap: 8px; }
+  .fcard b { color: var(--text); } .fcard > div span { color: var(--failed); white-space: nowrap; }
   [data-i18n], #events .ev b { text-transform: lowercase; }
   /* Gravidade labels are small caps-like headings: they inherit their own UPPERCASE */
-  :is(#orchNode, #planNode, #revNode) .oh [data-i18n], aside h3 [data-i18n], #results h3 [data-i18n],
+  aside h3 [data-i18n], #results h3 [data-i18n], #selectedTask .sk [data-i18n],
   #pop .pk [data-i18n] { text-transform: inherit; }
   .ev .t-task_done b { color: var(--done); } .ev .t-task_fail b { color: var(--failed); }
   .ev .t-task_start b { color: var(--running); } .ev .t-task_validate b { color: var(--validated); }
@@ -299,17 +325,16 @@
   .ev .t-task_review b, .ev .t-task_check b { color: var(--review); }
   .ev .t-task_planning b { color: var(--planning); } .ev .t-task_planned b { color: var(--ready); }
   .ev .t-task_discussion b, .ev .t-task_discussed b { color: var(--discussion); }
-  .par > span:not(.empty) { display: inline-block; background: var(--card); border: 1px solid var(--running);
-              border-radius: 8px; padding: 2px 8px; margin: 0 5px 5px 0; font-size: 11px; cursor: pointer; }
-  .par .sp { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px;
-             border: 1.5px solid var(--line); border-top-color: var(--running); vertical-align: -1px;
-             animation: spin .9s linear infinite; }
-  .par span.rev { border-color: var(--review); }
-  .par .sp.rev { border-top-color: var(--review); }
-  .par span.plan { border-color: var(--planning); }
-  .par .sp.plan { border-top-color: var(--planning); }
-  .par span.discuss { border-color: var(--discussion); }
-  .par .sp.discuss { border-top-color: var(--discussion); }
+  .par { display: flex; flex-direction: column; gap: 6px; }
+  .par > span:not(.empty) { --role: var(--running); position: relative; display: flex; align-items: center; gap: 10px;
+              padding: 8px 10px; border-radius: 8px; background: var(--card); overflow: hidden; font-size: 11px; cursor: pointer;
+              transition: background-color .2s var(--ease); }
+  .par > span:not(.empty):hover { background: var(--card-hi); }
+  .par .plan { --role: var(--planning); } .par .rev { --role: var(--review); } .par .discuss { --role: var(--discussion); }
+  .par .beat { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--role); animation: beat 1.2s ease-in-out infinite; }
+  .par b { width: 36px; overflow: hidden; text-overflow: ellipsis; }
+  .par .who { flex: 1; color: var(--text); }
+  .par .at { color: var(--dim); }
   .legend { display: grid; gap: 9px; }
   .legend > span { display: flex; align-items: center; color: var(--dim); font-size: 11px; }
   .legend i { flex-shrink: 0; width: 10px; height: 10px; border-radius: 50%; margin-right: 7px; }
@@ -317,9 +342,12 @@
   .legend i.l-back { border-top-color: var(--blocked); }
   .legend .role-dot { background: transparent; border: 1px dashed currentColor; }
   .legend .legend-break { margin-top: 5px; padding-top: 9px; border-top: 1px solid var(--line); }
-  #parTitle { display: grid; gap: 8px; margin-top: 20px; }
-  #parTitle > span { display: flex; justify-content: space-between; gap: 12px; }
-  #parTitle b { white-space: nowrap; }
+  #parTitle { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 0 0 10px; }
+  #parTitle > span { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 7px 10px;
+                     border-radius: 8px; background: var(--card); font-size: 10px; min-width: 0; }
+  #parTitle > span > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #parTitle b { font: 700 15px/1.1 var(--font-display); color: var(--text); white-space: nowrap; }
+  .legend-box { margin-top: 22px; }
   .empty { color: var(--dim); font-size: 11px; }
 
   /* ---- task popover: anchored beside the node — hover to peek, click to pin */
@@ -450,7 +478,7 @@
 </head>
 <body>
 <header>
-  <h1><svg viewBox="0 0 16 22" aria-hidden="true"><line x1="8" y1="0" x2="8" y2="9" stroke="#6e675c" stroke-width="1.2"/><path d="M8 8.5 L13 13.5 L8 21.5 L3 13.5 Z" fill="#e8b04b"/></svg>prumo</h1><select class="run" id="runName" aria-label="Select graph run" data-i18n-aria="Select graph run" onchange="selectRun(this.value)"></select>
+  <h1><svg viewBox="0 0 22 30" fill="none" aria-hidden="true"><line x1="11" y1="0" x2="11" y2="9" stroke="#e8b04b" stroke-width="1.5"/><path d="M5 10h12l-1.4 5L11 29 6.4 15z" fill="#e8b04b"/></svg>prumo</h1><select class="run" id="runName" aria-label="Select graph run" data-i18n-aria="Select graph run" onchange="selectRun(this.value)"></select>
   <button class="lbtn" id="fitBtn" onclick="toggleFitView()" title="show at 100%">100%</button>
   <button class="lbtn" id="resBtn" onclick="toggleResults()" title="run metrics (r)" data-i18n-title="run metrics (r)"><span data-i18n="results">results</span></button>
   <span id="zoomLvl">100%</span>
@@ -480,17 +508,29 @@
 <main id="main">
   <div id="viewport"><div id="canvas">
     <div id="lanes"></div>
-    <div id="orchNode"><span class="obeat"></span><span class="oh"><span data-i18n="orchestrator">orchestrator</span></span><span class="os" id="orchSub"><span data-i18n="idle">idle</span></span></div>
-    <div id="planNode"><span class="obeat"></span><span class="oh"><span data-i18n="planner">planner</span></span><span class="os" id="planSub"><span data-i18n="idle">idle</span></span></div>
-    <div id="revNode"><span class="obeat"></span><span class="oh"><span data-i18n="reviewer">reviewer</span></span><span class="os" id="revSub"><span data-i18n="idle">idle</span></span></div>
+    <div id="orchNode" class="role"><svg class="ric" viewBox="0 0 30 30" aria-hidden="true"><circle cx="15" cy="7" r="4"/><path d="M15 11v5M6 24v-4h18v4M15 16v8"/><circle class="f" cx="6" cy="26" r="2"/><circle class="f" cx="15" cy="26" r="2"/><circle class="f" cx="24" cy="26" r="2"/></svg><span class="rt"><span class="oh"><span data-i18n="orchestrator">orchestrator</span></span><span class="os" id="orchSub"><span data-i18n="idle">idle</span></span></span><span class="obeat"></span><i class="obar"></i></div>
+    <div id="planNode" class="role"><svg class="ric" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h10M4 19h6"/><circle cx="18" cy="17" r="3"/></svg><span class="rt"><span class="oh"><span data-i18n="planner">planner</span></span><span class="os" id="planSub"><span data-i18n="idle">idle</span></span></span><span class="obeat"></span><i class="obar"></i></div>
+    <div id="execNode" class="role"><svg class="ric" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3L5 14h6l-1 7 8-11h-6z"/></svg><span class="rt"><span class="oh"><span data-i18n="executor">executor</span><b class="rn" id="execCount"></b></span><span class="os" id="execSub"><span data-i18n="idle">idle</span></span></span><span class="obeat"></span><i class="obar"></i></div>
+    <div id="revNode" class="role"><svg class="ric" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M7.5 10.5l2 2 3.5-4M15.5 15.5L20 20"/></svg><span class="rt"><span class="oh"><span data-i18n="reviewer">reviewer</span></span><span class="os" id="revSub"><span data-i18n="idle">idle</span></span></span><span class="obeat"></span><i class="obar"></i></div>
     <svg id="edges">
       <defs id="edgeDefs"></defs>
+      <g id="structPaths"></g>
       <g id="edgePaths"></g>
     </svg>
     <div id="nodes"></div>
   </div></div>
   <button class="lbtn" id="sidebarToggle" aria-controls="sidebar" aria-expanded="true" onclick="toggleSidebar()"></button>
   <aside id="sidebar">
+    <h3><span data-i18n="Active agents">Active agents</span></h3>
+    <div id="parTitle"></div>
+    <div class="par" id="parallel"><span class="empty"><span data-i18n="nothing running">nothing running</span></span></div>
+    <h3><span data-i18n="Selected task">Selected task</span></h3>
+    <div id="selectedTask"><span data-i18n="No task selected">No task selected</span></div>
+    <h3><span data-i18n="Failures &amp; retries">Failures &amp; retries</span></h3>
+    <div id="failures"><span class="empty"><span data-i18n="none">none</span></span></div>
+    <h3><span data-i18n="Event log">Event log</span></h3>
+    <div id="events"></div>
+    <section class="legend-box">
     <h3><span data-i18n="Legend">Legend</span></h3>
     <div class="legend">
       <span><i style="background:var(--waiting)"></i><span data-i18n="waiting for dependencies">waiting for dependencies</span></span>
@@ -509,19 +549,12 @@
       <span class="legend-break"><i class="l-edge"></i><span data-i18n="unlocks next">unlocks next</span></span>
       <span><i class="l-edge l-back"></i><span data-i18n="dep crosses back a phase">dep crosses back a phase</span></span>
     </div>
-    <h3 id="parTitle"><span data-i18n="Running in parallel">Running in parallel</span></h3>
-    <div class="par" id="parallel"><span class="empty"><span data-i18n="nothing running">nothing running</span></span></div>
-    <h3><span data-i18n="Selected task">Selected task</span></h3>
-    <div id="selectedTask"><span data-i18n="No task selected">No task selected</span></div>
-    <h3><span data-i18n="Failures &amp; retries">Failures &amp; retries</span></h3>
-    <div id="failures"><span class="empty"><span data-i18n="none">none</span></span></div>
-    <h3><span data-i18n="Event log">Event log</span></h3>
-    <div id="events"></div>
+    </section>
   </aside>
 </main>
 <footer>
-  <span class="lbl">prumo</span>
-  <div id="bar"><div class="seg-done"></div><div class="seg-plan"></div><div class="seg-run"></div><div class="seg-review"></div><div class="seg-fail"></div></div>
+  <span class="lbl" id="doneFrac"></span>
+  <div id="bar"><div class="seg-done"></div><div class="seg-review"></div><div class="seg-run"></div><div class="seg-plan"></div><div class="seg-fail"></div></div>
   <span class="n" id="doneCount"></span>
 </footer>
 <div id="results"></div>
@@ -544,7 +577,7 @@
 </div>
 <script>
 /*PRUMO_I18N_START*/
-const PRUMO_MESSAGES = {"Legacy graph link targets a directory that migration cannot recreate: {0}":"O link do grafo legado aponta para uma pasta vazia que a migração não consegue preservar; a origem foi mantida: {0}","Legacy graph references execution data; preserve it before migration: {0}":"O grafo legado referencia dados de execução; preserve esses dados antes de migrar: {0}","Legacy workspace changed during installation: {0}":"O workspace legado mudou durante a instalação; a migração foi interrompida: {0}","Workspace changed during installation: {0}":"O workspace mudou durante a instalação: {0}","{0} global plan decisions differ from the approved plan ({1}) — run sync-plan and inspect the persisted plan before retry":"As decisões globais de {0} diferem do plano aprovado ({1}); execute sync-plan e confira o plano persistido antes do retry","Install opens a selection of detected environments; --all selects all without prompting":"Install abre a seleção dos ambientes detectados; --all seleciona todos diretamente","Interactive selection needs a terminal; use --all or choose a harness flag":"A seleção interativa precisa de um terminal; use --all ou escolha um ambiente por opção","Installation selection cancelled":"Seleção de instalação cancelada","Choose environments to install:":"Escolha os ambientes para instalar:","Arrows: move | Space: select | A: all/none | Enter: install | Esc: cancel":"Setas: mover | Espaço: marcar | A: todos/nenhum | Enter: instalar | Esc: sair","Use --all only with install and without a harness flag":"Use --all somente com install e sem selecionar um ambiente por opção","Detected environments: {0}":"Ambientes detectados: {0}","No supported environments detected; choose --claude, --kiro or --codex explicitly":"Nenhum ambiente compatível detectado; escolha --claude, --kiro ou --codex explicitamente","Choose exactly one of --claude, --kiro or --codex":"Escolha exatamente um: --claude, --kiro ou --codex","Language must be en or pt-BR":"O idioma deve ser en ou pt-BR","Prumo requires Node.js 22 or newer":"Prumo requer Node.js 22 ou superior","Changes / {0}":"Alterações / {0}","write":"gravar","remove":"remover","unchanged":"sem alterações","installed":"instalado","configured":"configurado","preview":"prévia","conflict":"conflito","pending activation":"ativação pendente","yes":"sim","no":"não","Existing data stays in place: {0}":"Os dados existentes permanecem no lugar: {0}","Migrate existing data: {0} -> {1}":"Migrar dados existentes: {0} -> {1}","Backup: {0}":"Backup: {0}","Dry run: no files changed":"Prévia: nenhum arquivo alterado","Open a new session to load Prumo and PO First":"Abra uma nova sessão para carregar Prumo e PO First","Would update global Prumo CLI to {0}":"Atualizaria a CLI global do Prumo para {0}","Updating global Prumo CLI to {0}":"Atualizando a CLI global do Prumo para {0}","Global Prumo CLI updated to {0}":"CLI global do Prumo atualizada para {0}","Global Prumo CLI update failed":"Falha ao atualizar a CLI global do Prumo","Would install global Prumo CLI {0}":"Instalaria a CLI global do Prumo {0}","Installing global Prumo CLI {0}":"Instalando a CLI global do Prumo {0}","Global Prumo CLI installed: prumo -v reports {0}":"CLI global do Prumo instalada: prumo -v mostra {0}","Global Prumo CLI installation failed":"Falha ao instalar a CLI global do Prumo","Preparing Prumo installation":"Preparando instalação do Prumo","Installing Prumo CLI":"Instalando CLI do Prumo","Installing {0}":"Instalando {0}","Prumo installed successfully":"Prumo instalado com sucesso","Preparing Prumo update":"Preparando atualização do Prumo","Updating Prumo CLI":"Atualizando CLI do Prumo","Updating {0}":"Atualizando {0}","Migrating workspace {0}":"Migrando workspace {0}","Prumo updated successfully":"Prumo atualizado com sucesso","Prumo is already up to date":"O Prumo já está atualizado","Prumo v{0} is already installed in {1}":"Prumo v{0} já está instalado em {1}","Restored {0} files; run data was not changed":"Restaurados {0} arquivos; os dados das execuções não foram alterados","Unknown command: {0}":"Comando desconhecido: {0}","Restore needs a backup directory":"A restauração requer um diretório de backup","Linked path requires an explicit installation at its real location: {0}":"O caminho vinculado exige instalação explícita no local real: {0}","Linked file cannot be replaced automatically: {0}":"O arquivo vinculado não pode ser substituído automaticamente: {0}","Malformed PO First block; repair its markers before installing":"Bloco PO First inválido; corrija os marcadores antes de instalar","Expected a settings object: {0}":"Esperado um objeto de configurações: {0}","Expected a resources array: {0}":"Esperada uma lista resources: {0}","Local outputStyle overrides PO First: {0}":"O outputStyle local substitui PO First: {0}","Unreadable local settings: {0}":"Configurações locais ilegíveis: {0}","Skill explicitly disabled; activation needs a settings change: {0}":"Skill desabilitada explicitamente; a ativação requer ajuste na configuração: {0}","Verify default resource inheritance for this Markdown agent: {0}":"Verifique a herança dos recursos padrão deste agente Markdown: {0}","File changed after installation; manual recovery required: {0}":"O arquivo mudou após a instalação; recuperação manual necessária: {0}","File changed during installation: {0}":"O arquivo mudou durante a instalação: {0}","Integrity check failed: {0}":"Falha na verificação de integridade: {0}","Choose a Prumo backup inside your home directory":"Escolha um backup Prumo dentro do seu diretório de usuário","Invalid Prumo backup":"Backup Prumo inválido","Backup target is outside the configured locations: {0}":"O destino do backup está fora dos locais configurados: {0}","File changed since this backup; restore manually: {0}":"O arquivo mudou desde este backup; restaure manualmente: {0}","Invalid backup file path":"Caminho de arquivo do backup inválido","Backup integrity check failed: {0}":"Falha de integridade no backup: {0}","PRUMO_ROOT points to \"{0}\", which does not exist":"PRUMO_ROOT aponta para \"{0}\", que não existe","PRUMO_ROOT must be a central workspace inside \"{0}\" or an existing legacy workspace":"PRUMO_ROOT deve ser um workspace central dentro de \"{0}\" ou um workspace legado existente","Select a workspace inside \"{0}\" with PRUMO_ROOT, or enter an existing legacy workspace":"Selecione um workspace dentro de \"{0}\" com PRUMO_ROOT ou entre em um workspace legado existente","no run selected — pass --run <name> or init one":"nenhuma execução selecionada — informe --run <name> ou inicialize uma","invalid run name \"{0}\" — letters, digits, \".\", \"_\" and \"-\" only (no leading dot, no path separators)":"nome de execução inválido \"{0}\" — use letras, números, \".\", \"_\" e \"-\" (sem ponto inicial ou separadores de caminho)","run \"{0}\" has no state.json":"a execução \"{0}\" não tem state.json","run \"{0}\" is locked by another command (waited {1}ms) — retry":"a execução \"{0}\" está bloqueada por outro comando (espera de {1}ms) — tente novamente","unknown task \"{0}\"":"tarefa desconhecida \"{0}\"","plan has no tasks":"o plano não contém tarefas","every task needs id and title":"toda tarefa precisa de id e title","duplicate task id {0}":"id de tarefa duplicado: {0}","task {0} depends on unknown task {1}":"a tarefa {0} depende da tarefa desconhecida {1}","plan has a dependency cycle: {0}":"o plano contém um ciclo de dependências: {0}","{0} and {1} can run in parallel but both touch \"{2}\" — add a dep between them (or --allow-overlap)":"{0} e {1} podem executar em paralelo, mas alteram \"{2}\" — adicione uma dependência entre elas (ou --allow-overlap)","active work needs a recorded agent":"trabalho ativo exige um agente registrado","begin-discussion <task>":"begin-discussion <tarefa>","finish-discussion <task> --context <discovery.json>":"finish-discussion <tarefa> --context <descoberta.json>","finish-discussion needs --context <discovery.json>":"finish-discussion exige --context <descoberta.json>","{0} is a legacy task without the discussion gate":"{0} é uma tarefa legada sem a etapa de discussão","{0} must be ready for discussion or require fresh planning":"{0} deve estar pronta para discussão ou exigir novo planejamento","{0} already has an open discussion round":"{0} já possui uma rodada de discussão aberta","{0} has no open discussion round":"{0} não possui uma rodada de discussão aberta","{0} discussion is stale — begin a fresh discussion":"a discussão de {0} está desatualizada — inicie uma nova discussão","discovery roundId and nonce must match the current discussion":"roundId e nonce da descoberta devem corresponder à discussão atual","discovery needs a fresh answered question bound to the current discussion roundId":"a descoberta exige uma pergunta nova respondida e vinculada ao roundId da discussão atual","{0} discussing (round {1}, nonce {2})":"{0} em discussão (rodada {1}, nonce {2})","{0} ready to plan (discussion {1} closed)":"{0} pronta para planejar (discussão {1} encerrada)","{0} needs a completed current discussion before the planner is dispatched":"{0} exige uma discussão atual concluída antes de disparar o planejador","plan-task <task> --agent <name> --context <discovery.json>":"plan-task <tarefa> --agent <nome> --context <descoberta.json>","plan-task needs --agent <name>":"plan-task exige --agent <nome>","plan-task needs --context <discovery.json> before the planner is dispatched":"plan-task exige --context <descoberta.json> antes de disparar o planejador","{0} already in planning with the same discovery; no new round recorded":"{0} já está em planejamento com a mesma descoberta; nenhuma rodada nova foi registrada","discovery context must be a JSON object":"o contexto de descoberta deve ser um objeto JSON","discovery research needs nonempty source and findings for each entry":"a pesquisa da descoberta exige source e findings preenchidos em cada item","discovery needs at least one answered question with channel native or chat-fallback and a positive round":"a descoberta exige ao menos uma pergunta respondida, canal native ou chat-fallback e rodada positiva","discovery coverage needs problem, affected, outcome, currentBehavior, desiredBehavior, rules, exceptions, scope and acceptance":"a cobertura da descoberta exige problem, affected, outcome, currentBehavior, desiredBehavior, rules, exceptions, scope e acceptance","discovery decisions must contain resolved question and answer entries":"as decisões da descoberta devem conter question e answer resolvidos","discovery deferred must be an array of nonempty strings":"deferred da descoberta deve ser uma lista de textos preenchidos","discovery closure must explain why no consequential gray area remains":"o encerramento da descoberta deve explicar por que não restou área cinzenta relevante","{0} must be pending, have stale planning, or have paused execution before plan-task":"{0} deve estar pendente, ter planejamento desatualizado ou execução pausada antes de plan-task","{0} execution scope needs current planning — keep work blocked, run plan-task and finish-planning, then unblock explicitly":"o escopo de execução de {0} exige planejamento atualizado — mantenha o trabalho bloqueado, execute plan-task e finish-planning e depois desbloqueie explicitamente","cannot replan without an open attempt and its original executor":"não é possível replanejar sem uma tentativa aberta e seu executor original","execution scope changed after validation — validate the current scope again":"o escopo de execução mudou após a validação — valide o escopo atual novamente","{0} task plan recorded; still blocked — unblock explicitly to resume the current attempt":"plano da tarefa {0} registrado; ainda bloqueada — desbloqueie explicitamente para retomar a tentativa atual","{0} in planning (planner {1}, round {2})":"{0} em planejamento (planejador {1}, rodada {2})","{0} in planning — {1} agent slots available for planning":"{0} em planejamento — {1} vagas de agentes disponíveis para planejar","finish-planning <task> --plan <task-plan.json>":"finish-planning <tarefa> --plan <plano-da-tarefa.json>","finish-planning needs --plan <task-plan.json>":"finish-planning exige --plan <plano-da-tarefa.json>","{0} is not in planning":"{0} não está em planejamento","planning needs an open round and its recorded planner":"o planejamento exige uma rodada aberta e seu planejador registrado","task planning is stale — run plan-task again and research the current contract":"o planejamento da tarefa está desatualizado — execute plan-task novamente e pesquise o contrato atual","task planning used stale discovery — run plan-task with the current discovery context":"o planejamento da tarefa usou uma descoberta desatualizada — execute plan-task com o contexto de descoberta atual","planning dependencies are no longer complete":"as dependências do planejamento não estão mais concluídas","{0} ready to execute (task plan recorded by {1})":"{0} pronto para executar (plano da tarefa registrado por {1})","{0} needs completed current planning — run plan-task and finish-planning before start":"{0} exige um planejamento atual concluído — execute plan-task e finish-planning antes de start","cannot resume planning without its paused round and original planner":"não é possível retomar o planejamento sem sua rodada pausada e o planejador original","task plan must be a JSON object":"o plano da tarefa deve ser um objeto JSON","task plan research needs nonempty source and findings for each entry":"a pesquisa do plano da tarefa exige source e findings preenchidos em cada item","task plan decisions must contain resolved question and answer entries; use [] when none are needed":"as decisões do plano da tarefa devem conter question e answer resolvidos; use [] quando não forem necessárias","task plan needs nonempty execution steps":"o plano da tarefa exige passos de execução preenchidos","task plan verification must map observable criteria to every validation check (1-based index, or \"inspection\")":"a verificação do plano da tarefa deve associar critérios observáveis a cada verificação de validação (índice iniciado em 1 ou \"inspection\")","task plan openQuestions must contain question, blocking boolean and optional nonempty answer":"openQuestions do plano da tarefa deve conter question, blocking booleano e answer opcional preenchido","task plan has unanswered blocking questions; resolve them with the user before execution":"o plano da tarefa tem perguntas bloqueantes sem resposta; resolva-as com o usuário antes da execução","Task discovery":"Descoberta da tarefa","Discovery research":"Pesquisa da descoberta","Discussion":"Discussão","PO First coverage":"Cobertura PO First","Discovery decisions":"Decisões da descoberta","Deferred ideas":"Ideias adiadas","round {0}":"rodada {0}","native":"nativo","chat-fallback":"conversa","problem":"problema","affected":"pessoas afetadas","outcome":"resultado","currentBehavior":"comportamento atual","desiredBehavior":"comportamento desejado","rules":"regras","exceptions":"exceções","scope":"escopo","acceptance":"aceite","{0} still waiting on: {1}":"{0} ainda depende de: {1}","{0} executors already running (max {1})":"{0} executores já estão em execução (máximo {1})","{0} agents busy (cap {1})":"{0} agentes ocupados (limite {1})","agent \"{0}\" is already on {1} — one agent per task":"o agente \"{0}\" já está em {1} — um agente por tarefa","agent \"{0}\" is already on {1} — one agent per task (or --force)":"o agente \"{0}\" já está em {1} — um agente por tarefa (ou --force)","init needs --plan <plan.json>":"init requer --plan <plan.json>","init needs --run <name>":"init requer --run <name>","run \"{0}\" already exists (use --force to overwrite)":"a execução \"{0}\" já existe (use --force para sobrescrever)","run \"{0}\" initialised: {1} tasks, {2} executors + 1 review slot (cap {3}){4}":"execução \"{0}\" inicializada: {1} tarefas, {2} executores + 1 vaga de revisão (limite {3}){4}","sync-plan needs --plan <plan.json> once":"sync-plan requer --plan <plan.json> na primeira chamada","sync-plan is additive: plan removed {0}":"sync-plan é aditivo: o plano removeu {0}","sync-plan task {0} changed: {1}":"sync-plan: tarefa {0} alterada: {1}","sync-plan warning: {0} blockReason cites {1}, absent from persisted deps":"sync-plan aviso: {0} blockReason cita {1}, ausentes das dependências persistidas","sync-plan warning: {0} blockReason cites {1}, absent from planned deps":"sync-plan aviso: {0} blockReason cita {1}, ausentes das dependências planejadas","sync-plan strong warning: {0} blockReason cites {1}, and cited tasks depend on it":"sync-plan aviso forte: {0} blockReason cita {1}, e as tarefas citadas dependem dela","sync-plan info: new leaf task {0} has no dependents":"sync-plan informação: a nova tarefa folha {0} não tem dependentes","sync-plan warning: new leaf task {0} is cited by blocked task {1}":"sync-plan aviso: a nova tarefa folha {0} é citada pela tarefa bloqueada {1}","no state changes; plan differs for preserved tasks: {0}. Use refresh-contract for an approved validation change; do not fail/retry completed work to refresh a contract.":"nenhum estado alterado; o plano difere nas tarefas concluídas preservadas: {0}. Crie uma tarefa de acompanhamento; não reescreva o histórico concluído.","run \"{0}\" already matches plan ({1} tasks)":"a execução \"{0}\" já corresponde ao plano ({1} tarefas)","run \"{0}\" synced: +{1}, updated {2}, preserved {3}, total {4}":"execução \"{0}\" sincronizada: +{1}, atualizadas {2}, preservadas {3}, total {4}","(no runs)":"(nenhuma execução)","{0}  {1}/{2} done  (updated {3})":"{0}  {1}/{2} concluídas  (atualização {3})","run: {0}  plan: {1}  {2}/{3} done":"execução: {0}  plano: {1}  {2}/{3} concluídas","states: {0}":"estados: {0}","\n(no phase)":"\n(sem fase)","\n[prumo] {0}/{1} executors, {2} in review (cap {3}) — dispatch at most {4} now":"\n[prumo] {0}/{1} executores, {2} em revisão (limite {3}) — dispare no máximo {4} agora","awaiting review: {0}":"aguardando revisão: {0}","start needs --agent <name>":"start requer --agent <name>","review needs --agent <name>":"review requer --agent <name>","{0} is {1}, not pending":"{0} está em {1}, e não em pending","{0} is {1}, not running":"{0} está em {1}, e não em running","{0} is {1}, not failed":"{0} está em {1}, e não em failed","approved plan no longer contains {0} — inspect it before retry":"o plano aprovado não contém mais {0} — confira-o antes de tentar novamente","{0} contract differs from the approved plan ({1}) — run sync-plan and inspect the persisted contract before retry":"o contrato de {0} difere do plano aprovado ({1}) — execute sync-plan e confira o contrato persistido antes de tentar novamente","{0} is {1}, not blocked":"{0} está em {1}, e não em blocked","{0} is {1}, not running or reviewing":"{0} está em {1}, e não em running ou reviewing","{0} is not running or reviewing":"{0} não está em running ou reviewing","{0} running (agent {1}, attempt {2})":"{0} em execução (agente {1}, tentativa {2})","\"{0}\" wrote {1} — a reviewer must be a different agent (or --force)":"\"{0}\" implementou {1} — o revisor deve ser outro agente (ou --force)","{0} in review (reviewer {1})":"{0} em revisão (revisor {1})","completed task contracts are immutable; create an explicit follow-up task":"contratos de tarefas concluídas são imutáveis; crie uma tarefa posterior explícita","refresh-contract needs --plan <approved-plan.json>":"refresh-contract requer --plan <approved-plan.json>","approved plan must contain exactly one task {0}":"o plano aprovado deve conter exatamente uma tarefa {0}","{0} validation contract already matches; state and attempt unchanged":"o contrato de validação de {0} já corresponde; estado e tentativa preservados","{0} contract refreshed; state {1}, attempt {2} preserved; previous validation receipts are stale":"contrato de {0} atualizado; estado {1} e tentativa {2} preservados; recibos anteriores de validação estão desatualizados","pass --ok or --failed":"informe --ok ou --failed","validation evidence must not be empty":"a evidência de validação não pode estar vazia","passing validation requires an independent reviewer":"a aprovação da validação exige um revisor independente","passing validation requires the current independent reviewer":"a aprovação da validação exige o revisor independente atual","task changed during validation; result discarded — validate the current attempt again":"a tarefa mudou durante a validação; resultado descartado — valide novamente a tentativa atual","{0} validation recorded by {1}: {2}":"validação de {0} registrada por {1}: {2}","{0} has no passing validation for the current attempt — validate first":"{0} não tem validação aprovada na tentativa atual — valide primeiro","{0} was validated by the {1}, not a reviewer — run `review {2} --agent <name>` first":"{0} foi validada por {1}, e não por um revisor — execute `review {2} --agent <name>` primeiro","{0} done — unlocked: {1}":"{0} concluída — liberadas: {1}","{0} done":"{0} concluída","{0} failed (attempt {1}): {2}":"{0} falhou (tentativa {1}): {2}","{0} already has {1} attempts (cap {2}) — escalate instead, or --force":"{0} já tem {1} tentativas (limite {2}) — escale a decisão ou use --force","{0} back to pending (attempt {1} when started)":"{0} voltou a pending (tentativa {1} ao iniciar)","completed tasks cannot be paused":"tarefas concluídas não podem ser pausadas","{0} blocked: {1}":"{0} bloqueada: {1}","cannot restore stateBeforeBlock; inspect the recorded history before repairing this task":"não foi possível restaurar stateBeforeBlock; confira o histórico registrado antes de reparar esta tarefa","direct review requires a paused active attempt; pending/failed tasks cannot bypass start/retry":"revisão direta exige uma tentativa ativa pausada; tarefas pending/failed não podem pular start/retry","cannot resume without an open attempt and its original executor":"não é possível retomar sem uma tentativa aberta e seu executor original","{0} unblocked to {1}; attempt {2} preserved; no agent dispatched":"{0} desbloqueada para {1}; tentativa {2} preservada; nenhum agente disparado","{0} already done":"{0} já está concluída","{0} skipped: {1}":"{0} pulada: {1}","usage: engine.mjs <{0}> — see file header for details":"uso: engine.mjs <{0}> — consulte o cabeçalho do arquivo","validationMode must be functional or inspection":"validationMode deve ser functional ou inspection","inspection requires inspectionReason explaining why runtime behavior is unaffected":"inspection exige inspectionReason explicando por que o comportamento de execução não foi afetado","validation contract must not be empty":"o contrato de validação não pode estar vazio","each validation step needs nonempty run and expect":"cada passo de validação exige run e expect preenchidos","step kind must be static or functional":"kind do passo deve ser static ou functional","cacheable must be true or false":"cacheable deve ser true ou false","only static validation steps can be cacheable":"somente passos de validação static podem usar cacheable","cachePaths requires cacheable: true":"cachePaths exige cacheable: true","cachePaths must be a nonempty array of safe relative paths":"cachePaths deve ser uma lista não vazia de caminhos relativos seguros","expectedExitCodes must be a nonempty array of integer process exit codes from 0 to 255":"expectedExitCodes deve ser uma lista não vazia de códigos de saída inteiros entre 0 e 255","env must map environment variable names to string values":"env deve mapear nomes de variáveis de ambiente para valores de texto","shell must be an executable name or path":"shell deve ser o nome ou caminho de um executável","timeoutMs must be an integer from 0 to 2147483647; 0 explicitly disables the deadline":"timeoutMs deve ser um inteiro de 0 a 2147483647; 0 desabilita explicitamente o prazo","Unix environment assignment does not run in cmd.exe; move NAME=value into step.env or declare step.shell explicitly":"atribuição de ambiente Unix não executa em cmd.exe; mova NAME=value para step.env ou declare step.shell explicitamente","functional task requires an executable functional check; lint, build, typecheck or prose alone cannot approve it":"tarefa funcional exige verificação funcional executável; lint, build, typecheck ou texto isolados não podem aprová-la","executable validation needs an absolute --cwd or step.cwd":"validação executável exige --cwd ou step.cwd absoluto","validation cwd is not a directory: {0}":"cwd da validação não é um diretório: {0}","running check {0}/{1}; timeout {2}; expected exit {3}":"executando verificação {0}/{1}; prazo {2}; saída esperada {3}","check {0}/{1} ({2}): exit {3}":"verificação {0}/{1} ({2}): saída {3}","reused check {0}/{1} (static, unchanged workspace)":"verificação {0}/{1} reutilizada (static, árvore de trabalho inalterada)","validation lacks an execution receipt for this contract — validate again":"a validação não tem recibo de execução deste contrato — valide novamente","contract was refreshed after validation — validate the current contract again":"o contrato mudou após a validação — valide novamente o contrato atual","validation receipt has no checks":"o recibo de validação não contém verificações","not all validation commands completed":"nem todos os comandos de validação foram concluídos","validation check {0}/{1} ({2}) failed: {3}; command: {4} — functional failures cannot be replaced by lint":"a verificação {0}/{1} ({2}) falhou: {3}; comando: {4} — falhas funcionais não podem ser substituídas por lint","auto-sync failed: {0}":"falha na sincronização automática: {0}","dashboard on http://localhost:{0} (run: {1}, auto-sync: {2})":"dashboard em http://localhost:{0} (execução: {1}, sincronização automática: {2})","port {0} is already in use — an earlier dashboard is likely still serving http://localhost:{1} (it follows CURRENT). To run a SECOND one: --port <other>{2}":"a porta {0} já está em uso — um dashboard anterior pode estar atendendo em http://localhost:{1} (acompanha CURRENT). Para abrir outro: --port <other>{2}","no run":"nenhuma execução","run \"{0}\" not found":"execução \"{0}\" não encontrada","not found":"não encontrado","Language":"Idioma","Select graph run":"Selecionar execução","Filter tasks":"Filtrar tarefas","all tasks":"todas","completed":"concluídas","incomplete":"incompletas","ignored":"ignoradas","dependencies off":"dependências desligadas","dependencies on":"dependências ligadas","filter results {0}/{1}":"resultado do filtro {0}/{1}","fit to screen (0)":"ajustar à tela (0)","show at 100%":"mostrar em 100%","run metrics (r)":"métricas da execução (r)","fit":"ajustar","results":"resultados","orchestrator":"orquestrador","reviewer":"revisor","planner":"planejador","idle":"inativo","Legend":"Legenda","Selected task":"Tarefa selecionada","No task selected":"Nenhuma tarefa selecionada","Collapse sidebar":"Recolher lateral","Open sidebar":"Abrir lateral","executor":"executor","discuss · orchestrator":"discussão · orquestrador","waiting for dependencies":"aguardando dependências","discussion · orchestrator":"discussão · orquestrador","ready for discussion":"pronto para discussão","ready_for_discussion":"pronto para discussão","discussing":"em discussão","discussed":"discussão concluída","Actively discussing":"Discutindo","discussing {0}: {1}":"discutindo {0}: {1}","planning · planner":"planejamento · planejador","execution · executor":"execução · executor","review · reviewer":"revisão · revisor","started":"iniciado","passed":"passou","reused":"reutilizado","progress needs the current executor agent":"o progresso exige o agente executor atual","progress step must be an index in the current task plan":"o passo de progresso deve pertencer ao plano atual da tarefa","progress cannot move backwards within an attempt":"o progresso não pode retroceder dentro de uma tentativa","done":"concluído","running":"em execução","in review":"em revisão","reviewing":"em revisão","ready":"pronto para executar","ready_to_plan":"pronto para planejamento","ready for planning":"pronto para planejamento","planning":"em planejamento","ready for execution":"pronto para executar","waiting":"aguardando","failed":"falhou","blocked":"bloqueado","pending":"pendente","skipped":"pulado","unlocks next":"libera a próxima tarefa","dep crosses back a phase":"dependência de fase posterior","✓ = validated, awaiting done":"✓ = validado, aguardando conclusão","Running in parallel":"Executando em paralelo","nothing running":"nenhuma tarefa em execução","Failures & retries":"Falhas e novas tentativas","none":"nenhum","Event log":"Histórico de eventos","✋ waiting on you":"✋ aguardando sua decisão","✗ rejected":"✗ reprovado","✓ validated":"✓ validado","✗ rework":"✗ retrabalho","dispatching {0}/{1}":"coordenando {0}/{1}","judging {0}":"revisando {0}","planning {0}: {1}":"planejando {0}: {1}","complete":"concluído","orch":"orquestrador","orchestrator idle":"orquestrador inativo","Working":"Executando","review":"revisão","attempt(s)":"tentativa(s)","Phase":"Fase","Depends on":"Depende de","Unlocks":"Libera","Validation contract":"Contrato de validação","Planner":"Planejador","Recorded task plan":"Plano registrado da tarefa","Research":"Pesquisa","Decisions":"Decisões","Execution steps":"Passos de execução","Verification":"Verificação","Questions":"Perguntas","check {0}":"verificação {0}","blocking":"bloqueante","non-blocking":"não bloqueante","Planning attempts":"Tentativas de planejamento","Blocked":"Bloqueado","Skipped":"Pulado","Attempts":"Tentativas","Validations":"Validações","Notes":"Notas","FAILED":"REPROVADO","click the task to pin · moves away, closes":"clique na tarefa para fixar · afastar o cursor fecha","← graph":"← grafo","← back to the graph":"← voltar ao grafo","Wall clock":"Tempo decorrido","Agent time":"Tempo dos agentes","Parallel gain":"Ganho com paralelismo","Critical path":"Caminho crítico","Review share":"Parcela de revisão","Planning share":"Parcela de planejamento","Retries":"Novas tentativas","so far":"até agora","init → last task":"início → última tarefa","sum of recorded agent intervals":"soma dos intervalos registrados dos agentes","{0} executors + review headroom":"{0} executores + capacidade de revisão","{0} total agent slots":"{0} vagas de agentes no total","{0}% of wall clock":"{0}% do tempo decorrido","{0} verdicts · {1} rejected":"{0} pareceres · {1} reprovados","blocked {0}":"bloqueado por {0}","no human blocks":"sem bloqueios humanos","Agent time: building vs verifying":"Tempo dos agentes: executar e verificar","Agent time: planning, building and verifying":"Tempo dos agentes: planejar, executar e verificar","planning {0}":"planejamento {0}","exec {0}":"execução {0}","review {0}":"revisão {0}","Per task":"Por tarefa","Task":"Tarefa","Planning":"Planejamento","Actively planning":"Planejando","Reviewing":"Revisando","Exec":"Execução","Review":"Revisão","build vs verify":"executar e verificar","plan / execute / review":"planejar / executar / revisar","Queued":"Na fila","Att.":"Tent.","Verdicts":"Pareceres","gate only":"somente validação","What the numbers support":"O que os números mostram","Not enough finished work to say anything yet.":"Ainda não há trabalho concluído suficiente para analisar.","The dependency chain limits parallel progress.":"A cadeia de dependências limita o progresso paralelo.","Critical path: {0}; elapsed: {1}; share: {2}%. Chain: {3}.":"Caminho crítico: {0}; tempo decorrido: {1}; parcela: {2}%. Cadeia: {3}.","Inspect time outside the critical path.":"Confira o tempo fora do caminho crítico.","Elapsed: {0}; critical path: {1}; difference: {2}. Check queues, blocks and retries before changing capacity.":"Tempo decorrido: {0}; caminho crítico: {1}; diferença: {2}. Confira filas, bloqueios e tentativas antes de mudar a capacidade.","Review durations are similar.":"Os tempos de revisão são semelhantes.","Review durations vary across tasks.":"Os tempos de revisão variam entre as tarefas.","Mean review: {0}; variation: {1}%. Timing alone does not establish coverage or a cause.":"Revisão média: {0}; variação: {1}%. O tempo, isoladamente, não comprova cobertura ou causa.","Review outcomes":"Resultados das revisões","{0} rejections in {1} verdicts. Review used {2}% of agent time. Inspect the evidence before changing the review policy.":"{0} reprovações em {1} pareceres. A revisão usou {2}% do tempo dos agentes. Confira as evidências antes de mudar a política de revisão.","Derived from attempt timestamps and events. Tokens belong to the harness and are not measured by this engine.":"Derivado dos horários das tentativas e eventos. Tokens pertencem ao ambiente de agentes e não são medidos por este motor.","Run still active; figures may change.":"Execução ainda ativa; os números podem mudar.","start":"início","planned":"planejada","superseded":"substituído","validate":"validação","fail":"falha","retry":"nova tentativa","block":"bloqueio","unblock":"desbloqueio","skip":"pular","note":"nota","init":"inicialização","plan_sync":"sincronização do plano","plan_sync_audit":"auditoria da sincronização do plano","contract_refresh":"atualização do contrato","contract_refreshed":"contrato atualizado","validation_started":"validação iniciada","block_updated":"bloqueio atualizado","No Prumo installations found; install an environment first":"Nenhuma instalação do Prumo encontrada; instale um ambiente primeiro","Invalid Prumo installation registry; existing installations were not changed":"Registro de instalações do Prumo inválido; as instalações existentes não foram alteradas","Invalid Prumo update request":"Solicitação de atualização do Prumo inválida","Prumo update was interrupted":"A atualização do Prumo foi interrompida","Update automatically selects installed environments; do not select a harness":"A atualização seleciona automaticamente os ambientes instalados; não selecione um ambiente","Updating {0} with Prumo {1}":"Atualizando {0} com Prumo {1}","phase discussion":"discussão da fase","phase planning":"planejamento da fase","phase discussion {0}: {1} tasks":"discussão da fase {0}: {1} tarefas","execution locked":"execução bloqueada","phase execution locked":"execução da fase bloqueada","discussion guard: inspect local context and resolve decisions only; planner researches how, executor delivers every task":"proteção da discussão: apenas inspecione o contexto local e resolva decisões; o planejador pesquisa como fazer e o executor entrega todas as tarefas","discussion guard: inspect local context and resolve decisions only; planner researches how, executor delivers the task":"proteção da discussão: apenas inspecione o contexto local e resolva decisões; o planejador pesquisa como fazer e o executor entrega a tarefa","planner guard: read-only research may determine how to execute; task results and acceptance evidence belong to the executor":"proteção do planejamento: pesquisa somente leitura pode determinar como executar; resultados e evidências de aceite pertencem ao executor","discovery needs an executionBoundary object":"a descoberta exige um objeto executionBoundary","discovery executionBoundary.deferredToExecutor must be an array of task IDs":"executionBoundary.deferredToExecutor da descoberta deve ser uma lista de IDs de tarefas","discovery executionBoundary.prematureTaskWork must contain task and action entries":"executionBoundary.prematureTaskWork da descoberta deve conter tarefa e ação em cada item","discovery must defer every discussion target to its executor; planner research cannot deliver the task":"a descoberta deve adiar cada alvo da discussão para seu executor; a pesquisa do planejador não pode entregar a tarefa","premature task work must identify a current discussion target":"trabalho prematuro deve identificar um alvo da discussão atual","premature task work was reported; stop and obtain explicit user approval, then repeat with --accept-premature-work so the executor still redoes it":"foi relatado trabalho prematuro; pare e obtenha aprovação explícita do usuário, depois repita com --accept-premature-work para que o executor ainda refaça o trabalho","phase planning {0}: {1} tasks":"planejamento da fase {0}: {1} tarefas","awaiting phase plan":"aguardando plano da fase","awaiting phase adoption":"aguardando adoção da fase","unresolved later-phase input":"entrada de fase posterior não resolvida","unresolved input":"entrada não resolvida","validated input":"entrada validada","waived input":"entrada dispensada","Phase plan":"Plano da fase","Update incomplete; resolve the reported issues and run prumo update again":"Atualização incompleta; resolva as pendências informadas e execute prumo update novamente","Migration deferred: finish or resume started legacy tasks before planning new work":"Migração adiada: conclua ou retome as tarefas legadas já iniciadas antes de planejar novos trabalhos","awaiting run migration":"aguardando migração do plano","Reading mode":"Modo de leitura","lean":"enxuto","detail":"detalhe","Expand":"Expandir","Collapse":"Recolher","Close":"Fechar","Summary":"Resumo","To pass":"Para passar","Journey":"Jornada","see detail →":"ver detalhe →","No summary recorded — the detail view has the full text.":"Sem resumo registrado — o detalhe traz o texto completo.","unlocks":"libera","Chosen approach":"Caminho escolhido"}
+const PRUMO_MESSAGES = {"Legacy graph link targets a directory that migration cannot recreate: {0}":"O link do grafo legado aponta para uma pasta vazia que a migração não consegue preservar; a origem foi mantida: {0}","Legacy graph references execution data; preserve it before migration: {0}":"O grafo legado referencia dados de execução; preserve esses dados antes de migrar: {0}","Legacy workspace changed during installation: {0}":"O workspace legado mudou durante a instalação; a migração foi interrompida: {0}","Workspace changed during installation: {0}":"O workspace mudou durante a instalação: {0}","{0} global plan decisions differ from the approved plan ({1}) — run sync-plan and inspect the persisted plan before retry":"As decisões globais de {0} diferem do plano aprovado ({1}); execute sync-plan e confira o plano persistido antes do retry","Install opens a selection of detected environments; --all selects all without prompting":"Install abre a seleção dos ambientes detectados; --all seleciona todos diretamente","Interactive selection needs a terminal; use --all or choose a harness flag":"A seleção interativa precisa de um terminal; use --all ou escolha um ambiente por opção","Installation selection cancelled":"Seleção de instalação cancelada","Choose environments to install:":"Escolha os ambientes para instalar:","Arrows: move | Space: select | A: all/none | Enter: install | Esc: cancel":"Setas: mover | Espaço: marcar | A: todos/nenhum | Enter: instalar | Esc: sair","Use --all only with install and without a harness flag":"Use --all somente com install e sem selecionar um ambiente por opção","Detected environments: {0}":"Ambientes detectados: {0}","No supported environments detected; choose --claude, --kiro or --codex explicitly":"Nenhum ambiente compatível detectado; escolha --claude, --kiro ou --codex explicitamente","Choose exactly one of --claude, --kiro or --codex":"Escolha exatamente um: --claude, --kiro ou --codex","Language must be en or pt-BR":"O idioma deve ser en ou pt-BR","Prumo requires Node.js 22 or newer":"Prumo requer Node.js 22 ou superior","Changes / {0}":"Alterações / {0}","write":"gravar","remove":"remover","unchanged":"sem alterações","installed":"instalado","configured":"configurado","preview":"prévia","conflict":"conflito","pending activation":"ativação pendente","yes":"sim","no":"não","Existing data stays in place: {0}":"Os dados existentes permanecem no lugar: {0}","Migrate existing data: {0} -> {1}":"Migrar dados existentes: {0} -> {1}","Backup: {0}":"Backup: {0}","Dry run: no files changed":"Prévia: nenhum arquivo alterado","Open a new session to load Prumo and PO First":"Abra uma nova sessão para carregar Prumo e PO First","Would update global Prumo CLI to {0}":"Atualizaria a CLI global do Prumo para {0}","Updating global Prumo CLI to {0}":"Atualizando a CLI global do Prumo para {0}","Global Prumo CLI updated to {0}":"CLI global do Prumo atualizada para {0}","Global Prumo CLI update failed":"Falha ao atualizar a CLI global do Prumo","Would install global Prumo CLI {0}":"Instalaria a CLI global do Prumo {0}","Installing global Prumo CLI {0}":"Instalando a CLI global do Prumo {0}","Global Prumo CLI installed: prumo -v reports {0}":"CLI global do Prumo instalada: prumo -v mostra {0}","Global Prumo CLI installation failed":"Falha ao instalar a CLI global do Prumo","Preparing Prumo installation":"Preparando instalação do Prumo","Installing Prumo CLI":"Instalando CLI do Prumo","Installing {0}":"Instalando {0}","Prumo installed successfully":"Prumo instalado com sucesso","Preparing Prumo update":"Preparando atualização do Prumo","Updating Prumo CLI":"Atualizando CLI do Prumo","Updating {0}":"Atualizando {0}","Migrating workspace {0}":"Migrando workspace {0}","Prumo updated successfully":"Prumo atualizado com sucesso","Prumo is already up to date":"O Prumo já está atualizado","Prumo v{0} is already installed in {1}":"Prumo v{0} já está instalado em {1}","Restored {0} files; run data was not changed":"Restaurados {0} arquivos; os dados das execuções não foram alterados","Unknown command: {0}":"Comando desconhecido: {0}","Restore needs a backup directory":"A restauração requer um diretório de backup","Linked path requires an explicit installation at its real location: {0}":"O caminho vinculado exige instalação explícita no local real: {0}","Linked file cannot be replaced automatically: {0}":"O arquivo vinculado não pode ser substituído automaticamente: {0}","Malformed PO First block; repair its markers before installing":"Bloco PO First inválido; corrija os marcadores antes de instalar","Expected a settings object: {0}":"Esperado um objeto de configurações: {0}","Expected a resources array: {0}":"Esperada uma lista resources: {0}","Local outputStyle overrides PO First: {0}":"O outputStyle local substitui PO First: {0}","Unreadable local settings: {0}":"Configurações locais ilegíveis: {0}","Skill explicitly disabled; activation needs a settings change: {0}":"Skill desabilitada explicitamente; a ativação requer ajuste na configuração: {0}","Verify default resource inheritance for this Markdown agent: {0}":"Verifique a herança dos recursos padrão deste agente Markdown: {0}","File changed after installation; manual recovery required: {0}":"O arquivo mudou após a instalação; recuperação manual necessária: {0}","File changed during installation: {0}":"O arquivo mudou durante a instalação: {0}","Integrity check failed: {0}":"Falha na verificação de integridade: {0}","Choose a Prumo backup inside your home directory":"Escolha um backup Prumo dentro do seu diretório de usuário","Invalid Prumo backup":"Backup Prumo inválido","Backup target is outside the configured locations: {0}":"O destino do backup está fora dos locais configurados: {0}","File changed since this backup; restore manually: {0}":"O arquivo mudou desde este backup; restaure manualmente: {0}","Invalid backup file path":"Caminho de arquivo do backup inválido","Backup integrity check failed: {0}":"Falha de integridade no backup: {0}","PRUMO_ROOT points to \"{0}\", which does not exist":"PRUMO_ROOT aponta para \"{0}\", que não existe","PRUMO_ROOT must be a central workspace inside \"{0}\" or an existing legacy workspace":"PRUMO_ROOT deve ser um workspace central dentro de \"{0}\" ou um workspace legado existente","Select a workspace inside \"{0}\" with PRUMO_ROOT, or enter an existing legacy workspace":"Selecione um workspace dentro de \"{0}\" com PRUMO_ROOT ou entre em um workspace legado existente","no run selected — pass --run <name> or init one":"nenhuma execução selecionada — informe --run <name> ou inicialize uma","invalid run name \"{0}\" — letters, digits, \".\", \"_\" and \"-\" only (no leading dot, no path separators)":"nome de execução inválido \"{0}\" — use letras, números, \".\", \"_\" e \"-\" (sem ponto inicial ou separadores de caminho)","run \"{0}\" has no state.json":"a execução \"{0}\" não tem state.json","run \"{0}\" is locked by another command (waited {1}ms) — retry":"a execução \"{0}\" está bloqueada por outro comando (espera de {1}ms) — tente novamente","unknown task \"{0}\"":"tarefa desconhecida \"{0}\"","plan has no tasks":"o plano não contém tarefas","every task needs id and title":"toda tarefa precisa de id e title","duplicate task id {0}":"id de tarefa duplicado: {0}","task {0} depends on unknown task {1}":"a tarefa {0} depende da tarefa desconhecida {1}","plan has a dependency cycle: {0}":"o plano contém um ciclo de dependências: {0}","{0} and {1} can run in parallel but both touch \"{2}\" — add a dep between them (or --allow-overlap)":"{0} e {1} podem executar em paralelo, mas alteram \"{2}\" — adicione uma dependência entre elas (ou --allow-overlap)","active work needs a recorded agent":"trabalho ativo exige um agente registrado","begin-discussion <task>":"begin-discussion <tarefa>","finish-discussion <task> --context <discovery.json>":"finish-discussion <tarefa> --context <descoberta.json>","finish-discussion needs --context <discovery.json>":"finish-discussion exige --context <descoberta.json>","{0} is a legacy task without the discussion gate":"{0} é uma tarefa legada sem a etapa de discussão","{0} must be ready for discussion or require fresh planning":"{0} deve estar pronta para discussão ou exigir novo planejamento","{0} already has an open discussion round":"{0} já possui uma rodada de discussão aberta","{0} has no open discussion round":"{0} não possui uma rodada de discussão aberta","{0} discussion is stale — begin a fresh discussion":"a discussão de {0} está desatualizada — inicie uma nova discussão","discovery roundId and nonce must match the current discussion":"roundId e nonce da descoberta devem corresponder à discussão atual","discovery needs a fresh answered question bound to the current discussion roundId":"a descoberta exige uma pergunta nova respondida e vinculada ao roundId da discussão atual","{0} discussing (round {1}, nonce {2})":"{0} em discussão (rodada {1}, nonce {2})","{0} ready to plan (discussion {1} closed)":"{0} pronta para planejar (discussão {1} encerrada)","{0} needs a completed current discussion before the planner is dispatched":"{0} exige uma discussão atual concluída antes de disparar o planejador","plan-task <task> --agent <name> --context <discovery.json>":"plan-task <tarefa> --agent <nome> --context <descoberta.json>","plan-task needs --agent <name>":"plan-task exige --agent <nome>","plan-task needs --context <discovery.json> before the planner is dispatched":"plan-task exige --context <descoberta.json> antes de disparar o planejador","{0} already in planning with the same discovery; no new round recorded":"{0} já está em planejamento com a mesma descoberta; nenhuma rodada nova foi registrada","discovery context must be a JSON object":"o contexto de descoberta deve ser um objeto JSON","discovery research needs nonempty source and findings for each entry":"a pesquisa da descoberta exige source e findings preenchidos em cada item","discovery needs at least one answered question with channel native or chat-fallback and a positive round":"a descoberta exige ao menos uma pergunta respondida, canal native ou chat-fallback e rodada positiva","discovery coverage needs problem, affected, outcome, currentBehavior, desiredBehavior, rules, exceptions, scope and acceptance":"a cobertura da descoberta exige problem, affected, outcome, currentBehavior, desiredBehavior, rules, exceptions, scope e acceptance","discovery decisions must contain resolved question and answer entries":"as decisões da descoberta devem conter question e answer resolvidos","discovery deferred must be an array of nonempty strings":"deferred da descoberta deve ser uma lista de textos preenchidos","discovery closure must explain why no consequential gray area remains":"o encerramento da descoberta deve explicar por que não restou área cinzenta relevante","{0} must be pending, have stale planning, or have paused execution before plan-task":"{0} deve estar pendente, ter planejamento desatualizado ou execução pausada antes de plan-task","{0} execution scope needs current planning — keep work blocked, run plan-task and finish-planning, then unblock explicitly":"o escopo de execução de {0} exige planejamento atualizado — mantenha o trabalho bloqueado, execute plan-task e finish-planning e depois desbloqueie explicitamente","cannot replan without an open attempt and its original executor":"não é possível replanejar sem uma tentativa aberta e seu executor original","execution scope changed after validation — validate the current scope again":"o escopo de execução mudou após a validação — valide o escopo atual novamente","{0} task plan recorded; still blocked — unblock explicitly to resume the current attempt":"plano da tarefa {0} registrado; ainda bloqueada — desbloqueie explicitamente para retomar a tentativa atual","{0} in planning (planner {1}, round {2})":"{0} em planejamento (planejador {1}, rodada {2})","{0} in planning — {1} agent slots available for planning":"{0} em planejamento — {1} vagas de agentes disponíveis para planejar","finish-planning <task> --plan <task-plan.json>":"finish-planning <tarefa> --plan <plano-da-tarefa.json>","finish-planning needs --plan <task-plan.json>":"finish-planning exige --plan <plano-da-tarefa.json>","{0} is not in planning":"{0} não está em planejamento","planning needs an open round and its recorded planner":"o planejamento exige uma rodada aberta e seu planejador registrado","task planning is stale — run plan-task again and research the current contract":"o planejamento da tarefa está desatualizado — execute plan-task novamente e pesquise o contrato atual","task planning used stale discovery — run plan-task with the current discovery context":"o planejamento da tarefa usou uma descoberta desatualizada — execute plan-task com o contexto de descoberta atual","planning dependencies are no longer complete":"as dependências do planejamento não estão mais concluídas","{0} ready to execute (task plan recorded by {1})":"{0} pronto para executar (plano da tarefa registrado por {1})","{0} needs completed current planning — run plan-task and finish-planning before start":"{0} exige um planejamento atual concluído — execute plan-task e finish-planning antes de start","cannot resume planning without its paused round and original planner":"não é possível retomar o planejamento sem sua rodada pausada e o planejador original","task plan must be a JSON object":"o plano da tarefa deve ser um objeto JSON","task plan research needs nonempty source and findings for each entry":"a pesquisa do plano da tarefa exige source e findings preenchidos em cada item","task plan decisions must contain resolved question and answer entries; use [] when none are needed":"as decisões do plano da tarefa devem conter question e answer resolvidos; use [] quando não forem necessárias","task plan needs nonempty execution steps":"o plano da tarefa exige passos de execução preenchidos","task plan verification must map observable criteria to every validation check (1-based index, or \"inspection\")":"a verificação do plano da tarefa deve associar critérios observáveis a cada verificação de validação (índice iniciado em 1 ou \"inspection\")","task plan openQuestions must contain question, blocking boolean and optional nonempty answer":"openQuestions do plano da tarefa deve conter question, blocking booleano e answer opcional preenchido","task plan has unanswered blocking questions; resolve them with the user before execution":"o plano da tarefa tem perguntas bloqueantes sem resposta; resolva-as com o usuário antes da execução","Task discovery":"Descoberta da tarefa","Discovery research":"Pesquisa da descoberta","Discussion":"Discussão","PO First coverage":"Cobertura PO First","Discovery decisions":"Decisões da descoberta","Deferred ideas":"Ideias adiadas","round {0}":"rodada {0}","native":"nativo","chat-fallback":"conversa","problem":"problema","affected":"pessoas afetadas","outcome":"resultado","currentBehavior":"comportamento atual","desiredBehavior":"comportamento desejado","rules":"regras","exceptions":"exceções","scope":"escopo","acceptance":"aceite","{0} still waiting on: {1}":"{0} ainda depende de: {1}","{0} executors already running (max {1})":"{0} executores já estão em execução (máximo {1})","{0} agents busy (cap {1})":"{0} agentes ocupados (limite {1})","agent \"{0}\" is already on {1} — one agent per task":"o agente \"{0}\" já está em {1} — um agente por tarefa","agent \"{0}\" is already on {1} — one agent per task (or --force)":"o agente \"{0}\" já está em {1} — um agente por tarefa (ou --force)","init needs --plan <plan.json>":"init requer --plan <plan.json>","init needs --run <name>":"init requer --run <name>","run \"{0}\" already exists (use --force to overwrite)":"a execução \"{0}\" já existe (use --force para sobrescrever)","run \"{0}\" initialised: {1} tasks, {2} executors + 1 review slot (cap {3}){4}":"execução \"{0}\" inicializada: {1} tarefas, {2} executores + 1 vaga de revisão (limite {3}){4}","sync-plan needs --plan <plan.json> once":"sync-plan requer --plan <plan.json> na primeira chamada","sync-plan is additive: plan removed {0}":"sync-plan é aditivo: o plano removeu {0}","sync-plan task {0} changed: {1}":"sync-plan: tarefa {0} alterada: {1}","sync-plan warning: {0} blockReason cites {1}, absent from persisted deps":"sync-plan aviso: {0} blockReason cita {1}, ausentes das dependências persistidas","sync-plan warning: {0} blockReason cites {1}, absent from planned deps":"sync-plan aviso: {0} blockReason cita {1}, ausentes das dependências planejadas","sync-plan strong warning: {0} blockReason cites {1}, and cited tasks depend on it":"sync-plan aviso forte: {0} blockReason cita {1}, e as tarefas citadas dependem dela","sync-plan info: new leaf task {0} has no dependents":"sync-plan informação: a nova tarefa folha {0} não tem dependentes","sync-plan warning: new leaf task {0} is cited by blocked task {1}":"sync-plan aviso: a nova tarefa folha {0} é citada pela tarefa bloqueada {1}","no state changes; plan differs for preserved tasks: {0}. Use refresh-contract for an approved validation change; do not fail/retry completed work to refresh a contract.":"nenhum estado alterado; o plano difere nas tarefas concluídas preservadas: {0}. Crie uma tarefa de acompanhamento; não reescreva o histórico concluído.","run \"{0}\" already matches plan ({1} tasks)":"a execução \"{0}\" já corresponde ao plano ({1} tarefas)","run \"{0}\" synced: +{1}, updated {2}, preserved {3}, total {4}":"execução \"{0}\" sincronizada: +{1}, atualizadas {2}, preservadas {3}, total {4}","(no runs)":"(nenhuma execução)","{0}  {1}/{2} done  (updated {3})":"{0}  {1}/{2} concluídas  (atualização {3})","run: {0}  plan: {1}  {2}/{3} done":"execução: {0}  plano: {1}  {2}/{3} concluídas","states: {0}":"estados: {0}","\n(no phase)":"\n(sem fase)","\n[prumo] {0}/{1} executors, {2} in review (cap {3}) — dispatch at most {4} now":"\n[prumo] {0}/{1} executores, {2} em revisão (limite {3}) — dispare no máximo {4} agora","awaiting review: {0}":"aguardando revisão: {0}","start needs --agent <name>":"start requer --agent <name>","review needs --agent <name>":"review requer --agent <name>","{0} is {1}, not pending":"{0} está em {1}, e não em pending","{0} is {1}, not running":"{0} está em {1}, e não em running","{0} is {1}, not failed":"{0} está em {1}, e não em failed","approved plan no longer contains {0} — inspect it before retry":"o plano aprovado não contém mais {0} — confira-o antes de tentar novamente","{0} contract differs from the approved plan ({1}) — run sync-plan and inspect the persisted contract before retry":"o contrato de {0} difere do plano aprovado ({1}) — execute sync-plan e confira o contrato persistido antes de tentar novamente","{0} is {1}, not blocked":"{0} está em {1}, e não em blocked","{0} is {1}, not running or reviewing":"{0} está em {1}, e não em running ou reviewing","{0} is not running or reviewing":"{0} não está em running ou reviewing","{0} running (agent {1}, attempt {2})":"{0} em execução (agente {1}, tentativa {2})","\"{0}\" wrote {1} — a reviewer must be a different agent (or --force)":"\"{0}\" implementou {1} — o revisor deve ser outro agente (ou --force)","{0} in review (reviewer {1})":"{0} em revisão (revisor {1})","completed task contracts are immutable; create an explicit follow-up task":"contratos de tarefas concluídas são imutáveis; crie uma tarefa posterior explícita","refresh-contract needs --plan <approved-plan.json>":"refresh-contract requer --plan <approved-plan.json>","approved plan must contain exactly one task {0}":"o plano aprovado deve conter exatamente uma tarefa {0}","{0} validation contract already matches; state and attempt unchanged":"o contrato de validação de {0} já corresponde; estado e tentativa preservados","{0} contract refreshed; state {1}, attempt {2} preserved; previous validation receipts are stale":"contrato de {0} atualizado; estado {1} e tentativa {2} preservados; recibos anteriores de validação estão desatualizados","pass --ok or --failed":"informe --ok ou --failed","validation evidence must not be empty":"a evidência de validação não pode estar vazia","passing validation requires an independent reviewer":"a aprovação da validação exige um revisor independente","passing validation requires the current independent reviewer":"a aprovação da validação exige o revisor independente atual","task changed during validation; result discarded — validate the current attempt again":"a tarefa mudou durante a validação; resultado descartado — valide novamente a tentativa atual","{0} validation recorded by {1}: {2}":"validação de {0} registrada por {1}: {2}","{0} has no passing validation for the current attempt — validate first":"{0} não tem validação aprovada na tentativa atual — valide primeiro","{0} was validated by the {1}, not a reviewer — run `review {2} --agent <name>` first":"{0} foi validada por {1}, e não por um revisor — execute `review {2} --agent <name>` primeiro","{0} done — unlocked: {1}":"{0} concluída — liberadas: {1}","{0} done":"{0} concluída","{0} failed (attempt {1}): {2}":"{0} falhou (tentativa {1}): {2}","{0} already has {1} attempts (cap {2}) — escalate instead, or --force":"{0} já tem {1} tentativas (limite {2}) — escale a decisão ou use --force","{0} back to pending (attempt {1} when started)":"{0} voltou a pending (tentativa {1} ao iniciar)","completed tasks cannot be paused":"tarefas concluídas não podem ser pausadas","{0} blocked: {1}":"{0} bloqueada: {1}","cannot restore stateBeforeBlock; inspect the recorded history before repairing this task":"não foi possível restaurar stateBeforeBlock; confira o histórico registrado antes de reparar esta tarefa","direct review requires a paused active attempt; pending/failed tasks cannot bypass start/retry":"revisão direta exige uma tentativa ativa pausada; tarefas pending/failed não podem pular start/retry","cannot resume without an open attempt and its original executor":"não é possível retomar sem uma tentativa aberta e seu executor original","{0} unblocked to {1}; attempt {2} preserved; no agent dispatched":"{0} desbloqueada para {1}; tentativa {2} preservada; nenhum agente disparado","{0} already done":"{0} já está concluída","{0} skipped: {1}":"{0} pulada: {1}","usage: engine.mjs <{0}> — see file header for details":"uso: engine.mjs <{0}> — consulte o cabeçalho do arquivo","validationMode must be functional or inspection":"validationMode deve ser functional ou inspection","inspection requires inspectionReason explaining why runtime behavior is unaffected":"inspection exige inspectionReason explicando por que o comportamento de execução não foi afetado","validation contract must not be empty":"o contrato de validação não pode estar vazio","each validation step needs nonempty run and expect":"cada passo de validação exige run e expect preenchidos","step kind must be static or functional":"kind do passo deve ser static ou functional","cacheable must be true or false":"cacheable deve ser true ou false","only static validation steps can be cacheable":"somente passos de validação static podem usar cacheable","cachePaths requires cacheable: true":"cachePaths exige cacheable: true","cachePaths must be a nonempty array of safe relative paths":"cachePaths deve ser uma lista não vazia de caminhos relativos seguros","expectedExitCodes must be a nonempty array of integer process exit codes from 0 to 255":"expectedExitCodes deve ser uma lista não vazia de códigos de saída inteiros entre 0 e 255","env must map environment variable names to string values":"env deve mapear nomes de variáveis de ambiente para valores de texto","shell must be an executable name or path":"shell deve ser o nome ou caminho de um executável","timeoutMs must be an integer from 0 to 2147483647; 0 explicitly disables the deadline":"timeoutMs deve ser um inteiro de 0 a 2147483647; 0 desabilita explicitamente o prazo","Unix environment assignment does not run in cmd.exe; move NAME=value into step.env or declare step.shell explicitly":"atribuição de ambiente Unix não executa em cmd.exe; mova NAME=value para step.env ou declare step.shell explicitamente","functional task requires an executable functional check; lint, build, typecheck or prose alone cannot approve it":"tarefa funcional exige verificação funcional executável; lint, build, typecheck ou texto isolados não podem aprová-la","executable validation needs an absolute --cwd or step.cwd":"validação executável exige --cwd ou step.cwd absoluto","validation cwd is not a directory: {0}":"cwd da validação não é um diretório: {0}","running check {0}/{1}; timeout {2}; expected exit {3}":"executando verificação {0}/{1}; prazo {2}; saída esperada {3}","check {0}/{1} ({2}): exit {3}":"verificação {0}/{1} ({2}): saída {3}","reused check {0}/{1} (static, unchanged workspace)":"verificação {0}/{1} reutilizada (static, árvore de trabalho inalterada)","validation lacks an execution receipt for this contract — validate again":"a validação não tem recibo de execução deste contrato — valide novamente","contract was refreshed after validation — validate the current contract again":"o contrato mudou após a validação — valide novamente o contrato atual","validation receipt has no checks":"o recibo de validação não contém verificações","not all validation commands completed":"nem todos os comandos de validação foram concluídos","validation check {0}/{1} ({2}) failed: {3}; command: {4} — functional failures cannot be replaced by lint":"a verificação {0}/{1} ({2}) falhou: {3}; comando: {4} — falhas funcionais não podem ser substituídas por lint","auto-sync failed: {0}":"falha na sincronização automática: {0}","dashboard on http://localhost:{0} (run: {1}, auto-sync: {2})":"dashboard em http://localhost:{0} (execução: {1}, sincronização automática: {2})","port {0} is already in use — an earlier dashboard is likely still serving http://localhost:{1} (it follows CURRENT). To run a SECOND one: --port <other>{2}":"a porta {0} já está em uso — um dashboard anterior pode estar atendendo em http://localhost:{1} (acompanha CURRENT). Para abrir outro: --port <other>{2}","no run":"nenhuma execução","run \"{0}\" not found":"execução \"{0}\" não encontrada","not found":"não encontrado","Language":"Idioma","Select graph run":"Selecionar execução","Filter tasks":"Filtrar tarefas","all tasks":"todas","completed":"concluídas","incomplete":"incompletas","ignored":"ignoradas","dependencies off":"dependências desligadas","dependencies on":"dependências ligadas","filter results {0}/{1}":"resultado do filtro {0}/{1}","fit to screen (0)":"ajustar à tela (0)","show at 100%":"mostrar em 100%","run metrics (r)":"métricas da execução (r)","fit":"ajustar","results":"resultados","orchestrator":"orquestrador","reviewer":"revisor","planner":"planejador","idle":"inativo","Legend":"Legenda","Selected task":"Tarefa selecionada","No task selected":"Nenhuma tarefa selecionada","Collapse sidebar":"Recolher lateral","Open sidebar":"Abrir lateral","executor":"executor","discuss · orchestrator":"discussão · orquestrador","waiting for dependencies":"aguardando dependências","discussion · orchestrator":"discussão · orquestrador","ready for discussion":"pronto para discussão","ready_for_discussion":"pronto para discussão","discussing":"em discussão","discussed":"discussão concluída","Actively discussing":"Discutindo","discussing {0}: {1}":"discutindo {0}: {1}","planning · planner":"planejamento · planejador","execution · executor":"execução · executor","review · reviewer":"revisão · revisor","started":"iniciado","passed":"passou","reused":"reutilizado","progress needs the current executor agent":"o progresso exige o agente executor atual","progress step must be an index in the current task plan":"o passo de progresso deve pertencer ao plano atual da tarefa","progress cannot move backwards within an attempt":"o progresso não pode retroceder dentro de uma tentativa","done":"concluído","running":"em execução","in review":"em revisão","reviewing":"em revisão","ready":"pronto para executar","ready_to_plan":"pronto para planejamento","ready for planning":"pronto para planejamento","planning":"em planejamento","ready for execution":"pronto para executar","waiting":"aguardando","failed":"falhou","blocked":"bloqueado","pending":"pendente","skipped":"pulado","unlocks next":"libera a próxima tarefa","dep crosses back a phase":"dependência de fase posterior","✓ = validated, awaiting done":"✓ = validado, aguardando conclusão","Running in parallel":"Executando em paralelo","nothing running":"nenhuma tarefa em execução","Failures & retries":"Falhas e novas tentativas","none":"nenhum","Event log":"Histórico de eventos","✋ waiting on you":"✋ aguardando sua decisão","✗ rejected":"✗ reprovado","✓ validated":"✓ validado","✗ rework":"✗ retrabalho","dispatching {0}/{1}":"coordenando {0}/{1}","judging {0}":"revisando {0}","planning {0}: {1}":"planejando {0}: {1}","complete":"concluído","orch":"orquestrador","orchestrator idle":"orquestrador inativo","Working":"Executando","review":"revisão","attempt(s)":"tentativa(s)","Phase":"Fase","Depends on":"Depende de","Unlocks":"Libera","Validation contract":"Contrato de validação","Planner":"Planejador","Recorded task plan":"Plano registrado da tarefa","Research":"Pesquisa","Decisions":"Decisões","Execution steps":"Passos de execução","Verification":"Verificação","Questions":"Perguntas","check {0}":"verificação {0}","blocking":"bloqueante","non-blocking":"não bloqueante","Planning attempts":"Tentativas de planejamento","Blocked":"Bloqueado","Skipped":"Pulado","Attempts":"Tentativas","Validations":"Validações","Notes":"Notas","FAILED":"REPROVADO","click the task to pin · moves away, closes":"clique na tarefa para fixar · afastar o cursor fecha","← graph":"← grafo","← back to the graph":"← voltar ao grafo","Wall clock":"Tempo decorrido","Agent time":"Tempo dos agentes","Parallel gain":"Ganho com paralelismo","Critical path":"Caminho crítico","Review share":"Parcela de revisão","Planning share":"Parcela de planejamento","Retries":"Novas tentativas","so far":"até agora","init → last task":"início → última tarefa","sum of recorded agent intervals":"soma dos intervalos registrados dos agentes","{0} executors + review headroom":"{0} executores + capacidade de revisão","{0} total agent slots":"{0} vagas de agentes no total","{0}% of wall clock":"{0}% do tempo decorrido","{0} verdicts · {1} rejected":"{0} pareceres · {1} reprovados","blocked {0}":"bloqueado por {0}","no human blocks":"sem bloqueios humanos","Agent time: building vs verifying":"Tempo dos agentes: executar e verificar","Agent time: planning, building and verifying":"Tempo dos agentes: planejar, executar e verificar","planning {0}":"planejamento {0}","exec {0}":"execução {0}","review {0}":"revisão {0}","Per task":"Por tarefa","Task":"Tarefa","Planning":"Planejamento","Actively planning":"Planejando","Reviewing":"Revisando","Exec":"Execução","Review":"Revisão","build vs verify":"executar e verificar","plan / execute / review":"planejar / executar / revisar","Queued":"Na fila","Att.":"Tent.","Verdicts":"Pareceres","gate only":"somente validação","What the numbers support":"O que os números mostram","Not enough finished work to say anything yet.":"Ainda não há trabalho concluído suficiente para analisar.","The dependency chain limits parallel progress.":"A cadeia de dependências limita o progresso paralelo.","Critical path: {0}; elapsed: {1}; share: {2}%. Chain: {3}.":"Caminho crítico: {0}; tempo decorrido: {1}; parcela: {2}%. Cadeia: {3}.","Inspect time outside the critical path.":"Confira o tempo fora do caminho crítico.","Elapsed: {0}; critical path: {1}; difference: {2}. Check queues, blocks and retries before changing capacity.":"Tempo decorrido: {0}; caminho crítico: {1}; diferença: {2}. Confira filas, bloqueios e tentativas antes de mudar a capacidade.","Review durations are similar.":"Os tempos de revisão são semelhantes.","Review durations vary across tasks.":"Os tempos de revisão variam entre as tarefas.","Mean review: {0}; variation: {1}%. Timing alone does not establish coverage or a cause.":"Revisão média: {0}; variação: {1}%. O tempo, isoladamente, não comprova cobertura ou causa.","Review outcomes":"Resultados das revisões","{0} rejections in {1} verdicts. Review used {2}% of agent time. Inspect the evidence before changing the review policy.":"{0} reprovações em {1} pareceres. A revisão usou {2}% do tempo dos agentes. Confira as evidências antes de mudar a política de revisão.","Derived from attempt timestamps and events. Tokens belong to the harness and are not measured by this engine.":"Derivado dos horários das tentativas e eventos. Tokens pertencem ao ambiente de agentes e não são medidos por este motor.","Run still active; figures may change.":"Execução ainda ativa; os números podem mudar.","start":"início","planned":"planejada","superseded":"substituído","validate":"validação","fail":"falha","retry":"nova tentativa","block":"bloqueio","unblock":"desbloqueio","skip":"pular","note":"nota","init":"inicialização","plan_sync":"sincronização do plano","plan_sync_audit":"auditoria da sincronização do plano","contract_refresh":"atualização do contrato","contract_refreshed":"contrato atualizado","validation_started":"validação iniciada","block_updated":"bloqueio atualizado","No Prumo installations found; install an environment first":"Nenhuma instalação do Prumo encontrada; instale um ambiente primeiro","Invalid Prumo installation registry; existing installations were not changed":"Registro de instalações do Prumo inválido; as instalações existentes não foram alteradas","Invalid Prumo update request":"Solicitação de atualização do Prumo inválida","Prumo update was interrupted":"A atualização do Prumo foi interrompida","Update automatically selects installed environments; do not select a harness":"A atualização seleciona automaticamente os ambientes instalados; não selecione um ambiente","Updating {0} with Prumo {1}":"Atualizando {0} com Prumo {1}","phase discussion":"discussão da fase","phase planning":"planejamento da fase","phase discussion {0}: {1} tasks":"discussão da fase {0}: {1} tarefas","execution locked":"execução bloqueada","phase execution locked":"execução da fase bloqueada","discussion guard: inspect local context and resolve decisions only; planner researches how, executor delivers every task":"proteção da discussão: apenas inspecione o contexto local e resolva decisões; o planejador pesquisa como fazer e o executor entrega todas as tarefas","discussion guard: inspect local context and resolve decisions only; planner researches how, executor delivers the task":"proteção da discussão: apenas inspecione o contexto local e resolva decisões; o planejador pesquisa como fazer e o executor entrega a tarefa","planner guard: read-only research may determine how to execute; task results and acceptance evidence belong to the executor":"proteção do planejamento: pesquisa somente leitura pode determinar como executar; resultados e evidências de aceite pertencem ao executor","discovery needs an executionBoundary object":"a descoberta exige um objeto executionBoundary","discovery executionBoundary.deferredToExecutor must be an array of task IDs":"executionBoundary.deferredToExecutor da descoberta deve ser uma lista de IDs de tarefas","discovery executionBoundary.prematureTaskWork must contain task and action entries":"executionBoundary.prematureTaskWork da descoberta deve conter tarefa e ação em cada item","discovery must defer every discussion target to its executor; planner research cannot deliver the task":"a descoberta deve adiar cada alvo da discussão para seu executor; a pesquisa do planejador não pode entregar a tarefa","premature task work must identify a current discussion target":"trabalho prematuro deve identificar um alvo da discussão atual","premature task work was reported; stop and obtain explicit user approval, then repeat with --accept-premature-work so the executor still redoes it":"foi relatado trabalho prematuro; pare e obtenha aprovação explícita do usuário, depois repita com --accept-premature-work para que o executor ainda refaça o trabalho","phase planning {0}: {1} tasks":"planejamento da fase {0}: {1} tarefas","awaiting phase plan":"aguardando plano da fase","awaiting phase adoption":"aguardando adoção da fase","unresolved later-phase input":"entrada de fase posterior não resolvida","unresolved input":"entrada não resolvida","validated input":"entrada validada","waived input":"entrada dispensada","Phase plan":"Plano da fase","Update incomplete; resolve the reported issues and run prumo update again":"Atualização incompleta; resolva as pendências informadas e execute prumo update novamente","Migration deferred: finish or resume started legacy tasks before planning new work":"Migração adiada: conclua ou retome as tarefas legadas já iniciadas antes de planejar novos trabalhos","awaiting run migration":"aguardando migração do plano","Reading mode":"Modo de leitura","lean":"enxuto","detail":"detalhe","Expand":"Expandir","Collapse":"Recolher","Close":"Fechar","Summary":"Resumo","To pass":"Para passar","Journey":"Jornada","see detail →":"ver detalhe →","No summary recorded — the detail view has the full text.":"Sem resumo registrado — o detalhe traz o texto completo.","unlocks":"libera","Chosen approach":"Caminho escolhido","Active agents":"Agentes ativos","in prumo":"no prumo","phases and linked tasks":"fases e tarefas vinculadas","{0} of {1} in prumo":"{0} de {1} no prumo","a task only enters prumo after the independent reviewer":"tarefa só entra no prumo depois do revisor independente"}
 function createTranslator(dictionary, lang) {
   const templates = Object.entries(dictionary).filter(([key]) => /\{\d+\}/.test(key)).map(([key, translated]) => {
     const slots = []
@@ -588,6 +621,7 @@ let dwellTimer = null   // long hover on a node auto-opens the popover
 let closeTimer = null   // grace period to travel from node into the popover
 let lastEventAt = null  // high-water mark: events past it flash their node once
 let lastEdgesHtml = ''  // skip the SVG rebuild when no edge changed (keeps dash flow continuous)
+let lastStructHtml = '' // same for the role frame and the plumb line
 const DWELL_MS = 550, GRACE_MS = 250
 /* Popover reading mode: 'lean' shows the role-written summaries, 'detail' shows everything.
    The choice is a per-viewer convenience, so it lives in localStorage. */
@@ -600,7 +634,10 @@ const DENSITY_METRICS = {
   compact: { nodeW: 202, nodeH: 48, gapX: 24, gapY: 28, lanePad: 22 },
   dense: { nodeW: 194, nodeH: 44, gapX: 16, gapY: 18, lanePad: 20 },
 }
-const ORCH_W = 168, ORCH_H = 60
+// Gravidade hierarchy: the orchestrator on top, three roles hanging from it, and a base
+// line the phases hang from. The role row is exactly as wide as the narrowest board.
+const ORCH_W = 240, ORCH_H = 62, ROLE_W = 172, ROLE_H = 58, ROLE_GAP = 20
+const ROLES_Y = PAD + ORCH_H + 26, BASE_Y = ROLES_Y + ROLE_H + 14
 let CANVAS_W = 0, CANVAS_H = 0
 let LAST_METRICS = DENSITY_METRICS.detailed
 let EVENTS = []
@@ -845,13 +882,14 @@ function layout(tasks) {
   const baseMetrics = DENSITY_METRICS[density]
   const phases = STATE.plan.phases ?? []
   const phaseIx = Object.fromEntries(phases.map((p, i) => [p.id, i]))
-  const layoutMetrics = { ...baseMetrics, nodeH: 44, gapX: 16, gapY: 10 }
+  // small plans get the full three-line card; larger ones drop the state line to stay legible when fitted
+  const layoutMetrics = { ...baseMetrics, nodeH: density === 'detailed' ? 60 : 46, gapX: 16, gapY: 10, lanePad: 28 }
   const { nodeH, gapX, gapY, lanePad } = layoutMetrics
-  const hubWidth = 3 * ORCH_W + 2 * 26 + 2 * PAD
+  const hubWidth = 3 * ROLE_W + 2 * ROLE_GAP + 2 * PAD
   const viewport = $('#viewport').getBoundingClientRect()
   const viewportWidth = viewport.width || innerWidth || hubWidth
-  const y0 = PAD + ORCH_H + 38
-  const nodeW = 120
+  const y0 = BASE_Y + 28
+  const minNodeW = 128
   const phaseCounts = phases.map((_, index) => ids.filter(id => phaseIx[tasks[id].phase] === index).length)
   const unphasedCount = ids.filter(id => phaseIx[tasks[id].phase] === undefined).length
   if (unphasedCount) phaseCounts.push(unphasedCount)
@@ -859,8 +897,10 @@ function layout(tasks) {
   // Horizontal space decides phase columns. The number of phases affects only height,
   // so a tall plan cannot force task cards into one vertical stack.
   const availableW = Math.max(1, viewportWidth - 56)
-  const viewportCapacity = Math.max(1, Math.floor((availableW - 2 * PAD + gapX) / (nodeW + gapX)))
+  const viewportCapacity = Math.max(1, Math.floor((availableW - 2 * PAD + gapX) / (minNodeW + gapX)))
   const capacity = Math.min(maxCapacity, viewportCapacity)
+  // cards grow into the spare width (up to the design's 200px) so titles read in full
+  const nodeW = Math.max(minNodeW, Math.min(200, Math.floor((availableW - 2 * PAD - (capacity - 1) * gapX) / capacity)))
   const naturalWidth = 2 * PAD + capacity * nodeW + (capacity - 1) * gapX
   const w = Math.max(hubWidth, naturalWidth)
   const metrics = { ...layoutMetrics, nodeW }
@@ -925,7 +965,7 @@ function layout(tasks) {
   for (const key of groupKeys) {
     const group = byCol[key] ?? []
     const rows = Math.max(1, Math.ceil(group.length / capacity))
-    const laneHeight = lanePad + rows * nodeH + (rows - 1) * gapY + 30
+    const laneHeight = lanePad + rows * nodeH + (rows - 1) * gapY + 22
     group.forEach((id, i) => {
       pos[id] = {
         x: PAD + (i % capacity) * slotX,
@@ -935,14 +975,23 @@ function layout(tasks) {
     if (phases[key]) lanes.push({ ...phases[key], y: laneTop, height: laneHeight - 14 })
     laneTop += laneHeight
   }
-  const h = Math.max(laneTop + PAD, y0 + PAD)
-  return { pos, w, h, lanes, density, metrics, capacity }
+  // small plans keep room below the last phase for the run's headline: "n of m in prumo"
+  const headline = density === 'detailed'
+  const h = Math.max(laneTop + (headline ? 76 : 0) + PAD, y0 + PAD)
+  return { pos, w, h, lanes, density, metrics, capacity, sumY: headline ? laneTop + 6 : null }
 }
 
 function fmtElapsed(iso) {
   const s = Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 1000))
   return s >= 3600 ? `${Math.floor(s / 3600)}h${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}`
     : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
+/** When the role now holding a task started on it — the card and the agent list count from here. */
+function taskClock(t, state, phasePlanningByTask) {
+  const run = t.attempts.at(-1)
+  return state === 'planning' ? (t.planningAttempts?.at(-1)?.startedAt ?? phasePlanningByTask.get(t.id)?.planningAttempts?.at(-1)?.startedAt)
+    : state === 'reviewing' ? run?.reviewStartedAt : state === 'running' ? run?.startedAt : null
 }
 
 /** Where a RUNNING task is in the start→validate→done loop, from the current attempt. */
@@ -1187,7 +1236,7 @@ function render(s, events) {
       ? `<span class="ask"><span data-i18n="✋ waiting on you">✋ waiting on you</span> <b>${by[k]}</b></span>`
       : `<span style="color:${ST_COLOR[k] ?? 'var(--dim)'}">${esc(statusLabel(k))} <b>${by[k]}</b></span>`).join('')
 
-  const { pos, w, h, lanes, density, metrics } = layout(tasks)
+  const { pos, w, h, lanes, density, metrics, sumY } = layout(tasks)
   const { nodeW, nodeH } = metrics
   const canvas = $('#canvas')
   canvas.dataset.density = density
@@ -1196,14 +1245,22 @@ function render(s, events) {
   canvas.style.width = w + 'px'
   canvas.style.height = h + 'px'
   CANVAS_W = w; CANVAS_H = h; LAST_POS = pos; LAST_METRICS = metrics
-  $('#lanes').innerHTML = lanes.map((p) => {
+  // a phase is DONE when every task in it is, LIVE while it is the first one still open
+  const phaseStats = lanes.map((p) => {
+    const members = list.filter((t) => t.phase === p.id)
+    const settled = members.filter((t) => ['done', 'skipped'].includes(eff(t.id))).length
+    return { done: members.filter((t) => eff(t.id) === 'done').length, total: members.length, closed: members.length > 0 && settled === members.length }
+  })
+  const liveLane = phaseStats.findIndex((stat) => !stat.closed)
+  const laneStatus = (i) => phaseStats[i].closed ? 'done' : i === liveLane ? 'live' : 'next'
+  $('#lanes').innerHTML = `<span class="lanes-cap" style="top:${BASE_Y + 8}px"><span data-i18n="phases and linked tasks">phases and linked tasks</span></span>` + lanes.map((p, i) => {
     const workflow = s.phaseWorkflows?.[p.id]
     const phaseState = workflow?.state === 'discussing' ? { cls: 'discussion', label: tr('discussion · orchestrator') } :
       workflow?.state === 'planning' ? { cls: 'planning', label: tr('planning · planner') } : null
-    return `<div class="lane" style="top:${p.y}px;height:${p.height}px">
-      <span class="lane-h">${esc(p.id)} · ${esc(p.title)}</span>${phaseState ?
+    return `<div class="lane ${laneStatus(i)}" style="top:${p.y}px;height:${p.height}px">
+      <span class="lane-h"><b class="ln">${esc(p.id)}</b><span class="lt">${esc(p.title)}</span><span class="ls">${phaseStats[i].done}/${phaseStats[i].total} ${esc(tr('in prumo'))}</span></span>${phaseState ?
         `<span class="lane-state ${phaseState.cls}">${esc(phaseState.label)}</span>` : ''}</div>`
-  }).join('')
+  }).join('') + (sumY === null ? '' : `<div class="run-sum" style="top:${sumY}px"><b>${esc(tr('{0} of {1} in prumo', by.done ?? 0, list.length - (by.skipped ?? 0)))}</b><span>${esc(tr('a task only enters prumo after the independent reviewer'))}</span></div>`)
 
   // nodes — a running task also tells WHERE it is in the loop: agent still working
   // (typing dots + orbit), validation failed (rework), or validated and awaiting `done`
@@ -1220,13 +1277,17 @@ function render(s, events) {
     const waitingOn = (s.derived[t.id].planningBlockedBy ?? s.derived[t.id].blockedBy ?? []).join(',')
     const sub = `<span class="${active ? 'ag' : ''}">${esc(label)}</span>${active && !badge ? working : badge}${e === 'waiting' ? ` ← ${esc(waitingOn)}` : ''}${phaseLabel ? `<span class="phase-task-state">${esc(phaseLabel)}</span>` : ''}`
     const retry = t.attempts.length > 1 ? ` ↻${t.attempts.length}` : ''
-    const run = t.attempts.at(-1)
-    const clock = e === 'planning' ? (t.planningAttempts?.at(-1)?.startedAt ?? phasePlanningByTask.get(t.id)?.planningAttempts?.at(-1)?.startedAt) : e === 'reviewing' ? run?.reviewStartedAt : e === 'running' ? run?.startedAt : null
+    const clock = taskClock(t, e, phasePlanningByTask)
     const elapsed = clock ? `<span class="elapsed">${fmtElapsed(clock)}</span>` : ''
+    // top-right tag: a live clock while a role works, "in prumo" once done, the verdict when failed
+    const tag = active ? `<span class="beat"></span>${elapsed}`
+      : e === 'done' ? `<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.5l2.2 2.2L9.5 3.5"/></svg>${esc(tr('in prumo'))}`
+      : e === 'failed' ? `${esc(statusLabel('failed'))} · ${t.attempts.length}`
+      : e === 'blocked' ? esc(statusLabel('blocked')) : ''
     return `<div class="node" data-st="${esc(e)}" data-sub="${sub2}" data-id="${esc(t.id)}" title="${esc(label)} · ${esc(t.title)}" aria-label="${esc(t.id)}: ${esc(label)}" style="left:${p.x}px;top:${p.y}px" onclick="openTask('${jsq(t.id)}')">
-      ${elapsed}<span class="dot">${sub2 === 'validated' ? '✓' : DOT[e] ?? ''}</span>
-      <span class="id">${esc(t.id)}<small style="color:var(--dim);font-weight:400"> ${esc(t.phase ?? '')}${retry}</small></span>
-      <span class="sub">${sub}</span></div>`
+      <span class="nh"><span class="id">${esc(t.id)}${retry ? `<small>${retry}</small>` : ''}</span><span class="tag">${tag}</span></span>
+      <span class="nt">${esc(t.title)}</span>
+      <span class="sub">${sub}</span><i class="nbar"></i></div>`
   }).join('')
 
   // edges — color tells the story: green = dep delivered, amber flowing = feeding a
@@ -1287,11 +1348,13 @@ function render(s, events) {
   const phaseTasks = phase => (phase.discussionAttempts?.at(-1)?.targets ?? phase.planningAttempts?.at(-1)?.targets ?? [])
     .map(id => tasks[id]).filter(Boolean)
   const busy = runningNow.length + inReview.length + taskPlanningNow.length + taskDiscussingNow.length + phaseDiscussing.length + phasePlanning.length
-  const cx = w / 2, HUB_GAP = 26
+  // Gravidade: the orchestrator hangs at the top centre; planner, executor and reviewer
+  // hang from its frame; every phase hangs from the base line below them.
+  const cx = w / 2
   const ox = cx - ORCH_W / 2, oy = PAD
+  const place = (node, x, y) => { node.style.left = `${x}px`; node.style.top = `${y}px` }
   const on = $('#orchNode')
-  on.style.left = `${ox}px`
-  on.style.top = `${oy}px`
+  place(on, ox, oy)
   on.classList.toggle('live', busy > 0)
   on.classList.toggle('discussing', taskDiscussingNow.length > 0 || phaseDiscussing.length > 0)
   $('#orchSub').textContent = phaseDiscussing.length
@@ -1299,14 +1362,65 @@ function render(s, events) {
     : taskDiscussingNow.length
     ? `${tr('discussing {0}: {1}', taskDiscussingNow.length, taskDiscussingNow.map(t => t.id).join(', '))} · ${tr('execution locked')}`
     : tr(busy ? `dispatching ${busy}/${s.plan.maxParallel ?? 4}` : 'idle')
-  const ocx = ox + ORCH_W / 2, ocy = oy + ORCH_H
-  for (const t of runningNow) {
-    const b = pos[t.id]
-    if (!b) continue
-    const x2 = b.x + nodeW / 2, y2 = b.y - 4
-    const bend = Math.max(30, (y2 - ocy) * 0.45)
-    edgesHtml += `<path class="e-dispatch" data-from="__orch" data-to="${esc(t.id)}" d="M ${ocx} ${ocy} C ${ocx} ${ocy + bend}, ${x2} ${y2 - bend}, ${x2} ${y2}"/>`
+  const ocx = cx, ocy = oy + ORCH_H
+  const roleX = { plan: cx - ROLE_W * 1.5 - ROLE_GAP, exec: cx - ROLE_W / 2, rev: cx + ROLE_W / 2 + ROLE_GAP }
+  const roleCx = (key) => roleX[key] + ROLE_W / 2, roleBottom = ROLES_Y + ROLE_H
+  const pn = $('#planNode'), xn = $('#execNode'), rn = $('#revNode')
+  place(pn, roleX.plan, ROLES_Y); place(xn, roleX.exec, ROLES_Y); place(rn, roleX.rev, ROLES_Y)
+  const live = { plan: planningNow.length > 0 || phasePlanning.length > 0, exec: runningNow.length > 0, rev: inReview.length > 0 }
+  pn.classList.toggle('live', live.plan)
+  xn.classList.toggle('live', live.exec)
+  rn.classList.toggle('live', live.rev)
+  $('#planSub').textContent = phasePlanning.length
+    ? phasePlanning.map(phase => tr('phase planning {0}: {1} tasks', phase.id, phase.planningAttempts.at(-1)?.targets?.length ?? 0)).join(' · ')
+    : planningNow.length
+    ? tr('planning {0}: {1}', planningNow.length, planningNow.map((t) => t.id).join(', ')) : tr('idle')
+  $('#execSub').textContent = runningNow.length ? runningNow.map((t) => t.id).join(' · ') : tr('idle')
+  $('#execCount').textContent = runningNow.length > 1 ? `×${runningNow.length}` : ''
+  $('#revSub').textContent = tr(inReview.length
+    ? `judging ${inReview.map((t) => t.id).join(', ')}`
+    : 'idle')
+
+  // the frame: orchestrator → bus → each role → base line; a working role's branch flows.
+  // The plumb line hangs from the base at the left and carries one dot per phase.
+  const busY = ocy + 16
+  const laneBottom = lanes.length ? lanes.at(-1).y + lanes.at(-1).height : BASE_Y + 40
+  const spineX = PAD / 2, bobY = laneBottom + 8
+  const colour = { plan: 'var(--planning)', exec: 'var(--running)', rev: 'var(--review)' }
+  const branch = (key) => {
+    const x = roleCx(key)
+    return x === cx ? `M ${cx} ${busY} V ${ROLES_Y}`
+      : `M ${cx} ${busY} H ${x + (x < cx ? 4 : -4)} Q ${x} ${busY} ${x} ${busY + 4} V ${ROLES_Y}`
   }
+  const phaseDot = (lane, i) => {
+    const y = lane.y + 12, st = laneStatus(i)
+    return st === 'done' ? `<circle cx="${spineX}" cy="${y}" r="6" fill="var(--done)"/>`
+      : st === 'live' ? `<circle class="s-ring" cx="${spineX}" cy="${y}" r="6"/><circle cx="${spineX}" cy="${y}" r="6" fill="var(--accent)"/>`
+      : `<circle cx="${spineX}" cy="${y}" r="6" fill="var(--bg)" stroke="#5e584f" stroke-width="1.5"/>`
+  }
+  const pcx = roleCx('plan'), rcx = roleCx('rev')
+  const structHtml = [
+    `<path class="s-frame" d="M ${cx} ${ocy} V ${busY} M ${pcx} ${ROLES_Y} V ${busY + 4} Q ${pcx} ${busY} ${pcx + 4} ${busY} H ${rcx - 4} Q ${rcx} ${busY} ${rcx} ${busY + 4} V ${ROLES_Y}"/>`,
+    ...Object.keys(live).filter((key) => live[key]).map((key) =>
+      `<path class="s-flow" style="stroke:${colour[key]}" d="${branch(key)} M ${roleCx(key)} ${roleBottom} V ${BASE_Y}"/>`),
+    `<path class="s-base" d="M ${spineX} ${BASE_Y} H ${w - spineX}"/>`,
+    ...Object.keys(live).map((key) => `<circle cx="${roleCx(key)}" cy="${BASE_Y}" r="3.5" fill="${live[key] ? colour[key] : '#3a362f'}"/>`),
+    `<defs><linearGradient id="spineGrad" gradientUnits="userSpaceOnUse" x1="0" y1="${BASE_Y}" x2="0" y2="${bobY}"><stop offset="0" stop-color="#8fd694"/><stop offset=".45" stop-color="#e8b04b"/><stop offset="1" stop-color="#3a362f"/></linearGradient></defs>`,
+    `<g class="s-sway" style="transform-origin:${spineX}px ${BASE_Y}px"><line x1="${spineX}" y1="${BASE_Y}" x2="${spineX}" y2="${bobY}" stroke="url(#spineGrad)"/><path class="s-bob" d="M ${spineX - 9} ${bobY + 2} h18 l-2 7 -7 20 -7 -20z"/></g>`,
+    ...lanes.map(phaseDot),
+  ].join('')
+  if (structHtml !== lastStructHtml) { $('#structPaths').innerHTML = structHtml; lastStructHtml = structHtml }
+
+  // live work: each role draws its own line to the task it holds
+  const fromRole = (key, cls, t) => {
+    const b = pos[t.id]
+    if (!b) return ''
+    const x1 = roleCx(key), x2 = b.x + nodeW / 2, y2 = b.y - 4
+    const bend = Math.max(30, (y2 - roleBottom) * 0.45)
+    return `<path class="${cls}" data-from="__${key}" data-to="${esc(t.id)}" d="M ${x1} ${roleBottom} C ${x1} ${roleBottom + bend}, ${x2} ${y2 - bend}, ${x2} ${y2}"/>`
+  }
+  for (const t of runningNow) edgesHtml += fromRole('exec', 'e-dispatch', t)
+  for (const t of taskPlanningNow) edgesHtml += fromRole('plan', 'e-planning', t)
   for (const t of taskDiscussingNow) {
     const b = pos[t.id]
     if (!b) continue
@@ -1314,56 +1428,22 @@ function render(s, events) {
     const bend = Math.max(30, (y2 - ocy) * 0.45)
     edgesHtml += `<path class="e-discussion" data-from="__orch" data-to="${esc(t.id)}" d="M ${ocx} ${ocy} C ${ocx} ${ocy + bend}, ${x2} ${y2 - bend}, ${x2} ${y2}"/>`
   }
-  for (const phase of phaseDiscussing) {
-    const lane = lanes.find(item => item.id === phase.id), members = phaseTasks(phase)
-    if (!lane || !members.length) continue
-    const x2 = w / 2, y2 = lane.y + 2, bend = Math.max(24, (y2 - ocy) * 0.45)
-    edgesHtml += `<path class="e-discussion" data-from="__orch" data-to="__phase-${esc(phase.id)}" data-members="${esc(members.map(t => t.id).join(','))}" d="M ${ocx} ${ocy} C ${ocx} ${ocy + bend}, ${x2} ${y2 - bend}, ${x2} ${y2}"/>`
+  const phaseLines = [[phaseDiscussing, 'orch', 'e-discussion', ocx, ocy], [phasePlanning, 'plan', 'e-planning', pcx, roleBottom]]
+  for (const [phases, key, cls, x1, y1] of phaseLines) {
+    for (const phase of phases) {
+      const lane = lanes.find(item => item.id === phase.id), members = phaseTasks(phase)
+      if (!lane || !members.length) continue
+      const x2 = w / 2, y2 = lane.y + 2, bend = Math.max(24, (y2 - y1) * 0.45)
+      edgesHtml += `<path class="${cls}" data-from="__${key}" data-to="__phase-${esc(phase.id)}" data-members="${esc(members.map(t => t.id).join(','))}" d="M ${x1} ${y1} C ${x1} ${y1 + bend}, ${x2} ${y2 - bend}, ${x2} ${y2}"/>`
+    }
   }
-  // reviewer sits beside the orchestrator, both above the graph: a task is dispatched
-  // DOWN and climbs back UP to be judged before it may proceed. Keeping the hubs off the
-  // vertical axis matters — down that axis means PHASE ORDER, and a hub parked at the
-  // bottom reads as "after every phase", which is not when review happens.
-  const px = ox - ORCH_W - HUB_GAP
-  const pn = $('#planNode')
-  pn.style.left = `${px}px`
-  pn.style.top = `${PAD}px`
-  pn.classList.toggle('live', planningNow.length > 0 || phasePlanning.length > 0)
-  $('#planSub').textContent = phasePlanning.length
-    ? phasePlanning.map(phase => tr('phase planning {0}: {1} tasks', phase.id, phase.planningAttempts.at(-1)?.targets?.length ?? 0)).join(' · ')
-    : planningNow.length
-    ? tr('planning {0}: {1}', planningNow.length, planningNow.map((t) => t.id).join(', ')) : tr('idle')
-  for (const t of taskPlanningNow) {
-    const b = pos[t.id]
-    if (!b) continue
-    const x1 = px + ORCH_W / 2, y1 = PAD + ORCH_H
-    const x2 = b.x + nodeW / 2, y2 = b.y - 4
-    const bend = Math.max(30, (y2 - y1) * 0.45)
-    edgesHtml += `<path class="e-planning" data-from="__plan" data-to="${esc(t.id)}" d="M ${x1} ${y1} C ${x1} ${y1 + bend}, ${x2} ${y2 - bend}, ${x2} ${y2}"/>`
-  }
-  for (const phase of phasePlanning) {
-    const lane = lanes.find(item => item.id === phase.id), members = phaseTasks(phase)
-    if (!lane || !members.length) continue
-    const x1 = px + ORCH_W / 2, y1 = PAD + ORCH_H
-    const x2 = w / 2, y2 = lane.y + 2, bend = Math.max(24, (y2 - y1) * 0.45)
-    edgesHtml += `<path class="e-planning" data-from="__plan" data-to="__phase-${esc(phase.id)}" data-members="${esc(members.map(t => t.id).join(','))}" d="M ${x1} ${y1} C ${x1} ${y1 + bend}, ${x2} ${y2 - bend}, ${x2} ${y2}"/>`
-  }
-  const rx = ox + ORCH_W + HUB_GAP, ry = PAD
-  const rn = $('#revNode')
-  rn.style.left = `${rx}px`
-  rn.style.top = `${ry}px`
-  rn.classList.toggle('live', inReview.length > 0)
-  $('#revSub').textContent = tr(inReview.length
-    ? `judging ${inReview.map((t) => t.id).join(', ')}`
-    : 'idle')
-  const rcx = rx + ORCH_W / 2, rcy = ry + ORCH_H
   for (const t of inReview) {
     const b = pos[t.id]
     if (!b) continue
-    // drawn task → reviewer: the arrow lands on the hub, so it reads as going BACK up
+    // drawn task → reviewer: the arrow lands on the role, so it reads as going BACK up
     const x1 = b.x + nodeW / 2, y1 = b.y - 4
-    const bend = Math.max(30, (y1 - rcy) * 0.45)
-    edgesHtml += `<path class="e-review" data-from="${esc(t.id)}" data-to="__rev" d="M ${x1} ${y1} C ${x1} ${y1 - bend}, ${rcx} ${rcy + bend}, ${rcx} ${rcy + 4}"/>`
+    const bend = Math.max(30, (y1 - roleBottom) * 0.45)
+    edgesHtml += `<path class="e-review" data-from="${esc(t.id)}" data-to="__rev" d="M ${x1} ${y1} C ${x1} ${y1 - bend}, ${rcx} ${roleBottom + bend}, ${rcx} ${roleBottom + 4}"/>`
   }
   /* Only touch the SVG when an edge actually changed: recreating a path restarts its
      dash-flow animation, and (unlike the HTML elements) the --epoch anchor does not
@@ -1383,7 +1463,9 @@ function render(s, events) {
   $('#bar .seg-run').style.width = `${scale * (by.running ?? 0)}%`
   $('#bar .seg-review').style.width = `${scale * (by.reviewing ?? 0)}%`
   $('#bar .seg-fail').style.width = `${scale * (by.failed ?? 0)}%`
-  $('#doneCount').innerHTML = `<b>${Math.round(scale * done)}%</b> ${esc(tr('complete'))} · <b>${done}</b> ${esc(tr('done'))} / ${total}`
+  $('#doneFrac').textContent = `${done}/${total}`
+  $('#doneCount').innerHTML = [`<b>${Math.round(scale * done)}%</b> ${esc(tr('complete'))}`,
+    ...['failed', 'blocked'].filter((k) => by[k]).map((k) => `${by[k]} ${esc(statusLabel(k))}`)].join(' · ')
 
   // orchestrator heartbeat — the last thing it did and how long ago; beating while active
   const last = events.at(-1)
@@ -1401,18 +1483,23 @@ function render(s, events) {
   const running = list.filter((t) => eff(t.id) === 'running')
   const maxExec = s.plan.maxExecutors ?? 3
   $('#parTitle').innerHTML = `<span style="color:var(--discussion)"><span>${esc(tr('Actively discussing'))}</span><b>${discussingNow.length}</b></span><span style="color:var(--planning)"><span>${esc(tr('Actively planning'))}</span><b>${planningNow.length}</b></span><span style="color:var(--running)"><span>${esc(tr('Working'))}</span><b>${running.length}/${maxExec}</b></span><span style="color:var(--review)"><span>${esc(tr('Reviewing'))}</span><b>${inReview.length}</b></span>`
+  // one row per working agent: heartbeat, task, role, who, how long — with its activity bar
+  const agentRow = (cls, t, role, who) => {
+    const clock = taskClock(t, eff(t.id), phasePlanningByTask)
+    return `<span class="${cls}" onclick="openTask('${jsq(t.id)}')"><i class="beat"></i><b>${esc(t.id)}</b><span class="who">${esc(tr(role))}</span><span class="at">${who ? `@${esc(who)}` : ''}${clock ? ` · ${fmtElapsed(clock)}` : ''}</span><i class="rbar"></i></span>`
+  }
   $('#parallel').innerHTML = busy
     ? [
-        ...discussingNow.map((t) => `<span class="discuss" onclick="openTask('${jsq(t.id)}')"><i class="sp discuss"></i>${esc(t.id)} <span style="color:var(--discussion)">◇ ${esc(tr('orchestrator'))}</span></span>`),
-        ...planningNow.map((t) => `<span class="plan" onclick="openTask('${jsq(t.id)}')"><i class="sp plan"></i>${esc(t.id)} <span style="color:var(--planning)">✎ @${esc(t.planner)}</span></span>`),
-        ...running.map((t) => `<span onclick="openTask('${jsq(t.id)}')"><i class="sp"></i>${esc(t.id)} <span style="color:var(--accent)">@${esc(t.agent)}</span></span>`),
-        ...inReview.map((t) => `<span class="rev" onclick="openTask('${jsq(t.id)}')"><i class="sp rev"></i>${esc(t.id)} <span style="color:var(--review)">⌕ @${esc(t.reviewer)}</span></span>`),
+        ...discussingNow.map((t) => agentRow('discuss', t, 'orchestrator', '')),
+        ...planningNow.map((t) => agentRow('plan', t, 'planner', t.planner)),
+        ...running.map((t) => agentRow('exec', t, 'executor', t.agent)),
+        ...inReview.map((t) => agentRow('rev', t, 'reviewer', t.reviewer)),
       ].join('')
     : '<span class="empty"><span data-i18n="nothing running">nothing running</span></span>'
   renderSelectedTask()
   const bad = list.filter((t) => eff(t.id) === 'failed' || t.attempts.length > 1)
   $('#failures').innerHTML = bad.length
-    ? bad.map((t) => `<div class="ev">${esc(t.id)} — ${t.attempts.length} ${esc(tr('attempt(s)'))}${t.attempts.at(-1)?.reason ? ` · ${esc(t.attempts.at(-1).reason)}` : ''}</div>`).join('')
+    ? bad.map((t) => `<div class="fcard"><div><b>${esc(t.id)} · ${esc(t.title)}</b><span>${t.attempts.length} ${esc(tr('attempt(s)'))}</span></div>${t.attempts.at(-1)?.reason ? `<span>${esc(t.attempts.at(-1).reason)}</span>` : ''}</div>`).join('')
     : '<span class="empty"><span data-i18n="none">none</span></span>'
   $('#events').innerHTML = events.slice().reverse().map((e) => {
     const label = e.type === 'task_start' || e.type === 'task_progress' ? 'Working'
@@ -1619,7 +1706,10 @@ function renderSelectedTask() {
   }
   const state = eff(t.id)
   selected.dataset.task = t.id
-  selected.innerHTML = '<b>' + esc(t.id) + ' · ' + esc(t.title) + '</b>' + esc(cardLabel(state))
+  const check = contractText(t.validation).split('\n')[0]
+  selected.innerHTML = '<b>' + esc(t.id) + ' · ' + esc(t.title) + '</b>' +
+    '<div class="sk">' + esc(cardLabel(state)) + '<span>' + t.attempts.length + ' ' + esc(tr('attempt(s)')) + '</span></div>' +
+    (check ? '<div class="cmd">$ ' + esc(check) + '</div>' : '')
 }
 
 /* Plain text of a validation contract — the lean view clamps it when no summary was written. */
