@@ -28,11 +28,12 @@ const discovery = {
 
 function dashboard(lang = 'en', width = 1000, session = new Map(), navigation = { state: null, urls: [] }) {
   const nodes = new Map(), cards = [], paths = []
-  const windowListeners = new Map()
+  const documentListeners = new Map(), windowListeners = new Map()
   let viewportWidth = width, viewportHeight = 700, animationFrame = null
   const element = (initialClasses = []) => {
     const classes = new Set(initialClasses)
     const attributes = new Map()
+    const listeners = new Map()
     let markup = ''
     return {
       textContent: '', dataset: {}, style: { setProperty() {} },
@@ -46,7 +47,14 @@ function dashboard(lang = 'en', width = 1000, session = new Map(), navigation = 
         },
         contains(name) { return classes.has(name) },
       },
-      addEventListener() {},
+      addEventListener(type, listener) {
+        if (!listeners.has(type)) listeners.set(type, [])
+        listeners.get(type).push(listener)
+      },
+      dispatchEvent(type, event) {
+        for (const listener of listeners.get(type) ?? []) listener(event)
+      },
+      setPointerCapture() {},
       setAttribute(name, value) { attributes.set(name, String(value)) },
       getAttribute(name) { return attributes.get(name) ?? null },
       offsetWidth: 280, offsetHeight: 300,
@@ -120,7 +128,10 @@ function dashboard(lang = 'en', width = 1000, session = new Map(), navigation = 
         return nodes.get(selector)
       },
       querySelectorAll,
-      addEventListener() {},
+      addEventListener(name, listener) {
+        if (!documentListeners.has(name)) documentListeners.set(name, [])
+        documentListeners.get(name).push(listener)
+      },
     },
     location,
     history: {
@@ -153,6 +164,11 @@ function dashboard(lang = 'en', width = 1000, session = new Map(), navigation = 
   return {
     nodes, labels, cards, paths,
     run(code, values = {}) { Object.assign(context, values); return runInContext(code, context) },
+    dispatchDocument(type, event, inline = () => {}) {
+      inline()
+      for (const listener of documentListeners.get(type) ?? []) listener(event)
+    },
+    dispatchElement(selector, type, event) { nodes.get(selector)?.dispatchEvent(type, event) },
     render(state, events = []) { this.run('STATE = input; render(STATE, inputEvents)', { input: state, inputEvents: events }) },
     flushFrame(nextWidth = viewportWidth) {
       viewportWidth = nextWidth
@@ -352,7 +368,7 @@ test('dashboard keeps an unadopted legacy phase pending until explicit adoption'
   }
 })
 
-test('status filters use effective state and add only direct dependency context', () => {
+test('status filters use effective state and always show only direct dependency context', () => {
   assert.ok(html.indexOf('.node.filtered-out') > html.indexOf('.node[data-st="skipped"]'),
     'filter opacity must override every task-state opacity')
   const tasks = {
@@ -370,8 +386,8 @@ test('status filters use effective state and add only direct dependency context'
     derived: Object.fromEntries(Object.entries(effective).map(([id, value]) => [id, { effective: value, blockedBy: tasks[id].deps }])) }
   const ui = dashboard()
   ui.render(state)
-  const ids = (filter, deps = false) => ui.run("JSON.stringify([...filterSets(STATE.tasks, inputFilter, inputDeps).allowed].sort())",
-    { inputFilter: filter, inputDeps: deps })
+  const matches = (filter) => ui.run("JSON.stringify([...filterSets(STATE.tasks, inputFilter).matches].sort())", { inputFilter: filter })
+  const allowed = (filter) => ui.run("JSON.stringify([...filterSets(STATE.tasks, inputFilter).allowed].sort())", { inputFilter: filter })
   const card = (id) => ui.cards.find((node) => node.dataset.id === id)
   const edge = (from, to) => ui.paths.find((path) => path.dataset.from === from && path.dataset.to === to)
   const hidden = (from, to) => !edge(from, to) || edge(from, to).classList.contains('filter-hidden')
@@ -380,44 +396,50 @@ test('status filters use effective state and add only direct dependency context'
     ready_to_plan: ['P'], planning: ['L'], ready: ['E'], running: ['B'], reviewing: ['R'],
     blocked: ['K'], failed: ['F'], skipped: ['S'],
   }
-  assert.equal(ids('all'), JSON.stringify(Object.keys(tasks).sort()))
-  for (const [filter, matches] of Object.entries(expected)) assert.equal(ids(filter), JSON.stringify(matches), filter)
-  assert.equal(ids('running', true), JSON.stringify(['A', 'B', 'C']))
-  assert.equal(ui.run("JSON.stringify([...filterSets(STATE.tasks, 'missing', false).matches])"), '[]')
+  assert.equal(matches('all'), JSON.stringify(Object.keys(tasks).sort()))
+  for (const [filter, ids] of Object.entries(expected)) assert.equal(matches(filter), JSON.stringify(ids), filter)
+  assert.equal(allowed('all'), JSON.stringify(Object.keys(tasks).sort()), 'no filter adds no context')
+  assert.equal(allowed('running'), JSON.stringify(['A', 'B']))
+  assert.equal(ui.run("JSON.stringify([...filterSets(STATE.tasks, 'missing').matches])"), '[]')
 
   assert.equal(ui.cards.length, Object.keys(tasks).length)
   for (const endpoints of [['A', 'B'], ['B', 'C'], ['C', 'D']])
     assert.ok(edge(...endpoints), endpoints.join(' → '))
   const originalState = JSON.stringify(state)
+  assert.equal(hidden('A', 'B'), true, 'the unfiltered graph keeps its prior dependency visibility')
 
   ui.run("setFilter('running')")
   assert.equal(card('B').classList.contains('filtered-out'), false)
-  assert.equal(card('A').classList.contains('filtered-out'), true)
-  assert.equal(ui.nodes.get('#depsBtn').textContent, 'dependencies off')
-  assert.equal(ui.nodes.get('#depsBtn').getAttribute('aria-pressed'), 'false')
+  assert.equal(card('A').classList.contains('filtered-out'), false)
+  assert.equal(card('A').classList.contains('dependency-context'), true)
+  assert.equal(card('B').classList.contains('dependency-context'), false)
+  assert.equal(card('C').classList.contains('filtered-out'), true)
   assert.equal(ui.nodes.get('#filterCount').textContent, 'filter results 1/12')
-  assert.equal(hidden('A', 'B'), true)
+  assert.equal(hidden('A', 'B'), false)
+  assert.equal(edge('A', 'B').classList.contains('context-edge'), true)
+  assert.equal(hidden('B', 'C'), true)
+  assert.equal(hidden('C', 'D'), true)
 
+  ui.run("setFilter('incomplete')")
+  assert.equal(card('B').classList.contains('filtered-out'), false)
+  assert.equal(card('C').classList.contains('filtered-out'), false)
+  assert.equal(hidden('B', 'C'), false, 'dependencies remain visible when both endpoints match the filter')
+  assert.equal(edge('B', 'C').classList.contains('context-edge'), false)
+  assert.equal(edge('A', 'B').classList.contains('context-edge'), true, 'direct dependencies outside the filter stay dimmed')
+
+  ui.run("setFilter('running')")
   ui.run("openTask('B'); setFilter('reviewing')")
   assert.equal(ui.run('POP === null'), true)
   assert.equal(ui.nodes.get('#pop').classList.contains('open'), false)
 
-  ui.run("setFilter('running'); toggleDependencies()")
-  assert.equal(ui.nodes.get('#depsBtn').textContent, 'dependencies on')
-  assert.equal(ui.nodes.get('#depsBtn').getAttribute('aria-pressed'), 'true')
-  for (const id of ['A', 'B', 'C']) assert.equal(card(id).classList.contains('filtered-out'), false, id)
+  ui.run("setFilter('running')")
   assert.equal(card('D').classList.contains('filtered-out'), true)
-  assert.equal(hidden('A', 'B'), false)
-  assert.equal(hidden('B', 'C'), false)
-  assert.equal(hidden('C', 'D'), true)
   assert.equal(JSON.stringify(state), originalState, 'filtering must not rewrite any task or dependency')
-
   ui.run("FOCUS = 'B'; applyFocus()")
-  assert.deepEqual(ui.cards.filter((node) => node.classList.contains('lit')).map((node) => node.dataset.id).sort(), ['A', 'B', 'C'])
+  assert.deepEqual(ui.cards.filter((node) => node.classList.contains('lit')).map((node) => node.dataset.id).sort(), ['A', 'B'])
   assert.equal(card('B').classList.contains('lit-self'), true)
   assert.equal(edge('A', 'B').classList.contains('lit'), true)
-  assert.equal(edge('B', 'C').classList.contains('lit'), true)
-  assert.equal(edge('C', 'D').classList.contains('filter-hidden'), true)
+  assert.equal(edge('B', 'C').classList.contains('filter-hidden'), true)
 
   ui.run("setFilter('reviewing')")
   ui.run("openTask('R')")
@@ -428,15 +450,14 @@ test('status filters use effective state and add only direct dependency context'
   assert.equal(ui.run('POP'), null, 'live status changes close details when the card leaves the filter')
   assert.equal(card('R').classList.contains('filtered-out'), true)
 })
-
-test('filter controls expose every state and localize labels and dependency toggle', () => {
+test('filter controls expose every state and localize labels', () => {
+  assert.doesNotMatch(html, /id="depsBtn"|toggleDependencies/)
   const options = [...html.matchAll(/<option value="([^"]+)"/g)].map(([, value]) => value)
   assert.deepEqual(options, ['all', 'done', 'incomplete', 'waiting', 'ready_for_discussion', 'discussing', 'ready_to_plan', 'planning', 'ready', 'running', 'reviewing', 'blocked', 'failed', 'skipped'])
   for (const [lang, labels] of [['en', ['all tasks', 'incomplete', 'ignored']], ['pt-BR', ['todas', 'incompletas', 'ignoradas']]]) {
     const ui = dashboard(lang)
     ui.render({ run: 'empty-filter', plan: { phases: [] }, tasks: {}, derived: {} })
     for (const label of labels) assert.ok(ui.labels.some((node) => node.textContent === label), `${lang}: ${label}`)
-    assert.equal(ui.nodes.get('#depsBtn').textContent, lang === 'en' ? 'dependencies off' : 'dependências desligadas')
     assert.equal(ui.nodes.get('#filterCount').textContent, lang === 'en' ? 'filter results 0/0' : 'resultado do filtro 0/0')
   }
 })
@@ -446,7 +467,7 @@ test('a run-only URL selects that run in the current root', () => {
   assert.match(html, /selectedRoot && SELECTED_RUN[\s\S]*selectedRoot\}\/\$\{SELECTED_RUN/)
 })
 
-test('filters preserve the full graph and disable nonmatching cards', () => {
+test('filters preserve the full graph and show matching task dependencies as context', () => {
   const ui = dashboard('pt-BR')
   const tasks = { A: task('A', 'pending', { phase: 'F0' }), B: task('B', 'pending', { phase: 'F1', deps: ['A'] }),
     C: task('C', 'pending', { phase: 'F7' }) }
@@ -463,7 +484,8 @@ test('filters preserve the full graph and disable nonmatching cards', () => {
   assert.equal(ui.run('CANVAS_H'), fullHeight)
   ui.run("setFilter('waiting')")
   assert.equal(ui.cards.find(card => card.dataset.id === 'B').classList.contains('filtered-out'), false)
-  assert.equal(ui.cards.find(card => card.dataset.id === 'A').classList.contains('filtered-out'), true)
+  assert.equal(ui.cards.find(card => card.dataset.id === 'A').classList.contains('filtered-out'), false)
+  assert.equal(ui.cards.find(card => card.dataset.id === 'A').classList.contains('dependency-context'), true)
   ui.run("setFilter('done')")
   assert.equal(ui.cards.length, 3)
   assert.equal(ui.cards.every(card => card.classList.contains('filtered-out')), true)
@@ -473,21 +495,29 @@ test('filters preserve the full graph and disable nonmatching cards', () => {
   assert.equal(ui.cards.some(card => card.classList.contains('filtered-out')), false)
 })
 
-test('opening and closing the legend preserves the 100% and the manual zoom', () => {
-  for (const setup of ['', 'zoomAt(100, 100, 0.6)', 'zoomAt(100, 100, 1.4)']) {
+test('opening and closing the legend preserves fixed scale and manual pan', () => {
+  for (const setup of ['', 'VIEW.x -= 40; VIEW.y -= 20; VIEW_MANUAL = true; applyView()']) {
     const ui = dashboard('en', 1000)
     ui.render(graphState(30))
     if (setup) ui.run(setup)
-    const before = ui.run('JSON.stringify({ view: VIEW, mode: VIEW_MODE })')
+    const before = JSON.parse(ui.run('JSON.stringify({ view: VIEW, manual: VIEW_MANUAL })'))
+    const assertView = () => {
+      const after = JSON.parse(ui.run("JSON.stringify({ view: VIEW, manual: VIEW_MANUAL, width: CANVAS_W, height: CANVAS_H, vw: $('#viewport').getBoundingClientRect().width, vh: $('#viewport').getBoundingClientRect().height })"))
+      assert.equal(after.view.k, 1)
+      assert.equal(after.manual, before.manual)
+      assert.ok(after.view.x >= Math.min(0, after.vw - after.width))
+      assert.ok(after.view.x <= Math.max(0, (after.vw - after.width) / 2))
+      assert.ok(after.view.y >= Math.min(0, after.vh - after.height))
+      assert.ok(after.view.y <= 0)
+    }
     ui.run('toggleSidebar()')
     ui.flushFrame(1330)
-    assert.equal(ui.run('JSON.stringify({ view: VIEW, mode: VIEW_MODE })'), before)
+    assertView()
     ui.run('toggleSidebar()')
     ui.flushFrame(1000)
-    assert.equal(ui.run('JSON.stringify({ view: VIEW, mode: VIEW_MODE })'), before)
+    assertView()
   }
 })
-
 test('responsive layout selects density and sizes phase lanes from their cards', () => {
   for (const [count, expected] of [[6, 'detailed'], [24, 'detailed'], [25, 'compact'], [48, 'compact'], [100, 'compact'], [101, 'dense'], [206, 'dense']]) {
     const ui = dashboard('en', 960)
@@ -536,34 +566,85 @@ test('responsive layout selects density and sizes phase lanes from their cards',
   assert.ok(narrowLayout.lanes.every((lane, i, lanes) => i === 0 || lanes[i - 1].y + lanes[i - 1].height < lane.y))
 })
 
-test('resize relayout preserves state and re-centres the untouched 100% board', () => {
+test('resize relayout preserves selected state and clamps manual pan at 100%', () => {
   const ui = dashboard('en', 1200)
   const state = graphState(48)
   ui.render(state)
-  ui.run("setFilter('running'); toggleDependencies(); openTask('T013'); FOCUS = 'T013'; SELECTED_RUN = 'fixture-48'; Object.assign(VIEW, { x: 91, y: -37, k: .8 })")
+  ui.run("setFilter('running'); openTask('T013'); FOCUS = 'T013'; SELECTED_RUN = 'fixture-48'; VIEW_MANUAL = true; Object.assign(VIEW, { x: 91, y: -37 })")
   assert.equal(ui.run('FILTER'), 'all', 'opening a filtered-out task reveals its card and popover anchor')
-  const before = JSON.parse(ui.run("JSON.stringify({ filter: FILTER, deps: SHOW_DEPS, pop: POP, focus: FOCUS, selected: SELECTED_RUN, fitted, view: VIEW, h: CANVAS_H, pos: LAST_POS })"))
+  const before = JSON.parse(ui.run("JSON.stringify({ filter: FILTER, pop: POP, focus: FOCUS, selected: SELECTED_RUN, fitted, manual: VIEW_MANUAL, view: VIEW, h: CANVAS_H, pos: LAST_POS })"))
   const beforeAnchor = JSON.parse(ui.run("JSON.stringify(document.querySelector('.node[data-id=\\\"T013\\\"]')?.getBoundingClientRect())"))
   ui.resize(700)
-  const after = JSON.parse(ui.run("JSON.stringify({ filter: FILTER, deps: SHOW_DEPS, pop: POP, focus: FOCUS, selected: SELECTED_RUN, fitted, view: VIEW, w: CANVAS_W, h: CANVAS_H, metrics: LAST_METRICS, pos: LAST_POS })"))
+  const after = JSON.parse(ui.run("JSON.stringify({ filter: FILTER, pop: POP, focus: FOCUS, selected: SELECTED_RUN, fitted, manual: VIEW_MANUAL, view: VIEW, w: CANVAS_W, h: CANVAS_H, metrics: LAST_METRICS, pos: LAST_POS })"))
   assert.equal(after.filter, before.filter)
-  assert.equal(after.deps, before.deps)
   assert.deepEqual(after.pop, before.pop)
   assert.equal(after.focus, before.focus)
   assert.equal(after.selected, before.selected)
   assert.equal(after.fitted, before.fitted)
-  assert.notDeepEqual(after.view, before.view)
+  assert.equal(after.manual, true)
   assert.equal(after.view.k, 1)
-  assert.equal(after.view.y, 0)
+  assert.notDeepEqual(after.view, before.view)
   const viewportW = ui.run("$('#viewport').getBoundingClientRect().width")
-  assert.equal(after.view.x, after.w <= viewportW ? (viewportW - after.w) / 2 : 0)
-  assert.ok(after.metrics.nodeW * after.view.k >= 72)
+  const viewportH = ui.run("$('#viewport').getBoundingClientRect().height")
+  assert.ok(after.view.x >= Math.min(0, viewportW - after.w))
+  assert.ok(after.view.x <= Math.max(0, (viewportW - after.w) / 2))
+  assert.ok(after.view.y >= Math.min(0, viewportH - after.h))
+  assert.ok(after.view.y <= 0)
+  assert.equal(after.metrics.nodeW * after.view.k, after.metrics.nodeW)
   const afterAnchor = JSON.parse(ui.run("JSON.stringify(document.querySelector('.node[data-id=\\\"T013\\\"]')?.getBoundingClientRect())"))
   const popPosition = JSON.parse(ui.run("JSON.stringify({ left: parseFloat($('#pop').style.left), top: parseFloat($('#pop').style.top) })"))
   assert.deepEqual(popPosition, { left: afterAnchor.right + 14, top: afterAnchor.top - 6 })
   assert.ok(beforeAnchor)
 })
+test('graph wheel and drag pan at fixed scale, honor bounds, and never zoom', () => {
+  const ui = dashboard('en', 500)
+  ui.render(graphState(48, 8))
+  const bounds = JSON.parse(ui.run("JSON.stringify({ width: CANVAS_W, height: CANVAS_H, vw: $('#viewport').getBoundingClientRect().width, vh: $('#viewport').getBoundingClientRect().height })"))
+  assert.ok(bounds.width > bounds.vw)
+  assert.ok(bounds.height > bounds.vh)
+  assert.equal(ui.run('VIEW.k'), 1)
 
+  const wheel = (deltaX, deltaY, options = {}) => {
+    const event = { deltaX, deltaY, shiftKey: false, ctrlKey: false, prevented: false,
+      preventDefault() { this.prevented = true }, ...options }
+    ui.dispatchElement('#viewport', 'wheel', event)
+    return event
+  }
+  wheel(30, 40)
+  assert.deepEqual(JSON.parse(ui.run('JSON.stringify({ x: VIEW.x, y: VIEW.y })')), { x: -30, y: -40 })
+  wheel(0, 12, { shiftKey: true })
+  assert.deepEqual(JSON.parse(ui.run('JSON.stringify({ x: VIEW.x, y: VIEW.y })')), { x: -42, y: -40 },
+    'Shift plus wheel moves the board horizontally')
+  const pinch = wheel(0, 15, { ctrlKey: true })
+  assert.equal(pinch.prevented, true, 'pinch wheel is prevented from zooming the page')
+  assert.deepEqual(JSON.parse(ui.run('JSON.stringify({ x: VIEW.x, y: VIEW.y, k: VIEW.k })')), { x: -42, y: -55, k: 1 })
+
+  const key = (value) => ui.dispatchDocument('keydown', {
+    key: value, target: { tagName: 'BODY' }, preventDefault() {},
+  })
+  const beforeKeys = ui.run('JSON.stringify(VIEW)')
+  for (const value of ['+', '-', '0']) key(value)
+  assert.equal(ui.run('JSON.stringify(VIEW)'), beforeKeys, 'legacy zoom keys do not move or scale the board')
+  assert.doesNotMatch(html, /zoomAt|zoomLvl|VIEW\.k\s*=/)
+
+  const minX = bounds.vw - bounds.width, minY = bounds.vh - bounds.height
+  wheel(5000, 5000)
+  assert.deepEqual(JSON.parse(ui.run('JSON.stringify({ x: VIEW.x, y: VIEW.y })')), { x: minX, y: minY })
+  wheel(-5000, -5000)
+  assert.deepEqual(JSON.parse(ui.run('JSON.stringify({ x: VIEW.x, y: VIEW.y })')), { x: 0, y: 0 })
+
+  const drag = (toX, toY) => {
+    ui.dispatchElement('#viewport', 'pointerdown', { button: 0, clientX: 100, clientY: 100, pointerId: 1 })
+    ui.dispatchElement('#viewport', 'pointermove', { clientX: toX, clientY: toY })
+    ui.dispatchElement('#viewport', 'pointerup', {})
+  }
+  drag(-2000, -2000)
+  assert.deepEqual(JSON.parse(ui.run('JSON.stringify({ x: VIEW.x, y: VIEW.y })')), { x: minX, y: minY },
+    'drag cannot pan beyond the far edges')
+  drag(2000, 2000)
+  assert.deepEqual(JSON.parse(ui.run('JSON.stringify({ x: VIEW.x, y: VIEW.y })')), { x: 0, y: 0 },
+    'drag cannot pan past the near edges')
+})
 test('phase boards expand for their cards and open with the complete graph visible', () => {
   const ui = dashboard('en', 1000)
   ui.render(graphState(48, 8))
@@ -575,13 +656,13 @@ test('phase boards expand for their cards and open with the complete graph visib
   assert.equal(initial.view.k, 1, 'the board always opens at 100%')
   assert.equal(initial.view.y, 0, '100% starts at the top when the board is taller than the viewport')
   assert.ok(initial.view.x >= 0, '100% never hides the hierarchy to the left of the viewport')
-  assert.doesNotMatch(html, /id="fitBtn"|toggleFitView|fitView\(/, 'no fit button: zoom is the wheel or the pinch only')
-  ui.run('zoomAt(500, 300, 0.5)')
-  assert.deepEqual(JSON.parse(ui.run('JSON.stringify({ k: VIEW.k, mode: VIEW_MODE })')), { k: 0.5, mode: 'manual' })
+  assert.doesNotMatch(html, /zoomAt|id="zoomLvl"|id="fitBtn"|toggleFitView|fitView\(/)
+  ui.run('VIEW.x -= 36; VIEW.y -= 20; VIEW_MANUAL = true; applyView()')
+  assert.deepEqual(JSON.parse(ui.run('JSON.stringify({ k: VIEW.k, manual: VIEW_MANUAL })')), { k: 1, manual: true })
   ui.run('actualView()')
-  const back = JSON.parse(ui.run('JSON.stringify({ view: VIEW, mode: VIEW_MODE })'))
-  assert.equal(back.mode, 'actual')
-  assert.deepEqual(back.view, initial.view, 'the 0 key returns to the opening 100% view')
+  const back = JSON.parse(ui.run('JSON.stringify({ view: VIEW, manual: VIEW_MANUAL })'))
+  assert.equal(back.manual, false)
+  assert.deepEqual(back.view, initial.view, 'resetting the graph returns to the opening fixed-scale view')
 
   const screenshotState = graphState(25, 6)
   const screenshotTasks = Object.values(screenshotState.tasks)
@@ -744,11 +825,15 @@ test('available tasks say who moves each one next and give way to the selected t
     assert.match(list, /--role:var\(--running\)[\s\S]*\$ bun test auth[\s\S]*12 tests pass/)
     assert.match(list, /--role:var\(--planning\)/)
     assert.match(list, lang === 'en' ? /needs you/ : /precisa de você/)
-    ui.run("openTask('E')")
+    const availableTarget = { closest(selector) { return selector === '.avail' ? this : null } }
+    const emptyTarget = { closest() { return null } }
+    ui.dispatchDocument('click', { target: availableTarget }, () => ui.run("openTask('E')"))
     assert.equal(ui.nodes.get('#availableBox').hidden, true)
     assert.equal(ui.nodes.get('#selectedBox').hidden, false)
     assert.match(ui.nodes.get('#selectedTask').innerHTML, /E · Task E/)
-    ui.run('closePop()')
+    assert.equal(ui.run('POP.id'), 'E', 'the card inline handler opens before the bubbling document handler')
+    ui.dispatchDocument('click', { target: emptyTarget })
+    assert.equal(ui.run('POP'), null, 'clicking empty space still closes the pinned task')
     assert.equal(ui.nodes.get('#availableBox').hidden, false)
   }
 })
@@ -823,6 +908,98 @@ test('expanding the popover pins it, switches to detail and closing resets it', 
   assert.equal(ui.nodes.get('#popScrim').classList.contains('on'), false)
 })
 
+test('results task rows select inline details, preserve them on refresh, and navigate with arrows', () => {
+  const state = graphState(3, 3)
+  state.tasks.T001.summary = 'A <summary>'
+  state.tasks.T001.validationSummary = 'Proof A'
+  state.tasks.T001.attempts = [{ n: 1, agent: 'exec-a', startedAt: instant(1), endedAt: instant(2), result: 'passed' }]
+  state.tasks.T001.validations = [{ ok: true, at: instant(2), evidence: 'check A passed' }]
+  const ui = dashboard()
+  ui.render(state)
+  ui.run("RESULTS_OPEN = true; $('#results').classList.add('open'); renderResults(STATE)")
+  assert.match(ui.nodes.get('#results').innerHTML, /role="button"[^>]*onclick="selectResultTask\('T001'\)"/)
+  const resultsTarget = { closest(selector) { return selector === '#results' ? this : null } }
+
+  ui.dispatchDocument('click', { target: resultsTarget }, () => ui.run("selectResultTask('T001')"))
+  assert.equal(ui.run('RESULTS_OPEN'), true, 'selecting a timeline row keeps the results tab open')
+  assert.equal(ui.run('POP'), null, 'row selection renders inside the tab without a graph popover')
+  assert.match(ui.nodes.get('#results').innerHTML, /T001 · Task T001/)
+  assert.match(ui.nodes.get('#results').innerHTML, /A &lt;summary&gt;/)
+  assert.match(ui.nodes.get('#results').innerHTML, /Proof A/)
+  assert.match(ui.nodes.get('#results').innerHTML, /onclick="jumpTo\('T001'\)"/)
+
+  ui.dispatchDocument('click', { target: resultsTarget }, () => ui.run("selectResultTask('T002')"))
+  assert.equal(ui.run('RESULT_TASK_ID'), 'T002', 'a second row replaces the selected detail')
+  assert.match(ui.nodes.get('#results').innerHTML, /T002 · Task T002/)
+  assert.doesNotMatch(ui.nodes.get('#results').innerHTML, /A &lt;summary&gt;/)
+  ui.run('renderResults(STATE)')
+  assert.equal(ui.run('RESULT_TASK_ID'), 'T002', 'the selected detail survives a live results refresh')
+
+  const key = (value) => ui.dispatchDocument('keydown', {
+    key: value, target: { tagName: 'BODY' }, preventDefault() {},
+  })
+  key('ArrowUp')
+  assert.equal(ui.run('RESULT_TASK_ID'), 'T001')
+  key('ArrowDown')
+  assert.equal(ui.run('RESULT_TASK_ID'), 'T002')
+  ui.dispatchDocument('keydown', {
+    key: 'ArrowUp', target: { tagName: 'SELECT', closest() { return this } }, preventDefault() {},
+  })
+  assert.equal(ui.run('RESULT_TASK_ID'), 'T002', 'arrows keep working in the run selector')
+
+  const nextRun = graphState(1, 1)
+  nextRun.run = 'next-run'
+  ui.render(nextRun)
+  ui.run('renderResults(STATE)')
+  assert.equal(ui.run('RESULT_TASK_ID'), null, 'switching to a run without the task clears its detail')
+  assert.doesNotMatch(ui.nodes.get('#results').innerHTML, /class="result-task"/)
+
+  ui.run("selectResultTask('T001')")
+  ui.dispatchDocument('click', { target: resultsTarget }, () => ui.run("jumpTo('T001')"))
+  assert.equal(ui.run('RESULTS_OPEN'), false, 'the separate graph link closes the results tab')
+  assert.equal(ui.run('POP.id'), 'T001', 'the separate graph link keeps jumpTo navigation working')
+})
+
+test('jumping from results pans a tall graph until the target task is visible', () => {
+  const ui = dashboard('en', 500)
+  ui.render(graphState(48, 8))
+  const before = JSON.parse(ui.run("JSON.stringify({ y: VIEW.y, taskY: LAST_POS.T048.y, height: LAST_METRICS.nodeH, viewport: $('#viewport').getBoundingClientRect().height })"))
+  assert.ok(before.taskY > before.viewport, 'fixture places T048 below the initial viewport')
+
+  ui.run("RESULTS_OPEN = true; $('#results').classList.add('open'); jumpTo('T048')")
+  assert.equal(ui.run('RESULTS_OPEN'), false, 'the graph link returns to the graph')
+  assert.equal(ui.run('POP.id'), 'T048', 'the target task keeps its graph detail open')
+  const after = JSON.parse(ui.run("JSON.stringify({ x: VIEW.x, y: VIEW.y, taskX: LAST_POS.T048.x, taskY: LAST_POS.T048.y, width: LAST_METRICS.nodeW, height: LAST_METRICS.nodeH, viewportWidth: $('#viewport').getBoundingClientRect().width, viewportHeight: $('#viewport').getBoundingClientRect().height })"))
+  const left = after.taskX + after.x
+  const top = after.taskY + after.y
+  assert.ok(left >= 0 && left + after.width <= after.viewportWidth,
+    `T048 should fit horizontally in the viewport: ${JSON.stringify({ left, ...after })}`)
+  assert.ok(top >= 0 && top + after.height <= after.viewportHeight,
+    `T048 should fit vertically in the viewport: ${JSON.stringify({ top, ...after })}`)
+})
+
+test('explicit results navigation survives the click suppression left by dragging the graph', () => {
+  const ui = dashboard('en', 500)
+  ui.render(graphState(48, 8))
+  ui.run('VIEW.x = -20; VIEW.y = -20; VIEW_MANUAL = true; applyView()')
+  ui.dispatchElement('#viewport', 'pointerdown', { button: 0, clientX: 100, clientY: 100, pointerId: 1 })
+  ui.dispatchElement('#viewport', 'pointermove', { clientX: 112, clientY: 112, pointerId: 1 })
+  ui.dispatchElement('#viewport', 'pointerup', { pointerId: 1 })
+  assert.equal(ui.run('suppressClick'), true, 'the completed drag suppresses its trailing graph click')
+
+  ui.run('toggleResults(); renderResults(STATE)')
+  assert.equal(ui.run('RESULTS_OPEN'), true)
+  ui.run("selectResultTask('T048')")
+  const resultsTarget = { closest(selector) { return selector === '#results' ? this : null } }
+  ui.dispatchDocument('click', { target: resultsTarget }, () => ui.run("jumpTo('T048')"))
+
+  assert.equal(ui.run('RESULTS_OPEN'), false, 'navigation returns to the graph')
+  assert.equal(ui.run('suppressClick'), false, 'explicit navigation clears stale drag suppression')
+  assert.equal(ui.run('POP.id'), 'T048', 'the task details open after the jump')
+  const view = JSON.parse(ui.run("JSON.stringify({ x: VIEW.x, y: VIEW.y, taskX: LAST_POS.T048.x, taskY: LAST_POS.T048.y, width: LAST_METRICS.nodeW, height: LAST_METRICS.nodeH, viewportWidth: $('#viewport').getBoundingClientRect().width, viewportHeight: $('#viewport').getBoundingClientRect().height })"))
+  assert.ok(view.taskX + view.x >= 0 && view.taskX + view.x + view.width <= view.viewportWidth)
+  assert.ok(view.taskY + view.y >= 0 && view.taskY + view.y + view.height <= view.viewportHeight)
+})
 test('results count planning intervals and exclude human blocks and planning from execution queue time', () => {
   const ui = dashboard()
   const completePlan = { ...plan, startedAt: instant(15), completedAt: instant(20) }

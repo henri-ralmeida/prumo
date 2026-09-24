@@ -272,8 +272,6 @@
   "completed": "concluídas",
   "incomplete": "incompletas",
   "ignored": "ignoradas",
-  "dependencies off": "dependências desligadas",
-  "dependencies on": "dependências ligadas",
   "filter results {0}/{1}": "resultado do filtro {0}/{1}",
   "fit to screen (0)": "ajustar à tela (0)",
   "show at 100%": "mostrar em 100%",
@@ -549,5 +547,7 @@
   "{0} in {1} of wall clock": "{0} em {1} de relógio",
   "Everything here comes from the attempt and review timestamps Prumo records. Tokens are not measured.": "Tudo aqui vem dos horários de tentativa e revisão registrados pelo Prumo. Tokens não são medidos.",
   "wait": "espera",
-  "rejected verdicts": "reprovados"
+  "rejected verdicts": "reprovados",
+  "Task detail": "Detalhes da tarefa",
+  "See in graph →": "Ver no grafo →"
 }
