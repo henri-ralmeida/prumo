@@ -160,7 +160,8 @@ function dashboard(lang = 'en', width = 1000, session = new Map(), navigation = 
   })
   // Run the shipped script, excluding its network polling boot; render/localize stay real.
   const script = localizeDashboard(html, lang).match(/<script>([\s\S]*?)<\/script>/)[1]
-  runInContext(script.replace(/localize\(\)\s*tick\(\)\s*$/, ''), context)
+  const renderOnly = script.replace(/\nconst ONBOARDING = createPrumoOnboarding\(\{[\s\S]*?\n\}\)\ntick\(\)\nloadIdentity\(\)\s*$/, '')
+  runInContext(renderOnly, context)
   return {
     nodes, labels, cards, paths,
     run(code, values = {}) { Object.assign(context, values); return runInContext(code, context) },
@@ -873,7 +874,7 @@ test('Gravidade cards and agent panels show measured activity in the compact das
   assert.match(html, /<details class="run-menu" id="runMenu"/)
   assert.match(html, /<summary class="run-trigger"/)
   assert.doesNotMatch(html, /<select[^>]+id="runSelect"/)
-  assert.match(html, /<details class="legend-box">/)
+  assert.match(html, /<details class="legend-box" data-prumo-guide-anchor="legend">/)
   assert.match(html, /#eventsBox \{ display: flex; flex: 1;/)
   assert.match(html, /#pop \{[^}]*width: 472px/)
   assert.match(html, /#pop \.pk \{[^}]*10px[^}]*var\(--font-mono\)/)
@@ -1345,6 +1346,65 @@ test('gain card omits a long phase-planning envelope without active telemetry', 
   assert.doesNotMatch(results, /115h|115:23/)
 })
 
+test('o tour só resume o ganho real do #39 com run concluída e medição íntegra', () => {
+  const ui = dashboard('pt-BR')
+  const runState = {
+    run: 'finished', createdAt: instant(0), plan: { phases: [] },
+    tasks: { A: task('A', 'done', { attempts: [{ n: 1, startedAt: instant(0), endedAt: instant(20) }] }) },
+    derived: { A: { effective: 'done' } },
+  }
+  const events = [
+    { type: 'task_start', task: 'A', attempt: 1, at: instant(0) },
+    { type: 'task_progress', task: 'A', attempt: 1, at: instant(20), current: 1, total: 1 },
+    { type: 'task_done', task: 'A', attempt: 1, at: instant(20) },
+  ]
+  const load = (run, state, history, complete) => ui.run(
+    "SELECTED_ROOT = inputRoot; SELECTED_RUN = inputRun; CURRENT_ROOT = inputRoot; CURRENT_RUN = inputRun; STATE = inputState; FULL_EVENTS = inputEvents; EVENTS = inputEvents; EVENTS_COMPLETE = inputComplete; STATE_RUN_KEY = inputRoot + '\\0' + inputRun; EVENT_HISTORY_KEY = STATE_RUN_KEY",
+    { inputRoot: 'root-a', inputRun: run, inputState: state, inputEvents: history, inputComplete: complete },
+  )
+  load('finished', runState, events, true)
+  assert.equal(ui.run('selectedRunStateAvailable()'), true)
+  const measured = JSON.parse(ui.run('JSON.stringify(getCompletedRunSummary())'))
+  assert.equal(measured.completed, true)
+  assert.equal(measured.measurementComplete, true)
+  assert.equal(measured.text, 'Um agente por vez: 20s · Com Prumo: 20s · Economia aferida: 0s · Fator de paralelismo: 1,00×')
+
+  ui.run("SELECTED_ROOT = 'root-b'; SELECTED_RUN = 'loading'; CURRENT_ROOT = 'root-b'; CURRENT_RUN = 'loading'")
+  assert.equal(ui.run('selectedRunStateAvailable()'), false, 'A não fica disponível enquanto a seleção aponta para B')
+  assert.equal(ui.run('getCompletedRunSummary()'), null, 'o guia não reutiliza o resumo de A durante o carregamento de B')
+
+  load('finished', runState, events, false)
+  const incompleteHistory = JSON.parse(ui.run('JSON.stringify(getCompletedRunSummary())'))
+  assert.equal(incompleteHistory.completed, true)
+  assert.equal(incompleteHistory.measurementComplete, false)
+  assert.equal(incompleteHistory.text, undefined)
+
+  const pauseSeconds = 115 * 3600 + 23 * 60
+  const gapState = {
+    ...runState,
+    tasks: { A: task('A', 'done', { attempts: [{ n: 1, startedAt: instant(0), endedAt: instant(pauseSeconds + 20) }] }) },
+  }
+  const sparseEvents = [
+    { type: 'task_start', task: 'A', attempt: 1, at: instant(0) },
+    { type: 'task_done', task: 'A', attempt: 1, at: instant(pauseSeconds + 20) },
+  ]
+  load('finished', gapState, sparseEvents, true)
+  const unmeasuredGap = JSON.parse(ui.run('JSON.stringify(getCompletedRunSummary())'))
+  assert.equal(unmeasuredGap.completed, true)
+  assert.equal(unmeasuredGap.measurementComplete, false)
+  assert.equal(unmeasuredGap.text, undefined)
+  assert.doesNotMatch(JSON.stringify(unmeasuredGap), /115h|115:23/)
+
+  const planningState = {
+    ...runState,
+    phaseWorkflows: { P1: { id: 'P1', state: 'done', planningAttempts: [{ startedAt: instant(0), endedAt: instant(pauseSeconds) }] } },
+  }
+  load('finished', planningState, events, true)
+  const unmeasuredPlanning = JSON.parse(ui.run('JSON.stringify(getCompletedRunSummary())'))
+  assert.equal(unmeasuredPlanning.completed, true)
+  assert.equal(unmeasuredPlanning.measurementComplete, false)
+  assert.equal(unmeasuredPlanning.text, undefined)
+})
 test('gain waits for complete events when an old block falls outside the last 120 events', () => {
   const ui = dashboard('pt-BR')
   const pauseSeconds = 115 * 3600 + 23 * 60

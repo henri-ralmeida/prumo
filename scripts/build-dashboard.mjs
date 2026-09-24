@@ -2,15 +2,22 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import { createTranslator, messages } from './i18n.mjs'
 import { DEFAULT_GAIN_ASSUMPTIONS, gainAssumptionKey, calculateGain, renderGainPanel, renderGainEstimate } from './dashboard-gains.mjs'
+import { createPrumoOnboarding } from './onboarding.mjs'
 
 export function dashboardWithCatalog(html) {
-  const block = `/*PRUMO_I18N_START*/\nconst PRUMO_MESSAGES = ${JSON.stringify(messages)}\n${createTranslator.toString()}\n/*PRUMO_I18N_END*/`
+  const block = '/*PRUMO_I18N_START*/\nconst PRUMO_MESSAGES = ' + JSON.stringify(messages) + '\n' + createTranslator.toString() + '\n/*PRUMO_I18N_END*/'
+  const guide = '/*PRUMO_GUIDE_START*/\n' + createPrumoOnboarding.toString() + '\n/*PRUMO_GUIDE_END*/'
   if (!html.includes('/*PRUMO_I18N_START*/')) throw new Error('Dashboard translation marker missing')
   if (!html.includes('/*PRUMO_GAIN_HELPERS_START*/')) throw new Error('Dashboard gain-helper marker missing')
-  const helpers = `/*PRUMO_GAIN_HELPERS_START*/\nconst DEFAULT_GAIN_ASSUMPTIONS = Object.freeze(${JSON.stringify(DEFAULT_GAIN_ASSUMPTIONS)})\n${[gainAssumptionKey, calculateGain, renderGainPanel, renderGainEstimate].map(fn => fn.toString()).join('\n\n')}\n/*PRUMO_GAIN_HELPERS_END*/`
+  if (!html.includes('/*PRUMO_GUIDE_START*/')) throw new Error('Dashboard onboarding marker missing')
+  const helpers = '/*PRUMO_GAIN_HELPERS_START*/\nconst DEFAULT_GAIN_ASSUMPTIONS = Object.freeze(' +
+    JSON.stringify(DEFAULT_GAIN_ASSUMPTIONS) + ')\n' +
+    [gainAssumptionKey, calculateGain, renderGainPanel, renderGainEstimate].map(fn => fn.toString()).join('\n\n') +
+    '\n/*PRUMO_GAIN_HELPERS_END*/'
   return html
     .replace(/\/\*PRUMO_I18N_START\*\/[\s\S]*?\/\*PRUMO_I18N_END\*\//, () => block)
     .replace(/\/\*PRUMO_GAIN_HELPERS_START\*\/[\s\S]*?\/\*PRUMO_GAIN_HELPERS_END\*\//, () => helpers)
+    .replace(/\/\*PRUMO_GUIDE_START\*\/[\s\S]*?\/\*PRUMO_GUIDE_END\*\//, () => guide)
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
