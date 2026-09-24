@@ -1278,3 +1278,29 @@ test('sync-plan warns without blocking when it invalidates an open discussion or
   assert.match(skipSync, /sync-plan warning: A planning skip was invalidated/)
   assert.ok(skipped.state().phaseWorkflows.F1.contractConfirmationRequired)
 })
+test('phase plans persist summaries and bind a separate plan digest at start', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Deliver phase output' }])
+  f.ok('skip-phase-discussion', 'F1', '--reason', 'The approved phase contract is settled', '--confirmed-by-user')
+  f.ok('plan-phase', 'F1', '--agent', 'phase-planner')
+  f.writeArtifacts('F1')
+
+  const artifactPath = join(f.plans, 'task-plan-A.json')
+  const artifact = JSON.parse(readFileSync(artifactPath, 'utf8'))
+  artifact.summary = 'Reuse the approved service path so phase output is available to its dependents.'
+  writeFileSync(artifactPath, JSON.stringify(artifact))
+  f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+
+  const planned = f.state().tasks.A
+  assert.equal(planned.taskPlan.summary, artifact.summary)
+  assert.match(planned.taskPlan.digest, /^[a-f0-9]{64}$/)
+  f.ok('start', 'A', '--agent', 'executor')
+
+  const started = f.state().tasks.A
+  assert.equal(started.attempts[0].planDigest, planned.taskPlan.digest)
+  assert.match(started.attempts[0].inputDigest, /^[a-f0-9]{64}$/)
+  assert.notEqual(started.attempts[0].inputDigest, started.attempts[0].planDigest)
+  const event = JSON.parse(f.events().trim().split(/\r?\n/).at(-1))
+  assert.equal(event.type, 'task_start')
+  assert.equal(event.planDigest, planned.taskPlan.digest.slice(0, 4))
+  assert.match(f.ok('status').stdout, new RegExp(`Plan ${planned.taskPlan.digest.slice(0, 4)}`))
+})

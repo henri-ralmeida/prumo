@@ -148,6 +148,8 @@ export function validationContract(task) {
 // Evidence is supplied by the planner; this gate checks completeness, not the truth of research.
 export function assertTaskPlan(task, plan) {
   insist(plan && typeof plan === 'object' && !Array.isArray(plan), 'task plan must be a JSON object')
+  if (plan.summary !== undefined)
+    insist(nonempty(plan.summary), 'task plan summary must be a nonempty string when present')
   insist(Array.isArray(plan.research) && plan.research.length > 0 &&
     plan.research.every(item => item && nonempty(item.source) && nonempty(item.findings)),
   'task plan research needs nonempty source and findings for each entry')
@@ -200,6 +202,21 @@ export function planTaskFromState(t) {
 }
 
 const digest = value => createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex')
+
+const TASK_PLAN_CONTENT_FIELDS = [
+  'research', 'decisions', 'steps', 'verification', 'openQuestions', 'writes',
+  'phaseBinding', 'unresolvedInputs',
+]
+
+// Hash executable planning content. Presentation summaries and recording metadata do not
+// change the plan identity or its authorization.
+export function taskPlanDigest(plan) {
+  const value = plan && typeof plan === 'object' && !Array.isArray(plan) ? plan : {}
+  const content = Object.fromEntries(TASK_PLAN_CONTENT_FIELDS
+    .filter(field => Object.hasOwn(value, field))
+    .map(field => [field, value[field]]))
+  return digest(content)
+}
 
 // Phase planning is intentionally contract-only: delivery progress may satisfy an input,
 // but must never rewrite an already approved plan.

@@ -48,6 +48,21 @@ is fixed under the central Prumo workspace.
 
 Apply [PO First](references/po-first.md), also configured globally by the installer, in every role. Respond in the user's language. A functional check means evidence of the requested effect, whether the work concerns data, automation, migration, software, or another domain. Use the host's native subagent tools; if dedicated planning, execution or independent review are unavailable, report that limitation rather than inventing agent dispatch. The engine records transitions; it does not create agents. In Codex invoke this skill as `$prumo`; Claude Code, Kiro and DeepSeek Harness (DSH) use `/prumo`.
 
+### Role-written summaries
+
+The approved task definition may include a business `label` (1–3 words, at most 24 characters),
+a 1–2 sentence `summary` of the expected result and why it matters, and a one-sentence
+`validationSummary` describing acceptance. Write only text supported by the approved scope.
+These fields are display text; changing them alone does not change the task contract or planning
+authorization. Do not invent, generate or truncate a label to fill a missing one.
+
+The planner writes `taskPlan.summary` as 1–2 sentences explaining the chosen approach and why it
+fits the expected result. The executor reports a 1–2 sentence outcome and why to the orchestrator
+for `task.summary`; the orchestrator may synchronize that text without changing the approved
+contract. The reviewer supplies a one-sentence PO First verdict through `validate --summary` and
+keeps `--evidence` as the complete behavioral observations. Summaries are optional in stored
+state, but when present they must contain nonblank text.
+
 For DSH, `prumo install --dsh` integrates only with an already detected external DSH installation and `prumo doctor --dsh` diagnoses that integration. A nonempty `DSH_HOME` takes precedence, otherwise the root is `~/.dsh`; Prumo manages `<DSH_HOME>/skills/prumo` and its PO First block in the global `<DSH_HOME>/AGENTS.md`. It never installs `@deepseek-ai/dsh`; explicit installation fails without writes when DSH is absent. The upstream version validated for this adapter was `0.1.6-alpha.2`, still alpha/developer preview. DSH already supplies skills, instructions, subagents and workflows in applicable profiles, so Prumo does not create or edit Cordis configuration, profiles, plugins, subagents, workflows or credentials. Structural install, doctor and `dsh --profile headless --dump-config` checks do not establish a real model conversation.
 
 ## Invocation router
@@ -380,6 +395,7 @@ context establishes it, otherwise surface the ownership question to the PO. Keep
 internal process details out of comments, tests, messages and README drafts; required planning identifiers
 belong only in the designated task-plan contract fields.
 Preserve known decisions; propose any material contract change for the authorized global-plan workflow.
+Include `summary` in each artifact: 1–2 sentences describing the chosen approach and why it meets the expected result.
 Write ONLY task-plan-<id>.json in <absolute artifact directory> for each target: research, decisions,
 steps, verification, open questions, writes, phaseBinding and unresolvedInputs. Each verification item may
 declare required resources with `requires`; use only the documented vocabulary. Record anticipated project
@@ -508,6 +524,7 @@ and planning separately from the observable uncertainty/risk, but let the user s
 unchanged-contract correction normally stays in the executor/reviewer loop; no replanning is invented.
 
 Report each execution step as it starts, using the 1-based index in the recorded `taskPlan.steps`.
+When reporting completion, give the orchestrator a 1–2 sentence result-and-why summary for `task.summary`.
 The orchestrator records actual executor reports with `progress <task> --step <index> --agent <executor>`.
 `start` records step 1; repeated progress is a no-op, and a new attempt starts over. These counters describe
 the current step, not verified completion; they never replace review. Legacy tasks without a task plan
@@ -610,7 +627,7 @@ Browser/API workflows need checks that exercise that workflow at the
 appropriate layer; a pure helper test cannot prove a user journey. Keep tests scoped to the
 task and add a final integration check when separate tasks must work together.
 
-Call `validate --ok --evidence "<observations against each criterion>" --cwd <absolute-project>`
+Call `validate --ok --summary "<one-sentence PO First verdict>" --evidence "<complete observations against each criterion>" --cwd <absolute-project>`
 after inspecting real `git status --short` and staged/unstaged diffs against the pre-start baseline,
 the declared `writes` and approved `touches`, and the approved commands. Discount paths and hunks
 already present before execution; a dirty path alone does not attribute a change to the current task.
@@ -776,6 +793,7 @@ Check the recorded output, actual relevant test count, and results against every
 Never accept lint/build/typecheck, echo instructions, or zero relevant tests as functional proof.
 Answer:
   verdict:  ok | failed
+  summary: one sentence stating the result and why it meets or misses acceptance
   evidence: what you RAN and what it ANSWERED — commands and counts, not impressions.
   if failed: what is missing, specific enough for the next executor to act on.
 ```
@@ -783,7 +801,8 @@ Answer:
 What is absent from that message is the point: no executor report, no attempt count, no "the
 suite was already green". A fresh agent, a clean context, and the contract.
 
-- **`--evidence` records the reviewer's behavioral observations** and must not be empty.
+- **`--summary` records the reviewer's concise PO First verdict** when supplied; blank values are refused.
+  **`--evidence` records the complete behavioral observations** and must not be empty or replaced by the summary.
   Command results are collected by the engine; the reviewer still checks their relevance.
   `done` refuses without a passing review validation for the CURRENT attempt — the one rule
   that stops "it looks right" from becoming state.

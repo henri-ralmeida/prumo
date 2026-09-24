@@ -902,3 +902,148 @@ test('task planning status shows age and accepted artifact counts', t => {
 function fixtureTempBase() {
   return tmpdir()
 }
+
+test('task labels and summaries persist while text-only sync leaves the approved plan current', t => {
+  const f = fixture(t, [{ id: 'T1', title: 'Delivery estimate', label: 'a'.repeat(24),
+    summary: 'Customers get the approved delivery estimate.', validationSummary: 'Both delivery cases pass.' }])
+  const initialized = f.state().tasks.T1
+  assert.equal(initialized.label, 'a'.repeat(24), 'the maximum 24-character label is accepted')
+  assert.equal(initialized.summary, 'Customers get the approved delivery estimate.')
+  assert.equal(initialized.validationSummary, 'Both delivery cases pass.')
+
+  f.planTask()
+  const planned = structuredClone(f.state().tasks.T1)
+  Object.assign(f.plan.tasks[0], {
+    label: 'Entrega',
+    summary: 'Customers see the estimate before choosing delivery.',
+    validationSummary: 'Express shows one day; normal shows three.',
+  })
+  f.writePlan()
+  f.ok('sync-plan', '--plan', f.planPath)
+
+  const updated = f.state().tasks.T1
+  assert.equal(updated.label, 'Entrega')
+  assert.equal(updated.summary, 'Customers see the estimate before choosing delivery.')
+  assert.equal(updated.validationSummary, 'Express shows one day; normal shows three.')
+  assert.deepEqual(updated.taskPlan, planned.taskPlan, 'text-only plan sync preserves the recorded plan')
+  for (const field of ['scopeRevision', 'planningRevision', 'contractRevision'])
+    assert.equal(updated[field], planned[field], field + ' is unchanged')
+  assert.equal(f.graph().derived.T1.effective, 'ready')
+  const sync = JSON.parse(f.events().trim().split(/\r?\n/).at(-1))
+  assert.deepEqual(sync.metadataUpdated, ['T1'])
+
+  f.ok('start', 'T1', '--agent', 'executor')
+  assert.equal(f.state().tasks.T1.state, 'running', 'the current plan remains executable')
+})
+
+test('empty task summaries and malformed labels are rejected by plan synchronization', t => {
+  for (const field of ['summary', 'validationSummary']) {
+    const f = fixture(t)
+    f.plan.tasks[0][field] = '  \n'
+    f.writePlan()
+    const before = f.state(), events = f.events()
+    f.rejected(new RegExp(`task T1 ${field} must be a nonempty string`), 'sync-plan', '--plan', f.planPath)
+    assert.deepEqual(f.state(), before)
+    assert.equal(f.events(), events)
+  }
+
+  for (const label of ['', 'four words are too many', '1234567890123456789012345', 7]) {
+    const f = fixture(t)
+    f.plan.tasks[0].label = label
+    f.writePlan()
+    const before = f.state(), events = f.events()
+    f.rejected(/task T1 label must have 1 to 3 words and no more than 24 characters/, 'sync-plan', '--plan', f.planPath)
+    assert.deepEqual(f.state(), before)
+    assert.equal(f.events(), events)
+  }
+
+  const invalidInit = fixture(t)
+  invalidInit.plan.tasks[0].label = 'four words are too many'
+  invalidInit.writePlan()
+  invalidInit.rejected(/task T1 label must have 1 to 3 words and no more than 24 characters/,
+    'init', '--plan', invalidInit.planPath, '--run', 'invalid-label')
+
+  const localized = fixture(t, [{ id: 'T1', title: 'Delivery estimate' }], {}, { lang: 'pt-BR' })
+  localized.plan.tasks[0].label = 'quatro palavras no rotulo'
+  localized.writePlan()
+  localized.rejected(/rótulo da tarefa T1/, 'sync-plan', '--plan', localized.planPath)
+})
+
+test('task-plan summaries are validated and their content digest is stable across replanning attempts', t => {
+  const f = fixture(t)
+  f.beginPlan()
+  const invalidPath = join(f.root, 'empty-summary.json')
+  writeFileSync(invalidPath, JSON.stringify({ ...f.artifact(), summary: '  ' }))
+  const before = f.state()
+  f.rejected(/task plan summary must be a nonempty string/, 'finish-planning', 'T1', '--plan', invalidPath)
+  assert.deepEqual(f.state(), before)
+
+  const artifact = { ...f.artifact(), summary: 'Reuse the existing boundary so invalid estimates are rejected before delivery.' }
+  f.finish('T1', artifact)
+  const initial = f.state().tasks.T1.taskPlan
+  const firstDigest = initial.digest
+  assert.match(firstDigest, /^[a-f0-9]{64}$/)
+
+  // A run written before plan digests existed can start; the engine fills the identity from content.
+  const legacy = f.state()
+  legacy.tasks.T1.taskPlan.summary = 'A display-only summary changed after planning.'
+  delete legacy.tasks.T1.taskPlan.digest
+  f.save(legacy)
+  f.ok('start', 'T1', '--agent', 'executor-1')
+  const firstAttempt = f.state().tasks.T1.attempts[0]
+  assert.equal(firstAttempt.planDigest, firstDigest)
+  assert.equal(f.state().tasks.T1.taskPlan.digest, firstDigest)
+  assert.equal(f.state().tasks.T1.taskPlan.summary, 'A display-only summary changed after planning.')
+  assert.match(f.ok('status').stdout, new RegExp(`Plan ${firstDigest.slice(0, 4)}`))
+  let starts = f.events().trim().split(/\r?\n/).map(JSON.parse).filter(event => event.type === 'task_start')
+  assert.equal(starts.at(-1).planDigest, firstDigest.slice(0, 4))
+
+  f.ok('review', 'T1', '--agent', 'reviewer-1')
+  f.ok('fail', 'T1', '--reason', 'The plan missed a required delivery branch', '--plan-defect')
+  f.ok('retry', 'T1')
+  f.beginPlan('T1', 'planner-2')
+  f.finish('T1', artifact)
+  const repeated = f.state().tasks.T1.taskPlan
+  assert.notEqual(repeated.completedAt, initial.completedAt)
+  assert.equal(repeated.digest, firstDigest, 'summary text and recording times do not change plan identity')
+  f.ok('start', 'T1', '--agent', 'executor-2')
+
+  f.ok('review', 'T1', '--agent', 'reviewer-2')
+  f.ok('fail', 'T1', '--reason', 'The plan still missed a required branch', '--plan-defect')
+  f.ok('retry', 'T1')
+  f.beginPlan('T1', 'planner-3')
+  f.finish('T1', { ...artifact, steps: [...artifact.steps, 'Compare the normal-delivery branch against the approved result.'] })
+  const changedDigest = f.state().tasks.T1.taskPlan.digest
+  assert.notEqual(changedDigest, firstDigest, 'a plan-content change gets a new identity')
+  f.ok('start', 'T1', '--agent', 'executor-3')
+
+  const attempts = f.state().tasks.T1.attempts
+  assert.deepEqual(attempts.map(attempt => attempt.planDigest), [firstDigest, firstDigest, changedDigest])
+  starts = f.events().trim().split(/\r?\n/).map(JSON.parse).filter(event => event.type === 'task_start')
+  assert.deepEqual(starts.map(event => event.planDigest), [
+    firstDigest.slice(0, 4), firstDigest.slice(0, 4), changedDigest.slice(0, 4),
+  ])
+})
+
+test('validation summary remains optional, nonblank when present, and separate from full evidence', t => {
+  const f = fixture(t)
+  f.planTask()
+  f.ok('start', 'T1', '--agent', 'executor')
+  f.ok('review', 'T1', '--agent', 'reviewer')
+  const before = f.state(), events = f.events()
+  f.rejected(/validation summary must be a nonempty string/, 'validate', 'T1', '--ok',
+    '--summary', '', '--evidence', 'All delivery observations are recorded.', '--cwd', f.project)
+  assert.deepEqual(f.state(), before)
+  assert.equal(f.events(), events)
+
+  const summary = 'As duas estimativas aprovadas são exibidas.\nO aceite foi conferido integralmente.  '
+  const evidence = 'node delivery.test.cjs retornou sucesso para os dois cenários.\nEVIDENCE_END.'
+  f.ok('validate', 'T1', '--ok', '--summary', summary, '--evidence', evidence, '--cwd', f.project)
+  const receipt = f.state().tasks.T1.validations.at(-1)
+  assert.equal(receipt.summary, summary)
+  assert.equal(receipt.evidence, evidence)
+  const event = JSON.parse(f.events().trim().split(/\r?\n/).at(-1))
+  assert.equal(event.type, 'task_validate')
+  assert.equal(event.summary, summary)
+  assert.equal(event.evidence, evidence)
+})

@@ -29,6 +29,9 @@ Cada execução usa `.specs/graph/<run>/state.json` e `events.ndjson`. `CURRENT`
   "phases": [{ "id": "P1", "title": "Entrega" }],
   "tasks": [{
     "id": "T1", "title": "Comprovar o resultado solicitado",
+    "label": "Cartões",
+    "summary": "Os dados aprovados chegam à conta sem uma segunda etapa manual.",
+    "validationSummary": "A conta mostra o status de cartão aprovado.",
     "phase": "P1", "deps": [], "touches": ["entrega/"],
     "unavailable": ["database", "manual-inspection"],
     "validationMode": "functional",
@@ -47,6 +50,8 @@ Cada execução usa `.specs/graph/<run>/state.json` e `events.ndjson`. `CURRENT`
 `init` e `sync-plan` avisam quando um prefixo de `touches` não existe no cwd da validação ou no `cwd`
 declarado por um passo; o aviso não bloqueia, pois novos arquivos e pastas são legítimos. Cwd inacessível
 é informado como checagem não realizada.
+
+`label` aceita de 1 a 3 palavras e até 24 caracteres; `summary` descreve em 1–2 frases o resultado esperado e por quê; `validationSummary` resume em uma frase o aceite. Todos são textos opcionais e precisam estar preenchidos quando presentes. Uma alteração apenas nesses textos via `sync-plan` atualiza a apresentação sem mudar o contrato nem invalidar o planejamento. O dashboard preserva o `title` completo em detalhes e tooltips; não gera nem corta um rótulo substituto.
 
 `requireReview` pode ser definido por tarefa ou plano; o padrão exige revisão. Desabilitar revisão não elimina a comprovação funcional. `maxAttempts` por tarefa define o limite de tentativas antes de escalar; o padrão é três. `tags` é uma lista opcional de classificações.
 
@@ -163,6 +168,7 @@ e recusa artefatos incompletos, alterados ou ligados a uma descoberta desatualiz
 ```json
 {
   "research": [{ "source": "src/importacao.mjs", "findings": "O importador atual valida as linhas antes de gravar; reutilizar essa validação." }],
+  "summary": "Reutilizar o limite de validação existente rejeita linhas inválidas antes de qualquer gravação.",
   "decisions": [{ "question": "Como tratar uma linha inválida?", "answer": "O contrato aprovado exige rejeição sem gravação parcial." }],
   "steps": ["Ampliar a validação existente.", "Adicionar o caso de linha inválida à verificação funcional existente."],
   "verification": [{ "criterion": "Linha inválida produz o erro aprovado e preserva os registros existentes.", "check": 1, "requires": ["database"] }],
@@ -188,12 +194,18 @@ somente quando o contrato aprovado for inspeção em texto. Esses três arrays n
 `question`, `blocking` booleano e `answer` opcional; também pode ser vazio. Pergunta bloqueante
 sem resposta impede concluir planejamento; não invente resposta nem omita seu efeito para liberar execução.
 
+Cada plano de tarefa pode ter um `summary` não vazio de 1–2 frases sobre o caminho escolhido e por quê.
 O motor salva cada `taskPlan` e seu histórico imutável. O escopo usa contratos, sem estado mutável das
 entregas. Mudança de contrato invalida a tarefa afetada e dependentes reais; descoberta compartilhada
 invalida planos não terminais da fase; `--plan-defect` invalida somente aquela tarefa. Achados comuns e
 conclusão de dependência não replanejam. No `start`, uma dependência `done` fornece a validação atual e
 uma `skipped` fornece dispensa explícita ligada ao motivo. O recibo não altera o plano e precisa permanecer
 igual durante revisão, validação e conclusão.
+
+Cada `taskPlan` persistido recebe `digest` SHA-256 do conteúdo canônico de execução, sem resumos de
+apresentação, horários ou metadados de registro. `start` grava o digest completo em `attempts[].planDigest`; status e evento `task_start`
+exibem os quatro primeiros caracteres. Ele é distinto de `inputDigest`, que identifica recibos de
+dependências. Runs antigas sem digest continuam legíveis e podem iniciar normalmente.
 
 Runs persistidas no modo por tarefa continuam usando `begin-discussion`, `finish-discussion`, `plan-task`
 e `finish-planning`, com a semântica anterior de dependências concluídas.
@@ -258,8 +270,8 @@ Resolva `scripts/engine.mjs` a partir da skill instalada. Acrescente `--run <nom
 | `start <tarefa> --agent <nome>` | Registra executor e inicia tentativa |
 | `progress <tarefa> --step <índice> --agent <executor>` | Registra o passo atual do plano durante a execução, começando em 1 |
 | `review <tarefa> --agent <nome>` | Encaminha trabalho para revisão |
-| `validate <tarefa> --ok --evidence <texto> --cwd <diretório>` | Executa o contrato; falha real impede aprovação |
-| `validate <tarefa> --failed --evidence <texto>` | Registra reprovação |
+| `validate <tarefa> --ok --summary <frase> --evidence <texto> --cwd <diretório>` | Executa o contrato; guarda resumo curto e evidência completa; falha real impede aprovação |
+| `validate <tarefa> --failed --summary <frase> --evidence <texto>` | Registra reprovação com resumo opcional e evidência completa |
 | `done <tarefa>` | Conclui com evidência válida da tentativa e revisor atuais |
 | `fail <tarefa> --reason <texto>` | Registra falha real da tentativa |
 | `retry <tarefa>` | Volta de failed para pending; reutiliza plano atual somente em correção limitada com contexto imutável da tarefa e do plano global e motivo de revisão válido |

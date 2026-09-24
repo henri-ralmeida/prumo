@@ -125,6 +125,9 @@ plans live in the workspace's `.specs/graph/plans/`. Node.js 22+, zero runtime d
       "id": "T1",
       "phase": "F1",
       "title": "What this task delivers",
+      "label": "Card sync",
+      "summary": "Approved card details reach the customer account without a second manual step.",
+      "validationSummary": "The account shows the approved card status.",
       "deps": ["T0"],
       "validation": [{ "kind": "functional", "run": "pnpm test:changed", "expect": "the task-specific behavior cases pass" }],
       "touches": ["supabase/functions/scenes/"],
@@ -144,6 +147,9 @@ and a valid validation contract; phase planning refines each task's execution wi
 | --------------- | ----------------------------- | --------- | --------------------------------------------------------------------------------------------- |
 | `id`            | string                        | required  | Unique task id (`T1`, `T2`…) — referenced by `deps`                                           |
 | `title`         | string                        | required  | What this task delivers, one line                                                             |
+| `label`         | string                        | —         | Optional business label: 1–3 words, at most 24 characters; display only                      |
+| `summary`       | string                        | —         | Optional 1–2 sentences stating the expected result and why it matters; display only           |
+| `validationSummary` | string                     | —         | Optional acceptance sentence for concise task views; it does not replace `validation`       |
 | `phase`         | string                        | —         | Id of a `phases[]` entry; groups the task in status and dashboard swimlanes                   |
 | `deps`          | string[]                      | `[]`      | Task ids that must be `done`/`skipped` first — the ENTIRE scheduling model                    |
 | `validation`    | string \| {run, expect, kind, cacheable?, cachePaths?, cwd?, env?, shell?, expectedExitCodes?, timeoutMs?}[]    | `""`      | What must be TRUE before done. Prose, or structured steps (see below)                         |
@@ -157,6 +163,11 @@ and a valid validation contract; phase planning refines each task's execution wi
 
 Plan-level fields: `name` (required), `description`, `phases[]` (`{id, title}`),
 `maxParallel` (4), `maxExecutors` (3), `requireReview` (true).
+
+These optional text fields must be nonblank when present. A text-only update through `sync-plan`
+does not change the task contract or invalidate planning. The dashboard keeps the full `title`
+in task details and tooltips; it shows `label` where a compact task name is useful and never
+generates or truncates a replacement label.
 
 `init` and `sync-plan` warn when a `touches` prefix is missing from the validation cwd or a step's declared
 `cwd`; this does not block the plan because a new file or folder can be intentional. An inaccessible cwd
@@ -185,7 +196,9 @@ reviewer then runs exactly what is written instead of interpreting:
 The default `validationMode` is `functional`: at least one step must declare
 `kind: "functional"`. Untyped steps count as `static`, so legacy lint/build/typecheck-only
 contracts cannot approve a functional task. `validate --ok` executes the commands and stores
-their working directory, stdout, stderr, exit code and any execution error. Every step must
+their working directory, stdout, stderr, exit code and any execution error. Optional
+`--summary "<one-sentence reviewer verdict>"` stores concise text beside the full `--evidence`;
+when supplied, it must be nonblank. Every step must
 return a code in its expectedExitCodes (default [0]), with no execution error or signal. `expect` describes the behavior the reviewer must check; it is not
 interpreted as an assertion by the engine. Checks must assert the actual behavior or resulting
 state relevant to the task, rather than merely repeat an executor report.
@@ -476,6 +489,7 @@ Example for a task with one executable validation check:
 
 ```json
 {
+  "summary": "Reuse the existing validation boundary to reject malformed rows before any write.",
   "research": [{ "source": "src/import.mjs", "findings": "The existing importer validates each row before writing; reuse that boundary." }],
   "decisions": [{ "question": "How should invalid rows behave?", "answer": "The approved contract requires rejection without partial writes." }],
   "steps": ["Extend the existing importer validation.", "Add the missing invalid-row scenario to the existing behavioral check."],
@@ -487,7 +501,8 @@ Example for a task with one executable validation check:
 }
 ```
 
-Each phase task artifact requires nonempty `research` (`source`, `findings`),
+Each task plan may include a nonblank `summary` of 1–2 sentences about the chosen approach and
+why it fits. Each phase task artifact requires nonempty `research` (`source`, `findings`),
 `steps` (strings) and `verification` (`criterion`, `check`). Each verification item may add
 `requires`, a list using the same closed resource vocabulary as task `unavailable`. When a required
 resource is also unavailable, finish planning warns with its task, verification index and resource;
@@ -509,6 +524,12 @@ returns ordinary work to pending with effective `ready`. It verifies structure a
 freshness, not source truth or agent identity. The executor must read and recheck the artifact;
 the fresh independent reviewer judges the delivery against approved objectives/current criteria
 and can reject flawed planning. Planning does not replace a behavioral gate.
+
+Every stored `taskPlan` has a SHA-256 `digest` of its canonical execution content, excluding
+display-only summaries, recording timestamps and planner/context metadata. `start` stores the full digest in `attempts[].planDigest`;
+status and the `task_start` event show its first four characters. This identity is separate from
+`inputDigest`, which continues to identify dependency receipts. Older runs without either plan
+digest remain readable and can start normally.
 
 Phase plans hash task and dependency contracts without mutable delivery state. A contract change invalidates
 that task and true downstream contract scopes; shared phase discovery invalidates affected nonterminal phase
@@ -601,7 +622,7 @@ node .claude/skills/prumo/scripts/engine.mjs finish-phase-planning F1 --plan-dir
 node .claude/skills/prumo/scripts/engine.mjs start T1 --agent ag-server      # max 3 executors
 node .claude/skills/prumo/scripts/engine.mjs progress T1 --step 2 --agent ag-server  # actual executor report
 node .claude/skills/prumo/scripts/engine.mjs review T1 --agent rev-server    # hand to a fresh reviewer
-node .claude/skills/prumo/scripts/engine.mjs validate T1 --ok --evidence "reviewed the 3 behavior cases" --cwd <absolute-project>
+node .claude/skills/prumo/scripts/engine.mjs validate T1 --ok --summary "The import rejects invalid rows before writing." --evidence "reviewed all 3 behavior cases" --cwd <absolute-project>
 node .claude/skills/prumo/scripts/engine.mjs done T1               # refuses without a passing validation
 node .claude/skills/prumo/scripts/engine.mjs fail T2 --reason "typecheck broke"
 node .claude/skills/prumo/scripts/engine.mjs retry T2              # warns after 3 attempts

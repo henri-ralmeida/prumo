@@ -1154,3 +1154,53 @@ test('replanning a paused attempt never counts its waiting or research as execut
     assert.equal(result.wall, 100000)
   }
 })
+test('task labels, summaries and plan identities stay visible across concise and historical dashboard views', () => {
+  const state = graphState(1, 1)
+  state.createdAt = instant(0)
+  const value = state.tasks.T001
+  value.title = 'Synchronize the approved card status with the customer account'
+  value.label = 'Cartões'
+  value.summary = 'A conta recebe o status aprovado antes da próxima compra.'
+  value.validationSummary = 'A conta mostra o status de cartão aprovado.'
+  value.validation = [{ run: 'node check.cjs', expect: 'The approved status appears in the account.' }]
+  value.taskPlan = { ...plan, summary: 'Reuse the existing account update path.', digest: 'b'.repeat(64) }
+  value.state = 'failed'
+  value.attempts = [
+    { n: 1, agent: 'executor-1', startedAt: instant(1), reviewStartedAt: instant(2), endedAt: instant(3),
+      result: 'failed', planDigest: 'a'.repeat(64) },
+    { n: 2, agent: 'executor-2', startedAt: instant(4), reviewStartedAt: instant(5), endedAt: instant(6),
+      result: 'failed', planDigest: 'b'.repeat(64) },
+  ]
+  value.validations = [
+    { by: 'review', ok: false, at: instant(3), evidence: 'Complete observation one.', summary: 'O status não atualizou no primeiro cenário.' },
+    { by: 'review', ok: false, at: instant(6), evidence: 'Complete observation two.', summary: 'A conta ainda mostra o status anterior.' },
+  ]
+  state.derived.T001 = { effective: 'ready', blockedBy: [] }
+
+  const ui = dashboard('pt-BR')
+  ui.render(state)
+  const graph = ui.nodes.get('#nodes').innerHTML
+  assert.match(graph, /<span class="nt">Cartões<\/span>/)
+  assert.ok(graph.includes(value.title), 'the graph tooltip retains the complete task title')
+  const available = ui.nodes.get('#available').innerHTML
+  assert.ok(available.includes('Cartões'))
+  assert.ok(available.includes(value.summary))
+  assert.ok(available.includes(value.validationSummary))
+  assert.ok(available.includes(value.title), 'the available task tooltip retains the complete task title')
+
+  ui.run("POP = { id: 'T001', pinned: true }; POP_MODE = 'lean'; fillPop('T001')")
+  const lean = ui.nodes.get('#popBody').innerHTML
+  assert.ok(lean.includes(value.title), 'the popover keeps the full task title')
+  assert.ok(lean.includes(value.summary))
+  assert.ok(lean.includes(value.validationSummary))
+  assert.ok(lean.includes('Plano bbbb'))
+  assert.ok(lean.includes('mudou de aaaa'), 'the journey calls out a changed plan between attempts')
+
+  ui.run("RESULTS_OPEN = true; $('#results').classList.add('open'); selectResultTask('T001')")
+  const history = ui.nodes.get('#results').innerHTML
+  assert.ok(history.includes('Cartões'), 'the timeline and rework history use the business label')
+  assert.ok(history.includes(value.title), 'history retains the full title in its tooltip')
+  assert.ok(history.includes('A conta ainda mostra o status anterior.'), 'the reviewer gate prefers its validation summary')
+  assert.ok(history.includes('Complete observation two.'), 'selected history retains the full evidence')
+  assert.ok(history.includes('mudou de aaaa'), 'selected history records the plan change')
+})

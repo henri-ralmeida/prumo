@@ -68,7 +68,8 @@ import { writeAtomicState } from './atomic-state.mjs'
 import { runValidation, assertValidation, validationContract, validationDirectories, assertDiscovery, assertDiscussionBoundary, discoveryDigest, assertTaskPlan,
   assertUnavailableResources,
   planTaskFromState, planningContext, hasCurrentTaskPlan, hasCurrentTaskScope, currentPlanningScope, usesCurrentPlanning,
-  phasePlanningContext, phaseRequiredInputs, assertPhaseTaskPlan, executionInputReceipt, currentPlanningSkip } from './validation.mjs'
+  phasePlanningContext, phaseRequiredInputs, assertPhaseTaskPlan, executionInputReceipt, currentPlanningSkip,
+  taskPlanDigest } from './validation.mjs'
 
 import { basename, dirname, join, resolve } from 'node:path'
 
@@ -527,6 +528,14 @@ function validatePlan(plan, allowOverlap = false, historical = new Set()) {
     if (!t.id || !t.title) die('every task needs id and title')
     safeId(t.id)
     if (ids.has(t.id)) die(`duplicate task id ${t.id}`)
+    for (const field of ['summary', 'validationSummary'])
+      if (t[field] !== undefined && (typeof t[field] !== 'string' || !t[field].trim()))
+        die(tr('task {0} {1} must be a nonempty string when present', t.id, field))
+    if (t.label !== undefined) {
+      const words = typeof t.label === 'string' && t.label.trim() ? t.label.trim().split(/\s+/u) : []
+      if (!words.length || words.length > 3 || Array.from(t.label).length > 24)
+        die(tr('task {0} label must have 1 to 3 words and no more than 24 characters', t.id))
+    }
     if (planningMode === 'phase' && !phaseIds.has(t.phase)) die(`task ${t.id} needs a declared phase for phase planning`)
     try { assertUnavailableResources(t) } catch (error) { die(`task ${t.id}: ${error.message}`) }
     if (!historical.has(t.id))
@@ -643,6 +652,9 @@ function taskFromPlan(t) {
     id: t.id,
     phase: t.phase ?? null,
     title: t.title,
+    label: t.label,
+    summary: t.summary,
+    validationSummary: t.validationSummary,
     deps: t.deps ?? [],
     validation: t.validation ?? '',
     validationMode: t.validationMode,
@@ -1203,6 +1215,7 @@ const commands = {
     const persistedTasks = structuredClone(state.tasks)
     const added = []
     const updated = []
+    const metadataUpdated = []
     const preserved = []
     const changes = []
     for (const planTask of plan.tasks) {
@@ -1213,6 +1226,13 @@ const commands = {
         continue
       }
       const next = taskFromPlan(planTask)
+      const metadataChanges = ['label', 'summary', 'validationSummary'].filter(
+        field => JSON.stringify(current[field]) !== JSON.stringify(next[field]))
+      for (const field of metadataChanges) {
+        if (next[field] === undefined) delete current[field]
+        else current[field] = next[field]
+      }
+      if (metadataChanges.length) metadataUpdated.push(planTask.id)
       const changed = contractFields.filter(
         (field) => JSON.stringify(current[field]) !== JSON.stringify(next[field]),
       )
@@ -1254,13 +1274,14 @@ const commands = {
     if (state.plan.planningRevision || planningChanged)
       nextPlan.planningRevision = (state.plan.planningRevision ?? 0) + (planningChanged ? 1 : 0)
     const planChanged = JSON.stringify(state.plan) !== JSON.stringify(nextPlan)
-    if (!added.length && !updated.length && !planChanged) {
+    if (!added.length && !updated.length && !metadataUpdated.length && !planChanged) {
       const hasDiagnostics = diagnostics.blockReasonContradictions.length || diagnostics.newLeaves.length ||
         diagnostics.preDiscussionFunctionalContracts.length
       if (hasDiagnostics || changes.length) {
         emit(name, 'plan_sync_audit', null, {
           added: sanitizeTaskIds(added),
           updated: sanitizeTaskIds(updated),
+          metadataUpdated: sanitizeTaskIds(metadataUpdated),
           preserved: sanitizeTaskIds(preserved),
           changes: sanitizeChanges(changes),
           diagnostics: sanitizeDiagnostics(diagnostics),
@@ -1338,6 +1359,7 @@ const commands = {
     emit(name, 'plan_sync', null, {
       added: sanitizeTaskIds(added),
       updated: sanitizeTaskIds(updated),
+      metadataUpdated: sanitizeTaskIds(metadataUpdated),
       preserved: sanitizeTaskIds(preserved),
       changes: sanitizeChanges(changes),
       diagnostics: sanitizeDiagnostics(diagnostics),
@@ -1428,7 +1450,9 @@ const commands = {
       const attempts = t.attempts.length > 1 ? `  (attempt ${t.attempts.length})` : ''
       const wait = t.effective === 'waiting' ? `  ← ${(t.planningBlockedBy ?? t.blockedBy).join(',')}` : ''
       const manual = t.manualInspectionPending ? `  [${tr('Manual inspection pending')}]` : ''
-      console.log(`  ${t.id.padEnd(width)}  ${tr(t.effective).padEnd(8)}${agent}${attempts}${wait}${manual}`)
+      const digest = t.taskPlan?.digest ?? t.attempts.at(-1)?.planDigest
+      const plan = digest ? `  ${tr('Plan {0}', digest.slice(0, 4))}` : ''
+      console.log(`  ${t.id.padEnd(width)}  ${tr(t.effective).padEnd(8)}${agent}${attempts}${wait}${manual}${plan}`)
     }
     for (const phase of state.plan.phases) {
       console.log(`\n${phase.id} — ${phase.title}`)
@@ -1750,10 +1774,10 @@ const commands = {
     for (const [task, plan] of plans) warnTaskPlan(task, plan)
     const completedAt = new Date().toISOString()
     for (const [task, plan] of plans) {
-      const fields = ['research', 'decisions', 'steps', 'verification', 'openQuestions', 'phaseBinding', 'unresolvedInputs', 'writes']
+      const fields = ['summary', 'research', 'decisions', 'steps', 'verification', 'openQuestions', 'phaseBinding', 'unresolvedInputs', 'writes']
       const artifact = Object.fromEntries(fields.map(field => [field, plan[field]]))
       task.planner = phase.planner
-      task.taskPlan = { ...artifact, planner: phase.planner, startedAt: round.startedAt, completedAt,
+      task.taskPlan = { ...artifact, digest: taskPlanDigest(artifact), planner: phase.planner, startedAt: round.startedAt, completedAt,
         context: round.context, scope: phasePlanningContext(state, task), phaseId,
         phaseDecision: round.discussionDecision ?? 'discussed', phaseDecisionDigest: round.discussionDigest ?? round.discoveryDigest,
         ...(round.discoveryDigest ? { phaseDiscoveryDigest: round.discoveryDigest } : {}), attempt: task.attempts.length + 1 }
@@ -2040,8 +2064,8 @@ const commands = {
       assertTaskPlan(t, plan)
     } catch (error) { die(planningArtifactError(filename, error)) }
     warnTaskPlan(t, plan)
-    const artifact = Object.fromEntries(['research', 'decisions', 'steps', 'verification', 'openQuestions', 'writes'].map(field => [field, plan[field]]))
-    t.taskPlan = { ...artifact, planner: t.planner, startedAt: round.startedAt, completedAt: new Date().toISOString(),
+    const artifact = Object.fromEntries(['summary', 'research', 'decisions', 'steps', 'verification', 'openQuestions', 'writes'].map(field => [field, plan[field]]))
+    t.taskPlan = { ...artifact, digest: taskPlanDigest(artifact), planner: t.planner, startedAt: round.startedAt, completedAt: new Date().toISOString(),
       context: round.context, scope: planningContext(state, t, { scopeOnly: true }), attempt: round.attempt,
       ...(round.discoveryDigest ? { discoveryDigest: round.discoveryDigest } : {}),
       ...(skippedDiscussion ? { discussionDecision: 'skipped', discussionDecisionId: skippedDiscussion.decisionId,
@@ -2079,17 +2103,21 @@ const commands = {
     if (t.taskPlan?.phaseId || currentPlanningSkip(state, t)) {
       try { inputReceipt = executionInputReceipt(state, t) } catch (error) { die(error.message) }
     }
+    const planDigest = t.taskPlan ? taskPlanDigest(t.taskPlan) : undefined
+    if (planDigest) t.taskPlan.digest = planDigest
     t.state = 'running'
     t.agent = agent
     t.attempts.push({ n: t.attempts.length + 1, agent, startedAt: new Date().toISOString(),
       ...(t.retryPlan?.attempt === t.attempts.length + 1 ? {
         planSourceAttempt: t.retryPlan.planSourceAttempt,
         correctionOf: t.retryPlan.failedAttempt, correctionReason: t.retryPlan.reason,
-      } : {}), ...(inputReceipt ? { inputReceipt: inputReceipt.inputs, inputDigest: inputReceipt.digest } : {}) })
+      } : {}), ...(planDigest ? { planDigest } : {}),
+      ...(inputReceipt ? { inputReceipt: inputReceipt.inputs, inputDigest: inputReceipt.digest } : {}) })
     const total = t.taskPlan?.steps?.length
     if (total) t.attempts.at(-1).executionStep = 1
     saveState(name, state)
-    emit(name, 'task_start', id, { agent, attempt: t.attempts.length, ...(total ? { current: 1, total } : {}) })
+    emit(name, 'task_start', id, { agent, attempt: t.attempts.length, ...(planDigest ? { planDigest: planDigest.slice(0, 4) } : {}),
+      ...(total ? { current: 1, total } : {}) })
     log(`[prumo] ${id} running (agent ${agent}, attempt ${t.attempts.length})`)
   },
 
@@ -2171,6 +2199,8 @@ const commands = {
     const id = args._[0] ?? die('validate <task> --ok|--failed --evidence "<text>" [--cwd <project>]')
     const requestedOk = args.ok === true ? true : args.failed === true ? false : die('pass --ok or --failed')
     if (typeof args.evidence !== 'string' || !args.evidence.trim()) die('validation evidence must not be empty')
+    if (args.summary !== undefined && (typeof args.summary !== 'string' || !args.summary.trim()))
+      die('validation summary must be a nonempty string when present')
     const token = randomUUID()
     const snapshot = withLock(name, () => {
       const state = loadState(name)
@@ -2189,7 +2219,8 @@ const commands = {
       }
       // Invalidate any previous pass before running commands, including on interruption.
       t.validations.push({ ok: false, by, agent: by === 'review' ? t.reviewer : t.agent,
-        evidence: args.evidence, at: new Date().toISOString(), attempt: t.attempts.length, token,
+        evidence: args.evidence, ...(args.summary === undefined ? {} : { summary: args.summary }),
+        at: new Date().toISOString(), attempt: t.attempts.length, token,
         ...(t.planningRequired ? { planningScope: currentPlanningScope(state, t) } : {}) })
       saveState(name, state)
       emit(name, 'task_validation_started', id, { token, attempt: t.attempts.length })
@@ -2233,7 +2264,8 @@ const commands = {
       if (requestedOk) assertCurrentExecutionInputs(state, t)
       Object.assign(last, result, { ok: requestedOk && !error, error, at: new Date().toISOString() })
       saveState(name, state)
-      emit(name, 'task_validate', id, { ok: last.ok, by: last.by, evidence: last.evidence, error })
+      emit(name, 'task_validate', id, { ok: last.ok, by: last.by, evidence: last.evidence,
+        ...(last.summary === undefined ? {} : { summary: last.summary }), error })
       log('[prumo] ' + id + ' validation recorded by ' + last.by + ': ' + (last.ok ? 'OK' : 'FAILED'))
     })
     if (error) die(error)
