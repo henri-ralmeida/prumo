@@ -4,6 +4,10 @@ Release commits and missing tags were recovered retrospectively from existing Gi
 the original package artifacts and the recorded edits in the development conversation.
 Commit dates are recovery dates where a commit had to be reconstructed.
 
+> The history was rewritten on 2026-09-23 (single fork commit). The commit hashes below belong to
+> the history before that rewrite; the release tags now point to the equivalent commits on `main`
+> (for example, 1.0.1 is `ecb91a6`). Use the tag names to find each release.
+
 | Version | Source and scope |
 | --- | --- |
 | 1.0.1 | Recover existing commit `dec8f92936f69f024318ee76201abcfdd80cde28`; the former tag pointed at a package declaring 1.0.0. |
