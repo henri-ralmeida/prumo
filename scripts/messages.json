@@ -718,5 +718,12 @@
   "{0} inspection criteria are not fully traversed; record reviewer-reported progress for each criterion with review-progress {1} --step <index> --agent {2} (this is not proof of inspection)": "os critérios de inspeção de {0} não foram todos percorridos; registre o progresso relatado pelo revisor com review-progress {1} --step <índice> --agent {2} (isso não comprova a inspeção)",
   "note needs a nonempty --text \"<text>\"": "note exige --text \"<texto>\" não vazio",
   "[prumo] {0} note recorded ({1} character)": "[prumo] nota de {0} registrada ({1} caractere)",
-  "[prumo] {0} note recorded ({1} characters)": "[prumo] nota de {0} registrada ({1} caracteres)"
+  "[prumo] {0} note recorded ({1} characters)": "[prumo] nota de {0} registrada ({1} caracteres)",
+  "Filters and counts": "Filtros e contadores",
+  "Active time not measured": "tempo ativo não aferido",
+  "not measured": "não aferido",
+  "⋯ idle": "⋯ parado",
+  "{0} waited for you": "A tarefa {0} aguardou você",
+  "The critical path took {0}.": "O caminho crítico levou {0}.",
+  "There is active time outside the chain; check queues, blocks and retries before changing capacity.": "Há tempo ativo fora da cadeia; confira filas, bloqueios e retrabalho antes de mudar a capacidade."
 }
