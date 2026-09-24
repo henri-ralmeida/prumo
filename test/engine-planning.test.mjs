@@ -225,7 +225,8 @@ function phaseFixture(t, tasks, { planningMode = 'phase' } = {}) {
   const discovery = phaseId => {
     const round = state().phaseWorkflows[phaseId].discussionAttempts.at(-1)
     const value = { research: [{ source: 'fixture', findings: 'Current phase contracts inspected.' }],
-      questions: [{ question: 'Keep the approved phase behavior?', answer: 'Yes.', channel: 'chat-fallback', round: 1, roundId: round.roundId }],
+      questions: [{ question: 'Keep the approved phase behavior?', answer: 'Yes.', channel: 'chat-fallback', round: 1, roundId: round.roundId,
+        ...(round.confirmsContract ? { confirmsContract: round.confirmsContract } : {}) }],
       coverage: { problem: 'A phase needs planning.', affected: 'Graph users.', outcome: 'Stable phase plans.', currentBehavior: 'Inspected.',
         desiredBehavior: 'Approved.', rules: 'Keep task bindings.', exceptions: 'None.', scope: phaseId, acceptance: 'Current receipts only.' },
       decisions: [], deferred: [], executionBoundary: { deferredToExecutor: round.targets, prematureTaskWork: [] },
@@ -1142,4 +1143,138 @@ test('one phase discussion plans every member atomically while the DAG binds lat
   assert.deepEqual(state().tasks.A.taskPlan, immutable, 'dependency delivery does not rewrite the earlier plan')
   const damaged = state(); damaged.tasks.B.validations.at(-1).evidence = 'tampered'; writeFileSync(statePath, JSON.stringify(damaged))
   rejects(/input receipt changed/, 'review', 'A', '--agent', 'consumer-reviewer')
+})
+
+test('contract changes warn, supersede planning with a cause, and require current acceptance for every phase target', t => {
+  const f = phaseFixture(t, [
+    { id: 'A', phase: 'F1', title: 'First approved task' },
+    { id: 'B', phase: 'F1', title: 'Second approved task' },
+  ])
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('plan-phase', 'F1', '--agent', 'first-planner')
+
+  f.plan.tasks[0].title = 'First revised task'
+  f.plan.tasks[1].validation[0].expect = 'The second task must satisfy its revised complete behavior.'
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  const synced = f.ok('sync-plan', '--plan', f.planPath).stdout
+  assert.match(synced, /sync-plan warning: F1 planning was invalidated/)
+  assert.equal(f.state().phaseWorkflows.F1.contractConfirmationRequired !== null, true)
+
+  const auditAt = '2026-09-24T12:34:56.000Z'
+  const eventsPath = join(f.root, '.specs/graph/phase-negative/events.ndjson')
+  writeFileSync(eventsPath, f.events() + JSON.stringify({ type: 'plan_sync_audit', at: auditAt }) + '\n')
+  const stale = f.rejects(/planning is stale:[\s\S]*task A[\s\S]*digest changed[\s\S]*last plan_sync_audit/, 'finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  assert.match(stale.stdout + stale.stderr, new RegExp(auditAt.replaceAll(':', '\\:')))
+  f.rejects(/fresh answered contract confirmation/, 'skip-phase-discussion', 'F1', '--reason', 'Skip is not acceptance', '--confirmed-by-user')
+  f.rejects(/fresh answered contract confirmation/, 'skip-phase-planning', 'F1', '--reason', 'Skip is not acceptance', '--confirmed-by-user')
+
+  const reopened = f.ok('begin-phase-discussion', 'F1')
+  assert.match(reopened.stdout, /contract confirmation required/)
+  const afterBegin = f.state()
+  const oldPlanning = afterBegin.phaseWorkflows.F1.planningAttempts[0]
+  assert.equal(oldPlanning.result, 'superseded')
+  assert.match(oldPlanning.cause, /task A .*digest changed/)
+  const round = afterBegin.phaseWorkflows.F1.discussionAttempts.at(-1)
+  assert.deepEqual(round.confirmsContract.map(item => item.task), ['A', 'B'])
+
+  const discoveryPath = f.discovery('F1')
+  const discovery = JSON.parse(readFileSync(discoveryPath, 'utf8'))
+  discovery.questions[0].confirmsContract = round.confirmsContract.slice(0, 1)
+  writeFileSync(discoveryPath, JSON.stringify(discovery))
+  const beforeMissing = f.state()
+  f.rejects(/confirmsContract matching every current task and digest/, 'finish-phase-discussion', 'F1', '--context', discoveryPath)
+  assert.deepEqual(f.state(), beforeMissing)
+
+  discovery.questions[0].confirmsContract = round.confirmsContract.map((item, index) =>
+    index === 1 ? { ...item, digest: '0'.repeat(64) } : item)
+  writeFileSync(discoveryPath, JSON.stringify(discovery))
+  const beforeOldDigest = f.state()
+  f.rejects(/confirmsContract matching every current task and digest/, 'finish-phase-discussion', 'F1', '--context', discoveryPath)
+  assert.deepEqual(f.state(), beforeOldDigest)
+
+  discovery.questions[0].confirmsContract = undefined
+  discovery.questions.push({ ...discovery.questions[0], question: 'Old round acceptance?',
+    roundId: 'old-round', confirmsContract: round.confirmsContract })
+  writeFileSync(discoveryPath, JSON.stringify(discovery))
+  const beforeWrongQuestion = f.state()
+  f.rejects(/confirmsContract matching every current task and digest/, 'finish-phase-discussion', 'F1', '--context', discoveryPath)
+  assert.deepEqual(f.state(), beforeWrongQuestion)
+
+  discovery.questions.pop()
+  discovery.questions[0].confirmsContract = round.confirmsContract
+  writeFileSync(discoveryPath, JSON.stringify(discovery))
+  f.ok('finish-phase-discussion', 'F1', '--context', discoveryPath)
+  const confirmed = f.state().phaseWorkflows.F1
+  assert.deepEqual(confirmed.contractConfirmations.at(-1).contracts, round.confirmsContract)
+  assert.equal(confirmed.contractConfirmationRequired, null)
+  f.ok('skip-phase-planning', 'F1', '--reason', 'User accepted the contracts and chose direct execution', '--confirmed-by-user')
+  assert.equal(f.state().tasks.A.planningSkips.at(-1).confirmedByUser, true)
+})
+
+test('phase discussion finish preserves its begin-time fallback targets when all tasks already have current plans', t => {
+  const f = phaseFixture(t, [
+    { id: 'A', phase: 'F1', title: 'First planned task' },
+    { id: 'B', phase: 'F1', title: 'Second planned task' },
+  ])
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('plan-phase', 'F1', '--agent', 'planner')
+  f.writeArtifacts('F1')
+  f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+
+  f.ok('begin-phase-discussion', 'F1')
+  const round = f.state().phaseWorkflows.F1.discussionAttempts.at(-1)
+  assert.deepEqual(round.targets, ['A', 'B'])
+  assert.equal(round.targetsFallback, true)
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  assert.equal(f.state().phaseWorkflows.F1.discussionAttempts.at(-1).result, 'discussed')
+})
+
+test('status and ready show planning age and accepted artifacts from 0/N through N/N', t => {
+  const f = phaseFixture(t, [
+    { id: 'A', phase: 'F1', title: 'First task' },
+    { id: 'B', phase: 'F1', title: 'Second task' },
+  ])
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('plan-phase', 'F1', '--agent', 'planner')
+  for (const command of ['status', 'ready']) {
+    const output = f.ok(command).stdout
+    assert.match(output, /planning round F1 \(1\) open for \d+s; artifacts 0\/2/)
+  }
+  f.writeArtifacts('F1')
+  f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  for (const command of ['status', 'ready']) {
+    const output = f.ok(command).stdout
+    assert.match(output, /planning round F1 \(1\) completed for \d+s; artifacts 2\/2/)
+  }
+})
+
+test('sync-plan warns without blocking when it invalidates an open discussion or current skip', t => {
+  const discussion = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Original' }])
+  discussion.ok('begin-phase-discussion', 'F1')
+  discussion.plan.tasks.push({ id: 'B', phase: 'F1', title: 'Added while discussion is open', validation })
+  writeFileSync(discussion.planPath, JSON.stringify(discussion.plan))
+  const discussionSync = discussion.ok('sync-plan', '--plan', discussion.planPath).stdout
+  assert.match(discussionSync, /sync-plan warning: F1 discussion was invalidated/)
+  assert.equal(discussion.state().phaseWorkflows.F1.discussionAttempts.at(-1).endedAt, undefined,
+    'sync warns and leaves the open discussion for explicit resumption')
+  const oldDiscovery = discussion.discovery('F1')
+  const staleFinish = discussion.rejects(/discussion is stale:[\s\S]*task B entered or left/, 'finish-phase-discussion', 'F1', '--context', oldDiscovery)
+  assert.match(staleFinish.stdout + staleFinish.stderr, /task B entered or left/)
+  discussion.ok('begin-phase-discussion', 'F1')
+  assert.equal(discussion.state().phaseWorkflows.F1.discussionAttempts[0].result, 'superseded')
+  assert.ok(discussion.state().phaseWorkflows.F1.discussionAttempts[0].cause)
+
+  const skipped = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Original' }])
+  skipped.ok('skip-phase-discussion', 'F1', '--reason', 'The original contract was clear', '--confirmed-by-user')
+  skipped.ok('skip-phase-planning', 'F1', '--reason', 'The original plan was sufficient', '--confirmed-by-user')
+  skipped.plan.tasks[0].title = 'Revised'
+  writeFileSync(skipped.planPath, JSON.stringify(skipped.plan))
+  const skipSync = skipped.ok('sync-plan', '--plan', skipped.planPath).stdout
+  assert.match(skipSync, /sync-plan warning: F1 discussion skip was invalidated/)
+  assert.match(skipSync, /sync-plan warning: F1 planning skip was invalidated/)
+  assert.match(skipSync, /sync-plan warning: A planning skip was invalidated/)
+  assert.ok(skipped.state().phaseWorkflows.F1.contractConfirmationRequired)
 })

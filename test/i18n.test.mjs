@@ -31,6 +31,15 @@ test('language selection and interpolation preserve data and placeholders', () =
   }
   assert.equal(pt('No supported environments detected; install or configure Claude Code, Kiro, Codex or DeepSeek Harness first'),
     'Nenhum ambiente compatível foi detectado; instale ou configure Claude Code, Kiro, Codex ou DeepSeek Harness primeiro')
+  assert.equal(pt('contract drift: task T1 fields: title, validation'),
+    'divergência de contrato: tarefa T1, campos: title, validation')
+  assert.equal(pt('planning round {0} ({1}) {2} for {3}; artifacts {4}/{5}', 'F1', 1, pt('open'), '12s', 0, 2),
+    'rodada de planejamento F1 (1) aberta há 12s; artefatos 0/2')
+  assert.equal(pt('contract confirmation required for phase F1: A, B'),
+    'a fase F1 exige confirmação do contrato: A, B')
+  assert.equal(pt('contract confirmation required for task T1'), 'a tarefa T1 exige confirmação do contrato')
+  assert.equal(pt('{0} requires a fresh answered contract confirmation; begin-discussion and ask the user before skipping discussion', 'T1'),
+    'T1 exige uma nova confirmação respondida do contrato; execute begin-discussion e pergunte ao usuário antes de pular a discussão')
   for (const [key, value] of Object.entries(messages)) {
     const slots = text => [...new Set(text.match(/\{\d+\}/g) ?? [])].sort()
     assert.deepEqual(slots(key), slots(value), key)

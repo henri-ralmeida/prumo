@@ -183,6 +183,20 @@ explicitly approves a broader graph change. Otherwise, adopt a migrated task-sco
 at a time with `begin-phase-discussion <phase> --adopt-legacy`. An approved validation change for active
 work needs `refresh-contract`, not fail/retry. Always check the persisted task before review.
 
+`sync-plan` warns without refusing synchronization when it invalidates an open discussion/planning round or
+a current skip. `status` and `ready` also warn when the approved plan source differs from persisted task
+contracts; this warning does not block readiness. Use `show-contract <task> [--diff]` to present complete
+business text before and after a change; it omits executable `validation.run` commands. When a changed
+contract reopens a phase or task that already had a discussion, planning round or current skip, the next
+discussion records the old open round as superseded with its cause and prints the current task digests. Run
+`show-contract <task> --diff` for every affected contract, present the complete business text and ask the user
+to accept the changed behavior. For phase planning, put the exact `{ "task": "...", "digest": "..." }` entries
+for all current targets in `questions[].confirmsContract` on one freshly answered question. For task planning,
+use the single entry printed by `begin-discussion` in one freshly answered question. In both modes, the
+confirmation must be on the same question bound to the current `roundId`; an old-round answer, stale digest,
+discussion skip or planning skip cannot replace it. After the confirmation is recorded, the ordinary explicit
+planning skip remains available.
+
 On Windows, use PowerShell environment assignment ($env:PRUMO_ROOT) and quoted paths instead of POSIX shell syntax. Start background helpers hidden. Keep the actual working directory in the approved validation step; do not translate or rewrite its commands.
 
 Ensure the server is available and give the dev the URL before dispatching a single agent. It discovers
@@ -289,6 +303,12 @@ one freshly answered question to that `roundId`; include light research, the rea
 empty. If task work occurred during discussion, record its task and action, stop, tell the user, and do not
 reuse its result. Only after explicit user approval may `finish-*-discussion --accept-premature-work` close
 the round; the executor still repeats the work. Then run:
+
+A phase reopened after a synchronized contract change also needs an explicit acceptance. Run `show-contract
+<task> --diff` for each current target, present its full business text to the user and ask whether to accept
+the changed contract. Add the exact task/digest list printed by `begin-phase-discussion` to
+`questions[].confirmsContract` on one freshly answered question. `finish-phase-discussion` checks that every
+current task and digest is present. A stale digest or a discussion/planning skip cannot satisfy this gate.
 
 ```bash
 node $ENGINE finish-phase-discussion F2 --context <discovery.json>
@@ -608,6 +628,7 @@ node $ENGINE fail T4 --reason "review: <actual unmet criterion>" --run <run-name
 # Edit the approved plan; separate current criteria from superseded context.
 node $ENGINE sync-plan --plan <approved-plan.json> --run <run-name>
 node $ENGINE graph --run <run-name>  # inspect T4's persisted definition before retry
+node $ENGINE show-contract T4 --diff --run <run-name>
 node $ENGINE retry T4 --run <run-name>
 node $ENGINE begin-phase-discussion F2 --run <run-name> # before the principal-chat question
 node $ENGINE finish-phase-discussion F2 --context <discovery.json> --run <run-name>

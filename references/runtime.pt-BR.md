@@ -112,6 +112,17 @@ de encerrar a descoberta. Essa seleção pertence à skill; o motor não cria um
 nova vinculada à rodada. `plan-phase <fase> --agent <planejador>` ocupa uma única vaga. O planejador
 consome a descoberta sem repetir perguntas, pesquisa todas as tarefas alvo e apenas escreve os artefatos.
 `finish-phase-planning <fase> --plan-dir <diretório>` valida o lote inteiro antes de gravar qualquer plano.
+Se a fase foi reaberta após uma mudança sincronizada de contrato, execute `show-contract <tarefa> --diff`
+para cada alvo, apresente o texto completo ao usuário e pergunte se ele aceita a mudança. Uma pergunta
+respondida da descoberta deve conter `confirmsContract: [{ "task": "<id>", "digest": "<digest-atual-de-64-caracteres>" }]`
+para todos os alvos atuais. Tarefa ausente, digest antigo e skip de discussão/planejamento não satisfazem a
+confirmação.
+O mesmo aceite vale para planejamento por tarefa: quando o sync invalida uma discussão, rodada de
+planejamento ou skip atual após mudança de contrato, `begin-discussion` imprime o par atual de tarefa/digest.
+Apresente o texto completo de `show-contract <tarefa> --diff` e pergunte se o usuário aceita a mudança. Inclua
+esse par em uma pergunta respondida vinculada ao `roundId` da discussão atual. Resposta de rodada antiga,
+digest desatualizado ou skip não satisfaz a confirmação; depois do aceite, o skip normal de planejamento fica
+disponível.
 Cada artefato inclui `phaseBinding` e lista dependências diretas incompletas em `unresolvedInputs`, com
 tarefa produtora, fase e evidência exigida. Exemplo da parte comum do contrato:
 
@@ -214,6 +225,7 @@ Resolva `scripts/engine.mjs` a partir da skill instalada. Acrescente `--run <nom
 | `init --plan <arquivo> --run <nome>` | Inicializa execução do plano aprovado |
 | `migrate [--check]` | Migra com backup o schema legado seguro; `--check` apenas diagnostica |
 | `status`, `ready`, `graph`, `runs` | Consulta estado, trabalho pronto, JSON ou execuções |
+| `show-contract <tarefa> [--diff]` | Exibe os contratos de negócio antes/depois sem comandos `validation.run` |
 | `begin-phase-discussion <fase> [--adopt-legacy]` | Persiste a discussão escolhida da fase antes da primeira pergunta; a opção adota uma fase legada segura |
 | `skip-phase-discussion <fase> --reason <texto> --confirmed-by-user` | Registra a escolha explícita de pular a discussão da fase |
 | `finish-phase-discussion <fase> --context <descoberta.json>` | Valida o recibo e as respostas da rodada atual |
@@ -258,6 +270,10 @@ da sessão, incluindo perguntas nativas assíncronas quando disponíveis fora do
 ## Planos em andamento
 
 `sync-plan` atualiza o contrato completo de qualquer tarefa não terminal sem mudar estado, tentativas, agentes, notas, evidências ou bloqueio. A saída mostra por tarefa os campos aplicados, resume contratos de validação sem imprimir seu conteúdo e registra no evento estruturado avisos de contradição entre dependências e `blockReason`. Mudanças de escopo deixam o planejamento anterior desatualizado e impedem revisão ou conclusão até que o trabalho seja bloqueado e replanejado. Tarefas done/skipped permanecem como histórico imutável e exigem acompanhamento explícito. Remover tarefas pelo sync é recusado. Quando uma run migrada ainda aponta para uma origem graph-foreman removida, o comando recupera o plano correspondente no workspace central do Prumo.
+
+O `sync-plan` também avisa quando invalida uma discussão/rodada de planejamento aberta ou um skip atual, mas continua a sincronização. `begin-phase-discussion` encerra uma rodada aberta desatualizada como `superseded` e registra a causa. `status` e `ready` comparam a fonte aprovada aos contratos persistidos e informam IDs de tarefas e campos divergentes. Fonte ausente ou ilegível gera um aviso curto, sem bloquear os comandos. Uma rodada de planejamento aberta mostra sua idade e a contagem de artefatos aceitos (`0/N`); após gravar o lote, mostra `N/N`.
+
+Use `show-contract <tarefa> [--diff]` para conferir o contrato de negócio completo antes/depois da alteração. Ele exibe o texto integral de `expect` e da justificativa de inspeção, mas omite os comandos executáveis `validation.run`. Quando uma alteração reabre uma fase que já teve discussão, planejamento ou skip atual, a nova discussão precisa pedir ao usuário que aceite o contrato alterado. Confira cada alvo atual e inclua os pares exatos de tarefa/digest impressos por `begin-phase-discussion` em `questions[].confirmsContract` de uma pergunta respondida. O motor exige todos os digests atuais; um skip não substitui essa confirmação. Depois do aceite registrado, a escolha normal de pular o planejamento continua disponível.
 
 Use `refresh-contract` quando a única mudança aprovada for validação. Ele preserva estado, tentativas, agentes, notas e bloqueio. A revisão do contrato invalida recibos anteriores, mesmo quando o texto volta à versão anterior.
 

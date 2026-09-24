@@ -83,7 +83,8 @@ function fixture(t, tasks = [{ id: 'T1', title: 'Delivery estimate' }], options 
     ok('begin-discussion', id)
     const round = state().tasks[id].discussionAttempts.at(-1)
     const bound = { ...value, roundId: round.roundId, nonce: round.nonce,
-      questions: value.questions.map(question => ({ ...question, roundId: round.roundId })) }
+      questions: value.questions.map(question => ({ ...question, roundId: round.roundId,
+        ...(round.confirmsContract ? { confirmsContract: round.confirmsContract } : {}) })) }
     const path = contextPath(bound, id)
     ok('finish-discussion', id, '--context', path)
     return path
@@ -399,6 +400,54 @@ test('task contract changes invalidate completed planning, including a later ret
   f.planTask('T1', 'fresh-planner')
   assert.equal(f.state().tasks.T1.planningHistory.length, 2)
   f.ok('start', 'T1', '--agent', 'executor')
+})
+
+test('task contract changes require a same-round answered acceptance; skips cannot replace it', t => {
+  const f = fixture(t)
+  f.discuss()
+  assert.equal(f.state().tasks.T1.contractConfirmationRequired, undefined)
+
+  f.planTask('T1', 'first-planner')
+  f.plan.tasks[0].title = 'Updated accepted delivery policy'
+  f.writePlan()
+  const synced = f.ok('sync-plan', '--plan', f.planPath).stdout
+  assert.match(synced, /sync-plan warning: T1 discussion was invalidated/)
+  assert.ok(f.state().tasks.T1.contractConfirmationRequired)
+  for (const command of ['status', 'ready'])
+    assert.match(f.ok(command).stdout, /contract confirmation required for task T1/)
+  f.rejected(/fresh answered contract confirmation/, 'skip-discussion', 'T1', '--reason', 'Skip is not acceptance', '--confirmed-by-user')
+  f.rejected(/fresh answered contract confirmation/, 'skip-planning', 'T1', '--reason', 'Skip is not acceptance', '--confirmed-by-user')
+
+  const begun = f.ok('begin-discussion', 'T1')
+  assert.match(begun.stdout, /contract confirmation required/)
+  const round = f.state().tasks.T1.discussionAttempts.at(-1)
+  assert.deepEqual(round.confirmsContract.map(item => item.task), ['T1'])
+  const discovery = f.discovery()
+  discovery.roundId = round.roundId
+  discovery.nonce = round.nonce
+  discovery.questions[0].roundId = round.roundId
+  const path = f.contextPath(discovery)
+  f.rejected(/confirmsContract matching every current task and digest/, 'finish-discussion', 'T1', '--context', path)
+
+  discovery.questions[0].confirmsContract = [{ task: 'T1', digest: '0'.repeat(64) }]
+  writeFileSync(path, JSON.stringify(discovery))
+  f.rejected(/confirmsContract matching every current task and digest/, 'finish-discussion', 'T1', '--context', path)
+
+  discovery.questions[0].confirmsContract = round.confirmsContract
+  discovery.questions.push({ ...discovery.questions[0], question: 'Stale acceptance?', roundId: 'old-round' })
+  discovery.questions[0].confirmsContract = undefined
+  writeFileSync(path, JSON.stringify(discovery))
+  f.rejected(/confirmsContract matching every current task and digest/, 'finish-discussion', 'T1', '--context', path)
+
+  discovery.questions.pop()
+  discovery.questions[0].confirmsContract = round.confirmsContract
+  writeFileSync(path, JSON.stringify(discovery))
+  f.ok('finish-discussion', 'T1', '--context', path)
+  const accepted = f.state().tasks.T1
+  assert.equal(accepted.contractConfirmationRequired, null)
+  assert.deepEqual(accepted.contractConfirmations.at(-1).contracts, round.confirmsContract)
+  f.ok('skip-planning', 'T1', '--reason', 'The user accepted the revised contract and chose direct execution', '--confirmed-by-user')
+  assert.equal(f.state().tasks.T1.planningSkips.at(-1).confirmedByUser, true)
 })
 
 test('changed contracts while planning or paused have an explicit restart preserving research history', t => {
@@ -799,6 +848,55 @@ test('touches existence check reports when a declared validation cwd is inaccess
   assert.match(output, /touches check not run/)
   assert.match(output, /inaccessible/)
   assert.match(output, /only repository-relative paths can be checked/)
+})
+
+test('status and ready surface contract drift without blocking, and show-contract omits validation commands', t => {
+  const f = fixture(t)
+  assert.doesNotMatch(f.ok('status').stdout, /contract drift/)
+  assert.doesNotMatch(f.ok('ready').stdout, /contract drift/)
+
+  f.plan.tasks[0].title = 'Changed approved title'
+  f.plan.tasks[0].validation[0] = { ...f.plan.tasks[0].validation[0],
+    run: 'node secret-validation-command.cjs',
+    expect: 'The complete user-visible result must hold for every branch.' }
+  f.writePlan()
+  for (const command of ['status', 'ready']) {
+    const output = f.ok(command).stdout
+    assert.match(output, /contract drift: task T1 fields: title, validation/)
+    assert.doesNotMatch(output, /secret-validation-command/)
+  }
+
+  const display = JSON.parse(f.ok('show-contract', 'T1', '--diff').stdout)
+  assert.deepEqual(display.fields, ['title', 'validation'])
+  assert.equal(display.before.task.title, 'Delivery estimate')
+  assert.equal(display.after.task.title, 'Changed approved title')
+  assert.equal(display.after.task.validation[0].expect, 'The complete user-visible result must hold for every branch.')
+  assert.doesNotMatch(JSON.stringify(display), /secret-validation-command/)
+
+  f.ok('sync-plan', '--plan', f.planPath)
+  assert.doesNotMatch(f.ok('status').stdout, /contract drift/)
+  assert.doesNotMatch(f.ok('ready').stdout, /contract drift/)
+  const history = JSON.parse(f.ok('show-contract', 'T1', '--diff').stdout)
+  assert.equal(history.before.task.validation[0].expect, 'Express delivery takes 1 day and normal delivery takes 3 days')
+  assert.equal(history.after.task.validation[0].expect, 'The complete user-visible result must hold for every branch.')
+  assert.doesNotMatch(JSON.stringify(history), /secret-validation-command/)
+
+  rmSync(f.planPath)
+  assert.match(f.ok('status').stdout, /approved plan source unavailable \(missing\)/)
+  assert.match(f.ok('ready').stdout, /approved plan source unavailable \(missing\)/)
+  writeFileSync(f.planPath, '{invalid json')
+  assert.match(f.ok('status').stdout, /approved plan source unavailable \(unreadable\)/)
+  assert.match(f.ok('ready').stdout, /approved plan source unavailable \(unreadable\)/)
+})
+
+test('task planning status shows age and accepted artifact counts', t => {
+  const f = fixture(t)
+  f.beginPlan()
+  for (const command of ['status', 'ready'])
+    assert.match(f.ok(command).stdout, /planning round T1 \(1\) open for \d+s; artifacts 0\/1/)
+  f.finish()
+  for (const command of ['status', 'ready'])
+    assert.match(f.ok(command).stdout, /planning round T1 \(1\) completed for \d+s; artifacts 1\/1/)
 })
 
 function fixtureTempBase() {

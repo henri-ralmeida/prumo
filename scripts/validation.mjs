@@ -65,6 +65,10 @@ export function assertDiscovery(context) {
     context.questions.every(item => item && nonempty(item.question) && nonempty(item.answer) &&
       ['native', 'chat-fallback'].includes(item.channel) && Number.isSafeInteger(item.round) && item.round > 0),
   'discovery needs at least one answered question with channel native or chat-fallback and a positive round')
+  insist(context.questions.every(item => item.confirmsContract === undefined ||
+    (Array.isArray(item.confirmsContract) && item.confirmsContract.every(confirmation =>
+      confirmation && nonempty(confirmation.task) && /^[a-f0-9]{64}$/i.test(confirmation.digest)))),
+  'discovery question confirmsContract must contain task IDs and current 64-character digests')
   insist(context.coverage && typeof context.coverage === 'object' && !Array.isArray(context.coverage) &&
     DISCOVERY_AREAS.every(area => nonempty(context.coverage[area])),
   'discovery coverage needs problem, affected, outcome, currentBehavior, desiredBehavior, rules, exceptions, scope and acceptance')

@@ -257,6 +257,27 @@ immutable history. It prints bounded per-task field changes, summarizes validati
 contents and records dependency/block-reason diagnostics in structured events. Synchronization records the
 approved definition; it is not proof that active work meets it.
 
+Synchronization also warns when it invalidates an open discussion/planning round or a current skip; it
+continues applying the approved plan. `begin-phase-discussion` closes a stale open phase round as
+`superseded` and records the cause. `status` and `ready` compare the approved source with persisted task
+contracts and report the task IDs and changed fields. Missing or unreadable sources produce a short warning
+without blocking either command. An open planning round shows its age and accepted artifact count (`0/N`);
+a recorded batch shows `N/N`.
+
+Use `show-contract <task> [--diff]` to inspect the complete before/after business contract before accepting a
+change. It includes full `expect` and inspection text while omitting executable `validation.run` commands.
+When a contract change reopens a phase that already had a discussion, planning round or current skip, the
+new discussion must ask the user to accept the changed contract. Inspect every current target, then include
+the exact task/digest entries printed by `begin-phase-discussion` in `questions[].confirmsContract` on one
+answered question. The engine requires all target digests to match. A skip cannot substitute for this
+confirmation; after the confirmation is recorded, the usual planning skip choice remains available.
+
+Task planning follows the same acceptance rule. If synchronization invalidates a task's current discussion,
+planning round or skip after a contract change, `begin-discussion` prints its current task/digest entry.
+Present the complete `show-contract <task> --diff` text and ask the user whether to accept it. Put that entry
+on an answered question bound to the current discussion round. An old-round answer, stale digest or skip does
+not satisfy the confirmation; once it is recorded, the usual task planning skip remains available.
+
 ### Rejection with an approved contract change
 
 An actual unmet criterion and a request for new scope are different. A defect within the approved
@@ -418,6 +439,11 @@ reason. It validates everything before atomically persisting discovery and retur
 If `prematureTaskWork` reports that discussion produced a task result, closure is refused. After the
 orchestrator discloses it and receives explicit user approval, `--accept-premature-work` records the incident;
 the planner treats that result as untrusted context and the executor repeats the work.
+If the phase was reopened after a synchronized contract change, first run `show-contract <task> --diff` for
+each target, present the full business text and ask the user to accept it. The answered discovery question
+must carry `confirmsContract: [{ "task": "<id>", "digest": "<current-64-character-digest>" }]` for every
+current target. Missing tasks, old digests and either discussion/planning skip leave the confirmation
+unsatisfied.
 The engine computes a canonical SHA-256 digest from the persisted fields and discussion receipt and
 binds it to `plan-phase`. The one planner researches the current code and contracts without editing them,
 then writes deterministic `task-plan-<id>.json` files. `plan-phase` prints a copyable JSON fragment for each

@@ -160,6 +160,15 @@ export function sanitizeDiagnostics(audit = {}) {
       indices: finding.indices.slice(0, MAX_SUMMARY_ITEMS),
       ...(finding.indices.length > MAX_SUMMARY_ITEMS && { truncated: true }),
     })),
+    invalidatedWorkflows: (audit.invalidatedWorkflows ?? []).map(item => ({
+      scope: item.scope,
+      workflow: boundedString(item.workflow ?? ''),
+      id: displayIdentifier(item.id),
+      ...(item.task ? { task: displayIdentifier(item.task) } : {}),
+      ...(item.roundId ? { roundId: boundedString(item.roundId) } : {}),
+      ...(item.decisionId ? { decisionId: boundedString(item.decisionId) } : {}),
+      cause: boundedString(item.cause ?? ''),
+    })),
   }
 }
 
