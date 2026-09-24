@@ -224,7 +224,7 @@ test('dashboard renders separate planning queues, active planner hub and executi
     const colors = ui.run("['ready_to_plan', 'planning', 'ready'].map(s => ST_COLOR[s])")
     assert.equal(new Set(colors).size, 3)
     const values = colors.map((cssVar) => html.match(new RegExp(`${cssVar.slice(4, -1)}: (#[a-f0-9]+)`))[1])
-    assert.deepEqual([...values], ['#3b82f6', '#f472b6', '#2dd4bf'])
+    assert.deepEqual([...values], ['#8a7bd6', '#b69cff', '#f5b58a'])
     assert.match(ui.nodes.get('#parallel').innerHTML, /class="plan"[^>]*openTask\('A'\)[\s\S]*@planner-1/)
     assert.doesNotMatch(ui.nodes.get('#parallel').innerHTML, /openTask\('[PEWDFBS]'\)/)
     assert.match(ui.nodes.get('#planSub').textContent, /1: A/)
@@ -693,8 +693,8 @@ test('visual polish keeps fixed arrows, full card labels and a controllable resp
   assert.match(linked.nodes.get('#edgePaths').innerHTML, /<path class="e-hot"[^>]* d="M [^"]* C [^"]*"/)
 })
 
-test('discussion uses electric lavender and connects the active orchestrator without motion when reduced', () => {
-  assert.match(html, /--discussion:\s*#c084fc/)
+test('discussion uses the orchestrator brass and connects the active orchestrator without motion when reduced', () => {
+  assert.match(html, /--discussion:\s*#e8b04b/)
   assert.match(html, /path\.e-discussion[\s\S]*stroke:\s*var\(--discussion\)/)
   assert.match(html, /@media \(prefers-reduced-motion: reduce\)[\s\S]*animation:\s*none !important/)
   const ui = dashboard('pt-BR')
