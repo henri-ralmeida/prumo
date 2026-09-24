@@ -354,6 +354,22 @@ Regression checks: `node --test scripts/validation.test.mjs`.
 
 ### Task-plan artifact
 
+Before planning, inspect the tools and permissions actually available in the session. Never infer subagent
+dispatch or file-write support from the harness name. If no planner subagent exists, report that limitation
+and let the orchestrator plan locally using read-only project research; the local planning role may write
+only the designated task-plan artifact and must not implement product work.
+
+Each planner uses the available tools to inspect current project rules, code, artifacts, dependency outputs
+and relevant sources. It may write only the exact task-plan-<id>.json file in the indicated artifact
+directory. If it cannot write there, return one full JSON object per target in a block opened with ```json, with
+the exact filename on the preceding line. Never abbreviate JSON or replace fields with ellipses.
+
+The orchestrator parses each returned JSON block, decodes &gt;, &lt;, &amp; and &quot; only within JSON string
+values, validates the resulting artifact, writes it under the indicated filename and then calls
+finish-phase-planning or finish-planning. If parsing or validation fails, send the concrete correction back
+to the planner; do not invent or patch missing plan content locally. Apply this protocol to both phase and
+task-scoped planning; omit phase-only binding fields from a task-scoped artifact.
+
 New tasks, including tasks added by `sync-plan` to old runs, receive
 `discussionRequired: true`, `discoveryRequired: true` and `planningRequired: true`.
 Existing tasks without that marker keep their original lifecycle and history. Do not reset

@@ -52,6 +52,23 @@ declarado por um passo; o aviso não bloqueia, pois novos arquivos e pastas são
 
 ## Descoberta e planejamento por fase
 
+Antes de planejar, confira as ferramentas e permissões realmente disponíveis na sessão. Nunca deduza suporte
+a subagentes ou gravação pelo nome do harness. Se não houver subagente planejador, informe essa limitação e
+faça o planejamento local com pesquisa somente leitura do projeto; essa atuação pode gravar apenas o artefato
+de plano indicado e não pode implementar o produto.
+
+Cada planejador usa as ferramentas disponíveis para inspecionar regras atuais do projeto, código, artefatos,
+saídas de dependências e fontes relevantes. Ele pode gravar somente o arquivo exato task-plan-<id>.json no
+diretório indicado. Se não puder gravar ali, retorna um objeto JSON completo por tarefa em um bloco aberto
+com ```json, com o nome exato do arquivo na linha anterior. Nunca abrevie o JSON nem substitua campos
+por reticências.
+
+O orquestrador interpreta cada bloco como JSON, decodifica &gt;, &lt;, &amp; e &quot; somente em valores de texto,
+valida o artefato resultante, grava-o com o nome indicado e então executa finish-phase-planning ou
+finish-planning. Se a leitura ou validação falhar, devolva a correção concreta ao planejador; não invente nem
+complete localmente o conteúdo ausente. A regra vale para planejamento por fase e por tarefa; não acrescente
+campos de vínculo exclusivos de fase a um artefato por tarefa.
+
 Há dois níveis. O modo Plan/Spec monta e aprova o grafo global, que permanece obrigatório. Em execuções
 com fases, discussão e planejamento são etapas opcionais e independentes. Antes de cada escolha, avalie
 tamanho e complexidade do escopo, ambiguidade, impacto, dependências, novidade, risco e suficiência do

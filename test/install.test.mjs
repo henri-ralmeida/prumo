@@ -488,6 +488,7 @@ for (const harness of ['claude', 'kiro', 'codex', 'dsh']) test(`${harness}: pers
   assert.match(read(join(skill, 'README.md')), /prumo migrate --check/)
   assert.match(read(join(skill, 'README.pt-BR.md')), /prumo migrate --check/)
   assert.match(read(join(skill, 'references', 'po-first.md')), /senior product partner/)
+  assert.match(read(join(skill, 'references', 'po-first.pt-BR.md')), /parceiro sênior de produto/)
   assert.match(read(join(skill, 'references', 'runtime.md')), /refreshes the CLI, skill, both READMEs, references, scripts and PO First/)
   assert.match(read(join(skill, 'references', 'runtime.pt-BR.md')), /atualiza a CLI, a skill, os dois READMEs, as referências, os scripts e a configuração PO First/)
   assert.ok(existsSync(join(skill, 'scripts', 'engine.mjs')))
@@ -502,6 +503,9 @@ for (const harness of ['claude', 'kiro', 'codex', 'dsh']) test(`${harness}: pers
   if (harness === 'kiro') assert.match(read(join(f.config, 'steering', 'po-first.md')), /inclusion: always/)
   if (harness === 'codex') assert.equal(read(join(f.config, 'AGENTS.md')).split('<!-- po-first:start -->').length - 1, 1)
   if (harness === 'dsh') assert.equal(read(join(f.config, 'AGENTS.md')).split('<!-- po-first:start -->').length - 1, 1)
+  const installedPoFirst = harness === 'claude' ? read(join(f.config, 'output-styles', 'po-first.md')) :
+    harness === 'kiro' ? read(join(f.config, 'steering', 'po-first.md')) : read(join(f.config, 'AGENTS.md'))
+  assert.match(installedPoFirst, /workflow metadata/)
   assert.ok(restoreInstall(result.backup, { home: f.home, env: {} }) > 0)
   assert.equal(existsSync(join(skill, 'SKILL.md')), false)
 })

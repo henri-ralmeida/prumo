@@ -344,12 +344,18 @@ the planning round and final task plans. Repeating `plan-phase` while that round
 
 ### Phase research and per-task plans
 
-Every phase gets one dedicated native planner after its discovery closes. The planner remains read-only:
-it researches the phase and writes only a separate plan artifact for each targeted task.
+Every phase gets one planner after its discovery closes. First inspect the actual tools and permissions
+in this session to determine whether a dedicated planner can be dispatched and whether it can write to
+the indicated artifact directory. Never infer either capability from the harness name. The planner
+remains read-only for project work: it researches the phase and may write only the designated plan
+artifact for each targeted task.
 Research the current code, artifacts, dependency outputs, project rules and relevant source
 documentation first; reuse useful prior research, but verify that it still applies. Read-only
 inspection and safe research checks are allowed. The planner writes only its designated task-plan
-artifact; it does not implement the task or edit graph state.
+artifact; it does not implement the task or edit graph state. If no dedicated planner subagent is
+available, the orchestrator reports that limitation and performs the same planning locally, with
+read-only research and only the designated artifact write. This fallback does not authorize product
+implementation.
 
 Consume the persisted discovery and do not repeat its questions. Apply PO First to research the selected
 implementation approach, impacts and verification in depth. If research reveals a new consequential
@@ -362,11 +368,17 @@ concrete unresolved risk remains. Do not reread equivalent sources or expand the
 to accumulate confidence; record a real gap instead of searching indefinitely for certainty.
 
 ```text
-You are the read-only PLANNER for phase <F2>. Research every targeted task; do not implement them.
+You are the read-only PLANNER for the approved phase. Inspect the actual tools and write permissions available
+to you; do not infer capabilities from the harness name. Research every targeted task; do not implement them.
 Read project rules, approved objective/constraints, member contracts and known dependency outputs: <references>.
 Read the persisted phase discovery and its locked decisions: <phaseWorkflows.F2.discovery from state.json>.
-Inspect the current implementation/artifacts and relevant sources; identify existing solutions and impacts.
+Use the available tools to inspect the current implementation/artifacts, real project rules, dependency outputs
+and relevant sources; identify existing solutions and impacts.
 Apply PO First. Do not repeat discovery questions; return newly found consequential gaps to the orchestrator.
+For product text you recommend, state the observable business rule and why; name its owner only when approved
+context establishes it, otherwise surface the ownership question to the PO. Keep workflow identifiers and
+internal process details out of comments, tests, messages and README drafts; required planning identifiers
+belong only in the designated task-plan contract fields.
 Preserve known decisions; propose any material contract change for the authorized global-plan workflow.
 Write ONLY task-plan-<id>.json in <absolute artifact directory> for each target: research, decisions,
 steps, verification, open questions, writes, phaseBinding and unresolvedInputs. Each verification item may
@@ -377,11 +389,49 @@ When discussion was skipped, discussionRoundId is the confirmed skip decisionId 
 Schema: references/runtime.md#task-plan-artifact.
 Inspect the real `git status --short` and relevant staged/unstaged diff while planning. Identify changes
 already present before execution so the reviewer can distinguish them from this task's delivery.
+If you can write to the indicated directory, write only the exact task-plan-<id>.json file there for each
+target. If you cannot write it, return one complete artifact per task: put its exact filename on the line
+immediately before a block opened with ```json containing the entire valid JSON object. Do not abbreviate, omit
+fields, use ellipses or return a partial object. The orchestrator decodes &gt;, &lt;, &amp; and &quot; in JSON
+string values, validates each complete object, writes each artifact to the indicated directory and then
+finishes planning. If validation reports a correction, send it back to the planner to fix; the orchestrator
+must not invent missing plan content.
+Inspect the actual available tools and permissions; never infer file-write or subagent capability from the
+harness name. If no planner subagent is available, report that limitation and do this planning locally with
+read-only research, writing only the designated task-plan artifact. Do not implement product work.
 Do not edit .specs/graph/ state. Report the artifact path, findings and any decision that blocks execution.
 ```
 
-The orchestrator records `finish-phase-planning` only after inspecting the complete artifact batch. The engine
-requires research, steps, a mapping to every validation check and no unanswered blocking question;
+The same artifact, capability, complete-JSON fallback and correction rules apply to task-scoped planning.
+Use the artifact directory and task schema given for that task, without adding phase-only binding fields.
+
+When the planning conversation is in Portuguese, use this equivalent planner prompt:
+
+```text
+Você é o PLANEJADOR somente leitura da fase aprovada. Confira as ferramentas e permissões de gravação realmente
+disponíveis; não deduza capacidades pelo nome do harness. Pesquise todas as tarefas alvo sem implementá-las.
+Leia as regras do projeto, o objetivo e as restrições aprovados, os contratos das tarefas e as saídas de
+dependências conhecidas. Leia a descoberta persistida da fase e inspecione o código, artefatos e fontes
+relevantes com as ferramentas disponíveis.
+Aplique PO First. Não repita perguntas da descoberta; devolva ao orquestrador novas lacunas consequenciais.
+Se recomendar texto de produto, descreva a regra observável e o motivo; nomeie a área responsável apenas
+quando o contexto aprovado confirmar essa informação. Mantenha identificadores e detalhes internos do fluxo
+fora de rascunhos de comentários, testes, mensagens e README; identificadores exigidos pertencem aos campos
+do contrato de planejamento.
+Se puder gravar no diretório indicado, grave SOMENTE o arquivo exato task-plan-<id>.json para cada tarefa,
+com JSON completo. Inclua pesquisa, decisões, passos, verificações, perguntas em aberto e caminhos previstos.
+Para planejamento por fase, copie phaseBinding e unresolvedInputs do resultado de plan-phase sem recalcular
+ou renumerar campos. Para planejamento por tarefa, siga o schema recebido e não acrescente campos exclusivos
+de fase. Mapeie todos os critérios de validação e resolva perguntas bloqueantes com o usuário.
+Se não puder gravar, devolva um artefato completo por tarefa: escreva o nome exato do arquivo na linha
+imediatamente antes de um bloco aberto com ```json que contenha o objeto inteiro. Não abrevie, omita campos
+ou use reticências. Reporte o caminho do artefato, as descobertas e qualquer decisão que bloqueie a execução.
+Não implemente a tarefa nem edite outros arquivos de produto ou o estado do grafo durante o planejamento.
+```
+The orchestrator parses each returned block as JSON, decodes the listed HTML entities only within its string
+values, validates the complete artifact, writes it under the indicated filename and then records
+finish-phase-planning or finish-planning. If parsing or validation fails, send the concrete correction back to
+the planner. The engine requires research, steps, a mapping to every validation check and no unanswered blocking question;
 it checks structure and freshness, not the truth of research or real agent identity. `init` still
 requires a valid behavioral contract: planning never permits fake `echo` checks or inspection
 exceptions for functional work. The executor reads and rechecks the plan; the independent reviewer
@@ -394,19 +444,21 @@ changes; the reviewer compares against this baseline and excludes them from the 
 
 ### Dispatch — recording a role does not create an agent
 
-**Every `plan-phase` and `start` is paired with a native subagent call in the SAME message**.
-Dispatch ready planning tasks within total capacity and ready execution tasks within both caps — parallelism is
+**Use a native subagent for plan-phase when one is actually available; otherwise report the limitation and follow the local, read-only planner fallback above. Every start still requires an actual native executor dispatch in the SAME message.**
+Dispatch ready planner agents within total capacity and ready execution agents within both caps — parallelism is
 the point of the graph, and tasks that share no dep share no file. The engine only ever sees
 the `--agent` string, so an orchestrator that runs `start` and then writes the code itself
 passes every check and leaves a state file that lies: `--agent` must name an agent that
 EXISTS. That is the one rule here the engine cannot enforce for you.
+Local planning writes only the designated artifact and does not invent a dispatched agent or consume an agent slot.
 
 `review` is a subagent call too — a `review` with no reviewer behind it is the same self-report
 wearing a different label. It is not capacity-capped, so it goes out the moment work finishes.
 
-After an interruption, inspect persisted state and the harness's actual agent status before
-repeating commands. If `plan-phase`, `start` or `review` was recorded but no agent was dispatched, complete
-that dispatch in the same attempt when authorized; do not repeat fail/retry/start. Record the
+After an interruption, inspect persisted state and the actual agent status before repeating commands.
+If planning intended a native planner, or start/review was recorded without dispatch, complete that dispatch
+in the same attempt when authorized; do not repeat fail/retry/start. For the documented local-planning
+fallback, resume read-only research and artifact work instead of inventing a dispatch. Record the
 actual agent handle in a note if it differs from the engine label. If dispatch is unavailable
 or the user paused work, block with the real orchestration reason. A recorded label is not
 proof that an agent is running, and a dispatch problem is not an implementation failure.
@@ -419,6 +471,11 @@ reasons and all available homologation/review feedback; do not invent a task pla
 You are the EXECUTOR for <T4>: <title>. Deliver exactly that; do not hand it to review until you
 reasonably believe every planned step and validation clause is satisfied.
 Read the project's agent rules first.
+For comments, tests, messages and other product text you add, state the observable business rule and why;
+name its owning area or organization only when known. State technical reasons without inventing an owner.
+Do not copy task, round, finding or criterion identifiers, internal process or orchestrator names, people's
+names, or a decision's date or authorship into product text. Dates that support a measurement or describe
+product behavior may be included. Keep traceability in the approved contract, commit or ticket.
 Write ONLY under: <touches>  — another executor owns the rest, right now.
 Build on what these already produced: <deps>.
 Read the current taskPlan and recheck its research/steps against the actual workspace: <artifact, or "planning explicitly skipped" plus its receipt>.
@@ -705,6 +762,13 @@ Relevant approved context and constraints: <references; distinguish superseded h
 Recorded taskPlan: <artifact>; treat it as evidence to inspect, not authority over the approved objective.
 Challenge missing or incorrect planning/criteria instead of approving a flawed plan's implementation.
 Read the project's agent rules and the relevant implementation, inputs, outputs and checks.
+Inspect new comments, tests, messages, README and other product text. Reject new references there to
+task/round/finding/criterion identifiers, internal process or orchestrator names, people's names, or a
+decision's date or authorship; those belong in the approved contract, commit or ticket. Preserve dates that
+support a measurement or describe product behavior. Check that business rules
+state why and name the owning area or organization when known. If ownership is unknown, flag it for the PO
+without inventing one; absence of a known owner is a notice, not by itself a rejection. Technical reasons
+must not claim a business owner without evidence.
 Check that the contract proves the changed behavior and that any inspection exception fits the diff.
 Check each verification item's `requires`; report manual inspection as pending until you have inspected it.
 Run the gate YOURSELF through engine validate: <Project overrides, engine path, absolute project cwd>.

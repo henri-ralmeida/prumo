@@ -6,7 +6,7 @@ import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { EventEmitter } from 'node:events'
-import { planInstall, applyInstall, discoverInstallations } from '../lib/install.mjs'
+import { planInstall, applyInstall, discoverInstallations, installedPoFirstLanguage } from '../lib/install.mjs'
 import { assertUpdateVersion, globalCliState, installationsCurrent, isGlobalCli, launchUpdate, npmLatestVersion, npmProcess, reconcileDashboardUpdate, updateRequest } from '../lib/update.mjs'
 import { inside } from '../scripts/storage.mjs'
 
@@ -145,6 +145,11 @@ test('update detects installed harnesses and custom paths, preserves preferences
     for (const item of plan.groups.flatMap(group => group.changes)) assert.ok(inside(home, item.file))
     assert.ok(applyInstall(plan).groups.every(group => group.status !== 'conflict'))
   }
+  const claudePoFirst = join(home, '.claude', 'output-styles', 'po-first.md')
+  assert.match(read(claudePoFirst), /metadados do fluxo de trabalho/)
+  assert.equal(installedPoFirstLanguage('claude', join(home, '.claude')), 'pt-BR')
+  assert.equal(installedPoFirstLanguage('codex', customCodex), 'en')
+  assert.equal(installedPoFirstLanguage('dsh', customDsh), 'pt-BR')
   const projectSkill = join(cwd, '.claude', 'skills', 'prumo')
   cpSync(join(home, '.claude', 'skills', 'prumo'), projectSkill, { recursive: true })
   const projectMarker = join(projectSkill, '.prumo-install.json')
@@ -182,11 +187,13 @@ test('update detects installed harnesses and custom paths, preserves preferences
   assert.equal(existsSync(join(home, '.codex', 'AGENTS.md')), false)
   assert.equal(read(legacy), 'Keep the active legacy installation.')
   assert.equal(existsSync(join(home, '.kiro', 'skills', 'prumo')), false)
+  assert.match(read(claudePoFirst), /metadados do fluxo de trabalho/)
   const backups = join(home, '.local', 'share', 'prumo', 'backups')
   const count = readdirSync(backups).length
   const repeated = run(false)
   assert.equal(repeated.status, 0, repeated.stdout + repeated.stderr)
   assert.equal(readdirSync(backups).length, count)
+  assert.match(read(claudePoFirst), /metadados do fluxo de trabalho/)
   put(join(home, '.local', 'share', 'prumo', 'installations.json'), '{broken')
   assert.throws(() => discoverInstallations({ home, cwd, env: {} }))
 })

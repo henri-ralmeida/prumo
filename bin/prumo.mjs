@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync, mkdirSync, renameSync, rmSync, existsSync 
 import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { resolve, join, dirname } from 'node:path'
-import { planInstall, applyInstall, restoreInstall, installationStatus, discoverInstallations, detectHarnesses, reconcileDashboardInstall, readInstallationMarker } from '../lib/install.mjs'
+import { planInstall, applyInstall, restoreInstall, installationStatus, discoverInstallations, detectHarnesses, reconcileDashboardInstall, readInstallationMarker, installedPoFirstLanguage } from '../lib/install.mjs'
 import { assertUpdateVersion, globalCliState, launchUpdate, reconcileDashboardUpdate, updateGlobalCli, updateRequest } from '../lib/update.mjs'
 import { releaseHistory } from '../lib/release-notes.mjs'
 import { dashboardNeedsRepair, dashboardStatus, disableDashboard, enableDashboard, readDashboardEvents, runDashboardForeground } from '../lib/autostart.mjs'
@@ -175,20 +175,23 @@ try {
       for (const [index, entry] of installed.entries()) {
         try {
           const variants = new Map()
+          let firstSavedLanguage
           for (const root of entry.roots) {
             const marker = readInstallationMarker(root, { harness: entry.harness })
             previousVersions.push(marker.version)
             const saved = marker.lang
             const lang = request.lang ?? (['en', 'pt-BR'].includes(saved) ? saved : undefined)
+            if (firstSavedLanguage === undefined && ['en', 'pt-BR'].includes(saved)) firstSavedLanguage = saved
             if (!variants.has(lang)) variants.set(lang, [])
             variants.get(lang).push(root)
           }
+          const poFirstLang = request.lang ?? installedPoFirstLanguage(entry.harness, entry.config) ?? firstSavedLanguage ?? language(undefined)
           for (const [lang, roots] of variants) {
             t = createTranslator(messages, language(lang))
             if (!quiet) print(t('Updating {0} with Prumo {1}', entry.harness, version))
             else progress.update(45 + Math.round(45 * (index + 1) / Math.max(installed.length, 1)), t('Updating {0}', entry.harness))
             const percent = 45 + Math.round(45 * (index + 1) / Math.max(installed.length, 1))
-            runInstall({ harness: entry.harness, configRoot: entry.config, skillRoots: roots, onlyInstalled: true, cwd: request.cwd, projects: entry.projects, lang }, { dryRun: request.dryRun, quiet, reported,
+            runInstall({ harness: entry.harness, configRoot: entry.config, skillRoots: roots, onlyInstalled: true, cwd: request.cwd, projects: entry.projects, lang, poFirstLang }, { dryRun: request.dryRun, quiet, reported,
               onProgress: event => progress.update(percent, t('Migrating workspace {0}', event.name)) })
           }
         } catch (error) { console.error(`[prumo] ${t(error.message)}`); process.exitCode = 2 }

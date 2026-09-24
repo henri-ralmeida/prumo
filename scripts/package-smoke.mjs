@@ -154,7 +154,20 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
   assert.equal(JSON.parse(readFileSync(join(globalPackage, 'package.json'), 'utf8')).version, version)
   assert.equal(JSON.parse(readFileSync(join(legacyCodex, '.prumo-install.json'), 'utf8')).version, version)
   assert.equal(existsSync(join(home, '.claude', 'skills', 'prumo')), false, '--ignore-scripts leaves harness setup pending')
+  const poFirstTargets = [
+    ['claude', join(home, '.claude', 'output-styles', 'po-first.md')],
+    ['kiro', join(home, '.kiro', 'steering', 'po-first.md')],
+    ['codex', join(home, '.codex', 'AGENTS.md')],
+    ['dsh', join(home, '.dsh', 'AGENTS.md')],
+  ]
+  const assertInstalledPoFirst = (pattern, language) => {
+    for (const [harness, file] of poFirstTargets)
+      assert.match(readFileSync(file, 'utf8'), pattern, language + ' PO First reaches ' + harness)
+  }
+  run(globalExecutable, ['install', '--all', '--lang', 'en'])
+  assertInstalledPoFirst(/workflow metadata/, 'English')
   run(globalExecutable, ['install', '--all', '--lang', 'pt-BR'])
+  assertInstalledPoFirst(/metadados do fluxo de trabalho/, 'Portuguese')
   assert.equal(JSON.parse(readFileSync(join(globalPackage, 'package.json'), 'utf8')).version, version)
   assert.match(run(globalExecutable, ['-v']), new RegExp(version.replaceAll('.', '\\.')))
   assert.doesNotMatch(evidence.at(-1).stderr, /DEP0190/)
@@ -169,9 +182,15 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
   assert.equal(existsSync(join(home, '.dsh', 'cordis.patch.yml')), false)
   assert.equal(existsSync(join(home, '.dsh', '.credentials.yaml')), false)
   assert.equal(existsSync(join(home, '.dsh', 'profiles')), false)
+  for (const harness of ['claude', 'kiro', 'codex', 'dsh']) {
+    const skillRoot = harness === 'codex' ? '.agents' : '.' + harness
+    const installedSkill = readFileSync(join(home, skillRoot, 'skills', 'prumo', 'SKILL.md'), 'utf8')
+    assert.match(installedSkill, /Inspect the actual tools and write permissions/)
+    assert.ok(installedSkill.includes('block opened with ' + String.fromCharCode(96).repeat(3) + 'json'))
+  }
   for (const harness of ['.claude', '.kiro', '.agents', '.dsh']) {
     const skill = join(home, harness, 'skills', 'prumo')
-    for (const file of ['SKILL.md', 'scripts/engine.mjs', 'scripts/serve.mjs', 'scripts/validation.mjs', 'scripts/atomic-state.mjs', 'scripts/storage.mjs', 'scripts/dashboard.html']) {
+    for (const file of ['SKILL.md', 'references/po-first.md', 'references/po-first.pt-BR.md', 'scripts/engine.mjs', 'scripts/serve.mjs', 'scripts/validation.mjs', 'scripts/atomic-state.mjs', 'scripts/storage.mjs', 'scripts/dashboard.html']) {
       assert.ok(existsSync(join(skill, file)), `${harness} installation must contain ${file}`)
     }
   }

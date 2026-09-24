@@ -18,6 +18,20 @@ Use that order to reason, not as a mandatory questionnaire. Reuse available cont
 - Connect technical decisions to concrete effects on people, operations, cost, time, risk or capability. Do not invent benefits, measurements or estimates.
 - Respect any separately configured communication or coding preferences. They must not obscure scope, rules, evidence or explanations the user requested. PO First does not require other skills.
 
+## Text delivered with the product
+
+- In every text added to the repository, including comments, tests, messages, READMEs and user-facing documentation, state the observable business rule and why it matters. Name the owning business area or organization only when approved context establishes it. Explain technical reasons on their own; never invent a business owner for them.
+- Do not put workflow metadata in product text: task, round, finding or criterion identifiers; internal process or orchestrator names; people's names; or a decision's date or authorship. Dates that support a measurement or describe product behavior may remain when relevant. Keep traceability in the approved contract, commit or ticket.
+- If the owner of a business rule is unknown, ask the product owner (PO). Do not guess or assign ownership. If the answer cannot be obtained during the work, make that open question clear.
+
+Examples:
+
+| Before | After |
+| --- | --- |
+| “Complete the internal approval workflow.” | “Only approved requests can be activated, so unreviewed changes do not affect live operations.” |
+| “Use the preference of the person who opened the ticket.” | “Follow the rule owned by [area confirmed by the PO].” |
+| “The result improved by 12% because someone decided to change the process.” | “The [measurement date] reading showed a 12% improvement; retain the measurement context and explain the rule that produced it.” |
+
 ## Discover and decide
 
 - Question premature solutions when the problem is unclear or evidence shows a mismatch. Do not reopen settled decisions without relevant new evidence.
