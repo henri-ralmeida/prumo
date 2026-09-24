@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, cpSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, cpSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -75,6 +75,83 @@ test('health reports the loaded server version until a real restart', async t =>
   const after = await (await f.get('/api/health')).json()
   assert.equal(after.version, '1.0.8', 'replacing package files does not replace the running process')
   assert.equal(after.pid, f.child.pid)
+})
+
+test('event history paging resets replacements and waits for complete NDJSON lines', async t => {
+  const f = await fixture(t)
+  const log = join(f.graph, 'demo', 'events.ndjson')
+  const encode = (count, base = 0) => Array.from({ length: count }, (_, index) => JSON.stringify({ type: 'task_note', id: base + index }) + '\n').join('')
+  const missing = await (await f.get('/api/events?root=healthy&run=demo&after=0&limit=10')).json()
+  assert.equal(missing.complete, false, 'a missing event log does not prove that pause history is complete')
+  f.put(log, encode(5105))
+
+  const firstResponse = await f.get('/api/events?root=healthy&run=demo&after=0&limit=5001')
+  assert.equal(firstResponse.status, 200)
+  const first = await firstResponse.json()
+  assert.equal(first.events.length, 5000, 'the requested page is bounded to 5000 records')
+  assert.equal(first.next, 5000)
+  assert.equal(first.total, 5105)
+  assert.equal(first.complete, false)
+  assert.equal(typeof first.revision, 'string')
+  assert.doesNotMatch(JSON.stringify(first), /events\.ndjson|healthy/)
+
+  const revision = encodeURIComponent(first.revision)
+  const second = await (await f.get(`/api/events?root=healthy&run=demo&after=5000&limit=5000&revision=${revision}`)).json()
+  assert.equal(second.events.length, 105)
+  assert.equal(second.next, 5105)
+  assert.equal(second.complete, true)
+  assert.equal(second.revision, first.revision)
+
+  const cursorReset = await (await f.get(`/api/events?root=healthy&run=demo&after=9999&limit=2&revision=${revision}`)).json()
+  assert.equal(cursorReset.reset, true)
+  assert.equal(cursorReset.next, 2)
+  assert.equal(cursorReset.events[0].id, 0)
+
+  assert.equal((await f.get('/api/events?root=healthy&run=demo&after=-1')).status, 400)
+  assert.equal((await f.get('/api/events?root=healthy&run=demo&after=')).status, 400)
+  assert.equal((await f.get('/api/events?root=healthy&run=demo&after=9007199254740992')).status, 400)
+  assert.equal((await f.get('/api/events?root=healthy&run=demo&after=0&limit=9007199254740992')).status, 400)
+  assert.equal((await f.get('/api/events?root=healthy&run=demo&limit=0')).status, 400)
+
+  appendFileSync(log, JSON.stringify({ type: 'task_note', id: 'append' }) + '\n')
+  const appended = await (await f.get(`/api/events?root=healthy&run=demo&after=5105&limit=10&revision=${revision}`)).json()
+  assert.equal(appended.events[0].id, 'append')
+  assert.equal(appended.next, 5106)
+  assert.equal(appended.complete, true)
+  assert.equal(appended.revision, first.revision)
+
+  appendFileSync(log, '{"type":"task_note","id":"partial"')
+  const partial = await (await f.get(`/api/events?root=healthy&run=demo&after=5106&limit=10&revision=${revision}`)).json()
+  assert.deepEqual(partial.events, [])
+  assert.equal(partial.complete, false, 'a partial final JSON line does not certify a complete history')
+  appendFileSync(log, '}\n')
+  const completed = await (await f.get(`/api/events?root=healthy&run=demo&after=5106&limit=10&revision=${revision}`)).json()
+  assert.equal(completed.events[0].id, 'partial')
+  assert.equal(completed.complete, true)
+
+  f.put(log, encode(2))
+  const truncated = await (await f.get(`/api/events?root=healthy&run=demo&after=5107&limit=10&revision=${revision}`)).json()
+  assert.equal(truncated.reset, true)
+  assert.equal(truncated.total, 2)
+  assert.notEqual(truncated.revision, first.revision)
+  assert.equal(truncated.events.length, 2)
+
+  const oldRevision = encodeURIComponent(truncated.revision)
+  rmSync(log)
+  f.put(log, encode(4))
+  const replaced = await (await f.get(`/api/events?root=healthy&run=demo&after=2&limit=10&revision=${oldRevision}`)).json()
+  assert.equal(replaced.reset, true)
+  assert.equal(replaced.total, 4)
+  assert.notEqual(replaced.revision, truncated.revision)
+  assert.equal(replaced.events[0].id, 0)
+
+  const beforeRewriteRevision = encodeURIComponent(replaced.revision)
+  f.put(log, encode(8, 10000))
+  const largerRewrite = await (await f.get(`/api/events?root=healthy&run=demo&after=4&limit=10&revision=${beforeRewriteRevision}`)).json()
+  assert.equal(largerRewrite.reset, true, 'rewriting in place with a longer file starts a new history')
+  assert.equal(largerRewrite.total, 8)
+  assert.notEqual(largerRewrite.revision, replaced.revision)
+  assert.equal(largerRewrite.events[0].id, 10000)
 })
 
 test('workspace auto-sync tolerates incomplete state both at startup and during its timer', async t => {

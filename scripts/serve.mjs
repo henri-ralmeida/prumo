@@ -8,13 +8,112 @@
  * Then open http://localhost:4949
  */
 import { createServer } from 'node:http'
-import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { readFileSync, existsSync, readdirSync, statSync, openSync, readSync, closeSync } from 'node:fs'
 import { execFile } from 'node:child_process'
 import { join, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ENGINE = join(HERE, 'engine.mjs')
+const eventHistoryCache = new Map()
+
+function parseEventChunk(buffer) {
+  return buffer.toString('utf8').split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line))
+}
+
+function tailMatches(path, history) {
+  if (!history.tailBytes.length) return true
+  const file = openSync(path, 'r')
+  const current = Buffer.alloc(history.tailBytes.length)
+  let bytesRead = 0
+  try {
+    while (bytesRead < current.length) {
+      const count = readSync(file, current, bytesRead, current.length - bytesRead, history.tailStart + bytesRead)
+      if (!count) break
+      bytesRead += count
+    }
+  } finally {
+    closeSync(file)
+  }
+  return bytesRead === current.length && current.equals(history.tailBytes)
+}
+
+function saveHistoryTail(path, history) {
+  const length = Math.min(256, history.readOffset)
+  history.tailStart = history.readOffset - length
+  if (!length) { history.tailBytes = Buffer.alloc(0); return }
+  const file = openSync(path, 'r')
+  history.tailBytes = Buffer.alloc(length)
+  let bytesRead = 0
+  try {
+    while (bytesRead < length) {
+      const count = readSync(file, history.tailBytes, bytesRead, length - bytesRead, history.tailStart + bytesRead)
+      if (!count) break
+      bytesRead += count
+    }
+  } finally {
+    closeSync(file)
+  }
+  if (bytesRead !== length) history.tailBytes = Buffer.from(history.tailBytes.subarray(0, bytesRead))
+}
+
+function readEventHistory(path) {
+  const stat = statSync(path)
+  let history = eventHistoryCache.get(path)
+  if (!history || stat.dev !== history.dev || stat.ino !== history.ino || stat.size < history.readOffset ||
+    (stat.size === history.readOffset && (stat.mtimeMs !== history.mtimeMs || stat.ctimeMs !== history.ctimeMs)) ||
+    (history && stat.size > history.readOffset && !tailMatches(path, history))) {
+    const content = readFileSync(path)
+    const end = content.lastIndexOf(0x0a)
+    const complete = end < 0 ? Buffer.alloc(0) : content.subarray(0, end + 1)
+    history = {
+      events: parseEventChunk(complete),
+      readOffset: content.length,
+      pending: Buffer.from(content.subarray(end + 1)),
+      revision: randomUUID(),
+      mtimeMs: stat.mtimeMs,
+      ctimeMs: stat.ctimeMs,
+      dev: stat.dev,
+      ino: stat.ino,
+    }
+    saveHistoryTail(path, history)
+  } else if (stat.size > history.readOffset) {
+    const file = openSync(path, 'r')
+    const added = Buffer.alloc(stat.size - history.readOffset)
+    let bytesRead = 0
+    try {
+      while (bytesRead < added.length) {
+        const count = readSync(file, added, bytesRead, added.length - bytesRead, history.readOffset + bytesRead)
+        if (!count) break
+        bytesRead += count
+      }
+    } finally {
+      closeSync(file)
+    }
+    const combined = Buffer.concat([history.pending, added.subarray(0, bytesRead)])
+    const end = combined.lastIndexOf(0x0a)
+    if (end >= 0) {
+      for (const event of parseEventChunk(combined.subarray(0, end + 1))) history.events.push(event)
+      history.pending = Buffer.from(combined.subarray(end + 1))
+    } else history.pending = combined
+    history.readOffset += bytesRead
+    history.mtimeMs = stat.mtimeMs
+    history.ctimeMs = stat.ctimeMs
+    history.dev = stat.dev
+    history.ino = stat.ino
+    saveHistoryTail(path, history)
+  }
+  try {
+    const finalStat = statSync(path)
+    history.stable = finalStat.dev === history.dev && finalStat.ino === history.ino &&
+      finalStat.size === history.readOffset && finalStat.mtimeMs === history.mtimeMs && finalStat.ctimeMs === history.ctimeMs
+  } catch { history.stable = false }
+  eventHistoryCache.delete(path)
+  eventHistoryCache.set(path, history)
+  while (eventHistoryCache.size > 32) eventHistoryCache.delete(eventHistoryCache.keys().next().value)
+  return history
+}
 
 import { findRoot, storageHome, graphRoots as listRoots, globalGraphRoots } from './storage.mjs'
 import { language, localizeDashboard, log, errorLog, tr } from './i18n.mjs'
@@ -350,13 +449,41 @@ const server = createServer((req, res) => {
   }
 
   if (url.pathname === '/api/events') {
+    const hasCursor = url.searchParams.has('after')
+    const rawAfter = hasCursor ? url.searchParams.get('after') : null
+    const after = hasCursor ? Number(rawAfter) : 0
+    const rawLimit = url.searchParams.get('limit')
+    const requestedLimit = rawLimit == null ? (hasCursor ? 1000 : 300) : Number(rawLimit)
+    if ((hasCursor && rawAfter.trim() === '') || !Number.isSafeInteger(after) || after < 0)
+      return json(res, 400, { error: 'invalid event cursor' })
+    if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1) return json(res, 400, { error: 'invalid event page size' })
+    const limit = Math.min(5000, requestedLimit)
     if (!run) {
-      if (GLOBAL && !url.searchParams.has('root') && !url.searchParams.has('run')) return json(res, 200, { events: [] })
+      if (GLOBAL && !url.searchParams.has('root') && !url.searchParams.has('run')) {
+        return json(res, 200, hasCursor
+          ? { events: [], next: 0, total: 0, complete: true, revision: 'empty',
+            reset: after > 0 || (url.searchParams.has('revision') && url.searchParams.get('revision') !== 'empty') }
+          : { events: [] })
+      }
       return json(res, 404, { error: 'no run' })
     }
     const p = join(selected.graphDir, run, 'events.ndjson')
-    if (!existsSync(p)) return json(res, 200, { events: [] })
-    const limit = Number(url.searchParams.get('limit') ?? 300)
+    if (!existsSync(p)) return json(res, 200, hasCursor
+      ? { events: [], next: 0, total: 0, complete: false, revision: 'empty',
+        reset: after > 0 || (url.searchParams.has('revision') && url.searchParams.get('revision') !== 'empty') }
+      : { events: [] })
+    if (hasCursor) {
+      const history = readEventHistory(p)
+      const requestedRevision = url.searchParams.get('revision')
+      const revisionChanged = requestedRevision != null && requestedRevision !== history.revision
+      const requested = after
+      const offset = revisionChanged || requested > history.events.length ? 0 : requested
+      const events = history.events.slice(offset, offset + limit)
+      const next = offset + events.length
+      return json(res, 200, { events, next, total: history.events.length,
+        complete: next >= history.events.length && history.pending.length === 0 && history.stable,
+        reset: revisionChanged || offset !== requested, revision: history.revision })
+    }
     const lines = readFileSync(p, 'utf8').trim().split('\n').filter(Boolean)
     return json(res, 200, { events: lines.slice(-limit).map((l) => JSON.parse(l)) })
   }

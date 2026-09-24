@@ -36,7 +36,7 @@ function dashboard(lang = 'en', width = 1000, session = new Map(), navigation = 
     const listeners = new Map()
     let markup = ''
     return {
-      textContent: '', dataset: {}, open: false, style: { setProperty() {} },
+      textContent: '', dataset: {}, open: false, hidden: false, style: { setProperty(name, value) { this[name] = value } },
       classList: {
         add(...names) { names.forEach((name) => classes.add(name)) },
         remove(...names) { names.forEach((name) => classes.delete(name)) },
@@ -67,8 +67,8 @@ function dashboard(lang = 'en', width = 1000, session = new Map(), navigation = 
     target.length = 0
     const pattern = new RegExp(`<${tag}\\b([^>]*)>`, 'g')
     const sources = [...markup.matchAll(pattern)]
-    const nodeCount = tag === 'div' ? sources.filter(([, source]) => /class="[^"]*\bnode\b/.test(source)).length : 0
-    const cardSize = nodeCount <= 24 ? [212, 52] : nodeCount <= 100 ? [202, 48] : [194, 44]
+    const cardSize = [Number.parseFloat(nodes.get('#canvas')?.style['--node-w']) || 200,
+      Number.parseFloat(nodes.get('#canvas')?.style['--node-h']) || 64]
     for (const [, source] of sources) {
       const attrs = Object.fromEntries([...source.matchAll(/([:\w-]+)="([^"]*)"/g)].map(([, name, value]) => [name, value]))
       const initialClasses = (attrs.class ?? '').split(/\s+/).filter(Boolean)
@@ -206,7 +206,7 @@ test('waiting cards identify the blocking phase even without their own task depe
     state.tasks.T001.state = 'pending'
     state.derived.T001 = { effective: 'waiting', blockedBy: [], planningBlockedBy: ['F2'] }
     ui.render(state)
-    assert.match(ui.nodes.get('#nodes').innerHTML, /← F2/)
+    assert.match(ui.nodes.get('#nodes').innerHTML, /title="[^"]*← F2/)
   }
 })
 
@@ -484,7 +484,8 @@ test('filter controls expose every state and localize labels', () => {
 
 test('a run-only URL selects that run in the current root', () => {
   assert.match(html, /const selectedRoot = SELECTED_ROOT \?\? currentRoot/)
-  assert.match(html, /selectedRoot && SELECTED_RUN[\s\S]*selectedRoot\}\/\$\{SELECTED_RUN/)
+  assert.match(html, /url\.searchParams\.set\('root', root\)/)
+  assert.match(html, /url\.searchParams\.set\('run', run\)/)
 })
 
 test('filters preserve the full graph and show matching task dependencies as context', () => {
@@ -544,7 +545,7 @@ test('responsive layout selects density and sizes phase lanes from their cards',
     const state = graphState(count)
     const result = JSON.parse(ui.run("STATE = input; JSON.stringify(layout(STATE.tasks))", { input: state }))
     assert.equal(result.density, expected, `${count} tasks`)
-    const cardDrivenWidth = Math.max(636, 80 + result.capacity * result.metrics.nodeW + (result.capacity - 1) * 16)
+    const cardDrivenWidth = Math.max(900, 80 + result.capacity * result.metrics.nodeW + (result.capacity - 1) * result.metrics.gapX)
     assert.equal(result.w, cardDrivenWidth)
     for (const point of Object.values(result.pos)) {
       assert.ok(Number.isFinite(point.x) && Number.isFinite(point.y), `${count}: finite coordinates`)
@@ -571,7 +572,7 @@ test('responsive layout selects density and sizes phase lanes from their cards',
   const tallTasks = Object.values(tallState.tasks)
   tallTasks.slice(0, 6).forEach(task => { task.phase = 'P1' })
   tallTasks.slice(6).forEach((task, index) => { task.phase = `P${index + 2}` })
-  const tallUi = dashboard('en', 1000)
+  const tallUi = dashboard('en', 1440)
   const tallLayout = JSON.parse(tallUi.run("STATE = input; JSON.stringify(layout(STATE.tasks))", { input: tallState }))
   assert.equal(tallLayout.capacity, 6, 'many phases must not force a six-card phase into one column')
   assert.equal(new Set(tallTasks.slice(0, 6).map(task => tallLayout.pos[task.id].y)).size, 1)
@@ -695,7 +696,7 @@ test('phase boards expand for their cards and open with the complete graph visib
   wide.render(screenshotState)
   const wideView = JSON.parse(wide.run("JSON.stringify({ view: VIEW, width: CANVAS_W, metrics: LAST_METRICS })"))
   const cardCapacity = wide.run("layout(STATE.tasks, 'phase').capacity")
-  assert.equal(wideView.width, Math.max(636, 80 + wideView.metrics.nodeW * cardCapacity + 16 * (cardCapacity - 1)))
+  assert.equal(wideView.width, Math.max(636, 80 + wideView.metrics.nodeW * cardCapacity + wideView.metrics.gapX * (cardCapacity - 1)))
   assert.ok(wideView.metrics.nodeW * wideView.view.k >= 72, 'cards at 100% stay legible')
 })
 
@@ -861,6 +862,90 @@ test('visual polish keeps arrowless curves, full card labels and a controllable 
   assert.match(linked.nodes.get('#edgePaths').innerHTML, /<path class="e-hot"[^>]* d="M [^"]* C [^"]*"/)
 })
 
+test('Gravidade cards and agent panels show measured activity in the compact dashboard layout', () => {
+  assert.match(html, /grid-template: 64px minmax\(0, 1fr\) 48px/)
+  assert.match(html, /grid-template-columns: minmax\(0, 1fr\) 360px/)
+  assert.match(html, /\.node \{[^}]*width: var\(--node-w, 200px\); height: var\(--node-h, 64px\)[^}]*padding: 9px 12px/)
+  assert.match(html, /\.node \.id \{[^}]*font-size: 13px/)
+  assert.match(html, /\.node \.tag \{[^}]*font-size: 10px/)
+  assert.match(html, /\.node \.nt \{ font: 15px\/1\.2 var\(--font-display\)/)
+  assert.doesNotMatch(html, /\.node \.sub\b/)
+  assert.match(html, /<details class="run-menu" id="runMenu"/)
+  assert.match(html, /<summary class="run-trigger"/)
+  assert.doesNotMatch(html, /<select[^>]+id="runSelect"/)
+  assert.match(html, /<details class="legend-box">/)
+  assert.match(html, /#eventsBox \{ display: flex; flex: 1;/)
+  assert.match(html, /#pop \{[^}]*width: 472px/)
+  assert.match(html, /#pop \.pk \{[^}]*10px[^}]*var\(--font-mono\)/)
+  assert.match(html, /#pop \.lead \{ font: 400 16px\/1\.45 var\(--font-display\)/)
+  assert.match(html, /#pop \.detail-head \{ display: flex; align-items: baseline; flex-wrap: nowrap/)
+  assert.match(html, /#pop\.expanded \.pk, #pop\.expanded dt \{[^}]*16px[^}]*var\(--font-display\)/)
+
+  const tasks = {
+    T0: task('T0', 'done', { attempts: [{ n: 1, agent: 'exec-a', startedAt: instant(1), endedAt: instant(5), result: 'passed', planDigest: 'a'.repeat(64) }],
+      validations: [{ by: 'review', ok: true, at: instant(5), evidence: 'check passed' }] }),
+    T1: task('T1', 'running', { deps: ['T0'], agent: 'exec-b', summary: 'Linha um\nLinha dois\nLinha três\nSUMMARY_SENTINEL',
+      attempts: [
+        { n: 1, agent: 'exec-b', startedAt: instant(50), endedAt: instant(60), result: 'failed', planDigest: 'a'.repeat(64) },
+        { n: 2, agent: 'exec-b', startedAt: instant(90), planDigest: 'b'.repeat(64) },
+      ],
+      validations: [{ by: 'review', agent: 'review', ok: false, at: instant(60), summary: 'Precisa corrigir', evidence: 'prova insuficiente' }] }),
+    T2: task('T2', 'failed', { deps: ['T1'], attempts: [
+      { n: 1, agent: 'exec-c', startedAt: instant(70), endedAt: instant(80), result: 'failed', reason: 'tentativa inicial falhou' },
+      { n: 2, agent: 'exec-c', startedAt: instant(82), endedAt: instant(90), result: 'failed', reason: 'timeout na segunda tentativa' },
+    ] }),
+  }
+  const state = { run: 'run-a', createdAt: new Date(Date.UTC(2026, 0, 1) - 115 * 60 * 60 * 1000).toISOString(),
+    plan: { description: 'Plano de atividade', phases: [], maxExecutors: 3, maxAttempts: 3 }, tasks,
+    derived: { T0: { effective: 'done' }, T1: { effective: 'running' }, T2: { effective: 'failed' } } }
+  const events = [
+    { type: 'task_start', task: 'T0', attempt: 1, at: instant(1) },
+    { type: 'task_progress', task: 'T0', attempt: 1, at: instant(5) },
+    { type: 'task_start', task: 'T1', attempt: 1, at: instant(50) },
+    { type: 'task_progress', task: 'T1', attempt: 1, at: instant(60) },
+    { type: 'task_start', task: 'T2', attempt: 1, at: instant(70) },
+    { type: 'task_progress', task: 'T2', attempt: 1, at: instant(80) },
+    { type: 'task_start', task: 'T2', attempt: 2, at: instant(82) },
+    { type: 'task_progress', task: 'T2', attempt: 2, at: instant(90) },
+  ]
+  const ui = dashboard('en', 1440)
+  ui.render(state, events)
+  ui.run("updateRunSelect({ currentRoot: 'workspace', current: 'run-a', runs: [{ root: 'workspace', run: 'run-a', plan: 'Plano de atividade' }, { root: 'workspace', run: 'run-b', plan: 'Outro plano' }] })")
+  assert.equal(ui.nodes.get('#runName').textContent, 'run-a')
+  assert.equal(ui.nodes.get('#runLabel').textContent, 'Plano de atividade')
+  assert.match(ui.nodes.get('#runOptions').innerHTML, /aria-current="true"/)
+  assert.match(ui.nodes.get('#runOptions').innerHTML, /Outro plano/)
+  ui.run("updateRunSelect({ currentRoot: 'workspace', current: 'run-b', runs: [{ root: 'workspace', run: 'run-a', plan: 'Plano de atividade' }, { root: 'workspace', run: 'run-b', plan: 'Outro plano' }] })")
+  assert.equal(ui.nodes.get('#runName').textContent, 'run-b')
+  assert.match(ui.nodes.get('#runOptions').innerHTML, /data-run="workspace\/run-b" aria-current="true"/)
+  assert.doesNotMatch(ui.nodes.get('#runOptions').innerHTML, /data-run="workspace\/run-a" aria-current="true"/)
+  assert.match(ui.nodes.get('#orch').innerHTML, /Live[\s\S]*00:00:32/)
+  assert.match(ui.nodes.get('#orch').innerHTML, /aria-label="Agent time: 00:00:32 · not measured"/)
+  assert.equal(ui.nodes.get('#orch').classList.contains('live'), true, 'the current task state, not event age, controls the live pill')
+  assert.match(ui.nodes.get('#doneCount').innerHTML, /32s[\s\S]*Active time not measured/)
+  assert.doesNotMatch(ui.nodes.get('#orch').innerHTML + ui.nodes.get('#doneCount').innerHTML, /115:00:00|115h/)
+  assert.match(ui.nodes.get('#nodes').innerHTML, /class="tr">running<\/span>/)
+  assert.doesNotMatch(ui.nodes.get('#nodes').innerHTML, /class="sub"/)
+  assert.match(ui.nodes.get('#parallel').innerHTML, /T1[\s\S]*executor[\s\S]*not measured[\s\S]*rbar/)
+  assert.match(ui.nodes.get('#failures').innerHTML, /2 of 3/)
+  assert.match(ui.nodes.get('#failures').innerHTML, /timeout na segunda tentativa/)
+
+  ui.run("POP_MODE = 'lean'; fillPop('T1')")
+  const lean = ui.nodes.get('#popBody').innerHTML
+  for (const text of ['T1', '2 of 3', 'Linha um', 'Linha dois', 'Linha três', 'Depends on', 'T0', 'Unlocks', 'T2', 'changed from aaaa', 'Pin', 'Agent time', 'see detail'])
+    assert.ok(lean.includes(text), text)
+  assert.ok(lean.includes('SUMMARY_SENTINEL'), 'an explicit summary remains complete in the concise view')
+  assert.doesNotMatch(lean, /115:00:00|115h/)
+  assert.match(lean, /<button type="button" class="dep"/)
+
+  ui.run("POP_MODE = 'detail'; fillPop('T1')")
+  const detail = ui.nodes.get('#popBody').innerHTML
+  for (const text of ['Attempts and verdicts', 'Rejected', '@exec-b', '@review', 'prova insuficiente', 'changed from aaaa', 'Esc closes'])
+    assert.ok(detail.includes(text), text)
+  ui.run("POP_MODE = 'lean'; fillPop('T0')")
+  assert.match(ui.nodes.get('#popBody').innerHTML, /Approved[\s\S]*in prumo/)
+})
+
 test('discussion uses the orchestrator brass and lights the active orchestrator without motion when reduced', () => {
   assert.match(html, /--discussion:\s*#e8b04b/)
   assert.match(html, /\.node\[data-st="discussing"\][^{]*\{[^}]*--st:\s*var\(--discussion\)/)
@@ -871,7 +956,7 @@ test('discussion uses the orchestrator brass and lights the active orchestrator 
   assert.match(ui.nodes.get('#nodes').innerHTML, /data-st="discussing"[^>]*data-id="T1"/)
   assert.match(ui.nodes.get('#orchSub').textContent, /discutindo 1: T1/)
   ui.render({ run: 'discussion', plan: { maxParallel: 4 }, tasks: { T1: task('T1', 'discussing', { discussionAttempts: [{ startedAt: instant(28) }] }) }, derived: { T1: { effective: 'discussing' } } })
-  assert.match(ui.nodes.get('#nodes').innerHTML, /orquestrador<\/span><span class="beat"><\/span><span class="elapsed">não aferido</,'the card does not infer active time from an open discussion envelope')
+  assert.match(ui.nodes.get('#nodes').innerHTML, /data-st="discussing"[^>]*[\s\S]*class="elapsed">não aferido</,'the card does not infer active time from an open discussion envelope')
 })
 
 test('the dashboard ships its own licensed fonts and the page policy allows only inline data fonts', () => {
@@ -1001,11 +1086,63 @@ test('lean popover falls back to clamped full text when no summary was recorded'
   ui.render({ run: 'old', plan: {}, tasks: { T: task('T', 'pending', { summary: '   ', validation: 'contrato antigo em prosa' }) }, derived: { T: { effective: 'ready' } } })
   ui.run("POP_MODE = 'lean'; fillPop('T')")
   const lean = ui.nodes.get('#popBody').innerHTML
-  assert.match(lean, /class="lead clamp">Task T/)
+  assert.match(lean, /class="lead">Task T/)
   assert.match(lean, /class="ptxt clamp">contrato antigo em prosa/)
-  assert.equal((lean.match(/class="nosum"/g) ?? []).length, 1, 'the missing-summary note appears once')
-  assert.match(lean, /title="Task T" class="ptitle">Task T/)
-  assert.match(html, /#pop \.ptitle[^}]*var\(--font-display\)/)
+  assert.equal((lean.match(/class="nosum"/g) ?? []).length, 1, 'a blank summary counts as absent')
+})
+
+test('detail preserves every recorded line in summaries, plans and validations while lean remains a preview', () => {
+  const summary = 'Resumo 1\nResumo 2\nResumo 3\nResumo 4 <img src=x onerror="alert(1)">'
+  const approach = 'Abordagem 1\nAbordagem 2\nAbordagem 3\nAbordagem 4'
+  const research = 'Pesquisa 1\nPesquisa 2\nPesquisa 3\nPesquisa 4 <script>alert(1)</script>'
+  const question = 'Pergunta 1\nPergunta 2\nPergunta 3\nPergunta 4'
+  const answer = 'Decisão 1\nDecisão 2\nDecisão 3\nDecisão 4'
+  const steps = 'Passo 1\nPasso 2\nPasso 3\nPasso 4'
+  const criterion = 'Critério 1\nCritério 2\nCritério 3\nCritério 4'
+  const check = 'Checagem 1\nChecagem 2\nChecagem 3\nChecagem 4'
+  const rejectedSummary = 'Parecer reprovado 1\nParecer reprovado 2\nParecer reprovado 3\nParecer reprovado 4'
+  const rejectedEvidence = 'Evidência reprovada 1\nEvidência reprovada 2\nEvidência reprovada 3\nEvidência reprovada 4'
+  const approvedSummary = 'Parecer aprovado 1\nParecer aprovado 2\nParecer aprovado 3\nParecer aprovado 4'
+  const approvedEvidence = 'Evidência aprovada 1\nEvidência aprovada 2\nEvidência aprovada 3\nEvidência aprovada 4'
+  const extraEvidence = 'Validação extra 1\nValidação extra 2\nValidação extra 3\nValidação extra 4'
+  const ui = dashboard('pt-BR')
+  ui.render({ run: 'full-detail', plan: {}, tasks: { T: task('T', 'done', {
+    summary,
+    taskPlan: { ...plan, summary: approach,
+      research: [{ source: 'arquivo atual', findings: research }],
+      decisions: [{ question, answer }], steps: [steps],
+      verification: [{ criterion, check }] },
+    attempts: [{ n: 1, agent: 'executor-1', startedAt: instant(1), endedAt: instant(10) }],
+    validations: [
+      { attempt: 1, by: 'review', agent: 'revisor-1', ok: false, at: instant(2), summary: rejectedSummary, evidence: rejectedEvidence },
+      { attempt: 1, by: 'review', agent: 'revisor-2', ok: true, at: instant(5), summary: approvedSummary, evidence: approvedEvidence },
+      { attempt: 1, by: 'executor', agent: 'executor-1', ok: true, at: instant(8), evidence: extraEvidence },
+    ],
+  }) }, derived: { T: { effective: 'done' } } })
+
+  ui.run("POP_MODE = 'lean'; fillPop('T')")
+  const lean = ui.nodes.get('#popBody').innerHTML
+  for (const line of ['Resumo 1', 'Resumo 2', 'Resumo 3', 'Resumo 4 &lt;img']) assert.ok(lean.includes(line), line)
+  assert.doesNotMatch(lean, /Pesquisa 4|Evidência aprovada 4/)
+
+  ui.run("POP_MODE = 'detail'; fillPop('T')")
+  const detail = ui.nodes.get('#popBody').innerHTML
+  for (const text of ['Resumo 4 &lt;img', 'Abordagem 4', 'Pesquisa 4 &lt;script&gt;', 'Pergunta 4', 'Decisão 4',
+    'Passo 4', 'Critério 4', 'Checagem 4', 'Parecer reprovado 4', 'Evidência reprovada 4',
+    'Parecer aprovado 4', 'Evidência aprovada 4', 'Validação extra 4']) assert.ok(detail.includes(text), text)
+  assert.equal((detail.match(/class="vitem/g) ?? []).length, 3, 'every validation remains in the full list')
+  assert.doesNotMatch(detail, /<img|onerror="|<script>/)
+
+  const fallback = 'Título original 1\nTítulo original 2\nTítulo original 3\nTítulo original 4 <em>completo</em>'
+  const fallbackUi = dashboard('pt-BR')
+  fallbackUi.render({ run: 'fallback', plan: {}, tasks: { F: task('F', 'pending', { title: fallback, summary: '  ' }) }, derived: { F: { effective: 'ready' } } })
+  fallbackUi.run("POP_MODE = 'lean'; fillPop('F')")
+  const fallbackLean = fallbackUi.nodes.get('#popBody').innerHTML
+  const fallbackPreview = fallbackLean.match(/<div class="lead">([\s\S]*?)<\/div>/)?.[1] ?? ''
+  for (const line of ['Título original 1', 'Título original 2', 'Título original 3']) assert.ok(fallbackPreview.includes(line), line)
+  assert.doesNotMatch(fallbackPreview, /Título original 4/)
+  fallbackUi.run("POP_MODE = 'detail'; fillPop('F')")
+  assert.ok(fallbackUi.nodes.get('#popBody').innerHTML.includes('Título original 4 &lt;em&gt;completo&lt;/em&gt;'))
 })
 
 test('expanding the popover pins it, switches to detail and closing resets it', () => {
@@ -1113,7 +1250,7 @@ test('explicit results navigation survives the click suppression left by draggin
   assert.ok(view.taskX + view.x >= 0 && view.taskX + view.x + view.width <= view.viewportWidth)
   assert.ok(view.taskY + view.y >= 0 && view.taskY + view.y + view.height <= view.viewportHeight)
 })
-test('results count planning intervals and exclude human blocks and planning from execution queue time', () => {
+test('task planning envelopes stay unmeasured and are subtracted from execution queue time', () => {
   const ui = dashboard()
   const completePlan = { ...plan, startedAt: instant(15), completedAt: instant(20) }
   const tasks = {
@@ -1127,19 +1264,32 @@ test('results count planning intervals and exclude human blocks and planning fro
     L: task('L', 'done', { attempts: [{ startedAt: instant(10), endedAt: instant(20) }] }),
   }
   const state = { run: 'metrics', createdAt: instant(0), plan: {}, tasks, derived: {} }
-  const result = ui.run('analyse(input, [])', { input: state })
-  assert.equal(result.planningTotal, 15000, 'an open task plan without activity telemetry contributes no duration')
+  const events = [
+    { type: 'task_start', task: 'D', attempt: 1, at: instant(30) },
+    { type: 'task_review', task: 'D', attempt: 1, at: instant(50) },
+    { type: 'task_review_progress', task: 'D', attempt: 1, at: instant(60) },
+    { type: 'task_validate', task: 'D', attempt: 1, by: 'review', at: instant(60) },
+    { type: 'task_done', task: 'D', attempt: 1, at: instant(60) },
+    { type: 'task_start', task: 'L', attempt: 1, at: instant(10) },
+    { type: 'task_progress', task: 'L', attempt: 1, at: instant(20) },
+    { type: 'task_done', task: 'L', attempt: 1, at: instant(20) },
+  ]
+  const result = ui.run('analyse(input, inputEvents)', { input: state, inputEvents: events })
+  assert.equal(result.planningTotal, 0, 'task plan envelopes have no active planning telemetry')
   assert.equal(result.execTotal, 30000)
   assert.equal(result.reviewTotal, 10000)
-  assert.equal(result.agentTotal, 55000)
+  assert.equal(result.agentTotal, 40000)
+  assert.equal(result.planningMeasured, false)
+  assert.equal(result.per.find((t) => t.id === 'D').unmeasured, true)
   assert.equal(result.wall, 100000)
   assert.equal(result.anyLive, true)
   assert.equal(result.per.find((t) => t.id === 'D').queue, 10000)
   assert.equal(result.per.find((t) => t.id === 'P').queue, null)
   assert.equal(result.per.find((t) => t.id === 'L').queue, 10000)
-  ui.run('renderResults(input)', { input: state })
+  ui.run('FULL_EVENTS = inputEvents; renderResults(input)', { input: state, inputEvents: events })
   assert.match(ui.nodes.get('#results').innerHTML, /Planning share/)
-  assert.match(ui.nodes.get('#results').innerHTML, /background:var\(--planning\)/)
+  assert.match(ui.nodes.get('#results').innerHTML, /not measured/)
+  assert.doesNotMatch(ui.nodes.get('#results').innerHTML, /<i class="gs"[^>]*background:var\(--planning\)/)
   assert.match(ui.nodes.get('#results').innerHTML, /Run still active/)
 })
 
@@ -1153,7 +1303,10 @@ test('results count shared phase planning once and keep pending runs live', () =
     F1: { id: 'F1', state: 'planned', planningAttempts: [{ startedAt: instant(10), endedAt: instant(20) }] },
     F2: { id: 'F2', state: 'planning', planningAttempts: [{ startedAt: instant(80) }] },
   } }
-  const result = ui.run('analyse(input, [])', { input: state })
+  const events = [{ type: 'task_start', task: 'A', attempt: 1, at: instant(30) },
+    { type: 'task_progress', task: 'A', attempt: 1, at: instant(40) },
+    { type: 'task_done', task: 'A', attempt: 1, at: instant(40) }]
+  const result = ui.run('analyse(input, inputEvents)', { input: state, inputEvents: events })
   assert.equal(result.planningTotal, 0, 'phase envelopes without activity events are not active planning time')
   assert.equal(result.agentTotal, 10000)
   assert.equal(result.wall, 100000)
@@ -1162,10 +1315,11 @@ test('results count shared phase planning once and keep pending runs live', () =
   assert.equal(result.phasePlanning.find((attempt) => attempt.phase === 'F1').elapsed, 10000)
   assert.equal(result.phasePlanning.find((attempt) => attempt.phase === 'F2').elapsed, 20000)
   assert.equal(result.cpLen, 10000, 'unmeasured phase envelopes do not inflate the critical path')
-  ui.run('renderResults(input)', { input: state })
+  assert.equal(result.criticalPathMeasured, false, 'a path that omits unmeasured phase planning is not authoritative')
+  ui.run('FULL_EVENTS = inputEvents; renderResults(input)', { input: state, inputEvents: events })
   const results = ui.nodes.get('#results').innerHTML
-  assert.equal((results.match(/Active time not measured/g) ?? []).length, 4,
-    'the phase label and its tooltip both identify unmeasured time without showing the envelope')
+  assert.equal((results.match(/Active time not measured/g) ?? []).length, 5,
+    'the phase label, tooltip and critical-path indicator identify unmeasured time without showing the envelope')
   assert.doesNotMatch(results, /open for|elapsed /)
 })
 
@@ -1198,9 +1352,18 @@ test('mobile header puts filters and counters behind a compact menu below 700px'
   assert.equal(small.nodes.get('#headerMenu').open, true)
   small.resize(330)
   assert.equal(small.nodes.get('#headerMenu').open, false)
-  const menu = html.slice(html.indexOf('<details class="header-menu"'), html.indexOf('</details>') + 10)
+  const menuStart = html.indexOf('<details class="header-menu"')
+  const menu = html.slice(menuStart, html.indexOf('</details>', menuStart) + 10)
   assert.ok(menu.includes('id="statusFilter"'))
   assert.ok(menu.includes('id="counts"'))
+  assert.match(menu, /<div class="filter-menu" id="filterMenu">/)
+  assert.doesNotMatch(menu, /<details[^>]+class="filter-menu"/)
+  small.run('toggleFilterMenu()')
+  assert.equal(small.nodes.get('#filterPanel').hidden, false)
+  assert.equal(small.nodes.get('#filterToggle').getAttribute('aria-expanded'), 'true')
+  small.run('setFilter("done")')
+  assert.equal(small.nodes.get('#filterPanel').hidden, true)
+  assert.equal(small.nodes.get('#filterToggle').getAttribute('aria-expanded'), 'false')
   assert.match(html, /@media \(max-width: 700px\)/)
 })
 
@@ -1226,30 +1389,37 @@ test('115h23 phase envelope stays out of displayed time while measured work and 
         planningAttempts: [{ startedAt: phaseStart, ...(open ? {} : { endedAt: instant(100) }) }],
       } },
     }
-    const result = ui.run('analyse(input, [])', { input: state })
+    const events = [
+      { type: 'task_start', task: 'A', attempt: 1, at: instant(95) },
+      { type: 'task_progress', task: 'A', attempt: 1, at: instant(100) },
+      { type: 'task_done', task: 'A', attempt: 1, at: instant(100) },
+    ]
+    const result = ui.run('analyse(input, inputEvents)', { input: state, inputEvents: events })
     assert.equal(result.phasePlanning[0].elapsed, elapsedSeconds * 1000)
     assert.equal(result.phasePlanning[0].duration, 0)
     assert.equal(result.planningTotal, 0)
     assert.equal(result.agentTotal, 5000)
     assert.equal(result.activeElapsed, 5000)
     assert.equal(result.wall, elapsedSeconds * 1000)
-    assert.equal(result.cpLen, 5000, 'the measured task alone sets the critical path')
-    ui.render(state)
+    assert.equal(result.cpLen, 5000, 'the measured task alone remains available to internal calculations')
+    assert.equal(result.criticalPathMeasured, false, 'unmeasured phase planning suppresses the displayed critical path')
+    ui.render(state, events)
     const graph = ['#doneCount', '#lanes', '#nodes', '#parallel', '#orch', '#planSub']
       .map((selector) => ui.nodes.get(selector).innerHTML + ui.nodes.get(selector).textContent).join('\n')
     assert.match(graph, /5s/)
     assert.match(graph, /tempo ativo não aferido/)
     assert.doesNotMatch(graph, /115h|76h|192h|115:23|24h/)
-    ui.run('renderResults(input)', { input: state })
+    ui.run('FULL_EVENTS = inputEvents; renderResults(input)', { input: state, inputEvents: events })
     const results = ui.nodes.get('#results').innerHTML
-    assert.equal((results.match(/tempo ativo não aferido/g) ?? []).length, 2,
-      'phase label and tooltip state the measurement limit without elapsed hours')
+    assert.equal((results.match(/tempo ativo não aferido/g) ?? []).length, 3,
+      'phase label, tooltip and critical-path indicator state the measurement limit without elapsed hours')
     assert.ok(results.includes('F0 · Fase curta'))
     assert.ok(results.includes('F0 · Título completo da fase F0 muito grande'))
     assert.ok(results.includes('title="A tarefa tem um título muito comprido"'))
     assert.ok(results.includes('Tarefa curta'))
     assert.ok(results.includes('>5s</span>'))
-    assert.ok(results.includes('class="cp-tag"'))
+    assert.doesNotMatch(results, /class="cp-tag"/)
+    assert.match(results, /Caminho crítico[\s\S]*tempo ativo não aferido/)
     assert.doesNotMatch(results, /115h|76h|192h|115h23|aberta por|decorrido/)
   }
 })
@@ -1294,6 +1464,318 @@ test('blocked execution keeps only its two measured slices across graph, results
   assert.doesNotMatch(popover, /115h|76h|192h|115:23|24h/)
 })
 
+test('more than 120 events preserve long pauses and never display unmeasured envelope time', () => {
+  const waitSeconds = 115 * 3600 + 23 * 60
+  const startSeconds = 100 - waitSeconds - 10
+  const events = [
+    { type: 'task_start', task: 'A', attempt: 1, at: instant(startSeconds) },
+    { type: 'task_progress', task: 'A', attempt: 1, at: instant(startSeconds + 5), current: 1, total: 2 },
+    { type: 'task_block', task: 'A', attempt: 1, at: instant(startSeconds + 5) },
+    ...Array.from({ length: 121 }, (_, index) => ({ type: 'task_note', task: 'OTHER', at: instant(90 + index / 100), text: `event-${index}` })),
+    { type: 'task_unblock', task: 'A', attempt: 1, at: instant(startSeconds + waitSeconds + 5), state: 'running' },
+    { type: 'task_progress', task: 'A', attempt: 1, at: instant(100), current: 2, total: 2 },
+  ]
+  const value = task('A', 'running', { agent: 'executor-1', attempts: [{ n: 1, startedAt: instant(startSeconds) }] })
+  const state = { run: 'long-block', createdAt: instant(startSeconds), plan: {}, tasks: { A: value },
+    derived: { A: { effective: 'running', blockedBy: [] } } }
+  assert.ok(events.length > 120)
+  const ui = dashboard('en')
+  const truncated = events.slice(-120)
+  const truncatedCalculation = ui.run('analyse(input, inputEvents, true)', { input: state, inputEvents: truncated })
+  assert.equal(truncatedCalculation.agentTotal, 5000, 'a long gap without its opening pause marker remains unknown')
+
+  ui.run('EVENTS_COMPLETE = false')
+  ui.render(state, truncated)
+  const visibleWhileIncomplete = ['#orch', '#doneCount', '#parallel', '#nodes', '#planSub']
+    .map((selector) => ui.nodes.get(selector).innerHTML + ui.nodes.get(selector).textContent).join('\n')
+  assert.match(visibleWhileIncomplete, /Live[\s\S]*not measured/)
+  assert.match(ui.nodes.get('#orch').innerHTML, /aria-label="Agent time: not measured"/)
+  assert.equal(ui.nodes.get('#orch').classList.contains('live'), true)
+  assert.match(visibleWhileIncomplete, /not measured/)
+  assert.doesNotMatch(visibleWhileIncomplete, /115h|115:23|415390s/)
+  ui.run("POP = { id: 'A', pinned: true }; POP_MODE = 'lean'; fillPop('A')")
+  assert.match(ui.nodes.get('#popBody').innerHTML, /Agent time[\s\S]*· not measured/)
+  ui.run('FULL_EVENTS = inputEvents; RESULTS_OPEN = true; renderResults(STATE)', { inputEvents: truncated })
+  const incompleteResults = ui.nodes.get('#results').innerHTML
+  assert.match(incompleteResults, /tempo ativo não aferido|Active time not measured/)
+  assert.doesNotMatch(incompleteResults, /115h|115:23|415390s/)
+
+  ui.run('EVENTS_COMPLETE = true; FULL_EVENTS = inputEvents; EVENTS = inputEvents; render(STATE, inputEvents); renderResults(STATE)',
+    { input: state, inputEvents: events })
+  const completeMetrics = ui.run('analyse(input, inputEvents, true)', { input: state, inputEvents: events })
+  assert.equal(completeMetrics.agentTotal, 10000)
+  assert.equal(completeMetrics.per[0].blocked, waitSeconds * 1000)
+  assert.match(ui.nodes.get('#orch').innerHTML, /Live[\s\S]*00:00:10/)
+  assert.match(ui.nodes.get('#orch').innerHTML, /aria-label="Agent time: 00:00:10 · not measured"/)
+  const visibleWithCompleteHistory = ['#orch', '#doneCount', '#parallel', '#results', '#popBody']
+    .map((selector) => ui.nodes.get(selector).innerHTML + ui.nodes.get(selector).textContent).join('\n')
+  assert.doesNotMatch(visibleWithCompleteHistory, /115h|115:23|415390s/)
+})
+
+test('late event pages from a previous run cannot contaminate the newly selected run', async () => {
+  const ui = dashboard()
+  let resolvePage
+  ui.run('fetch = inputFetch', { inputFetch: () => new Promise(resolve => { resolvePage = resolve }) })
+  ui.run("TICK_GENERATION = 1; resetEventHistory('root/run-a')")
+  const oldRun = ui.run("syncEventHistory(1, 'root/run-a')")
+  ui.run("TICK_GENERATION = 2; resetEventHistory('root/run-b'); FULL_EVENTS = [{ id: 'new-run' }]; EVENTS = FULL_EVENTS; EVENT_OFFSET = 1; EVENT_HISTORY_REVISION = 'rev-b'; EVENTS_COMPLETE = true")
+  const staleEntry = ui.run("syncEventHistory(1, 'root/run-a')")
+  assert.equal(ui.run('EVENT_HISTORY_KEY'), 'root/run-b', 'an obsolete entry cannot reset the newly selected history')
+  resolvePage({ ok: true, json: async () => ({ events: [{ id: 'old-run' }], next: 1, total: 1, complete: true, revision: 'rev-a' }) })
+  await oldRun
+  await staleEntry
+  assert.equal(ui.run('EVENT_HISTORY_KEY'), 'root/run-b')
+  assert.deepEqual(JSON.parse(ui.run('JSON.stringify(FULL_EVENTS)')), [{ id: 'new-run' }])
+  assert.equal(ui.run('EVENT_HISTORY_REVISION'), 'rev-b')
+  assert.equal(ui.run('EVENTS_COMPLETE'), true)
+})
+
+test('a late state response after selecting another run cannot replace its state or history', async () => {
+  const ui = dashboard()
+  const oldState = { run: 'run-a', createdAt: instant(0), plan: { phases: [] }, tasks: {}, derived: {} }
+  const newState = { run: 'run-b', createdAt: instant(0), plan: { phases: [] },
+    tasks: { B: task('B', 'done') }, derived: { B: { effective: 'done', blockedBy: [] } } }
+  const runs = {
+    a: { currentRoot: 'root-a', current: 'run-a', runs: [{ root: 'root-a', run: 'run-a', plan: '' }] },
+    b: { currentRoot: 'root-b', current: 'run-b', runs: [{ root: 'root-b', run: 'run-b', plan: '' }] },
+  }
+  let activeRun = 'a', resolveOldState, announceOldState
+  const oldStateStarted = new Promise(resolve => { announceOldState = resolve })
+  const pendingOldState = new Promise(resolve => { resolveOldState = resolve })
+  ui.run('fetch = inputFetch', { inputFetch: (input) => {
+    const url = new URL(String(input), 'http://localhost')
+    if (url.pathname === '/api/runs') return Promise.resolve({ ok: true, json: async () => runs[activeRun] })
+    if (url.pathname === '/api/state' && url.searchParams.get('root') === 'root-a') {
+      return Promise.resolve({ ok: true, json: () => { announceOldState(); return pendingOldState } })
+    }
+    if (url.pathname === '/api/state' && url.searchParams.get('root') === 'root-b')
+      return Promise.resolve({ ok: true, json: async () => newState })
+    if (url.pathname === '/api/events' && url.searchParams.get('root') === 'root-b')
+      return Promise.resolve({ ok: true, json: async () => ({ events: [{ id: 'run-b-event' }], next: 1, total: 1, complete: true, revision: 'rev-b' }) })
+    throw new Error(`Unexpected request: ${url}`)
+  } })
+
+  ui.run("SELECTED_ROOT = 'root-a'; SELECTED_RUN = 'run-a'; TICK_GENERATION = 1")
+  const oldTick = ui.run('tick(1)')
+  await oldStateStarted
+
+  activeRun = 'b'
+  ui.run("SELECTED_ROOT = 'root-b'; SELECTED_RUN = 'run-b'; TICK_GENERATION = 2; resetEventHistory()")
+  await ui.run('tick(2)')
+  assert.equal(ui.run('STATE.run'), 'run-b')
+  assert.equal(ui.run('EVENT_HISTORY_KEY'), 'root-b\u0000run-b')
+  assert.deepEqual(JSON.parse(ui.run('JSON.stringify(FULL_EVENTS)')), [{ id: 'run-b-event' }])
+  assert.equal(ui.run('EVENTS_COMPLETE'), true)
+
+  resolveOldState(oldState)
+  await oldTick
+  assert.equal(ui.run('STATE.run'), 'run-b', 'the stale state body cannot repaint run A over run B')
+  assert.equal(ui.run('EVENT_HISTORY_KEY'), 'root-b\u0000run-b')
+  assert.deepEqual(JSON.parse(ui.run('JSON.stringify(FULL_EVENTS)')), [{ id: 'run-b-event' }])
+  assert.equal(ui.run('EVENT_HISTORY_REVISION'), 'rev-b')
+  assert.equal(ui.run('EVENTS_COMPLETE'), true)
+  assert.equal(ui.nodes.get('#runName').textContent, 'run-b')
+})
+
+test('a late runs catalog cannot move the header back to a previous run', async () => {
+  const ui = dashboard()
+  const oldState = { run: 'run-a', createdAt: instant(0), plan: { phases: [] }, tasks: {}, derived: {} }
+  const newState = { run: 'run-b', createdAt: instant(0), plan: { phases: [] }, tasks: {}, derived: {} }
+  const runs = {
+    a: { currentRoot: 'root-a', current: 'run-a', runs: [{ root: 'root-a', run: 'run-a', plan: '' }] },
+    b: { currentRoot: 'root-b', current: 'run-b', runs: [{ root: 'root-b', run: 'run-b', plan: '' }] },
+  }
+  let activeRun = 'a', resolveOldRuns, announceOldRuns
+  const oldRunsStarted = new Promise(resolve => { announceOldRuns = resolve })
+  const pendingOldRuns = new Promise(resolve => { resolveOldRuns = resolve })
+  ui.run('fetch = inputFetch', { inputFetch: (input) => {
+    const url = new URL(String(input), 'http://localhost')
+    if (url.pathname === '/api/runs' && activeRun === 'a')
+      return Promise.resolve({ ok: true, json: () => { announceOldRuns(); return pendingOldRuns } })
+    if (url.pathname === '/api/runs') return Promise.resolve({ ok: true, json: async () => runs.b })
+    if (url.pathname === '/api/state' && url.searchParams.get('root') === 'root-a')
+      return Promise.resolve({ ok: true, json: async () => oldState })
+    if (url.pathname === '/api/state' && url.searchParams.get('root') === 'root-b')
+      return Promise.resolve({ ok: true, json: async () => newState })
+    if (url.pathname === '/api/events' && url.searchParams.get('root') === 'root-b')
+      return Promise.resolve({ ok: true, json: async () => ({ events: [{ id: 'run-b-event' }], next: 1, total: 1, complete: true, revision: 'rev-b' }) })
+    throw new Error(`Unexpected request: ${url}`)
+  } })
+
+  ui.run("SELECTED_ROOT = 'root-a'; SELECTED_RUN = 'run-a'; TICK_GENERATION = 1")
+  const oldTick = ui.run('tick(1)')
+  await oldRunsStarted
+  activeRun = 'b'
+  ui.run("SELECTED_ROOT = 'root-b'; SELECTED_RUN = 'run-b'; TICK_GENERATION = 2; resetEventHistory()")
+  await ui.run('tick(2)')
+  assert.equal(ui.nodes.get('#runName').textContent, 'run-b')
+
+  resolveOldRuns(runs.a)
+  await oldTick
+  assert.equal(ui.nodes.get('#runName').textContent, 'run-b', 'the previous catalog cannot repaint the run selector')
+  assert.equal(ui.run('STATE.run'), 'run-b')
+  assert.deepEqual(JSON.parse(ui.run('JSON.stringify(FULL_EVENTS)')), [{ id: 'run-b-event' }])
+  assert.equal(ui.run('EVENTS_COMPLETE'), true)
+})
+
+test('late result events from run A cannot replace results for run B', async () => {
+  const ui = dashboard()
+  const stateA = { run: 'run-a', createdAt: instant(0), plan: { phases: [] },
+    tasks: { A: task('A', 'done') }, derived: { A: { effective: 'done' } } }
+  const stateB = { run: 'run-b', createdAt: instant(0), plan: { phases: [] },
+    tasks: { B: task('B', 'done') }, derived: { B: { effective: 'done' } } }
+  let resolveEventsA, announceEventsA
+  const eventsAStarted = new Promise(resolve => { announceEventsA = resolve })
+  const pendingEventsA = new Promise(resolve => { resolveEventsA = resolve })
+  let eventsBStarted
+  const eventsBLoaded = new Promise(resolve => { eventsBStarted = resolve })
+  ui.run('fetch = inputFetch', { inputFetch: (input) => {
+    const url = new URL(String(input), 'http://localhost')
+    if (url.pathname === '/api/events' && url.searchParams.get('root') === 'root-a')
+      return Promise.resolve({ ok: true, json: () => { announceEventsA(); return pendingEventsA } })
+    if (url.pathname === '/api/runs')
+      return Promise.resolve({ ok: true, json: async () => ({ currentRoot: 'root-b', current: 'run-b', runs: [{ root: 'root-b', run: 'run-b', plan: '' }] }) })
+    if (url.pathname === '/api/state' && url.searchParams.get('root') === 'root-b')
+      return Promise.resolve({ ok: true, json: async () => stateB })
+    if (url.pathname === '/api/events' && url.searchParams.get('root') === 'root-b')
+      return Promise.resolve({ ok: true, json: async () => {
+        eventsBStarted()
+        return { events: [{ id: 'run-b-event' }], next: 1, total: 1, complete: true, revision: 'rev-b' }
+      } })
+    throw new Error(`Unexpected request: ${url}`)
+  } })
+  ui.run("STATE = input; SELECTED_ROOT = 'root-a'; SELECTED_RUN = 'run-a'; CURRENT_ROOT = 'root-a'; CURRENT_RUN = 'run-a'; TICK_GENERATION = 1; STATE_RUN_KEY = 'root-a\\0run-a'; EVENT_HISTORY_KEY = STATE_RUN_KEY; EVENTS_COMPLETE = true; RESULTS_OPEN = true; renderResults(STATE)", { input: stateA })
+  const oldResults = ui.run('loadResults()')
+  await eventsAStarted
+
+  ui.run("selectRun('root-b/run-b')")
+  await eventsBLoaded
+  for (let tries = 0; tries < 60 && ui.run("STATE?.run !== 'run-b' || !EVENTS_COMPLETE || !$('#results').innerHTML.includes('run-b')"); tries++)
+    await Promise.resolve()
+  assert.equal(ui.run('STATE.run'), 'run-b')
+  assert.match(ui.nodes.get('#results').innerHTML, /results · run-b/)
+
+  resolveEventsA({ events: [{ id: 'stale-run-a-event' }], next: 1, total: 1, complete: true, revision: 'rev-a' })
+  await oldResults
+  assert.match(ui.nodes.get('#results').innerHTML, /results · run-b/)
+  assert.doesNotMatch(ui.nodes.get('#results').innerHTML, /results · run-a|stale-run-a-event/)
+  assert.equal(ui.run('EVENT_HISTORY_KEY'), 'root-b\u0000run-b')
+  assert.deepEqual(JSON.parse(ui.run('JSON.stringify(FULL_EVENTS)')), [{ id: 'run-b-event' }])
+})
+
+test('opening results while the selected run state is still loading never shows the previous run', async () => {
+  const ui = dashboard()
+  const stateA = { run: 'run-a', createdAt: instant(0), plan: { phases: [] }, tasks: {}, derived: {} }
+  const stateB = { run: 'run-b', createdAt: instant(0), plan: { phases: [] },
+    tasks: { B: task('B', 'done') }, derived: { B: { effective: 'done' } } }
+  let resolveStateB, announceStateB
+  const stateBStarted = new Promise(resolve => { announceStateB = resolve })
+  const pendingStateB = new Promise(resolve => { resolveStateB = resolve })
+  let eventsBRequests = 0
+  ui.run('fetch = inputFetch', { inputFetch: (input) => {
+    const url = new URL(String(input), 'http://localhost')
+    if (url.pathname === '/api/runs')
+      return Promise.resolve({ ok: true, json: async () => ({ currentRoot: 'root-b', current: 'run-b', runs: [{ root: 'root-b', run: 'run-b', plan: '' }] }) })
+    if (url.pathname === '/api/state' && url.searchParams.get('root') === 'root-b')
+      return Promise.resolve({ ok: true, json: () => { announceStateB(); return pendingStateB } })
+    if (url.pathname === '/api/events' && url.searchParams.get('root') === 'root-b') {
+      eventsBRequests++
+      return Promise.resolve({ ok: true, json: async () => ({ events: [{ id: 'run-b-event' }], next: 1, total: 1, complete: true, revision: 'rev-b' }) })
+    }
+    throw new Error(`Unexpected request: ${url}`)
+  } })
+  ui.run("STATE = input; SELECTED_ROOT = 'root-a'; SELECTED_RUN = 'run-a'; CURRENT_ROOT = 'root-a'; CURRENT_RUN = 'run-a'; TICK_GENERATION = 1; STATE_RUN_KEY = 'root-a\\0run-a'; EVENT_HISTORY_KEY = STATE_RUN_KEY; EVENTS_COMPLETE = true; renderResults(STATE)", { input: stateA })
+  ui.run("selectRun('root-b/run-b')")
+  await stateBStarted
+
+  await ui.run('toggleResults()')
+  assert.equal(ui.run('RESULTS_OPEN'), true)
+  assert.equal(ui.nodes.get('#results').innerHTML, '')
+  assert.equal(ui.nodes.get('#results').getAttribute('aria-busy'), 'true')
+  assert.equal(eventsBRequests, 0, 'events are not fetched against the old state')
+
+  resolveStateB(stateB)
+  for (let tries = 0; tries < 60 && ui.run("STATE?.run !== 'run-b' || !EVENTS_COMPLETE || !$('#results').innerHTML.includes('run-b')"); tries++)
+    await Promise.resolve()
+  assert.equal(ui.run('STATE.run'), 'run-b')
+  assert.match(ui.nodes.get('#results').innerHTML, /results · run-b/)
+  assert.equal(ui.nodes.get('#results').getAttribute('aria-busy'), 'false')
+})
+
+test('closing results while event history is pending prevents a late repaint', async () => {
+  const ui = dashboard()
+  const state = { run: 'run-a', createdAt: instant(0), plan: { phases: [] }, tasks: {}, derived: {} }
+  let resolvePage, announcePage
+  const pageStarted = new Promise(resolve => { announcePage = resolve })
+  const pendingPage = new Promise(resolve => { resolvePage = resolve })
+  ui.run('fetch = inputFetch', { inputFetch: () => Promise.resolve({
+    ok: true, json: () => { announcePage(); return pendingPage },
+  }) })
+  ui.run("STATE = input; TICK_GENERATION = 1; STATE_RUN_KEY = 'root-a\\0run-a'; EVENT_HISTORY_KEY = STATE_RUN_KEY; EVENTS_COMPLETE = true; RESULTS_OPEN = true; renderResults(STATE)", { input: state })
+  const pendingResults = ui.run('loadResults()')
+  await pageStarted
+  await ui.run('toggleResults()')
+  assert.equal(ui.run('RESULTS_OPEN'), false)
+  ui.nodes.get('#results').innerHTML = 'closed-tab marker'
+  resolvePage({ events: [{ id: 'late' }], next: 1, total: 1, complete: true, revision: 'rev-a' })
+  await pendingResults
+  assert.equal(ui.nodes.get('#results').innerHTML, 'closed-tab marker')
+})
+
+test('a changed event revision replaces the cached browser history from its first page', async () => {
+  const ui = dashboard()
+  const responses = [
+    { events: [{ id: 'old-run' }], next: 1, total: 1, complete: true, revision: 'rev-a' },
+    { events: [{ id: 'new-run-1' }], next: 1, total: 2, complete: false, reset: true, revision: 'rev-b' },
+    { events: [{ id: 'new-run-2' }], next: 2, total: 2, complete: true, revision: 'rev-b' },
+  ]
+  ui.run('fetch = inputFetch', { inputFetch: async () => ({ ok: true, json: async () => responses.shift() }) })
+  ui.run("TICK_GENERATION = 1; resetEventHistory('root/run-a')")
+  assert.equal(await ui.run("syncEventHistory(1, 'root/run-a')"), true)
+  assert.equal(ui.run('EVENT_HISTORY_REVISION'), 'rev-a')
+  assert.equal(await ui.run("syncEventHistory(1, 'root/run-a')"), false, 'revision change restarts at the first page and waits for the next page')
+  assert.equal(ui.run('EVENT_HISTORY_REVISION'), 'rev-b')
+  assert.deepEqual(JSON.parse(ui.run('JSON.stringify(FULL_EVENTS)')), [{ id: 'new-run-1' }])
+  assert.equal(await ui.run("syncEventHistory(1, 'root/run-a')"), true)
+  assert.deepEqual(JSON.parse(ui.run('JSON.stringify(FULL_EVENTS)')), [{ id: 'new-run-1' }, { id: 'new-run-2' }])
+})
+
+test('115h task planning envelopes stay unmeasured and cannot inflate the critical path', () => {
+  const waitSeconds = 115 * 3600 + 23 * 60
+  const planStart = instant(100 - waitSeconds)
+  const taskValue = task('P', 'done', {
+    planningAttempts: [{ startedAt: planStart, endedAt: instant(95) }],
+    attempts: [{ n: 1, startedAt: instant(95), endedAt: instant(100) }],
+  })
+  const state = { run: 'task-plan-envelope', createdAt: planStart, plan: {}, tasks: { P: taskValue },
+    derived: { P: { effective: 'done' } } }
+  const events = [
+    { type: 'task_start', task: 'P', attempt: 1, at: instant(95) },
+    { type: 'task_progress', task: 'P', attempt: 1, at: instant(100) },
+    { type: 'task_done', task: 'P', attempt: 1, at: instant(100) },
+  ]
+  const ui = dashboard('pt-BR')
+  const result = ui.run('analyse(input, inputEvents, true)', { input: state, inputEvents: events })
+  assert.equal(result.planningTotal, 0)
+  assert.equal(result.execTotal, 5000)
+  assert.equal(result.agentTotal, 5000)
+  assert.equal(result.planningMeasured, false)
+  assert.equal(result.criticalPathMeasured, false)
+  assert.equal(result.per[0].unmeasured, true)
+  ui.render(state, events)
+  const graph = ['#orch', '#doneCount', '#nodes', '#parallel'].map(selector => ui.nodes.get(selector).innerHTML).join('\n')
+  assert.match(graph, /concluída[\s\S]*00:00:05/i)
+  assert.match(graph, /tempo ativo não aferido/)
+  assert.doesNotMatch(graph, /115h|115:23|415390s/)
+  ui.run('FULL_EVENTS = inputEvents; renderResults(input)', { input: state, inputEvents: events })
+  const results = ui.nodes.get('#results').innerHTML
+  assert.match(results, /tempo ativo não aferido/)
+  assert.doesNotMatch(results, /class="cp-tag"|115h|115:23|415390s/)
+  ui.run("POP = { id: 'P', pinned: true }; POP_MODE = 'lean'; fillPop('P')")
+  assert.match(ui.nodes.get('#popBody').innerHTML, /Agent time[\s\S]*· 5s · não aferido/)
+  assert.doesNotMatch(ui.nodes.get('#popBody').innerHTML, /115h|115:23|415390s/)
+})
+
 test('review time ends at the last validation receipt even when done arrives 115h later', () => {
   const waitSeconds = 115 * 3600 + 23 * 60
   const startSeconds = 100 - waitSeconds - 10
@@ -1302,6 +1784,7 @@ test('review time ends at the last validation receipt even when done arrives 115
   const events = [
     { type: 'task_start', task: 'A', attempt: 1, at: instant(startSeconds) },
     { type: 'task_review', task: 'A', attempt: 1, at: instant(reviewAt) },
+    { type: 'task_review_progress', task: 'A', attempt: 1, at: instant(receiptAt) },
     { type: 'task_validate', task: 'A', attempt: 1, by: 'review', ok: true, at: instant(receiptAt) },
     { type: 'task_done', task: 'A', attempt: 1, at: instant(100) },
   ]
@@ -1315,11 +1798,111 @@ test('review time ends at the last validation receipt even when done arrives 115
   assert.equal(result.agentTotal, 10000)
   assert.equal(result.activeElapsed, 10000)
   assert.equal(result.cpLen, 10000)
+  assert.equal(result.criticalPathMeasured, false, 'the 115h tail after the last reviewer activity stays unknown')
   ui.render(state, events)
   ui.run('FULL_EVENTS = inputEvents; renderResults(STATE)', { inputEvents: events })
   const results = ui.nodes.get('#results').innerHTML
   assert.match(results, /10s/)
   assert.doesNotMatch(results, /115h|76h|192h|115:23|24h/)
+})
+
+test('large gaps between activity milestones are unknown and never counted as agent time', () => {
+  const waitSeconds = 115 * 3600 + 23 * 60
+  const startSeconds = 100 - waitSeconds - 10
+  const endSeconds = 100
+  const cases = [
+    {
+      name: 'late execution milestone',
+      events: [
+        { type: 'task_start', task: 'E', attempt: 1, at: instant(startSeconds) },
+        { type: 'task_progress', task: 'E', attempt: 1, at: instant(startSeconds + waitSeconds + 5) },
+        { type: 'task_done', task: 'E', attempt: 1, at: instant(endSeconds) },
+      ],
+      value: task('E', 'done', { attempts: [{ n: 1, startedAt: instant(startSeconds), endedAt: instant(endSeconds) }] }),
+      expected: 0,
+    },
+    {
+      name: 'late review start',
+      events: [
+        { type: 'task_start', task: 'E', attempt: 1, at: instant(startSeconds) },
+        { type: 'task_review', task: 'E', attempt: 1, at: instant(startSeconds + waitSeconds + 5) },
+        { type: 'task_review_progress', task: 'E', attempt: 1, at: instant(endSeconds - 1) },
+        { type: 'task_validate', task: 'E', attempt: 1, by: 'review', at: instant(endSeconds) },
+        { type: 'task_done', task: 'E', attempt: 1, at: instant(endSeconds) },
+      ],
+      value: task('E', 'done', { attempts: [{ n: 1, startedAt: instant(startSeconds), reviewStartedAt: instant(startSeconds + waitSeconds + 5), endedAt: instant(endSeconds) }],
+        validations: [{ by: 'review', attempt: 1, ok: true, at: instant(endSeconds) }] }),
+      expected: 4000,
+    },
+    {
+      name: 'late review progress',
+      events: [
+        { type: 'task_start', task: 'E', attempt: 1, at: instant(startSeconds) },
+        { type: 'task_review', task: 'E', attempt: 1, at: instant(startSeconds + 5) },
+        { type: 'task_review_progress', task: 'E', attempt: 1, at: instant(startSeconds + waitSeconds + 5) },
+        { type: 'task_validate', task: 'E', attempt: 1, by: 'review', at: instant(endSeconds) },
+        { type: 'task_done', task: 'E', attempt: 1, at: instant(endSeconds) },
+      ],
+      value: task('E', 'done', { attempts: [{ n: 1, startedAt: instant(startSeconds), reviewStartedAt: instant(startSeconds + 5), endedAt: instant(endSeconds) }],
+        validations: [{ by: 'review', attempt: 1, ok: true, at: instant(endSeconds) }] }),
+      expected: 5000,
+    },
+    {
+      name: 'late validation receipt without review progress',
+      events: [
+        { type: 'task_start', task: 'E', attempt: 1, at: instant(startSeconds) },
+        { type: 'task_review', task: 'E', attempt: 1, at: instant(startSeconds + 5) },
+        { type: 'task_validate', task: 'E', attempt: 1, by: 'review', at: instant(endSeconds) },
+        { type: 'task_done', task: 'E', attempt: 1, at: instant(endSeconds) },
+      ],
+      value: task('E', 'done', { attempts: [{ n: 1, startedAt: instant(startSeconds), reviewStartedAt: instant(startSeconds + 5), endedAt: instant(endSeconds) }],
+        validations: [{ by: 'review', attempt: 1, ok: true, at: instant(endSeconds) }] }),
+      expected: 5000,
+    },
+  ]
+  for (const item of cases) {
+    const state = { run: item.name, createdAt: instant(startSeconds), plan: {}, tasks: { E: item.value }, derived: { E: { effective: 'done' } } }
+    const ui = dashboard('pt-BR')
+    const metrics = ui.run('analyse(input, inputEvents, true)', { input: state, inputEvents: item.events })
+    assert.equal(metrics.agentTotal, item.expected, item.name)
+    assert.equal(metrics.per[0].unmeasured, true, item.name)
+    assert.equal(metrics.criticalPathMeasured, false, item.name)
+    ui.render(state, item.events)
+    ui.run('FULL_EVENTS = inputEvents; renderResults(STATE); POP = { id: "E", pinned: true }; POP_MODE = "detail"; fillPop("E")',
+      { inputEvents: item.events })
+    const visible = ['#orch', '#doneCount', '#parallel', '#nodes', '#results', '#popBody']
+      .map((selector) => ui.nodes.get(selector).innerHTML + ui.nodes.get(selector).textContent).join('\n')
+    assert.doesNotMatch(visible, /115h|115:23|415390s/, item.name)
+    assert.match(ui.nodes.get('#popBody').innerHTML, /Agent time[\s\S]*não aferido/, item.name)
+    if (item.expected === 0) assert.doesNotMatch(ui.nodes.get('#popBody').innerHTML, />0s</, item.name)
+  }
+})
+
+test('switching runs clears the previous graph and exposes a loading state until the new run paints', () => {
+  const ui = dashboard('pt-BR')
+  const stateA = { run: 'run-a', createdAt: instant(0), plan: {}, tasks: { A: task('A', 'done') }, derived: { A: { effective: 'done' } } }
+  const stateB = { run: 'run-b', createdAt: instant(0), plan: {}, tasks: { B: task('B', 'done') }, derived: { B: { effective: 'done' } } }
+  ui.render(stateA)
+  ui.run("SELECTED_ROOT = 'root-a'; SELECTED_RUN = 'run-a'; CURRENT_ROOT = 'root-a'; CURRENT_RUN = 'run-a'")
+  assert.match(ui.nodes.get('#nodes').innerHTML, /data-id="A"/)
+
+  ui.run("selectRun('root-b/run-b')")
+  assert.equal(ui.nodes.get('#nodes').innerHTML, '')
+  assert.equal(ui.nodes.get('#lanes').innerHTML, '')
+  assert.equal(ui.nodes.get('#runLoading').hidden, false)
+  assert.equal(ui.nodes.get('#runLoadingStatus').hidden, false)
+  assert.equal(ui.nodes.get('#main').inert, true)
+  assert.equal(ui.nodes.get('#main').getAttribute('aria-busy'), 'true')
+  assert.ok(html.indexOf('id="runLoadingStatus"') < html.indexOf('<main id="main">'), 'the live loading status remains outside the inert main')
+  assert.equal(ui.nodes.get('#runName').textContent, 'run-b')
+  assert.doesNotMatch(ui.nodes.get('#parallel').innerHTML + ui.nodes.get('#events').innerHTML, /run-a|A/)
+
+  ui.run('STATE = stateB; STATE_RUN_KEY = "root-b\\0run-b"; render(STATE, [])', { stateB })
+  assert.match(ui.nodes.get('#nodes').innerHTML, /data-id="B"/)
+  assert.equal(ui.nodes.get('#runLoading').hidden, true)
+  assert.equal(ui.nodes.get('#runLoadingStatus').hidden, true)
+  assert.equal(ui.nodes.get('#main').inert, false)
+  assert.equal(ui.nodes.get('#viewport').getAttribute('aria-busy'), 'false')
 })
 
 test('open execution without progress telemetry stays unmeasured in every visible surface', () => {
@@ -1351,12 +1934,12 @@ test('open execution without progress telemetry stays unmeasured in every visibl
 test('replanning a paused attempt never counts its waiting or research as execution or review', () => {
   const ui = dashboard()
   for (const [state, replanEnd, resumed, reviewAt, expected] of [
-    ['done', 60, true, null, { planning: 30, exec: 30, review: 0, blocked: 40 }],
-    ['blocked', 60, false, null, { planning: 30, exec: 10, review: 0, blocked: 60 }],
-    ['planning', null, false, null, { planning: 10, exec: 10, review: 0, blocked: 20 }],
-    ['done', 60, true, 15, { planning: 30, exec: 5, review: 25, blocked: 40 }],
-    ['blocked', 60, false, 15, { planning: 30, exec: 5, review: 5, blocked: 60 }],
-    ['planning', null, false, 15, { planning: 10, exec: 5, review: 5, blocked: 20 }],
+    ['done', 60, true, null, { planning: 0, exec: 30, review: 0, blocked: 40 }],
+    ['blocked', 60, false, null, { planning: 0, exec: 10, review: 0, blocked: 60 }],
+    ['planning', null, false, null, { planning: 0, exec: 10, review: 0, blocked: 20 }],
+    ['done', 60, true, 15, { planning: 0, exec: 5, review: 25, blocked: 40 }],
+    ['blocked', 60, false, 15, { planning: 0, exec: 5, review: 5, blocked: 60 }],
+    ['planning', null, false, 15, { planning: 0, exec: 5, review: 5, blocked: 20 }],
   ]) {
     const attempt = { startedAt: instant(10), ...(state === 'done' ? { endedAt: instant(100) } : {}),
       ...(reviewAt == null ? {} : { reviewStartedAt: instant(reviewAt) }) }
@@ -1370,7 +1953,11 @@ test('replanning a paused attempt never counts its waiting or research as execut
     })
     const events = [{ type: 'task_block', task: 'T', at: instant(20) }, { type: 'task_planning', task: 'T', at: instant(40) }]
     if (replanEnd != null) events.push({ type: 'task_planned', task: 'T', at: instant(replanEnd), state: 'blocked' })
-    if (resumed) events.push({ type: 'task_unblock', task: 'T', at: instant(80), state: reviewAt == null ? 'running' : 'reviewing' })
+    if (resumed) {
+      events.push({ type: 'task_unblock', task: 'T', attempt: 1, at: instant(80), state: reviewAt == null ? 'running' : 'reviewing' })
+      events.push({ type: reviewAt == null ? 'task_progress' : 'task_review_progress', task: 'T', attempt: 1, at: instant(100) })
+    }
+    if (reviewAt != null) events.push({ type: 'task_review_progress', task: 'T', attempt: 1, at: instant(20) })
     const result = ui.run('analyse(input, inputEvents)', { input: { createdAt: instant(0), plan: {}, tasks: { T: paused } }, inputEvents: events })
     for (const [key, seconds] of Object.entries(expected)) assert.equal(result.per[0][key], seconds * 1000, `${state}, reviewAt=${reviewAt}: ${key}`)
     assert.equal(result.agentTotal, (expected.planning + expected.exec + expected.review) * 1000)
