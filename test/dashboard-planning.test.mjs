@@ -885,7 +885,9 @@ test('the dashboard ships its own licensed fonts and the page policy allows only
 
 test('available tasks say who moves each one next and give way to the selected task', () => {
   const tasks = {
-    K: task('K', 'blocked', { blockReason: 'pick <the> API version' }),
+    K: task('K', 'blocked', { blockReason: 'pick <the> API version', blockQuestion: 'Which API version should ship?',
+      blockOptions: ['v1', 'v2'], blockHistory: [{ at: instant(10), reason: 'Needs a decision',
+        question: 'Which API version should ship?', answer: 'v2' }] }),
     E: task('E', 'pending', { validation: [{ run: 'bun test auth', expect: '12 tests pass' }] }),
     P: task('P', 'pending', { planningRequired: true }),
     D: task('D', 'done'),
@@ -899,9 +901,18 @@ test('available tasks say who moves each one next and give way to the selected t
     assert.equal(ui.nodes.get('#selectedBox').hidden, true)
     assert.deepEqual([...list.matchAll(/openTask\('(\w+)'\)/g)].map(m => m[1]), ['K', 'E', 'P'], 'needs-you first, then the next role in the flow')
     assert.match(list, /--role:var\(--blocked\)[\s\S]*pick &lt;the&gt; API version/)
+    assert.match(list, lang === 'en' ? /Decision question: Which API version should ship\? · Options: v1 \/ v2/ :
+      /Pergunta para decisão: Which API version should ship\? · Opções: v1 \/ v2/)
+    ui.run("POP_MODE = 'lean'; fillPop('K')")
+    const blockedPopover = ui.nodes.get('#popBody').innerHTML
+    assert.equal((blockedPopover.match(/pick &lt;the&gt; API version/g) ?? []).length, 1, 'the blocked reason appears once in the lean popover')
     assert.match(list, /--role:var\(--running\)[\s\S]*\$ bun test auth[\s\S]*12 tests pass/)
     assert.match(list, /--role:var\(--planning\)/)
     assert.match(list, lang === 'en' ? /needs you/ : /precisa de você/)
+    const resultTask = ui.run("RESULT_TASK_ID = 'K'; renderResultTaskDetail(STATE)")
+    assert.match(resultTask, lang === 'en' ? /Decision question/ : /Pergunta para decisão/)
+    assert.match(resultTask, /v1 \/ v2/)
+    assert.match(resultTask, /v2/)
     const availableTarget = { closest(selector) { return selector === '.avail' ? this : null } }
     const emptyTarget = { closest() { return null } }
     ui.dispatchDocument('click', { target: availableTarget }, () => ui.run("openTask('E')"))
@@ -936,6 +947,29 @@ test('discovery, planner identity and task plan render as escaped text, includin
   assert.match(body, /&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt;&amp;&#39;text/)
   for (const text of ['Descoberta da tarefa', 'Pesquisa da descoberta', 'Discussão', 'Cobertura PO First', 'Decisões da descoberta', 'Ideias adiadas',
     'Planejador', 'Plano registrado da tarefa', 'Pesquisa', 'Decisões', 'Passos de execução', 'Verificação', 'Perguntas', 'verificação 1', 'não bloqueante']) assert.ok(body.includes(text), text)
+})
+
+test('dashboard keeps a future open-question reference and its later decision visible', () => {
+  const reference = 'T:plan:012345abcdef'
+  for (const [lang, deadline, resolved] of [
+    ['en', 'before task U', 'resolved by U'],
+    ['pt-BR', 'antes da tarefa U', 'resolvida por U'],
+  ]) {
+    const ui = dashboard(lang)
+    const state = { run: 'question-reference', plan: {}, tasks: {
+      T: task('T', 'pending', { taskPlan: { ...plan, openQuestions: [{ question: 'Which protocol should U use?',
+        blocking: false, decideBy: { beforeTask: 'U' }, questionRef: reference }] } }),
+    }, questionResolutions: [{ questionRef: reference, byTask: 'U', answer: 'Use the existing client.' }],
+      derived: { T: { effective: 'ready' } } }
+    ui.render(state)
+    ui.run("POP_MODE = 'detail'; fillPop('T')")
+    const detail = ui.nodes.get('#popBody').innerHTML
+    assert.ok(detail.includes(reference))
+    assert.ok(detail.includes('Which protocol should U use?'))
+    assert.ok(detail.includes(deadline))
+    assert.ok(detail.includes(resolved))
+    assert.ok(detail.includes('Use the existing client.'))
+  }
 })
 
 test('lean popover shows role-written summaries, escaped, and never the full plan', () => {

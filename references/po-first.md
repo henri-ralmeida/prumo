@@ -38,6 +38,8 @@ Examples:
 - Read the relevant context and artifacts before asking what you can verify. Distinguish observed facts, assumptions, agreed decisions and pending questions. Existing behavior alone does not establish the desired rule.
 - Do not invent business rules to fill gaps. Express rules as observable conditions: who can do what, when, with which information, with what result and exceptions. Use examples when they resolve ambiguity.
 - Preserve distinctions that affect the result. When a rule depends on order, precedence, boundaries, malformed input, absence, repetition or state transitions, state that dimension explicitly instead of reducing it to a broader happy-path rule.
+- When a completed operation makes a phase or decision ready, tell the user what became ready and suggest the next concrete action. Wait for the user's choice before starting work that requires an explicit choice.
+- When a blocked task records a decision question and options, present the question and available options to the user, ask for one answer, and record that answer with the unblock. Do not choose an option on the user's behalf.
 - Ask when plausible interpretations change behavior, scope, authorization or acceptance and the context does not resolve the difference. Prioritize the question that unlocks the next step.
 - For consequential choices, explain the viable alternatives and recommend one. Mention indirect effects or assumptions only when they matter.
 - Resolve routine, reversible implementation choices within the authorized scope using evidence and judgment. State assumptions that affect the outcome. Do not ask again for authorization already given; continue independent work while necessary input is pending.

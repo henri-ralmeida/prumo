@@ -184,6 +184,36 @@ dependencies, scope and history, then run `sync-plan` on the same run
 and inspect the persisted result. Do not create an auxiliary run to avoid adapting old tasks. Ask in the
 principal discussion only when a consequential contract meaning cannot be established from the repository.
 
+After the user approves the graph and `init` or `sync-plan` has persisted it, ask what execution scope
+they authorize: the current run, one phase, or selected tasks. Ask whether dispatch should continue
+automatically within that scope (`auto`, the default) or pause for a user prompt before each dispatch
+(`manual`). Record the accepted scope only after the user agrees:
+
+```bash
+node $ENGINE authorize --scope run --mode auto --confirmed-by-user
+node $ENGINE authorize --scope phase:F2 --mode manual --confirmed-by-user
+node $ENGINE authorize --scope tasks:T4,T5 --confirmed-by-user  # auto is the default
+```
+
+Authorization records the user's scope, mode, time and channel. It does not dispatch an agent or open a
+phase. Use `ready` or `status` for per-task authorization, available slots and the next suggested action.
+In auto mode, keep filling free slots from authorized ready tasks after a review or completion. In manual
+mode, ask before every dispatch. If `sync-plan` or `refresh-contract` changes a task contract, show the changed contract and get
+fresh acceptance for that task before execution. A changed global plan decision renews acceptance for the
+affected nonterminal tasks; work already running continues under its recorded attempt.
+For manual authorization, pass `--confirmed-by-user` on each `start`, `review` and `retry`. Resuming an
+active attempt through `unblock` also needs that flag. The engine records each confirmation with its
+authorization ID, time and channel in the task event and an ordered `manualConfirmations[]` list on the
+attempt. The older singular confirmation fields keep the latest value for compatibility. Auto mode needs
+no repeated confirmation.
+
+```bash
+node $ENGINE start T4 --agent <executor> --confirmed-by-user  # manual only
+node $ENGINE review T4 --agent <reviewer> --confirmed-by-user # manual only
+node $ENGINE retry T4 --confirmed-by-user                     # manual only
+node $ENGINE unblock T4 --confirmed-by-user                   # resuming active execution
+```
+
 `sync-plan` adds approved tasks and refreshes contracts in every nonterminal state while preserving the
 current lifecycle, agents, attempts, notes and evidence. Active work whose scope changed cannot advance
 through review or completion until current planning is restored; block and replan it without inventing a
@@ -271,6 +301,10 @@ within the same phase gate execution, not phase planning. Phase numbering alone 
 phases. The user chooses which eligible phases to plan, including multiple phases in parallel; eligibility
 does not authorize opening all phases automatically. Keep the approved phase assignments and dependency
 chains. Overlapping `touches` must be resolved through the approved dependency graph, not by moving tasks.
+
+After `done`, `skip` or `sync-plan`, inspect any `phase_eligible` event and the engine's suggestion. Tell the
+user which phase and tasks are ready for discussion, then recommend `begin-phase-discussion <phase>`. Wait
+for the user's choice before beginning it; eligibility alone never opens a phase.
 
 When the user chooses discussion, the orchestrator runs an agnostic discovery protocol in the principal
 Codex, Claude Code, Kiro or DSH conversation. Load the global plan, settled decisions and dependency outputs;
@@ -457,6 +491,14 @@ Before the executor starts, record the real `git status --short`, staged and uns
 task's declared `writes` (or approved `touches` when `writes` is absent), and relevant pre-existing
 untracked paths in a durable task note or review handoff. The planner identifies those existing
 changes; the reviewer compares against this baseline and excludes them from the delivery judgment.
+
+`openQuestions[].decideBy` may be `executor`, `user-now`, `{ "beforeTask": "T2" }` or
+`{ "beforePhase": "F2" }`; blocking questions still need answers before planning closes and mean
+`user-now`. A future deadline does not hold its source task. At the named task or phase, the reference
+appears in discussion/planning and `status` reports it when overdue. Resolve it in a later `decisions`
+entry with `resolvesQuestion` set to the displayed reference; start remains gated only after that
+deadline has arrived. In task-planning mode, a `{ "beforePhase": "F2" }` deadline becomes due when any
+task in F2 begins discussion or planning.
 
 ### Dispatch — recording a role does not create an agent
 
@@ -744,6 +786,11 @@ the attempt and previous work. For delivered work paused during execution or rev
 This does not acquire an executor slot. It does recheck dependencies, total capacity and the
 reviewer's availability; ordinary execution resume also checks executor capacity. A refusal
 leaves the task blocked. Pending/failed tasks cannot use this handoff to bypass start/retry.
+
+When a block includes a recorded `blockQuestion`, present that exact question and its `blockOptions`
+through PO First, ask the user for the decision, then pass the answer with `unblock <task> --answer`.
+Keep the recorded reason, question, answer and time in the block history. Older reason-only blocks remain
+resumable with `unblock <task>`.
 
 These commands record state only. Resume the appropriate actual agent or dispatch the reviewer;
 do not start a new executor for work already delivered. Respect the user's pause until resumption

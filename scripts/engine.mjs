@@ -46,17 +46,19 @@
  *   node $ENGINE plan-task <task> --agent <name> [--context <legacy-discovery.json>]
  *   node $ENGINE skip-planning <task> --reason <text> --confirmed-by-user
  *   node $ENGINE finish-planning <task> --plan <task-plan.json>
- *   node $ENGINE start <task> --agent <name>   (max 3 executors)
+ *   node $ENGINE start <task> --agent <name> [--confirmed-by-user]   (manual mode; max 3 executors)
  *   node $ENGINE progress <task> --step <1-based index> --agent <executor>
- *   node $ENGINE review <task> --agent <name>  (hands it to a reviewer)
+ *   node $ENGINE review <task> --agent <name> [--confirmed-by-user]  (manual mode; hands it to a reviewer)
  *   node $ENGINE review-progress <task> --step <1-based index> --agent <reviewer>
  *   node $ENGINE validate <task> --ok|--failed --evidence "<text>" [--cwd <project>] [--tail <lines>]
  *   node $ENGINE show-check <task> --check <1-based index> --attempt <number>
  *   node $ENGINE refresh-contract <task> --plan <approved-plan.json>
  *   node $ENGINE done <task>
  *   node $ENGINE fail <task> --reason "<text>" [--plan-defect]
- *   node $ENGINE retry <task> [--force]
- *   node $ENGINE block <task> --reason | unblock <task> [--reviewer <agent>]
+ *   node $ENGINE retry <task> [--force] [--confirmed-by-user]   (manual mode)
+ *   node $ENGINE authorize --scope run|phase:<phase>|tasks:<task,...> [--mode auto|manual] --confirmed-by-user
+ *   node $ENGINE block <task> --reason [--question <text>] [--option <text>...]
+ *   node $ENGINE unblock <task> [--answer <text>] [--reviewer <agent>] [--confirmed-by-user]   (manual active resume)
  *   node $ENGINE skip <task> --reason
  *   node $ENGINE note <task> --text "<text>"
  *   node $ENGINE runs
@@ -103,7 +105,8 @@ for (let i = 0; i < rest.length; i++) {
     const key = a.slice(2)
     const next = rest[i + 1]
     if (next !== undefined && !next.startsWith('--')) {
-      args[key] = next
+      if (key === 'option') (args[key] ??= []).push(next)
+      else args[key] = next
       i++
     } else args[key] = true
   } else args._.push(a)
@@ -835,6 +838,351 @@ function phasePlanningBlockers(state, phaseId) {
   return [...blockers]
 }
 
+function eligibleDiscussionPhases(state) {
+  if (state.plan.planningMode !== 'phase') return []
+  return (state.plan.phases ?? []).flatMap(phase => {
+    const workflow = state.phaseWorkflows?.[phase.id]
+    if (!workflow || ['discussing', 'planning'].includes(workflow.state) ||
+        state.legacyPhaseAdoption && !workflow.adoptedLegacy || phasePlanningBlockers(state, phase.id).length)
+      return []
+    const targets = phaseTargets(state, phase.id)
+    return targets.length ? [{ phase: phase.id, tasks: targets.map(task => task.id) }] : []
+  })
+}
+
+function announceNewlyEligiblePhases(name, previouslyEligible, state, cause) {
+  const previous = new Set(previouslyEligible.map(item => item.phase))
+  for (const item of eligibleDiscussionPhases(state)) {
+    if (previous.has(item.phase)) continue
+    emit(name, 'phase_eligible', null, { ...item, cause })
+    log('[prumo] ' + tr('phase {0} is eligible for discussion; tasks: {1}', item.phase, item.tasks.join(', ')))
+  }
+}
+
+function planQuestionRef(task, plan, index) {
+  const fingerprint = digestValue([task.id, plan?.startedAt ?? '', index + 1, plan?.openQuestions?.[index]?.question])
+  return plan?.openQuestions?.[index]?.questionRef ?? `${task.id}:plan:${fingerprint.slice(0, 12)}`
+}
+
+function annotatePlanQuestions(task, questions, startedAt) {
+  return (questions ?? []).map((question, index) => ({ ...question,
+    questionRef: `${task.id}:plan:${digestValue([task.id, startedAt, index + 1, question.question]).slice(0, 12)}` }))
+}
+
+function openQuestionRecords(state) {
+  const out = []
+  for (const task of Object.values(state.tasks)) {
+    const plan = task.taskPlan
+    // A pergunta persiste enquanto este taskPlan for o atual, inclusive durante
+    // replanejamento; só um novo plano ou uma decisão pode substituí-la.
+    if (!plan) continue
+    for (const [index, question] of (plan?.openQuestions ?? []).entries()) {
+      if (!question || typeof question.question !== 'string') continue
+      const decideBy = question.blocking ? 'user-now' : (question.decideBy ?? 'executor')
+      out.push({ ref: planQuestionRef(task, plan, index), sourceTask: task.id, question,
+        decideBy, planAt: plan.completedAt ?? plan.startedAt ?? '' })
+    }
+  }
+  return out
+}
+
+function questionResolutionMap(state) {
+  const out = new Map()
+  for (const entry of state.questionResolutions ?? [])
+    if (entry.questionRef) out.set(entry.questionRef, entry)
+  for (const task of Object.values(state.tasks)) {
+    const decisions = [
+      ...(task.taskPlan?.decisions ?? []),
+      ...(task.discovery?.decisions ?? []),
+      ...(task.planningHistory ?? []).flatMap(plan => plan.decisions ?? []),
+      ...(task.discussionAttempts ?? []).flatMap(round => round.discovery?.decisions ?? []),
+    ]
+    for (const decision of decisions) if (decision?.resolvesQuestion)
+      out.set(decision.resolvesQuestion, { questionRef: decision.resolvesQuestion, byTask: task.id,
+        answer: decision.answer, at: task.taskPlan?.completedAt ?? task.discovery?.recordedAt ?? null })
+  }
+  for (const phase of Object.values(state.phaseWorkflows ?? {})) {
+    const decisions = [
+      ...(phase.discovery?.decisions ?? []),
+      ...(phase.discussionAttempts ?? []).flatMap(round => round.discovery?.decisions ?? []),
+    ]
+    for (const decision of decisions) if (decision?.resolvesQuestion)
+      out.set(decision.resolvesQuestion, { questionRef: decision.resolvesQuestion, byPhase: phase.id,
+        answer: decision.answer, at: phase.discovery?.recordedAt ?? null })
+  }
+  return out
+}
+
+function validateQuestionDeadlines(state, taskId, openQuestions) {
+  for (const [index, question] of (openQuestions ?? []).entries()) {
+    if (question.decideBy && typeof question.decideBy === 'object') {
+      if (question.decideBy.beforeTask && !state.tasks[question.decideBy.beforeTask])
+        die(`task plan open question ${index + 1} references unknown task ${question.decideBy.beforeTask}`)
+      if (question.decideBy.beforePhase && !(state.plan.phases ?? []).some(phase => phase.id === question.decideBy.beforePhase))
+        die(`task plan open question ${index + 1} references unknown phase ${question.decideBy.beforePhase}`)
+    }
+    const decideBy = question.blocking ? 'user-now' : (question.decideBy ?? 'executor')
+    if (!question.answer && targetHasStarted(state, decideBy))
+      die(tr('task plan open question {0} has an expired deadline and must be answered before it can be added', index + 1))
+  }
+}
+
+function validateQuestionResolutions(state, decisions) {
+  const known = new Set(openQuestionRecords(state).map(item => item.ref))
+  const requested = (decisions ?? []).filter(item => item?.resolvesQuestion).map(item => item.resolvesQuestion)
+  if (new Set(requested).size !== requested.length)
+    die(tr('decisions cannot resolve the same open question more than once'))
+  for (const ref of requested) if (!known.has(ref))
+    die(tr('decision references unknown open question {0}', ref))
+  const resolved = questionResolutionMap(state)
+  for (const ref of requested) if (resolved.has(ref))
+    die(tr('open question {0} was already resolved', ref))
+  return requested
+}
+
+function recordQuestionResolutions(state, refs, decisions, { task, phase } = {}) {
+  if (!refs.length) return
+  state.questionResolutions ??= []
+  for (const ref of refs) {
+    const decision = decisions.find(item => item.resolvesQuestion === ref)
+    state.questionResolutions.push({ questionRef: ref, ...(task ? { byTask: task } : {}),
+      ...(phase ? { byPhase: phase } : {}), question: decision.question, answer: decision.answer,
+      at: new Date().toISOString() })
+  }
+}
+
+function taskHasStarted(state, task) {
+  return Boolean(task && ((task.discussionAttempts?.length ?? 0) || (task.planningAttempts?.length ?? 0) ||
+    (task.discussionSkips?.length ?? 0) || (task.planningSkips?.length ?? 0) ||
+    (task.attempts?.length ?? 0) || ['running', 'reviewing', 'done', 'skipped'].includes(task.state)))
+}
+
+function phaseWorkflowHasStarted(state, phaseId, taskId = null) {
+  const workflow = state.phaseWorkflows?.[phaseId]
+  if (!workflow) return false
+  const records = [
+    ...(workflow.discussionAttempts ?? []).map(item => ({ item, targets: item.targets })),
+    ...(workflow.planningAttempts ?? []).map(item => ({ item, targets: [...(item.targets ?? []), ...(item.contextTargets ?? [])] })),
+    ...(workflow.discussionSkips ?? []).map(item => ({ item, targets: item.targets })),
+    ...(workflow.planningSkips ?? []).map(item => ({ item, targets: item.targets })),
+  ]
+  return records.some(({ item, targets }) => Boolean(item) && (taskId === null || targets?.includes(taskId)))
+}
+
+function targetHasStarted(state, decideBy) {
+  if (!decideBy || typeof decideBy !== 'object') return false
+  if (decideBy.beforeTask) {
+    const target = state.tasks[decideBy.beforeTask]
+    if (taskHasStarted(state, target)) return true
+    return Boolean(state.plan.planningMode === 'phase' && target?.phase &&
+      phaseWorkflowHasStarted(state, target.phase, target.id))
+  }
+  const phaseId = decideBy.beforePhase
+  return phaseWorkflowHasStarted(state, phaseId) || Object.values(state.tasks).some(task =>
+    task.phase === phaseId && taskHasStarted(state, task))
+}
+
+function overdueQuestions(state, taskId = null, phaseId = null) {
+  const resolved = questionResolutionMap(state)
+  return openQuestionRecords(state).filter(item => {
+    if (item.question.answer || resolved.has(item.ref)) return false
+    if (!questionIsOverdue(state, item)) return false
+    if (item.decideBy === 'user-now') return !taskId || item.sourceTask === taskId
+    if (item.decideBy?.beforeTask) return item.decideBy.beforeTask === taskId
+    if (item.decideBy?.beforePhase) return item.decideBy.beforePhase === phaseId
+    return false
+  })
+}
+
+function questionIsOverdue(state, item) {
+  if (item.decideBy === 'user-now') return true
+  if (item.decideBy === 'executor') return false
+  return targetHasStarted(state, item.decideBy)
+}
+
+function scheduledQuestionsForTarget(state, taskId = null, phaseId = null) {
+  const resolved = questionResolutionMap(state)
+  return openQuestionRecords(state).filter(item => {
+    if (item.question.answer || resolved.has(item.ref)) return false
+    if (item.decideBy === 'executor') return false
+    if (item.decideBy === 'user-now') return item.sourceTask === taskId
+    if (item.decideBy?.beforeTask) return item.decideBy.beforeTask === taskId
+    if (item.decideBy?.beforePhase) return item.decideBy.beforePhase === phaseId
+    return false
+  })
+}
+
+function printQuestionsForTarget(state, taskId, phaseId) {
+  const questions = scheduledQuestionsForTarget(state, taskId, phaseId)
+  if (!questions.length) return
+  log('[prumo] ' + tr('resolve open questions before proceeding; reference each question ID in decisions[].resolvesQuestion:'))
+  for (const item of questions)
+    log(`[prumo] ${item.ref} (from ${item.sourceTask}): ${item.question.question}`)
+}
+
+function assertNoOverdueQuestions(state, task) {
+  const questions = overdueQuestions(state, task.id, task.phase)
+  if (questions.length)
+    die(tr('{0} has unresolved questions due before it starts: {1}; resolve them in discussion or planning decisions',
+      task.id, questions.map(item => item.ref).join(', ')))
+}
+
+function printQuestionStatus(state) {
+  const resolved = questionResolutionMap(state)
+  for (const item of openQuestionRecords(state)) {
+    if (item.question.answer || resolved.has(item.ref) || item.decideBy === 'executor') continue
+    const deadline = item.decideBy === 'user-now' ? tr('now') : item.decideBy.beforeTask ?
+      tr('before task {0}', item.decideBy.beforeTask) : tr('before phase {0}', item.decideBy.beforePhase)
+    const label = questionIsOverdue(state, item) ? tr('overdue') : tr('scheduled')
+    log('[prumo] ' + tr('open question {0} ({1}, {2}): {3}', item.ref, label, deadline, item.question.question))
+  }
+}
+
+function taskAuthorization(task) { return task.executionAuthorization ?? null }
+
+function assertTaskExecutionAuthorized(task) {
+  if (!taskAuthorization(task))
+    die(tr('{0} has no execution authorization; ask the user to accept a scope with authorize --confirmed-by-user', task.id))
+}
+
+function assertReauthorizedAfterContractChange(task) {
+  if (!taskAuthorization(task) && task.authorizationHistory?.length) assertTaskExecutionAuthorized(task)
+}
+
+function manualDispatchConfirmation(task, message) {
+  const authorization = taskAuthorization(task)
+  if (authorization?.mode !== 'manual') return null
+  if (args['confirmed-by-user'] !== true) die(tr(message, task.id))
+  const channel = args.channel ?? 'cli'
+  if (typeof channel !== 'string' || !channel.trim()) die(tr('confirmation channel must be nonempty'))
+  return { authorizationId: authorization.authorizationId, confirmedByUser: true,
+    at: new Date().toISOString(), channel: channel.trim() }
+}
+
+function manualConfirmationIdentity(entry) {
+  const { action, ...payload } = entry
+  return JSON.stringify([action, Object.entries(payload).sort(([left], [right]) => left.localeCompare(right))])
+}
+
+function compareManualConfirmationTime(left, right) {
+  const leftAt = Date.parse(left.at), rightAt = Date.parse(right.at)
+  const a = Number.isFinite(leftAt) ? leftAt : Number.POSITIVE_INFINITY
+  const b = Number.isFinite(rightAt) ? rightAt : Number.POSITIVE_INFINITY
+  if (a < b) return -1
+  if (a > b) return 1
+  return 0
+}
+
+function mergeMissingManualConfirmations(history, missing) {
+  const orderedMissing = missing.map((entry, index) => ({ entry, index }))
+    .sort((left, right) => compareManualConfirmationTime(left.entry, right.entry) || left.index - right.index)
+    .map(item => item.entry)
+  const merged = []
+  let existingIndex = 0, missingIndex = 0
+  while (existingIndex < history.length && missingIndex < orderedMissing.length) {
+    if (compareManualConfirmationTime(orderedMissing[missingIndex], history[existingIndex]) < 0)
+      merged.push(orderedMissing[missingIndex++])
+    else merged.push(history[existingIndex++])
+  }
+  merged.push(...history.slice(existingIndex), ...orderedMissing.slice(missingIndex))
+  return merged
+}
+
+function recordManualConfirmation(attempt, action, confirmation) {
+  if (!attempt || !confirmation) return
+  const fields = {
+    dispatch: 'manualDispatchConfirmation',
+    review: 'manualReviewConfirmation',
+    retry: 'manualRetryConfirmation',
+    resume: 'manualResumeConfirmation',
+  }
+  let history = Array.isArray(attempt.manualConfirmations) ? [...attempt.manualConfirmations] : []
+  const seen = new Set(history.map(manualConfirmationIdentity))
+  const missing = []
+  for (const [legacyAction, field] of Object.entries(fields)) {
+    const legacy = attempt[field]
+    if (!legacy) continue
+    const entry = { action: legacyAction, ...legacy }
+    const identity = manualConfirmationIdentity(entry)
+    if (seen.has(identity)) continue
+    seen.add(identity)
+    missing.push(entry)
+  }
+  history = mergeMissingManualConfirmations(history, missing)
+  history.push({ action, ...confirmation })
+  attempt.manualConfirmations = history
+  attempt[fields[action]] = confirmation
+}
+
+function authorizeScope(state, scope) {
+  if (scope === 'run') return Object.keys(state.tasks)
+  if (typeof scope !== 'string' || !scope.includes(':')) die('authorize needs --scope run|phase:<phase>|tasks:<task,...>')
+  const [kind, value, ...extra] = scope.split(':')
+  if (extra.length || !value) die('authorize scope must be run, phase:<phase> or tasks:<task,...>')
+  if (kind === 'phase') {
+    if (!(state.plan.phases ?? []).some(phase => phase.id === value)) die(`unknown phase "${value}"`)
+    return Object.values(state.tasks).filter(task => task.phase === value).map(task => task.id)
+  }
+  if (kind === 'tasks') {
+    const ids = value.split(',').filter(Boolean)
+    if (!ids.length || new Set(ids).size !== ids.length) die('tasks scope needs distinct task IDs')
+    for (const id of ids) getTask(state, id)
+    return ids
+  }
+  die('authorize scope must be run, phase:<phase> or tasks:<task,...>')
+}
+
+function executionSlots(state) {
+  const occ = occupancy(state)
+  return Math.max(0, Math.min(occ.maxExec - occ.executors.length, occ.cap - occ.busy.length))
+}
+
+function actionForTask(state, task, slots) {
+  if (!['ready_for_discussion', 'ready_to_plan', 'ready'].includes(task.effective)) return ''
+  if (task.effective === 'ready_for_discussion')
+    return state.plan.planningMode === 'phase' ? tr('ask user to begin discussion for {0}', task.phase) :
+      `begin-discussion ${task.id}; ${tr('ask user')}`
+  const due = overdueQuestions(state, task.id, task.phase)
+  if (task.effective === 'ready_to_plan') {
+    const command = state.plan.planningMode === 'phase' ? `plan-phase ${task.phase} --agent <planner>` : `plan-task ${task.id} --agent <planner>`
+    return `${command}${due.length ? `; ${tr('resolve due questions {0} in the plan decisions', due.map(item => item.ref).join(', '))}` : ''}`
+  }
+  if (due.length) {
+    const command = state.plan.planningMode === 'phase' ? `begin-phase-discussion ${task.phase}` : `begin-discussion ${task.id}`
+    return `${command}; ${tr('resolve due questions {0} before dispatch', due.map(item => item.ref).join(', '))}`
+  }
+  const authorization = taskAuthorization(task)
+  if (!authorization) return `${tr('ask user to authorize')}: authorize --scope tasks:${task.id} --confirmed-by-user`
+  if (authorization.mode === 'manual') return tr('ask user before dispatching {0}', task.id)
+  if (slots > 0) return `start ${task.id} --agent <executor>`
+  return tr('wait for an execution slot, then start {0}', task.id)
+}
+
+function printDispatchSuggestions(state, tasks = null) {
+  const d = derive(state)
+  const candidates = tasks ?? Object.values(d).filter(task => ['ready_for_discussion', 'ready_to_plan', 'ready'].includes(task.effective))
+  let slots = executionSlots(state)
+  for (const task of candidates) {
+    const current = d[task.id] ?? task
+    const action = actionForTask(state, current, slots)
+    if (action) log('[prumo] ' + tr('suggested action for {0}: {1}', current.id, action))
+    if (current.effective === 'ready' && taskAuthorization(current)?.mode === 'auto' && slots > 0 &&
+        !overdueQuestions(state, current.id, current.phase).length) slots -= 1
+  }
+}
+
+function suggestedActionsByTask(state) {
+  const actions = new Map()
+  let slots = executionSlots(state)
+  for (const task of Object.values(derive(state))) {
+    const action = actionForTask(state, task, slots)
+    if (action) actions.set(task.id, action)
+    if (task.effective === 'ready' && taskAuthorization(task)?.mode === 'auto' && slots > 0 &&
+        !overdueQuestions(state, task.id, task.phase).length) slots -= 1
+  }
+  return actions
+}
+
 function assertPhasePlanningOrder(state, phaseId) {
   const blockers = phasePlanningBlockers(state, phaseId)
   if (blockers.length) die(`${phaseId} waits for external dependencies: ${blockers.join(', ')}. Keep the approved phases; complete their dependency tasks first.`)
@@ -1251,6 +1599,7 @@ const commands = {
         source,
       },
       createdAt: new Date().toISOString(),
+      authorizations: [],
       tasks: {},
     }
     for (const t of plan.tasks) state.tasks[t.id] = taskFromPlan(t)
@@ -1320,6 +1669,12 @@ const commands = {
         continue
       }
       for (const field of changed) current[field] = next[field]
+      if (current.executionAuthorization) {
+        current.authorizationHistory ??= []
+        current.authorizationHistory.push({ ...current.executionAuthorization, revokedAt: new Date().toISOString(),
+          revokeReason: 'sync-plan changed this task contract' })
+        delete current.executionAuthorization
+      }
       if (current.planningRequired) current.planningRevision = (current.planningRevision ?? 0) + 1
       if (changed.some(field => !['validation', 'validationMode', 'inspectionReason'].includes(field)))
         current.scopeRevision = (current.scopeRevision ?? 0) + 1
@@ -1396,6 +1751,12 @@ const commands = {
         before: previous ? businessContract(beforeState.plan, previous) : null,
         after: businessContract(state.plan, task) })
       if (task.contractHistory.length > 20) task.contractHistory.splice(0, task.contractHistory.length - 20)
+      if (changedPlanFields.length && task.executionAuthorization) {
+        task.authorizationHistory ??= []
+        task.authorizationHistory.push({ ...task.executionAuthorization, revokedAt: historyAt,
+          revokeReason: 'sync-plan changed global plan decisions' })
+        delete task.executionAuthorization
+      }
     }
 
     const invalidatedWorkflows = invalidatedSyncWorkflows(name, beforeState, state)
@@ -1431,6 +1792,7 @@ const commands = {
           invalidated: invalidatedWorkflows.filter(item => item.scope === 'task' && item.task === id) }
       }
     }
+    const previouslyEligible = eligibleDiscussionPhases(beforeState)
     saveState(name, state)
     emit(name, 'plan_sync', null, {
       added: sanitizeTaskIds(added),
@@ -1440,12 +1802,16 @@ const commands = {
       changes: sanitizeChanges(changes),
       diagnostics: sanitizeDiagnostics(diagnostics),
       tasks: Object.keys(state.tasks).length,
+      revokedAuthorizationTasks: sanitizeTaskIds(Object.keys(state.tasks).filter(id => beforeState.tasks[id]?.executionAuthorization &&
+        !state.tasks[id]?.executionAuthorization)),
     })
     printSyncPlanAudit(changes, diagnostics)
     log(
       `[prumo] run "${name}" synced: +${added.length}, updated ${updated.length}, ` +
         `preserved ${preserved.length}, total ${Object.keys(state.tasks).length}`,
     )
+    announceNewlyEligiblePhases(name, previouslyEligible, state, 'sync-plan')
+    printDispatchSuggestions(state)
   },
 
   'show-contract'() {
@@ -1527,14 +1893,43 @@ const commands = {
     }
   },
 
+  authorize() {
+    const name = runName()
+    if (args['confirmed-by-user'] !== true)
+      die('authorize requires --confirmed-by-user after the user accepts this execution scope')
+    const state = loadState(name)
+    const scope = args.scope ?? die('authorize needs --scope run|phase:<phase>|tasks:<task,...>')
+    const mode = args.mode ?? 'auto'
+    if (!['auto', 'manual'].includes(mode)) die('authorize --mode must be auto or manual')
+    const channel = args.channel ?? 'cli'
+    if (typeof channel !== 'string' || !channel.trim()) die('authorize --channel must be nonempty')
+    const taskIds = authorizeScope(state, scope)
+    if (!taskIds.length) die(`authorization scope "${scope}" contains no tasks`)
+    const authorization = { authorizationId: randomUUID(), scope, taskIds, mode, confirmedByUser: true,
+      at: new Date().toISOString(), channel: channel.trim() }
+    state.authorizations ??= []
+    state.authorizations.push(authorization)
+    for (const id of taskIds) state.tasks[id].executionAuthorization = {
+      authorizationId: authorization.authorizationId, scope, mode, confirmedByUser: true,
+      at: authorization.at, channel: authorization.channel,
+    }
+    saveState(name, state)
+    emit(name, 'run_authorized', null, { scope, mode, confirmedByUser: true, at: authorization.at,
+      channel: authorization.channel, tasks: taskIds })
+    log('[prumo] ' + tr('authorized {0} task(s) for {1} mode ({2}) via {3}', taskIds.length, mode, scope, authorization.channel))
+    printDispatchSuggestions(state)
+  },
+
   status() {
     const name = runName()
     const state = loadState(name)
     printContractDriftWarnings(state)
     printPendingContractConfirmations(state)
     printPlanningRoundProgress(state)
+    printQuestionStatus(state)
     const d = derive(state)
     const p = progress(state)
+    const actions = suggestedActionsByTask(state)
     log(`run: ${name}  plan: ${state.plan.name}  ${p.done}/${p.total} done`)
     log(`states: ${JSON.stringify(p.by)}`)
     const countGateSkips = field => new Set([
@@ -1554,7 +1949,10 @@ const commands = {
       const manual = t.manualInspectionPending ? `  [${tr('Manual inspection pending')}]` : ''
       const digest = t.taskPlan?.digest ?? t.attempts.at(-1)?.planDigest
       const plan = digest ? `  ${tr('Plan {0}', digest.slice(0, 4))}` : ''
-      console.log(`  ${t.id.padEnd(width)}  ${tr(t.effective).padEnd(8)}${agent}${attempts}${wait}${manual}${plan}`)
+      const auth = t.executionAuthorization ? `  [${tr('authorized')} ${t.executionAuthorization.mode}]` :
+        `  [${tr('authorization required')}]`
+      const action = actions.get(t.id) ?? ''
+      console.log(`  ${t.id.padEnd(width)}  ${tr(t.effective).padEnd(8)}${agent}${attempts}${wait}${manual}${plan}${auth}${action ? `  → ${action}` : ''}`)
     }
     for (const phase of state.plan.phases) {
       console.log(`\n${phase.id} — ${phase.title}`)
@@ -1568,6 +1966,7 @@ const commands = {
       log(`\n(no phase)`)
       orphans.forEach(row)
     }
+    log('[prumo] ' + tr('{0} execution slot(s) available', executionSlots(state)))
   },
 
   ready() {
@@ -1575,11 +1974,17 @@ const commands = {
     printContractDriftWarnings(state)
     printPendingContractConfirmations(state)
     printPlanningRoundProgress(state)
+    printQuestionStatus(state)
     const d = derive(state)
     const occ = occupancy(state)
     const list = Object.values(d).filter((t) => ['ready_for_discussion', 'ready_to_plan', 'ready'].includes(t.effective))
-    for (const t of list) console.log(`${t.id}  ${t.title}  [${tr(t.effective)}]`)
-    const slots = Math.max(0, Math.min(occ.maxExec - occ.executors.length, occ.cap - occ.busy.length))
+    const slots = executionSlots(state)
+    const actions = suggestedActionsByTask(state)
+    for (const t of list) {
+      const auth = t.executionAuthorization ? tr('authorized {0}', t.executionAuthorization.mode) : tr('authorization required')
+      const action = actions.get(t.id) ?? ''
+      console.log(`${t.id}  ${t.title}  [${tr(t.effective)} · ${auth}]${action ? `  → ${action}` : ''}`)
+    }
     log(
       `\n[prumo] ${occ.executors.length}/${occ.maxExec} executors, ${occ.reviewers.length} in review ` +
         `(cap ${occ.cap}) — dispatch at most ${slots} now`,
@@ -1599,6 +2004,7 @@ const commands = {
     const state = loadState(name)
     if (!(state.plan.phases ?? []).some(phase => phase.id === phaseId)) die(`unknown phase "${phaseId}"`)
     assertPhasePlanningOrder(state, phaseId)
+    printQuestionsForTarget(state, null, phaseId)
     const members = phaseMembers(state, phaseId)
     const needsLegacyAdoption = state.plan.planningMode !== 'phase' ||
       (state.legacyPhaseAdoption && !state.phaseWorkflows?.[phaseId]?.adoptedLegacy)
@@ -1746,6 +2152,7 @@ const commands = {
         if (!confirmed)
           throw new Error(tr('discovery needs an answered question with confirmsContract matching every current task and digest'))
       }
+      round.questionRefs = validateQuestionResolutions(state, discovery.decisions)
       digest = discoveryDigest(discovery)
     } catch (error) { die(error.message) }
     const fields = ['research', 'questions', 'coverage', 'decisions', 'deferred', 'executionBoundary', 'closure', 'roundId', 'nonce']
@@ -1760,6 +2167,7 @@ const commands = {
       phase.contractConfirmationRequired = null
     }
     phase.state = 'pending'
+    recordQuestionResolutions(state, round.questionRefs ?? [], discovery.decisions, { phase: phaseId })
     saveState(name, state)
     emit(name, 'phase_discussed', null, { phase: phaseId, roundId: round.roundId, questions: discovery.questions.length,
       members: round.targets, prematureTaskWork: discovery.executionBoundary.prematureTaskWork.length })
@@ -1772,6 +2180,7 @@ const commands = {
     const agent = args.agent ?? die('plan-phase needs --agent <name>')
     const state = loadState(name), phase = getPhase(state, phaseId)
     assertPhasePlanningOrder(state, phaseId)
+    printQuestionsForTarget(state, null, phaseId)
     const discussion = currentPhaseDiscussionDecision(state, phase)
     if (!discussion) die(`${phaseId} needs a completed current phase discussion or an explicit user-confirmed discussion skip`)
     const targets = discussion.targets.map(id => getTask(state, id)).filter(task => !hasCurrentTaskPlan(state, task))
@@ -1859,7 +2268,7 @@ const commands = {
     }
     const tasks = round.targets.map(id => getTask(state, id))
     const binding = { phaseId, discussionRoundId: round.discussionRoundId, plannerRound: round.n }
-    const plans = [], errors = [], planDir = resolve(args['plan-dir'])
+    const plans = [], errors = [], plannedQuestionRefs = new Set(), planDir = resolve(args['plan-dir'])
     for (const task of tasks) {
       const filename = `task-plan-${task.id}.json`
       try {
@@ -1868,16 +2277,28 @@ const commands = {
         if (dirname(path) !== planDir) throw new Error(tr('task plan artifact path escapes --plan-dir'))
         const plan = readPlanningArtifact(path)
         assertPhaseTaskPlan(state, task, plan, binding, round.requiredInputs?.[task.id] ?? [])
-        plans.push([task, plan])
+        validateQuestionDeadlines(state, task.id, plan.openQuestions)
+        const questionRefs = validateQuestionResolutions(state, plan.decisions)
+        for (const ref of questionRefs) {
+          if (plannedQuestionRefs.has(ref))
+            throw new Error(tr('phase planning cannot resolve the same open question more than once'))
+          plannedQuestionRefs.add(ref)
+        }
+        plans.push([task, plan, questionRefs])
       } catch (error) { errors.push(planningArtifactError(filename, error)) }
     }
     if (errors.length) die(tr('finish-phase-planning {0} rejected {1} task-plan artifact(s); nothing was recorded:\n{2}',
       phaseId, errors.length, errors.join('\n')))
     for (const [task, plan] of plans) warnTaskPlan(task, plan)
     const completedAt = new Date().toISOString()
-    for (const [task, plan] of plans) {
+    const allResolutions = []
+    for (const [task, plan, questionRefs] of plans) {
       const fields = ['summary', 'research', 'decisions', 'steps', 'verification', 'openQuestions', 'phaseBinding', 'unresolvedInputs', 'writes']
       const artifact = Object.fromEntries(fields.map(field => [field, plan[field]]))
+      artifact.openQuestions = annotatePlanQuestions(task, artifact.openQuestions, round.startedAt)
+      allResolutions.push(...questionRefs.map(questionRef => ({
+        task: task.id, questionRef, decisions: plan.decisions,
+      })))
       task.planner = phase.planner
       task.taskPlan = { ...artifact, digest: taskPlanDigest(artifact), planner: phase.planner, startedAt: round.startedAt, completedAt,
         context: round.context, scope: phasePlanningContext(state, task), phaseId,
@@ -1892,6 +2313,8 @@ const commands = {
     phase.planningHistory.push({ round: round.n, planner: phase.planner, completedAt, members: round.targets,
       discoveryDigest: round.discoveryDigest })
     phase.state = 'planned'
+    for (const item of allResolutions)
+      recordQuestionResolutions(state, [item.questionRef], item.decisions, { task: item.task, phase: phaseId })
     saveState(name, state)
     emit(name, 'phase_planned', null, { phase: phaseId, planner: phase.planner, round: round.n, members: round.targets })
     log(`[prumo] ${phaseId} planned atomically (${round.targets.length} task artifact(s))`)
@@ -1903,6 +2326,7 @@ const commands = {
     const state = loadState(name)
     if (state.plan.planningMode === 'phase') die('this run uses phase planning; use begin-phase-discussion')
     const t = getTask(state, id)
+    printQuestionsForTarget(state, id, t.phase)
     const blockedBy = t.deps.filter(dep => !['done', 'skipped'].includes(state.tasks[dep]?.state))
     if (blockedBy.length) die(id + ' still waiting on: ' + blockedBy.join(', '))
     const adoptLegacy = !t.discussionRequired && args['adopt-legacy'] === true
@@ -2031,6 +2455,7 @@ const commands = {
         if (!confirmed)
           throw new Error(tr('discovery needs an answered question with confirmsContract matching every current task and digest'))
       }
+      round.questionRefs = validateQuestionResolutions(state, discovery.decisions)
       digest = discoveryDigest(discovery)
     } catch (error) { die(error.message) }
     const fields = ['research', 'questions', 'coverage', 'decisions', 'deferred', 'executionBoundary', 'closure', 'roundId', 'nonce']
@@ -2044,6 +2469,7 @@ const commands = {
       t.contractConfirmationRequired = null
     }
     t.state = t.planningReturn ? 'blocked' : 'pending'
+    recordQuestionResolutions(state, round.questionRefs ?? [], discovery.decisions, { task: id })
     saveState(name, state)
     emit(name, 'task_discussed', id, { roundId: round.roundId, questions: discovery.questions.length, state: t.state,
       prematureTaskWork: discovery.executionBoundary.prematureTaskWork.length })
@@ -2057,6 +2483,7 @@ const commands = {
     const state = loadState(name)
     if (state.plan.planningMode === 'phase') die('this run uses phase planning; use plan-phase')
     const t = getTask(state, id)
+    printQuestionsForTarget(state, id, t.phase)
     const pausedExecution = t.planningRequired && t.state === 'blocked' && ['running', 'reviewing'].includes(t.stateBeforeBlock)
     const stale = t.state === 'planning' && t.planningAttempts?.at(-1)?.context !== planningContext(state, t)
     let discovery, digest
@@ -2164,9 +2591,12 @@ const commands = {
     try {
       plan = readPlanningArtifact(path)
       assertTaskPlan(t, plan)
+      validateQuestionDeadlines(state, id, plan.openQuestions)
     } catch (error) { die(planningArtifactError(filename, error)) }
+    const questionRefs = validateQuestionResolutions(state, plan.decisions)
     warnTaskPlan(t, plan)
     const artifact = Object.fromEntries(['summary', 'research', 'decisions', 'steps', 'verification', 'openQuestions', 'writes'].map(field => [field, plan[field]]))
+    artifact.openQuestions = annotatePlanQuestions(t, artifact.openQuestions, round.startedAt)
     t.taskPlan = { ...artifact, digest: taskPlanDigest(artifact), planner: t.planner, startedAt: round.startedAt, completedAt: new Date().toISOString(),
       context: round.context, scope: planningContext(state, t, { scopeOnly: true }), attempt: round.attempt,
       ...(round.discoveryDigest ? { discoveryDigest: round.discoveryDigest } : {}),
@@ -2181,6 +2611,7 @@ const commands = {
       Object.assign(t, t.planningReturn)
       delete t.planningReturn
     }
+    recordQuestionResolutions(state, questionRefs, plan.decisions, { task: id })
     saveState(name, state)
     emit(name, 'task_planned', id, { planner: t.planner, round: t.planningAttempts.length, state: t.state })
     if (t.state === 'blocked') log(`[prumo] ${id} task plan recorded; still blocked — unblock explicitly to resume the current attempt`)
@@ -2196,6 +2627,9 @@ const commands = {
     const state = loadState(name)
     const t = getTask(state, id)
     if (t.state !== 'pending') die(`${id} is ${t.state}, not pending`)
+    assertTaskExecutionAuthorized(t)
+    const dispatchConfirmation = manualDispatchConfirmation(t, 'manual authorization for {0} requires --confirmed-by-user before dispatch')
+    assertNoOverdueQuestions(state, t)
     if (!hasCurrentTaskPlan(state, t)) die(id + ' needs completed current planning — run plan-task and finish-planning before start')
     try { validationContract(t) } catch (error) {
       die(`${id} has an invalid legacy validation contract: ${error.message} — correct the approved plan and run sync-plan before start`)
@@ -2215,10 +2649,13 @@ const commands = {
         correctionOf: t.retryPlan.failedAttempt, correctionReason: t.retryPlan.reason,
       } : {}), ...(planDigest ? { planDigest } : {}),
       ...(inputReceipt ? { inputReceipt: inputReceipt.inputs, inputDigest: inputReceipt.digest } : {}) })
+    recordManualConfirmation(t.attempts.at(-1), 'dispatch', dispatchConfirmation)
     const total = t.taskPlan?.steps?.length
     if (total) t.attempts.at(-1).executionStep = 1
     saveState(name, state)
-    emit(name, 'task_start', id, { agent, attempt: t.attempts.length, ...(planDigest ? { planDigest: planDigest.slice(0, 4) } : {}),
+    emit(name, 'task_start', id, { agent, attempt: t.attempts.length,
+      ...(planDigest ? { planDigest: planDigest.slice(0, 4) } : {}),
+      ...(dispatchConfirmation ? { manualDispatchConfirmation: dispatchConfirmation } : {}),
       ...(total ? { current: 1, total } : {}) })
     log(`[prumo] ${id} running (agent ${agent}, attempt ${t.attempts.length})`)
     if (total) {
@@ -2263,6 +2700,8 @@ const commands = {
     const state = loadState(name)
     const t = getTask(state, id)
     if (t.state !== 'running') die(`${id} is ${t.state}, not running`)
+    assertReauthorizedAfterContractChange(t)
+    const dispatchConfirmation = manualDispatchConfirmation(t, 'manual authorization for {0} requires --confirmed-by-user before dispatch')
     assertCurrentTaskScope(state, t)
     assertCurrentExecutionInputs(state, t)
     if (reviewer === t.agent && !args.force)
@@ -2280,12 +2719,15 @@ const commands = {
     t.attempts.at(-1).reviewStartedAt = new Date().toISOString()
     const denominator = reviewDenominator(t)
     reviewProgressRecord(t, reviewer, denominator)
+    recordManualConfirmation(t.attempts.at(-1), 'review', dispatchConfirmation)
     saveState(name, state)
     emit(name, 'task_review', id, { reviewer, attempt: t.attempts.length,
-      ...(denominator ? { current: 1, total: denominator.total, basis: denominator.basis } : {}) })
+      ...(denominator ? { current: 1, total: denominator.total, basis: denominator.basis } : {}),
+      ...(dispatchConfirmation ? { manualDispatchConfirmation: dispatchConfirmation } : {}) })
     log(`[prumo] ${id} in review (reviewer ${reviewer})`)
     if (t.taskPlan?.steps?.length > 1 && (t.attempts.at(-1).executionStep ?? 1) === 1)
       log(`[prumo] WARNING: executor progress stayed at 1/${t.taskPlan.steps.length}; the position is not proof of completed work`)
+    printDispatchSuggestions(state)
   },
 
   'review-progress'() {
@@ -2346,11 +2788,22 @@ const commands = {
       log('[prumo] ' + id + ' validation contract already matches; state and attempt unchanged')
       return
     }
+    const authorization = task.executionAuthorization
+    if (authorization) {
+      task.authorizationHistory ??= []
+      task.authorizationHistory.push({ ...authorization, revokedAt: new Date().toISOString(),
+        revokeReason: 'refresh-contract changed this task validation contract' })
+      delete task.executionAuthorization
+    }
     Object.assign(task, changes)
     task.contractRevision = (task.contractRevision ?? 0) + 1
     saveState(name, state)
-    emit(name, 'task_contract_refreshed', id, { revision: task.contractRevision, attempt: task.attempts.length, state: task.state, source: resolve(source) })
-    log('[prumo] ' + id + ' contract refreshed; state ' + task.state + ', attempt ' + task.attempts.length + ' preserved; previous validation receipts are stale')
+    emit(name, 'task_contract_refreshed', id, { revision: task.contractRevision, attempt: task.attempts.length, state: task.state,
+      source: resolve(source), authorizationRevoked: Boolean(authorization) })
+    log('[prumo] ' + tr('{0} contract refreshed; state {1}, attempt {2} preserved; previous validation receipts are stale',
+      id, task.state, task.attempts.length))
+    if (authorization)
+      log('[prumo] ' + tr('execution authorization revoked for {0}; ask the user to accept the changed contract before another dispatch', id))
   },
 
   async validate() {
@@ -2367,6 +2820,7 @@ const commands = {
       const t = getTask(state, id)
       if (t.state !== 'running' && t.state !== 'reviewing') die(id + ' is not running or reviewing')
       if (requestedOk) {
+        assertNoOverdueQuestions(state, t)
         assertCurrentTaskScope(state, t)
         assertCurrentExecutionInputs(state, t)
       }
@@ -2432,7 +2886,10 @@ const commands = {
           JSON.stringify([t.validation, t.validationMode, t.inspectionReason]) !==
           JSON.stringify([snapshot.validation, snapshot.validationMode, snapshot.inspectionReason]))
         die('task changed during validation; result discarded — validate the current attempt again')
-      if (requestedOk) assertCurrentExecutionInputs(state, t)
+      if (requestedOk) {
+        try { assertNoOverdueQuestions(state, t) } catch (questionError) { error ??= questionError.message }
+        assertCurrentExecutionInputs(state, t)
+      }
       Object.assign(last, result, { ok: requestedOk && !error, error, at: new Date().toISOString() })
       saveState(name, state)
       emit(name, 'task_validate', id, { ok: last.ok, by: last.by, evidence: last.evidence,
@@ -2449,6 +2906,7 @@ const commands = {
     const t = getTask(state, id)
     if (t.state !== 'running' && t.state !== 'reviewing')
       die(`${id} is ${t.state}, not running or reviewing`)
+    assertNoOverdueQuestions(state, t)
     assertCurrentTaskScope(state, t)
     assertCurrentExecutionInputs(state, t)
     const last = t.validations.at(-1)
@@ -2463,6 +2921,7 @@ const commands = {
     if (last.by === 'review' && (!t.reviewer || last.agent !== t.reviewer || t.reviewer === t.agent))
       die('passing validation requires the current independent reviewer')
     try { assertValidation(t, last) } catch (e) { die(e.message) }
+    const previouslyEligible = eligibleDiscussionPhases(state)
     t.state = 'done'
     t.attempts.at(-1).endedAt = new Date().toISOString()
     t.attempts.at(-1).result = 'done'
@@ -2472,6 +2931,8 @@ const commands = {
       (o) => ['ready_to_plan', 'ready'].includes(o.effective) && o.deps.includes(id),
     )
     log(`[prumo] ${id} done${unlocked.length ? ` — unlocked: ${unlocked.map((u) => u.id).join(', ')}` : ''}`)
+    announceNewlyEligiblePhases(name, previouslyEligible, state, 'done')
+    printDispatchSuggestions(state)
   },
 
   fail() {
@@ -2501,6 +2962,8 @@ const commands = {
     const state = loadState(name)
     const t = getTask(state, id)
     if (t.state !== 'failed') die(`${id} is ${t.state}, not failed`)
+    assertReauthorizedAfterContractChange(t)
+    const retryConfirmation = manualDispatchConfirmation(t, 'manual authorization for {0} requires --confirmed-by-user before retry')
     if (state.plan.source && existsSync(state.plan.source)) {
       const { plan } = readPlan(state.plan.source, state)
       if (!plan.tasks.some(candidate => candidate.id === id))
@@ -2517,6 +2980,7 @@ const commands = {
     if (t.attempts.length >= cap && !args.force)
       die(`${id} already has ${t.attempts.length} attempts (cap ${cap}) — escalate instead, or --force`)
     const failed = t.attempts.at(-1)
+    recordManualConfirmation(failed, 'retry', retryConfirmation)
     const planningSkipped = currentPlanningSkip(state, t)
     const planSourceAttempt = t.taskPlan?.attempt
     const reuse = Boolean(planningSkipped || (t.planningRequired && failed?.failedFrom === 'reviewing' && !failed.planDefect &&
@@ -2542,6 +3006,7 @@ const commands = {
     saveState(name, state)
     emit(name, 'task_retry', id, { nextAttempt: t.attempts.length + 1,
       reusedPlan: Boolean(reuse && !planningSkipped), reusedPlanningSkip: Boolean(planningSkipped),
+      ...(retryConfirmation ? { manualRetryConfirmation: retryConfirmation } : {}),
       ...(reuse ? { reason: failed.reason, ...(!planningSkipped ? { planSourceAttempt } : {}),
         failedAttempt: t.attempts.length } : {}) })
     log(`[prumo] ${id} back to pending (attempt ${t.attempts.length + 1} when started; ${planningSkipped ? 'approved planning skip reused' : reuse ? 'approved plan reused' : 'planning required'})`)
@@ -2552,6 +3017,13 @@ const commands = {
     const id = args._[0] ?? die('block <task> --reason "<text>"')
     const state = loadState(name)
     const t = getTask(state, id)
+    const question = args.question === undefined ? undefined :
+      typeof args.question === 'string' && args.question.trim() ? args.question.trim() : die(tr('block --question must be nonempty'))
+    const options = args.option === undefined ? undefined :
+      (Array.isArray(args.option) ? args.option : [args.option]).map(value => typeof value === 'string' && value.trim() ? value.trim() :
+        die(tr('block --option values must be nonempty')))
+    if (options && question === undefined && !t.blockQuestion)
+      die(tr('block --option requires --question'))
     if (['done', 'skipped'].includes(t.state)) die('completed tasks cannot be paused')
     const alreadyBlocked = t.state === 'blocked'
     if (t.state === 'planning') closePlanning(t, 'blocked')
@@ -2560,8 +3032,14 @@ const commands = {
     t.stateRevision = (t.stateRevision ?? 0) + 1
     t.state = 'blocked'
     t.blockReason = args.reason ?? ''
+    if (question !== undefined) {
+      if (t.blockQuestion !== question && options === undefined) delete t.blockOptions
+      t.blockQuestion = question
+    }
+    if (options !== undefined) t.blockOptions = [...new Set(options)]
     saveState(name, state)
-    emit(name, alreadyBlocked ? 'task_block_updated' : 'task_block', id, { reason: args.reason ?? '' })
+    emit(name, alreadyBlocked ? 'task_block_updated' : 'task_block', id, { reason: args.reason ?? '',
+      ...(t.blockQuestion ? { question: t.blockQuestion } : {}), ...(t.blockOptions ? { options: t.blockOptions } : {}) })
     log(`[prumo] ${id} blocked: ${args.reason ?? ''}`)
   },
 
@@ -2571,6 +3049,10 @@ const commands = {
     const state = loadState(name)
     const t = getTask(state, id)
     if (t.state !== 'blocked') die(id + ' is ' + t.state + ', not blocked')
+    const answer = args.answer === undefined ? undefined :
+      typeof args.answer === 'string' && args.answer.trim() ? args.answer.trim() : die(tr('unblock --answer must be nonempty'))
+    if (t.blockQuestion && answer === undefined) die(tr('unblock needs --answer to resolve the current block question'))
+    if (!t.blockQuestion && answer !== undefined) die(tr('unblock --answer requires a current block question'))
     // Legacy unstarted tasks can return to pending; never guess the phase of an existing attempt.
     const previous = t.stateBeforeBlock ?? (t.attempts.length === 0 ? 'pending' : null)
     if (!['pending', 'discussing', 'planning', 'running', 'reviewing', 'failed'].includes(previous))
@@ -2579,6 +3061,9 @@ const commands = {
     if (handoff && !['running', 'reviewing'].includes(previous))
       die('direct review requires a paused active attempt; pending/failed tasks cannot bypass start/retry')
     const target = handoff ? 'reviewing' : previous === 'discussing' ? 'pending' : previous
+    if (['running', 'reviewing'].includes(target)) assertReauthorizedAfterContractChange(t)
+    const dispatchConfirmation = ['running', 'reviewing'].includes(target) ?
+      manualDispatchConfirmation(t, 'manual authorization for {0} requires --confirmed-by-user to resume execution') : null
     const reviewer = handoff ? args.reviewer : t.reviewer
     if (target === 'planning') {
       const round = t.planningAttempts?.at(-1)
@@ -2596,6 +3081,7 @@ const commands = {
       if (target === 'reviewing' && reviewer === t.agent)
         die('passing validation requires an independent reviewer')
       assertAvailable(state, t, target, target === 'reviewing' ? reviewer : t.agent)
+      recordManualConfirmation(t.attempts.at(-1), 'resume', dispatchConfirmation)
       if (handoff && reviewer !== t.reviewer) {
         t.reviewer = reviewer
         attempt.reviewer = reviewer
@@ -2613,11 +3099,18 @@ const commands = {
         reviewProgressRecord(t, reviewer, reviewDenom)
     }
     t.state = target
+    t.blockHistory ??= []
+    t.blockHistory.push({ reason: t.blockReason ?? '', ...(t.blockQuestion ? { question: t.blockQuestion } : {}),
+      ...(answer !== undefined ? { answer } : {}), at: new Date().toISOString() })
     delete t.blockReason
+    delete t.blockQuestion
+    delete t.blockOptions
     delete t.stateBeforeBlock
     saveState(name, state)
-    emit(name, 'task_unblock', id, { state: target, agent: target === 'reviewing' ? t.reviewer : target === 'planning' ? t.planner : t.agent, attempt: t.attempts.length,
-      ...(target === 'reviewing' && reviewDenom ? { current: 1, total: reviewDenom.total, basis: reviewDenom.basis } : {}) })
+    emit(name, 'task_unblock', id, { state: target, agent: target === 'reviewing' ? t.reviewer : target === 'planning' ? t.planner : t.agent,
+      attempt: t.attempts.length, ...(answer !== undefined ? { answer } : {}),
+      ...(target === 'reviewing' && reviewDenom ? { current: 1, total: reviewDenom.total, basis: reviewDenom.basis } : {}),
+      ...(dispatchConfirmation ? { manualDispatchConfirmation: dispatchConfirmation } : {}) })
     log('[prumo] ' + id + ' unblocked to ' + target + '; attempt ' + t.attempts.length + ' preserved; no agent dispatched')
     if (target === 'reviewing' && t.taskPlan?.steps?.length > 1 && (t.attempts.at(-1).executionStep ?? 1) === 1)
       log(`[prumo] WARNING: executor progress stayed at 1/${t.taskPlan.steps.length}; the position is not proof of completed work`)
@@ -2630,6 +3123,7 @@ const commands = {
     const t = getTask(state, id)
     if (['done', 'skipped'].includes(t.state)) die(`${id} is already terminal`)
     const reason = typeof args.reason === 'string' && args.reason.trim() ? args.reason.trim() : die('skip requires --reason <text>')
+    const previouslyEligible = eligibleDiscussionPhases(state)
     if (t.state === 'planning') closePlanning(t, 'skipped')
     if (t.state === 'discussing') closeDiscussion(t, 'skipped')
     t.state = 'skipped'
@@ -2643,6 +3137,8 @@ const commands = {
     saveState(name, state)
     emit(name, 'task_skip', id, { reason })
     log(`[prumo] ${id} skipped: ${reason}`)
+    announceNewlyEligiblePhases(name, previouslyEligible, state, 'skip')
+    printDispatchSuggestions(state)
   },
 
   note() {

@@ -191,8 +191,15 @@ sem invalidar planos antigos.
 `verification.check` não indexa `taskPlan.steps`. Use `"inspection"`
 somente quando o contrato aprovado for inspeção em texto. Esses três arrays não podem estar vazios.
 `decisions` contém pares `question`/`answer` resolvidos e pode ser vazio. `openQuestions` contém
-`question`, `blocking` booleano e `answer` opcional; também pode ser vazio. Pergunta bloqueante
-sem resposta impede concluir planejamento; não invente resposta nem omita seu efeito para liberar execução.
+`question`, `blocking` booleano, `answer` opcional e `decideBy` opcional: `"executor"` (padrão),
+`"user-now"`, `{ "beforeTask": "T2" }` ou `{ "beforePhase": "F2" }`. Perguntas bloqueantes
+continuam exigindo resposta antes de concluir o planejamento e equivalem a `user-now`. Uma pergunta
+futura não segura a tarefa de origem; ela reaparece quando a tarefa ou fase indicada começa e vira
+impedimento de execução somente nesse momento. `status` mostra perguntas programadas e vencidas.
+Resolva uma pergunta posterior com um item de `decisions` que informe a referência exibida em
+`resolvesQuestion`, por exemplo `{ "question": "Qual protocolo?", "answer": "Use o cliente existente.",
+"resolvesQuestion": "T1:plan:abc123" }`. No planejamento por tarefa, o prazo `{ "beforePhase": "F2" }`
+vence quando qualquer tarefa de F2 inicia discussão ou planejamento. Não invente respostas nem omita uma incerteza consequencial.
 
 Cada plano de tarefa pode ter um `summary` não vazio de 1–2 frases sobre o caminho escolhido e por quê.
 O motor salva cada `taskPlan` e seu histórico imutável. O escopo usa contratos, sem estado mutável das
@@ -254,6 +261,7 @@ Resolva `scripts/engine.mjs` a partir da skill instalada. Acrescente `--run <nom
 | `init --plan <arquivo> --run <nome>` | Inicializa execução do plano aprovado |
 | `migrate [--check]` | Migra com backup o schema legado seguro; `--check` apenas diagnostica |
 | `status`, `ready`, `graph`, `runs` | Consulta estado, trabalho pronto, JSON ou execuções |
+| `authorize --scope run\|phase:<fase>\|tasks:<T1,T2> [--mode auto\|manual] --confirmed-by-user` | Registra o escopo e o modo de despacho aceitos pelo usuário; `auto` é o padrão |
 | `show-contract <tarefa> [--diff]` | Exibe os contratos de negócio antes/depois sem comandos `validation.run` |
 | `show-check <tarefa> --check <N> --attempt <K>` | Exibe stdout, stderr, diretório, código de saída e reutilização do recibo armazenado |
 | `begin-phase-discussion <fase> [--adopt-legacy]` | Persiste a discussão escolhida da fase antes da primeira pergunta; a opção adota uma fase legada segura |
@@ -278,8 +286,8 @@ Resolva `scripts/engine.mjs` a partir da skill instalada. Acrescente `--run <nom
 | `done <tarefa>` | Conclui com evidência válida da tentativa e revisor atuais |
 | `fail <tarefa> --reason <texto>` | Registra falha real da tentativa |
 | `retry <tarefa>` | Volta de failed para pending; reutiliza plano atual somente em correção limitada com contexto imutável da tarefa e do plano global e motivo de revisão válido |
-| `block <tarefa> --reason <texto>` | Pausa preservando a fase anterior |
-| `unblock <tarefa>` | Restaura a fase anterior, sem nova tentativa |
+| `block <tarefa> --reason <texto> [--question <texto>] [--option <texto>...]` | Pausa preservando a fase anterior e, quando informada, a decisão necessária para retomar |
+| `unblock <tarefa> [--answer <texto>]` | Restaura a fase anterior; registra pergunta e resposta no histórico quando houver decisão |
 | `unblock <tarefa> --reviewer <nome>` | Leva tentativa ativa pausada diretamente à revisão |
 | `skip <tarefa> --reason <texto>` | Pula uma vez por decisão explícita não vazia; uma tentativa ativa termina como skipped sem inventar recibo de validação |
 | `note <tarefa> --text <texto>` | Acrescenta nota ao histórico |
@@ -291,6 +299,25 @@ depende do código de saída e do resultado relevante, não de palavras como “
 checks ou critérios estruturados, percorra cada item com `review-progress` antes de aprovar. O evento
 registra um relato rastreável do revisor; não prova que houve inspeção nem que o trabalho passou. Um
 estado legado sem denominador continua sem total inventado.
+
+Depois que o usuário aprovar o plano, pergunte se a autorização cobre a execução inteira, uma fase ou
+tarefas escolhidas, e se o modo é `auto` ou `manual`. Só então execute `authorize` com
+`--confirmed-by-user`. O comando registra o aceite; não cria agentes nem inicia tarefas ou fases.
+`ready` e `status` mostram autorização por tarefa, vagas livres e uma ação sugerida. No modo `auto`,
+preencha vagas livres com tarefas autorizadas quando revisão ou conclusão liberar capacidade. No modo
+`manual`, pergunte ao usuário antes de cada despacho. Exija `--confirmed-by-user` em cada `start`,
+`review`, `retry` e `unblock` que retome uma tentativa ativa; o motor registra esse aceite com ID da autorização,
+data e canal no evento e na lista ordenada `manualConfirmations[]` da tentativa. Os campos singulares antigos
+continuam mostrando a confirmação mais recente por compatibilidade. O modo `auto` não exige confirmação repetida.
+`sync-plan` ou `refresh-contract` remove o aceite da tarefa cujo contrato mudou até nova confirmação.
+Uma decisão global alterada exige novo aceite das tarefas não terminais
+afetadas; tentativas já em andamento continuam no estado persistido.
+
+Quando `done`, `skip` ou `sync-plan` liberar uma fase para discussão, leia o evento `phase_eligible`,
+informe ao usuário a fase e as tarefas e recomende `begin-phase-discussion <fase>`. Aguarde a escolha
+explícita; a elegibilidade não inicia a fase. Se `block` registrar `--question` e opções, apresente a
+pergunta pela abordagem PO First e registre a resposta em `unblock --answer`. Bloqueios legados que
+contêm somente motivo continuam aceitando `unblock` sem resposta.
 
 O histórico mostra `Executando T4 [2/4]` a partir dos passos de `taskPlan.steps`, conforme o executor
 informa o avanço ao orquestrador. O índice indica o passo atual, não uma aprovação; repetição é
@@ -315,7 +342,7 @@ O `sync-plan` também avisa quando invalida uma discussão/rodada de planejament
 
 Use `show-contract <tarefa> [--diff]` para conferir o contrato de negócio completo antes/depois da alteração. Ele exibe o texto integral de `expect` e da justificativa de inspeção, mas omite os comandos executáveis `validation.run`. Quando uma alteração reabre uma fase que já teve discussão, planejamento ou skip atual, a nova discussão precisa pedir ao usuário que aceite o contrato alterado. Confira cada alvo atual e inclua os pares exatos de tarefa/digest impressos por `begin-phase-discussion` em `questions[].confirmsContract` de uma pergunta respondida. O motor exige todos os digests atuais; um skip não substitui essa confirmação. Depois do aceite registrado, a escolha normal de pular o planejamento continua disponível.
 
-Use `refresh-contract` quando a única mudança aprovada for validação. Ele preserva estado, tentativas, agentes, notas e bloqueio. A revisão do contrato invalida recibos anteriores, mesmo quando o texto volta à versão anterior.
+Use `refresh-contract` quando a única mudança aprovada for validação. Ele preserva estado, tentativas, agentes, notas e bloqueio. A revisão do contrato invalida recibos anteriores, mesmo quando o texto volta à versão anterior, e revoga a autorização de execução, preservando-a no histórico até novo aceite.
 
 Trabalho entregue pode seguir à revisão, que pode completar verificações faltantes. Não use fail/retry **somente** para atualizar contrato nem registre erro de orquestração como falha do executor. Um bloqueio solicitado permanece até uma decisão explícita de desbloqueio.
 

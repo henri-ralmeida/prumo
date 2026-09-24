@@ -233,6 +233,8 @@ test('sync-plan records per-task changes and diagnostics in plan_sync', (t) => {
   })
   const init = run('init', '--plan', planPath, '--run', 'audit')
   assert.equal(init.status, 0, init.stdout + init.stderr)
+  const authorization = run('authorize', '--scope', 'tasks:T12', '--confirmed-by-user')
+  assert.equal(authorization.status, 0, authorization.stdout + authorization.stderr)
   const statePath = join(root, '.specs', 'graph', 'audit', 'state.json')
   const state = JSON.parse(readFileSync(statePath, 'utf8'))
   // Model a legacy run with the old lifecycle; the sync itself remains the state owner.

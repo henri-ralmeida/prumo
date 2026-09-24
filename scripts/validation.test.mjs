@@ -36,8 +36,16 @@ function fixture(t, task = {}, planOptions = {}, { init = true, lang = 'en' } = 
     return { ...r, output: r.stdout + r.stderr }
   }
   function ok(...args) {
+    if (args[0] === 'start' && !state().tasks[args[1]]?.executionAuthorization) {
+      const authorization = cli('authorize', '--scope', `tasks:${args[1]}`, '--confirmed-by-user')
+      assert.equal(authorization.status, 0, authorization.output)
+    }
     const r = cli(...args)
     assert.equal(r.status, 0, r.output)
+    if (args[0] === 'init') {
+      const authorization = cli('authorize', '--scope', 'run', '--confirmed-by-user')
+      assert.equal(authorization.status, 0, authorization.output)
+    }
     return r
   }
   function rejected(pattern, ...args) {
@@ -79,6 +87,7 @@ test('unblock restores running work and contract refresh can be reviewed in the 
   f.plan.tasks[0].validation[1] = { ...functionalStep, timeoutMs: 900000 }
   writeFileSync(f.planPath, JSON.stringify(f.plan))
   f.ok('refresh-contract', 'T1', '--plan', f.planPath)
+  f.ok('authorize', '--scope', 'tasks:T1', '--confirmed-by-user')
   f.ok('unblock', 'T1')
   assert.equal(f.state().tasks.T1.state, 'running')
   assert.deepEqual(f.state().tasks.T1.attempts, before.attempts)
@@ -98,6 +107,7 @@ test('legacy active work rechecks current dependencies before review, validation
   writeFileSync(f.planPath, JSON.stringify(f.plan))
   f.ok('sync-plan', '--plan', f.planPath)
   assert.deepEqual(f.state().tasks.T1.attempts, before)
+  f.ok('authorize', '--scope', 'tasks:T1', '--confirmed-by-user')
   for (const command of [
     ['review', 'T1', '--agent', 'reviewer'],
     ['validate', 'T1', '--ok', '--evidence', 'Dependency must finish first', '--cwd', f.project],
@@ -760,7 +770,16 @@ test('refresh-contract preserves running, reviewing and blocked work without ano
     writeFileSync(f.planPath, JSON.stringify(f.plan))
     const result = f.ok('refresh-contract', 'T1', '--plan', f.planPath)
     assert.match(result.output, new RegExp(`state ${status}, attempt 1 preserved`))
-    assert.deepEqual(f.state().tasks.T1, { ...before, validation: f.plan.tasks[0].validation, contractRevision: 1 })
+    const refreshedTask = f.state().tasks.T1
+    const { executionAuthorization, authorizationHistory, ...refreshedWithoutAuthorization } = refreshedTask
+    const { executionAuthorization: previousAuthorization, ...expectedWithoutAuthorization } = {
+      ...before, validation: f.plan.tasks[0].validation, contractRevision: 1,
+    }
+    assert.deepEqual(refreshedWithoutAuthorization, expectedWithoutAuthorization)
+    assert.equal(executionAuthorization, undefined)
+    assert.deepEqual(authorizationHistory.at(-1), { ...previousAuthorization,
+      revokedAt: authorizationHistory.at(-1).revokedAt,
+      revokeReason: 'refresh-contract changed this task validation contract' })
     const refreshed = f.state()
     f.ok('refresh-contract', 'T1', '--plan', f.planPath)
     assert.deepEqual(f.state(), refreshed)
@@ -908,8 +927,12 @@ test('real rejection and approved contract change preserve history and verify th
   assert.deepEqual(synced.tasks.T1.touches, f.plan.tasks[0].touches)
   assert.deepEqual(synced.tasks.T1.attempts, rejected.attempts)
   assert.deepEqual(synced.tasks.T1.validations, rejected.validations)
-  assert.deepEqual(synced.tasks.T2, other)
+  assert.equal(synced.tasks.T2.state, other.state, 'a run-wide plan update does not pause work already in flight')
+  assert.deepEqual(synced.tasks.T2.attempts, other.attempts)
+  assert.equal(synced.tasks.T2.executionAuthorization, undefined, 'the changed global plan scope needs renewed acceptance')
+  assert.equal(synced.tasks.T2.authorizationHistory.at(-1).revokeReason, 'sync-plan changed global plan decisions')
   assert.deepEqual(f.events().slice(0, priorEvents.length), priorEvents)
+  f.ok('authorize', '--scope', 'tasks:T1', '--confirmed-by-user')
   f.ok('retry', 'T1')
   assert.equal(f.state().tasks.T1.attempts.length, 1, 'retry must not itself create an attempt')
   f.ok('start', 'T1', '--agent', 'executor-v2')
@@ -931,5 +954,9 @@ test('real rejection and approved contract change preserve history and verify th
   assert.equal(done.attempts.length, 2)
   assert.equal(done.attempts[1].result, 'done')
   assert.deepEqual(done.validations[0], rejected.validations[0])
-  assert.deepEqual(f.state().tasks.T2, other)
+  const independent = f.state().tasks.T2
+  assert.equal(independent.state, other.state)
+  assert.deepEqual(independent.attempts, other.attempts)
+  assert.equal(independent.executionAuthorization, undefined)
+  assert.equal(independent.authorizationHistory.at(-1).revokeReason, 'sync-plan changed global plan decisions')
 })

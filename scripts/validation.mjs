@@ -73,7 +73,8 @@ export function assertDiscovery(context) {
     DISCOVERY_AREAS.every(area => nonempty(context.coverage[area])),
   'discovery coverage needs problem, affected, outcome, currentBehavior, desiredBehavior, rules, exceptions, scope and acceptance')
   insist(Array.isArray(context.decisions) && context.decisions.every(item =>
-    item && nonempty(item.question) && nonempty(item.answer)),
+    item && nonempty(item.question) && nonempty(item.answer) &&
+      (item.resolvesQuestion === undefined || nonempty(item.resolvesQuestion))),
   'discovery decisions must contain resolved question and answer entries')
   insist(Array.isArray(context.deferred) && context.deferred.every(nonempty),
     'discovery deferred must be an array of nonempty strings')
@@ -176,12 +177,18 @@ export function assertTaskPlan(task, plan) {
           `task plan writes path "${write}" is outside task touches; correct the approved task contract, run sync-plan, and replan before execution`)
     }
   }
+  const validQuestionDeadline = value => value === undefined || value === 'executor' || value === 'user-now' ||
+    value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 1 &&
+      ((nonempty(value.beforeTask) && value.beforePhase === undefined) ||
+        (nonempty(value.beforePhase) && value.beforeTask === undefined))
   insist(Array.isArray(plan.openQuestions) && plan.openQuestions.every(item => item &&
     nonempty(item.question) && typeof item.blocking === 'boolean' &&
-    (item.answer === undefined || nonempty(item.answer))),
-  'task plan openQuestions must contain question, blocking boolean and optional nonempty answer')
+    (item.answer === undefined || nonempty(item.answer)) && validQuestionDeadline(item.decideBy)),
+  'task plan openQuestions must contain question, blocking boolean, optional nonempty answer, and a valid optional decideBy')
   insist(plan.openQuestions.every(item => !item.blocking || nonempty(item.answer)),
     'task plan has unanswered blocking questions; resolve them with the user before execution')
+  insist(Array.isArray(plan.decisions) && plan.decisions.every(item => item.resolvesQuestion === undefined || nonempty(item.resolvesQuestion)),
+    'task plan decisions resolvesQuestion must reference a question ID when present')
 }
 
 export function planTaskFromState(t) {

@@ -984,6 +984,10 @@ test('overlay migrates the legacy skill, preserves run data and supports complet
   for (const args of [['init', '--plan', planPath, '--run', 'legacy'], ['begin-discussion', 'T1']]) {
     const result = spawnSync(process.execPath, [join(source, 'scripts', 'engine.mjs'), ...args], { env, encoding: 'utf8' })
     assert.equal(result.status, 0, result.stderr)
+    if (args[0] === 'init') {
+      const authorization = spawnSync(process.execPath, [join(source, 'scripts', 'engine.mjs'), 'authorize', '--scope', 'run', '--confirmed-by-user'], { env, encoding: 'utf8' })
+      assert.equal(authorization.status, 0, authorization.stderr)
+    }
   }
   const round = JSON.parse(read(statePath)).tasks.T1.discussionAttempts.at(-1)
   const context = JSON.parse(read(discovery))
@@ -1427,6 +1431,10 @@ test('an in-flight validation finishes across overlay without a new attempt or s
   for (const args of [['init', '--plan', plan, '--run', 'active'], ['begin-discussion', 'T1']]) {
     const result = cli(args)
     assert.equal(result.status, 0, result.stdout + result.stderr)
+    if (args[0] === 'init') {
+      const authorization = cli(['authorize', '--scope', 'run', '--confirmed-by-user'])
+      assert.equal(authorization.status, 0, authorization.stdout + authorization.stderr)
+    }
   }
   const statePath = join(root, '.specs', 'graph', 'active', 'state.json')
   const round = JSON.parse(read(statePath)).tasks.T1.discussionAttempts.at(-1)

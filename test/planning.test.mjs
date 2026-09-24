@@ -32,7 +32,18 @@ function fixture(t, tasks = [{ id: 'T1', title: 'Delivery estimate' }], options 
     assert.ifError(result.error)
     return { ...result, output: result.stdout + result.stderr }
   }
-  const ok = (...args) => { const result = cli(...args); assert.equal(result.status, 0, result.output); return result }
+  const ok = (...args) => {
+    if (args[0] === 'start' && !state().tasks[args[1]]?.executionAuthorization) {
+      const authorization = cli('authorize', '--scope', `tasks:${args[1]}`, '--confirmed-by-user')
+      assert.equal(authorization.status, 0, authorization.output)
+    }
+    const result = cli(...args); assert.equal(result.status, 0, result.output)
+    if (args[0] === 'init') {
+      const authorization = cli('authorize', '--scope', 'run', '--confirmed-by-user')
+      assert.equal(authorization.status, 0, authorization.output)
+    }
+    return result
+  }
   const rejected = (pattern, ...args) => {
     const result = cli(...args)
     assert.notEqual(result.status, 0, result.output)
@@ -515,6 +526,7 @@ test('task contract changes invalidate completed planning, including a later ret
     f.writePlan()
     f.ok('sync-plan', '--plan', f.planPath)
     assert.equal(f.graph().derived.T1.effective, 'ready_for_discussion')
+    f.ok('authorize', '--scope', 'tasks:T1', '--confirmed-by-user')
     f.rejected(/completed current planning/, 'start', 'T1', '--agent', 'executor', '--force')
   }
   assert.deepEqual(f.state().tasks.T1.taskPlan, before.taskPlan)
@@ -650,6 +662,7 @@ test('active contract refresh preserves execution and review in the same attempt
   f.plan.tasks[0].validation = [{ ...check, timeoutMs: 900000 }]
   f.writePlan()
   f.ok('refresh-contract', 'T1', '--plan', f.planPath)
+  f.ok('authorize', '--scope', 'tasks:T1', '--confirmed-by-user')
   f.ok('block', 'T1', '--reason', 'Pause delivered work')
   f.ok('unblock', 'T1', '--reviewer', 'reviewer')
   assert.equal(f.state().tasks.T1.attempts.length, 1)
@@ -673,6 +686,7 @@ test('paused execution must replan changed scope before resume without replacing
     Object.assign(f.plan.tasks[0], { title: 'Clarified delivery scope', touches: ['delivery.cjs'], deps: ['T0'] })
     f.writePlan()
     f.ok('sync-plan', '--plan', f.planPath)
+    f.ok('authorize', '--scope', 'tasks:T1', '--confirmed-by-user')
     const changed = f.state()
     f.rejected(/scope.*planning/, 'unblock', 'T1', '--force')
     f.rejected(/scope.*planning/, 'unblock', 'T1', '--reviewer', 'new-reviewer', '--force')
@@ -712,6 +726,7 @@ test('changed global scope cannot bypass planning through active review or valid
   f.plan.description = 'Approved clarification: preserve the exported days function.'
   f.writePlan()
   f.ok('sync-plan', '--plan', f.planPath)
+  f.ok('authorize', '--scope', 'tasks:T1', '--confirmed-by-user')
   f.rejected(/scope needs current planning/, 'review', 'T1', '--agent', 'reviewer', '--force')
   f.rejected(/scope needs current planning/, 'validate', 'T1', '--ok', '--evidence', 'Old research', '--cwd', f.project)
   f.rejected(/scope needs current planning/, 'done', 'T1', '--force')

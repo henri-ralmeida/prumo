@@ -33,7 +33,18 @@ function fixture(t, dependent = false, { requireReview = true } = {}) {
     steps: ['Correct the implementation and run its check.'], verification: [{ criterion: 'delivery behavior passes', check: 1 }], openQuestions: [] }))
   const env = { ...process.env, PRUMO_ROOT: root, PRUMO_HOME: home, PRUMO_LANG: 'en' }
   const cli = (...args) => spawnSync(process.execPath, [engine, ...args], { cwd: project, env, encoding: 'utf8', windowsHide: true })
-  const ok = (...args) => { const result = cli(...args); assert.equal(result.status, 0, result.stdout + result.stderr); return result }
+  const ok = (...args) => {
+    if (args[0] === 'start' && !JSON.parse(readFileSync(join(root, '.specs/graph/retry/state.json'), 'utf8')).tasks[args[1]]?.executionAuthorization) {
+      const authorization = cli('authorize', '--scope', `tasks:${args[1]}`, '--confirmed-by-user')
+      assert.equal(authorization.status, 0, authorization.stdout + authorization.stderr)
+    }
+    const result = cli(...args); assert.equal(result.status, 0, result.stdout + result.stderr)
+    if (args[0] === 'init') {
+      const authorization = cli('authorize', '--scope', 'run', '--confirmed-by-user')
+      assert.equal(authorization.status, 0, authorization.stdout + authorization.stderr)
+    }
+    return result
+  }
   const rejects = (pattern, ...args) => { const result = cli(...args); assert.notEqual(result.status, 0); assert.match(result.stdout + result.stderr, pattern) }
   ok('init', '--plan', planPath, '--run', 'retry')
   if (dependent) ok('skip', 'T0', '--reason', 'Dependency explicitly waived')
@@ -126,6 +137,7 @@ test('retry requires new planning when the validation contract changes after fai
   approved.tasks[0].validation[0].expect = 'updated delivery behavior passes'
   writeFileSync(f.planPath, JSON.stringify(approved))
   f.ok('refresh-contract', 'T1', '--plan', f.planPath)
+  f.ok('authorize', '--scope', 'tasks:T1', '--confirmed-by-user')
   f.ok('retry', 'T1')
   assert.equal(JSON.parse(f.ok('graph').stdout).derived.T1.effective, 'ready_for_discussion')
   assert.equal(f.state().tasks.T1.retryPlan, undefined)
@@ -216,7 +228,18 @@ function phaseFixture(t, tasks, { planningMode = 'phase' } = {}) {
   writeFileSync(planPath, JSON.stringify(plan))
   const env = { ...process.env, PRUMO_ROOT: root, PRUMO_HOME: home, PRUMO_LANG: 'en' }
   const cli = (...args) => spawnSync(process.execPath, [engine, ...args], { cwd: project, env, encoding: 'utf8', windowsHide: true })
-  const ok = (...args) => { const result = cli(...args); assert.equal(result.status, 0, result.stdout + result.stderr); return result }
+  const ok = (...args) => {
+    if (args[0] === 'start' && !JSON.parse(readFileSync(join(root, '.specs/graph/phase-negative/state.json'), 'utf8')).tasks[args[1]]?.executionAuthorization) {
+      const authorization = cli('authorize', '--scope', `tasks:${args[1]}`, '--confirmed-by-user')
+      assert.equal(authorization.status, 0, authorization.stdout + authorization.stderr)
+    }
+    const result = cli(...args); assert.equal(result.status, 0, result.stdout + result.stderr)
+    if (args[0] === 'init') {
+      const authorization = cli('authorize', '--scope', 'run', '--confirmed-by-user')
+      assert.equal(authorization.status, 0, authorization.stdout + authorization.stderr)
+    }
+    return result
+  }
   const rejects = (pattern, ...args) => { const result = cli(...args); assert.notEqual(result.status, 0); assert.match(result.stdout + result.stderr, pattern); return result }
   const statePath = join(root, '.specs/graph/phase-negative/state.json')
   const state = () => JSON.parse(readFileSync(statePath, 'utf8'))
@@ -1065,7 +1088,18 @@ test('one phase discussion plans every member atomically while the DAG binds lat
   writeFileSync(planPath, JSON.stringify(phasePlan))
   const env = { ...process.env, PRUMO_ROOT: root, PRUMO_HOME: home, PRUMO_LANG: 'en' }
   const cli = (...args) => spawnSync(process.execPath, [engine, ...args], { cwd: project, env, encoding: 'utf8', windowsHide: true })
-  const ok = (...args) => { const result = cli(...args); assert.equal(result.status, 0, result.stdout + result.stderr); return result }
+  const ok = (...args) => {
+    if (args[0] === 'start' && !JSON.parse(readFileSync(join(root, '.specs/graph/phase/state.json'), 'utf8')).tasks[args[1]]?.executionAuthorization) {
+      const authorization = cli('authorize', '--scope', `tasks:${args[1]}`, '--confirmed-by-user')
+      assert.equal(authorization.status, 0, authorization.stdout + authorization.stderr)
+    }
+    const result = cli(...args); assert.equal(result.status, 0, result.stdout + result.stderr)
+    if (args[0] === 'init') {
+      const authorization = cli('authorize', '--scope', 'run', '--confirmed-by-user')
+      assert.equal(authorization.status, 0, authorization.stdout + authorization.stderr)
+    }
+    return result
+  }
   const rejects = (pattern, ...args) => { const result = cli(...args); assert.notEqual(result.status, 0); assert.match(result.stdout + result.stderr, pattern); return result }
   const statePath = join(root, '.specs/graph/phase/state.json')
   const state = () => JSON.parse(readFileSync(statePath, 'utf8'))

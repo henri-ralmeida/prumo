@@ -271,7 +271,9 @@ For an approved validation change in an existing run, use
 `node $ENGINE refresh-contract <task> --plan <approved-plan.json> --run <run>`.
 Only validation, validationMode and inspectionReason are refreshed. State, agent, reviewer,
 attempts, block reason and historical evidence remain intact. Previous receipts become stale,
-including if a later refresh restores the old text. A fresh validation is required before done.
+including if a later refresh restores the old text. The task's execution authorization is revoked and
+preserved in authorization history whenever this contract changes; accept a fresh authorization before
+starting or resuming execution. A fresh validation is required before done.
 Done/skipped tasks cannot be refreshed. The command neither dispatches work nor unblocks tasks.
 Do not use fail/retry solely for contract migration, redo a delivered fix, or enlarge a data
 window because the skill changed. The reviewer can verify delivered work in the same attempt.
@@ -360,6 +362,11 @@ the original phase. Completed/skipped tasks cannot be paused.
 | --- | --- |
 | `unblock <task>` | Restores pending/planning/running/reviewing/failed without adding an attempt. |
 | `unblock <task> --reviewer <agent>` | Paused running/reviewing work goes directly to independent review in the same open attempt. |
+
+`block --question <text>` stores the decision needed to resume, and repeatable `--option <text>`
+stores its choices. When a question was recorded, `unblock` requires `--answer <text>` and appends
+the reason, question, answer and time to block history. A legacy reason-only block can still use
+`unblock <task>`.
 
 Resume reacquires capacity and checks dependencies and the active agent's availability.
 Direct review needs only a total slot, not an executor slot. For tasks requiring planning,
@@ -525,9 +532,17 @@ Every entry in the task's
 `validation` array must be mapped by its **1-based numeric index**; `verification.check` does not
 index `taskPlan.steps`. Use `"inspection"` only for an approved prose
 inspection contract. `decisions` is an array of resolved `question`/`answer` pairs; it may be
-empty. `openQuestions` is an array of `question`, boolean `blocking` and optional `answer`;
-it may also be empty. An unanswered blocking question prevents completion. Never invent an
-answer or downgrade a consequential uncertainty to pass this check.
+empty. `openQuestions` entries contain `question`, boolean `blocking`, optional `answer`, and
+optional `decideBy`: `"executor"` (the default), `"user-now"`, `{ "beforeTask": "T2" }`, or
+`{ "beforePhase": "F2" }`. A blocking question still requires an answer before planning can
+finish and is treated as due now. An unanswered nonblocking question with a future deadline does
+not hold its source task; it appears when the named task or phase begins and becomes an execution
+gate only at that point. `status` reports scheduled and overdue questions. Use the displayed
+question reference in a later resolved decision, for example
+`{ "question": "Which protocol?", "answer": "Use the existing client.", "resolvesQuestion": "T1:plan:abc123" }`.
+In task-planning mode, a `{ "beforePhase": "F2" }` deadline becomes due when any task in F2 begins
+discussion or planning.
+Never invent an answer or downgrade a consequential uncertainty to pass this check.
 
 The engine stores each `taskPlan`, planner/timing/context metadata and immutable planning history, then
 returns ordinary work to pending with effective `ready`. It verifies structure and recorded
@@ -615,6 +630,40 @@ The fraction indicates position, not approval or completed checks. Legacy events
 total show no fraction. The legend follows the lifecycle: hollow discuss reflects the engine's
 persisted `discussing` state and the orchestrator's visible principal conversation; it is not a separate agent.
 
+Execution needs a saved user authorization after the approved graph is in place. Ask whether the
+scope is the current run, one phase, or selected tasks, and whether dispatch should continue
+automatically within that scope or wait for a user prompt each time. Record only an authorization
+the user accepted:
+
+```bash
+node $ENGINE authorize --scope run --mode auto --confirmed-by-user
+node $ENGINE authorize --scope phase:F2 --mode manual --confirmed-by-user
+node $ENGINE authorize --scope tasks:T4,T5 --confirmed-by-user  # auto is the default
+```
+
+`authorize` stores the accepted scope, mode, time and channel; it neither starts tasks nor creates
+agents. `ready` and `status` show each task's authorization, available execution slots and a
+suggested action. In auto mode, keep filling free slots from authorized ready tasks after review or
+completion; in manual mode, ask before each dispatch. A task whose contract changes in `sync-plan` or
+`refresh-contract` loses its authorization until the user accepts that task again. A changed global plan decision requires
+renewed acceptance for the affected nonterminal tasks; attempts already running continue under their
+recorded state. In manual mode, require `--confirmed-by-user` on each `start`, `review` and `retry`, and when
+`unblock` resumes an active attempt. The engine records the confirmation, authorization ID, time and
+channel in the task event and the ordered `manualConfirmations[]` list on that attempt. The older singular
+confirmation fields continue to show the latest value for compatibility. Auto mode needs no repeated confirmation.
+
+```bash
+node $ENGINE start T4 --agent <executor> --confirmed-by-user  # manual only
+node $ENGINE review T4 --agent <reviewer> --confirmed-by-user # manual only
+node $ENGINE retry T4 --confirmed-by-user                     # manual only
+node $ENGINE unblock T4 --confirmed-by-user                   # resume active work
+```
+
+When `done`, `skip` or `sync-plan` makes a phase newly eligible for discussion, the engine records
+`phase_eligible` with its phase, task IDs and cause and prints a suggestion. Tell the user which
+phase is ready and recommend `begin-phase-discussion <phase>`; wait for the user's choice before
+opening it. Eligibility alone never opens a phase.
+
 ```bash
 PRUMO_HOME="${PRUMO_HOME:-$HOME/.local/share/prumo}"
 PRUMO_ROOT="$PRUMO_HOME/my-workspace"
@@ -638,7 +687,8 @@ node .claude/skills/prumo/scripts/engine.mjs validate T1 --ok --summary "The imp
 node .claude/skills/prumo/scripts/engine.mjs done T1               # refuses without a passing validation
 node .claude/skills/prumo/scripts/engine.mjs fail T2 --reason "typecheck broke"
 node .claude/skills/prumo/scripts/engine.mjs retry T2              # warns after 3 attempts
-node .claude/skills/prumo/scripts/engine.mjs block T9 --reason "needs dev decision" | unblock T9
+node .claude/skills/prumo/scripts/engine.mjs block T9 --reason "needs dev decision" --question "Which policy applies?" --option "Keep current" --option "Adopt proposed"
+node .claude/skills/prumo/scripts/engine.mjs unblock T9 --answer "Keep current"
 node .claude/skills/prumo/scripts/engine.mjs status | graph        # human table | full JSON
 ```
 
