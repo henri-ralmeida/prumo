@@ -1340,6 +1340,22 @@ test('explicit disabled skills and local output styles are not silently overridd
   assert.equal(JSON.parse(read(join(f.cwd, '.claude', 'settings.local.json'))).outputStyle, 'Concise')
 })
 
+test('Codex reports pending activation only for a disabled Prumo skill entry', t => {
+  const c = fixture(t, 'codex')
+  put(join(c.config, 'config.toml'), `[projects.'C:/work/prumo']
+trust_level = "trusted"
+[plugins."some-other-plugin"]
+enabled = false
+[[skills.config]]
+path = "C:/skills/ai-memory/SKILL.md"
+enabled = false
+[plugins."prumo-not-a-skill"]
+enabled = false
+`)
+  c.install()
+  assert.deepEqual(installationStatus(c.plan()).pendingActivation, [])
+})
+
 test('saved language persists during a subsequent install or doctor without --lang', t => {
   const f = fixture(t)
   applyInstall(f.plan({ lang: 'pt-BR' }))

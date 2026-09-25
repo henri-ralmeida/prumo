@@ -19,6 +19,7 @@ Historical tag and commit corrections are documented in [Release history recover
 
 - Require a SemVer bump when distributed package bytes differ from the last-release baseline.
 - Validate local CLI archives in isolation and restore the previous global package if replacement verification fails.
+- Report Codex skill activation as pending only when the Prumo skill entry itself is disabled.
 
 ### Added — Decisions and execution authorization
 
