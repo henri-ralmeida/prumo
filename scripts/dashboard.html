@@ -1990,6 +1990,13 @@ async function loadIdentity() {
   }
 }
 
+/* A run is "in prumo" once every task is done. Older servers omit `complete`; then the counts
+   decide, and a run whose activity is unknown gets no "paused" badge it has not earned. */
+function runComplete(run) {
+  if (typeof run?.complete === 'boolean') return run.complete
+  return Number.isFinite(run?.taskCount) && run.taskCount > 0 && run.doneCount === run.taskCount
+}
+
 function updateRunSelect(catalog) {
   const { currentRoot, current, runs = [] } = catalog
   RUN_CATALOG = catalog
@@ -2001,7 +2008,7 @@ function updateRunSelect(catalog) {
   const selectedRun = SELECTED_RUN ?? current
   const value = selectedRoot && selectedRun ? `${selectedRoot}/${selectedRun}` : ''
   const selected = runs.find(({ root, run }) => `${root}/${run}` === value)
-  const selectedComplete = selected?.complete === true
+  const selectedComplete = runComplete(selected)
   if (select.dataset.selectedValue !== value || select.dataset.selectedComplete !== String(selectedComplete)) {
     // the selected run's group is always visible; the first paint shows only that group
     const group = selectedComplete ? 'complete' : 'progress'
@@ -2014,8 +2021,8 @@ function updateRunSelect(catalog) {
   const signature = `${value}\0${filters.join(',')}\0${runs.map(({ root, run, plan, complete, activity, doneCount, taskCount }) =>
     `${root}\0${run}\0${plan}\0${complete}\0${activity}\0${doneCount}\0${taskCount}`).join('\0')}`
   if (select.dataset.signature !== signature) {
-    const progress = runs.filter(run => run.complete !== true)
-    const complete = runs.filter(run => run.complete === true)
+    const progress = runs.filter(run => !runComplete(run))
+    const complete = runs.filter(run => runComplete(run))
     const visible = [...(RUN_FILTERS.has('progress') ? progress : []), ...(RUN_FILTERS.has('complete') ? complete : [])]
     const tab = (group, label, count) => {
       const on = RUN_FILTERS.has(group)
@@ -2026,14 +2033,16 @@ function updateRunSelect(catalog) {
     const tabs = `<div class="run-tabs" role="group" aria-label="${esc(tr('Filter plans'))}">
       ${tab('progress', 'in progress', progress.length)}
       ${tab('complete', 'in prumo', complete.length)}</div>`
-    const items = visible.map(({ root, run, plan, complete, activity, doneCount, taskCount }) => {
+    const items = visible.map((entry) => {
+      const { root, run, plan, activity, doneCount, taskCount } = entry
+      const complete = runComplete(entry)
       const item = `${root}/${run}`
       const state = complete ? 'complete' : activity === 'working' ? 'working' : 'idle'
-      const label = complete ? 'in prumo' : activity === 'working' ? 'running' : 'paused'
+      const label = complete ? 'in prumo' : activity === 'working' ? 'running' : activity === 'idle' ? 'paused' : ''
       const taskProgress = taskCount > 0 ? tr('{0} of {1} tasks in prumo', doneCount ?? 0, taskCount) : ''
-      const accessible = [run, plan !== run ? plan : '', tr(label), taskProgress].filter(Boolean).join(' · ')
+      const accessible = [run, plan !== run ? plan : '', label ? tr(label) : '', taskProgress].filter(Boolean).join(' · ')
       return `<button type="button" class="run-option" data-run="${esc(item)}" aria-current="${item === value}" aria-label="${esc(accessible)}">
-        <span class="run-option-head"><b>${esc(run)}</b><span class="run-state ${state}"><i aria-hidden="true"></i>${complete ? '✓ ' : ''}${esc(tr(label))}</span></span>
+        <span class="run-option-head"><b>${esc(run)}</b>${label ? `<span class="run-state ${state}"><i aria-hidden="true"></i>${complete ? '✓ ' : ''}${esc(tr(label))}</span>` : ''}</span>
         ${plan && plan !== run ? `<span>${esc(plan)}</span>` : ''}
         ${taskProgress ? `<span>${esc(taskProgress)}</span>` : ''}</button>`
     }).join('')

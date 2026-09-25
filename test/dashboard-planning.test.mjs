@@ -1052,6 +1052,40 @@ test('o seletor separa planos em andamento dos concluidos', () => {
   assert.doesNotMatch(ui.nodes.get('#runOptions').innerHTML, /placeholder-01|data-run-demo/)
 })
 
+test('um plano com todas as tarefas concluidas conta como no prumo mesmo sem os campos complete e activity', () => {
+  // Um servidor mais antigo lista as execuções sem complete/activity; o painel novo não pode chamá-las de "parado".
+  const ui = dashboard('pt-BR')
+  const catalog = { currentRoot: 'root', current: 'finished', runs: [
+    { root: 'root', run: 'finished', plan: 'Plano entregue', taskCount: 6, doneCount: 6 },
+    { root: 'root', run: 'halfway', plan: 'Plano pela metade', taskCount: 4, doneCount: 2 },
+    { root: 'root', run: 'legacy', plan: 'Sem contagens' },
+  ] }
+  ui.run(`updateRunSelect(${JSON.stringify(catalog)})`)
+  let options = ui.nodes.get('#runOptions').innerHTML
+  assert.match(options, /aria-label="no prumo: 1"[^>]*>no prumo<small>1<\/small>/)
+  assert.match(options, /aria-label="em andamento: 2"/)
+  assert.match(options, /data-run="root\/finished" aria-current="true" aria-label="finished · Plano entregue · no prumo · 6 de 6 tarefas no prumo"/)
+  assert.match(options, /<span class="run-state complete"><i aria-hidden="true"><\/i>✓ no prumo<\/span>/)
+  assert.doesNotMatch(options, /parado|data-run="root\/halfway"/, 'the selected completed run opens its own group, without a paused badge')
+
+  ui.run("toggleRunFilter('progress')")
+  options = ui.nodes.get('#runOptions').innerHTML
+  const option = (run) => options.slice(options.indexOf(`data-run="root/${run}"`), options.indexOf('</button>', options.indexOf(`data-run="root/${run}"`)))
+  assert.doesNotMatch(option('halfway'), /run-state|parado/, 'unknown activity earns no paused badge')
+  assert.match(option('halfway'), /2 de 4 tarefas no prumo/)
+  assert.doesNotMatch(option('legacy'), /run-state|parado/)
+
+  // quando o servidor informa, o campo explícito prevalece; parado só com trabalho pendente e sem atividade
+  ui.run(`updateRunSelect(${JSON.stringify({ ...catalog, runs: [
+    { root: 'root', run: 'finished', taskCount: 6, doneCount: 6, complete: true, activity: 'idle' },
+    { root: 'root', run: 'halfway', taskCount: 4, doneCount: 2, complete: false, activity: 'idle' },
+  ] })})`)
+  options = ui.nodes.get('#runOptions').innerHTML
+  assert.match(option('finished'), /✓ no prumo/)
+  assert.doesNotMatch(option('finished'), /parado/)
+  assert.match(option('halfway'), /<span class="run-state idle"><i aria-hidden="true"><\/i>parado<\/span>/)
+})
+
 test('available tasks say who moves each one next and give way to the selected task', () => {
   const tasks = {
     K: task('K', 'blocked', { blockReason: 'pick <the> API version', blockQuestion: 'Which API version should ship?',
