@@ -4,6 +4,23 @@
 planners and executors, refusing to sign off any task a fresh reviewer has not inspected, and
 watching the whole site on a live dashboard.
 
+This file documents the MECHANISM (schemas, commands, states, dashboard). The workflow for each step is
+in [SKILL.md](../SKILL.md) and the step references beside this file. [Português](runtime.pt-BR.md)
+
+## Contents
+
+- [DSH integration](#dsh-integration)
+- [What it does](#what-it-does) · [What you need before running it](#what-you-need-before-running-it) · [What makes a project graph-ready](#what-makes-a-project-graph-ready)
+- [Domain-neutral outcomes](#domain-neutral-outcomes) · [Mechanism vs discipline](#mechanism-vs-discipline) · [Pieces](#pieces)
+- [Plan format](#plan-format)
+  - [Task contract](#task-contract) — fields, structured validation, cache, deadlines, exit codes, `refresh-contract`, `sync-plan`, `show-contract`
+  - [Rejection with an approved contract change](#rejection-with-an-approved-contract-change)
+  - [Pause and resume](#pause-and-resume)
+  - [Task-plan artifact](#task-plan-artifact) — discovery JSON, task-plan JSON, open questions, digests
+  - [Dashboard startup](#dashboard-startup) · [Effective states](#effective-states)
+- [Driving a run](#driving-a-run) — authorization, command walkthrough, [command reference](#command-reference), enforced rules
+- [Watching](#watching) — [layout](#layout), [navigating](#navigating), [results](#results)
+
 Install the global CLI, skill, PO First and per-user dashboard service; see the [installation guide](../README.md).
 
 ```bash
@@ -16,8 +33,15 @@ A local npm install is inert. Use `prumo install --all` after disabled npm scrip
 every registered Claude Code, Kiro, Codex and DSH installation. It compares managed contents, resumes a pending
 activation and never downgrades a global CLI newer than npm `latest`. A damaged marker is recovered only
 for its exact registered harness/path and only from a byte-verified Prumo backup.
+Installation and update restart the dashboard when it is enabled, so it serves the installed version, and
+preserve an explicit disable. They never restart agents. The global dashboard only observes: only an explicit
+orchestrator call to `sync-plan` reconciles an approved plan.
+
+### DSH integration
 
 DSH must already be installed and detected before `prumo install --dsh`; Prumo never installs the external `@deepseek-ai/dsh` package. A nonempty `DSH_HOME` takes precedence, otherwise `~/.dsh` is used. The managed destinations are `<DSH_HOME>/skills/prumo` and the PO First block in the global `<DSH_HOME>/AGENTS.md`. Explicit installation exits nonzero without writes when DSH is absent; `--all` and `postinstall` act only on detected harnesses, while update can repair an exact detected or registered Prumo installation.
+
+`prumo install --dsh` integrates only with an already detected external DSH installation and `prumo doctor --dsh` diagnoses that integration. It never installs `@deepseek-ai/dsh`; explicit installation fails without writes when DSH is absent. The upstream version validated for this adapter was `0.1.6-alpha.2`, still alpha/developer preview. DSH already supplies skills, instructions, subagents and workflows in applicable profiles, so Prumo does not create or edit Cordis configuration, profiles, plugins, subagents, workflows or credentials. Structural install, doctor and `dsh --profile headless --dump-config` checks do not establish a real model conversation.
 
 ## What it does
 
@@ -111,6 +135,10 @@ project-local `.specs/graph` storage remains usable in place; new project-local 
 not created. When cwd is inside an existing workspace, the root may be omitted.
 Each run contains `state.json` (source of truth) and `events.ndjson` (append-only history);
 plans live in the workspace's `.specs/graph/plans/`. Node.js 22+, zero runtime dependencies.
+`CURRENT` selects the default run; pass `--run <name>` on every call when several runs exist. Run names
+accept letters, digits, dot, hyphen and underscore, without a leading dot or path separators. Writes use a
+temporary file, a rename and a per-run lock. Validation releases the lock while its commands run and,
+before recording the result, rechecks the attempt, contract, reviewer and state.
 
 ## Plan format
 
@@ -259,6 +287,8 @@ Example for an existing project-specific verification script:
   "expect": "assertions pass; exit 3 means only the documented data-quality warning" }
 ```
 An execution error, timeout or output above the 4 MiB buffer limit prevents approval.
+The receipt records command, expectation, kind, directory, shell, deadline, expected codes, output, error,
+signal and actual exit code; output and evidence keep their original language.
 On timeout/output overflow, the engine terminates the command tree on Windows or its process
 group on Unix. This does not stop commands launched separately by an executor agent.
 Commands have the caller's permissions: inspect them and execute only approved, safe checks.
@@ -290,7 +320,10 @@ Do not use fail/retry solely for contract migration, redo a delivered fix, or en
 window because the skill changed. The reviewer can verify delivered work in the same attempt.
 `sync-plan` refreshes active contracts while preserving their lifecycle and keeps completed contracts as
 immutable history. It prints bounded per-task field changes, summarizes validation contracts without their
-contents and records dependency/block-reason diagnostics in structured events. Synchronization records the
+contents and records dependency/block-reason diagnostics in structured events. Its final line reads
+`run "<run>" synced: +A, updated U, metadata M, preserved P, total T`: `metadata M` counts tasks whose only
+changes were metadata fields such as `label`, `summary`, `validationSummary` or `manualEstimate`; those are
+applied without invalidating planning or execution authorization. Synchronization records the
 approved definition; it is not proof that active work meets it.
 
 Synchronization also warns when it invalidates an open discussion/planning round or a current skip; it
@@ -301,7 +334,11 @@ contracts and report the task IDs and changed fields, each followed by "run sync
 approved plan is reported as not synchronized; a task missing from it is reported as missing, because
 `sync-plan` refuses task removal. Missing or unreadable sources produce a short warning
 without blocking either command. An open planning round shows its age and accepted artifact count (`0/N`);
-a recorded batch shows `N/N`. When `plan-phase` received `--plan-dir`, the open round counts the
+a recorded batch shows `N/N`. A round that was still open when a later `sync-plan` demanded a contract
+confirmation no longer counts as work in progress: `status` shows it as
+`planning round <id> (<n>) is stale after a contract change; artifacts x/y`. Do not wait for its artifacts,
+because `finish-phase-planning`/`finish-planning` would refuse them; begin a fresh discussion round and
+confirm the changed contract as described below. When `plan-phase` received `--plan-dir`, the open round counts the
 `task-plan-<id>.json` files already present in that directory instead.
 
 Use `show-contract <task> [--diff]` to inspect the complete before/after business contract before accepting a
@@ -515,7 +552,7 @@ open round prints the same fragments without creating a round. `finish-phase-pla
 the complete batch before atomically recording any plan. Every artifact includes `phaseBinding` and lists
 currently incomplete direct dependencies in `unresolvedInputs` with producer task, phase and required evidence.
 New material uncertainty returns to principal discovery and fresh planning.
-Only the orchestrator records engine transitions. See [the workflow](../SKILL.md#two-planning-levels).
+Only the orchestrator records engine transitions. See [the workflow](discussion.md#two-planning-levels).
 
 Example for a task with one executable validation check:
 
@@ -606,6 +643,8 @@ Before a task has a current phase plan, any unfinished external dependency of an
 blocks discussion and planning for the entire phase. Internal dependencies only gate execution.
 After planning, incomplete task inputs produce `waiting`. Blocked phases include
 `planningBlockedBy` with the external dependency phase IDs (or task IDs for unphased/missing dependencies).
+The phase workflow persists `ready_for_discussion`, `discussing`, `ready_to_plan` and `planning`
+independently, so discussion and planning can be active while a card is still `waiting` on its own inputs.
 
 | Effective state | Meaning | Dashboard color |
 | --- | --- | --- |
@@ -647,6 +686,12 @@ restart that index. Validation emits started, passed, failed and reused check ev
 The fraction indicates position, not approval or completed checks. Legacy events without a known
 total show no fraction. The legend follows the lifecycle: hollow discuss reflects the engine's
 persisted `discussing` state and the orchestrator's visible principal conversation; it is not a separate agent.
+
+`start` prints the ready `progress` line in the syntax of the shell that ran `start`: POSIX quoting when
+`MSYSTEM` or `SHELL` is set (Git Bash, MSYS2, any non-Windows shell), otherwise PowerShell syntax with the
+`&` call operator. Paste it into a shell of the same kind. When the executor's shell differs from the one
+that ran `start`, adapt only the quoting and call operator; keep the paths, task, `--step`, `--agent` and
+`--run` values unchanged.
 
 Execution needs a saved user authorization after the approved graph is in place. Ask whether the
 scope is the current run, one phase, or selected tasks, and whether dispatch should continue
@@ -720,11 +765,58 @@ harness. An old marker without `contentId` asks for `prumo update`. When the run
 the marker's `engineHash`, `status` warns without blocking; `status --verify-install` recomputes the content
 ID of the installed files. `prumo status --verify-install` checks every registered installation.
 
+### Command reference
+
+Resolve `scripts/engine.mjs` from the installed skill. Add `--run <name>` to select a run.
+
+| Command after `node <ENGINE>` | Effect |
+|---|---|
+| `init --plan <file> --run <name>` | Initializes a run of the approved plan |
+| `migrate [--check]` | Migrates a safe legacy schema with a backup; `--check` only diagnoses |
+| `status`, `ready`, `graph`, `runs` | State, work ready now, full JSON or the list of runs |
+| `status --verify-install` | Also compares the installed files with the installation marker |
+| `authorize --scope run\|phase:<phase>\|tasks:<T1,T2> [--mode auto\|manual] --confirmed-by-user` | Records the dispatch scope and mode the user accepted; `auto` is the default |
+| `show-contract <task> [--diff]` | Shows the business contract before/after without `validation.run` commands |
+| `show-check <task> --check <N> --attempt <K>` | Shows the stored check's stdout, stderr, directory, exit code and reuse status |
+| `begin-phase-discussion <phase> [--adopt-legacy]` | Persists the chosen phase discussion before the first question; the option adopts a safe legacy phase |
+| `skip-phase-discussion <phase> --reason <text> --confirmed-by-user` | Records the explicit choice to skip the phase discussion |
+| `finish-phase-discussion <phase> --context <discovery.json> [--accept-premature-work]` | Validates the receipt and the current round's answers |
+| `plan-phase <phase> --agent <name> [--plan-dir <directory>]` | Records the phase's single read-only planner; the optional directory lets status count artifacts already written |
+| `skip-phase-planning <phase> --reason <text> --confirmed-by-user` | Records the explicit choice to skip phase planning after the discussion decision |
+| `finish-phase-planning <phase> --plan-dir <directory>` | Validates and atomically records one immutable plan per target task |
+| `begin-discussion <task> [--adopt-legacy]` | Persists an active task discussion; the option adopts only an eligible legacy task |
+| `skip-discussion <task> --reason <text> --confirmed-by-user` | Records the explicit choice to skip the task discussion |
+| `finish-discussion <task> --context <discovery.json>` | Validates the current round's answers and releases planning |
+| `plan-task <task> --agent <name>` | Records the planner after the discussion closed |
+| `skip-planning <task> --reason <text> --confirmed-by-user` | Records the explicit choice to skip task planning |
+| `finish-planning <task> --plan <artifact.json>` | Checks and records the task plan; releases execution unless a preserved pause remains |
+| `start <task> --agent <name>` | Records the executor and opens an attempt (`--executor` is an alias) |
+| `progress <task> --step <index> --agent <executor>` | Records the current plan step during execution, starting at 1 |
+| `review <task> --agent <name>` | Hands the work to review |
+| `review-progress <task> --step <index> --agent <reviewer>` | Records the criteria traversed in review, in order |
+| `validate <task> --ok --summary <sentence> --evidence <text> --cwd <directory> [--tail <lines>]` | Runs the contract, stores the short summary and complete evidence, previews up to 15 lines; a real failure prevents approval |
+| `validate <task> --failed --summary <sentence> --evidence <text>` | Records a rejection with an optional summary and complete evidence |
+| `done <task>` | Completes with valid evidence from the current attempt and reviewer |
+| `fail <task> --reason <text> [--plan-defect]` | Records a real attempt failure; `--plan-defect` marks the plan itself as wrong |
+| `retry <task>` | Returns failed to pending; reuses the current plan only for a bounded correction with unchanged context and a valid review reason |
+| `block <task> --reason <text> [--question <text>] [--option <text>...]` | Pauses, preserving the previous phase and, when given, the decision needed to resume |
+| `unblock <task> [--answer <text>]` | Restores the previous phase; records question and answer in history when there is a decision |
+| `unblock <task> --reviewer <name>` | Takes a paused active attempt directly to review |
+| `skip <task> --reason <text>` | Skips once by a nonempty explicit decision; an active attempt ends as skipped without a fabricated receipt |
+| `note <task> --text <text>` | Appends a note to history |
+| `refresh-contract <task> --plan <approved-file>` | Updates only validation, validationMode and inspectionReason |
+| `sync-plan --plan <approved-file>` | Adds tasks and reconciles the allowed changes |
+
+`--force` never approves lint as functional proof, never completes with an invalid receipt or a
+self-review. Explicit scheduling exceptions (`--allow-overlap`) and overwriting an initial run need the
+relevant authorization.
+
 Rules the engine enforces (everything else is the orchestrator's judgment):
 
 - `init` refuses a plan with a dependency cycle, naming the loop (`T1 → T2 → T1`). Without
   this the run would init fine and deadlock in silence — every task on the cycle waiting for
-  the others forever, and `ready` never listing them.
+  the others forever, and `ready` never listing them. Duplicate IDs and unknown dependencies are
+  refused too.
 
 - Phase discussion and planning do not require completed task dependencies. `start` does: it requires
   a current per-task plan and binds current validated or explicitly waived direct-dependency receipts.
@@ -756,6 +848,13 @@ node .claude/skills/prumo/scripts/serve.mjs      # http://localhost:4949 — pol
 
 The dashboard is observability ONLY. It reads the same `state.json` the engine writes and
 mutates nothing — never a second source of truth, never a second orchestrator.
+
+The managed service is `prumo dashboard enable` (`prumo dashboard status` reports it; plain
+`prumo dashboard` runs it in the foreground). Its default address, `http://localhost:4949`, is restricted
+to the local machine; a taken port never terminates another process. The language follows the
+installation preference or an explicit run choice; there is no browser selector. User text is escaped and
+never translated. The derived numbers do not prove test coverage, defect causes or business rules.
+Stopping the dashboard never cancels work.
 
 ### Layout
 
@@ -830,4 +929,4 @@ from the agent harness.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](../LICENSE)

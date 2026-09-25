@@ -5,10 +5,12 @@ description: Executes an approved global plan as a task GRAPH — optional user-
 
 # /prumo [plan|run]
 
-
 Runs an **already approved** global plan through the graph engine bundled with this skill: a DAG of
 tasks, optional phase discussion and read-only planning chosen explicitly by the user, parallel executors, a validation gate before anything
 is `done`, and a read-only dashboard the dev can watch.
+
+This file is the router: it says what to do in each state and which reference holds the detail. Read a
+reference when the state machine below sends you there, not up front.
 
 ## When to use
 
@@ -46,30 +48,38 @@ is fixed under the central Prumo workspace.
 
 ## Product-first behavior
 
-Apply [PO First](references/po-first.md), also configured globally by the installer, in every role. Respond in the user's language. A functional check means evidence of the requested effect, whether the work concerns data, automation, migration, software, or another domain. Use the host's native subagent tools; if dedicated planning, execution or independent review are unavailable, report that limitation rather than inventing agent dispatch. The engine records transitions; it does not create agents. In Codex invoke this skill as `$prumo`; Claude Code, Kiro and DeepSeek Harness (DSH) use `/prumo`.
+Apply [PO First](references/po-first.md), also configured globally by the installer, in every role. Respond in the user's language. A functional check means evidence of the requested effect, whether the work concerns data, automation, migration, software, or another domain. Use the host's native subagent tools; if dedicated planning, execution or independent review are unavailable, report that limitation rather than inventing agent dispatch. The engine records transitions; it does not create agents. In Codex invoke this skill as `$prumo`; Claude Code, Kiro and DeepSeek Harness (DSH) use `/prumo`. DSH integration (`prumo install --dsh`, `prumo doctor --dsh`, `DSH_HOME`) is described in [runtime.md](references/runtime.md#dsh-integration).
 
-### Role-written summaries
+**Role-written summaries.** The approved task may carry a business `label` (1–3 words, at most 24
+characters), a 1–2 sentence `summary` of the expected result and why it matters, and a one-sentence
+`validationSummary` describing acceptance. Write only text the approved scope supports. They are display
+text: changing them alone changes neither the contract nor planning authorization. Do not invent, generate
+or truncate a label to fill a missing one. The planner writes `taskPlan.summary` (1–2 sentences: chosen
+approach and why it fits); the executor reports a 1–2 sentence outcome and why for `task.summary`, which the
+orchestrator may synchronize without changing the approved contract; the reviewer supplies a one-sentence
+PO First verdict through `validate --summary` and keeps `--evidence` as the complete behavioral
+observations. Summaries are optional in stored state, but when present they must contain nonblank text.
 
-The approved task definition may include a business `label` (1–3 words, at most 24 characters),
-a 1–2 sentence `summary` of the expected result and why it matters, and a one-sentence
-`validationSummary` describing acceptance. Write only text supported by the approved scope.
-These fields are display text; changing them alone does not change the task contract or planning
-authorization. Do not invent, generate or truncate a label to fill a missing one.
+**Traceability stays out of the product.** When the orchestrator writes or synchronizes a task contract,
+it keeps traceability there: task and round ids, process names, who decided and when belong in the
+contract, task notes or the commit, never in the delivered product text. State that explicitly in the contract so the executor and reviewer
+apply it. Record the area that owns a business rule only when approved context confirms it; otherwise ask
+the PO before naming an owner.
 
-The planner writes `taskPlan.summary` as 1–2 sentences explaining the chosen approach and why it
-fits the expected result. The executor reports a 1–2 sentence outcome and why to the orchestrator
-for `task.summary`; the orchestrator may synchronize that text without changing the approved
-contract. The reviewer supplies a one-sentence PO First verdict through `validate --summary` and
-keeps `--evidence` as the complete behavioral observations. Summaries are optional in stored
-state, but when present they must contain nonblank text.
+## References — read when the step needs them
 
-When the orchestrator writes or synchronizes a task contract, it keeps traceability there: task and round
-ids, process names, who decided and when belong in the contract, task notes or the commit, never in the
-delivered product text. State that explicitly in the contract so the executor and reviewer apply it. Record
-the area that owns a business rule only when approved context confirms it; otherwise ask the PO before
-naming an owner.
+| Reference | Read it when |
+| --- | --- |
+| [po-first.md](references/po-first.md) | Always in force for every role (installed globally) |
+| [discussion.md](references/discussion.md) | A phase/task is `ready_for_discussion` or `discussing`; the user must choose discuss/plan or skip; a `phase_eligible` event appears |
+| [planning.md](references/planning.md) | `ready_to_plan` or `planning`: dispatching the planner (prompts in English and Portuguese), recording task plans, open questions, pre-start baseline |
+| [dispatch.md](references/dispatch.md) | Recording the execution authorization; `ready`/`running`: executor prompt, obstacles, progress, capacity, interruptions |
+| [contracts.md](references/contracts.md) | Writing, translating or adapting `validation`; checking the plan's behavioral checks before the first dispatch |
+| [review.md](references/review.md) | `reviewing` or a validation receipt exists; `validate`/`done`; a verdict failed or the task is `failed` |
+| [recovery.md](references/recovery.md) | `blocked`; a user decision is needed; the plan changed after `init`; resuming or migrating an existing/legacy run |
+| [runtime.md](references/runtime.md) | Exact plan/task-plan/discovery schemas, CLI flags, effective states, dashboard |
 
-For DSH, `prumo install --dsh` integrates only with an already detected external DSH installation and `prumo doctor --dsh` diagnoses that integration. A nonempty `DSH_HOME` takes precedence, otherwise the root is `~/.dsh`; Prumo manages `<DSH_HOME>/skills/prumo` and its PO First block in the global `<DSH_HOME>/AGENTS.md`. It never installs `@deepseek-ai/dsh`; explicit installation fails without writes when DSH is absent. The upstream version validated for this adapter was `0.1.6-alpha.2`, still alpha/developer preview. DSH already supplies skills, instructions, subagents and workflows in applicable profiles, so Prumo does not create or edit Cordis configuration, profiles, plugins, subagents, workflows or credentials. Structural install, doctor and `dsh --profile headless --dump-config` checks do not establish a real model conversation.
+Each reference has a Portuguese counterpart beside it (`*.pt-BR.md`) with the same content.
 
 ## Invocation router
 
@@ -77,16 +87,17 @@ The top-level Prumo skill is the orchestrator. On every invocation, inspect the 
 scope, the approved source plan, persisted `status`/`ready`, dashboard `/api/runs`, and actual native
 agent state before selecting exactly one current flow:
 
-| Observed context | Route |
-| --- | --- |
-| No approved global plan | Global planning and user approval; do not initialize or dispatch |
-| Approved plan, but no persisted run | Storage/dashboard bootstrap, then `init` and visibility verification |
-| `ready_for_discussion`, `discussing`, `discussed`, `ready_to_plan` or `planning` | Ask for the independent discussion/planning decisions, then follow or explicitly skip each gate |
-| `ready` or `running` with a current task plan or planning-skip receipt | Executor flow |
-| `reviewing` or a current validation receipt | Independent reviewer flow |
-| `failed` | Classify unchanged-contract correction versus an explicit contract change before retrying |
-| `blocked` | Resolve or wait for the recorded blocker; never route around it |
-| Every task terminal | Close-out and results flow |
+| Observed context | Route | Read |
+| --- | --- | --- |
+| No approved global plan | Global planning and user approval; do not initialize or dispatch | — |
+| Approved plan, but no persisted run | Storage/dashboard bootstrap, then `init` and visibility verification (§0–§2) | contracts.md |
+| Existing run, first command this session | Compare the `status` version line; check legacy contracts and plan drift | recovery.md |
+| `ready_for_discussion`, `discussing`, `discussed`, `ready_to_plan` or `planning` | Ask for the independent discussion/planning decisions, then follow or explicitly skip each gate | discussion.md, planning.md |
+| `ready` or `running` with a current task plan or planning-skip receipt | Executor flow | dispatch.md |
+| `reviewing` or a current validation receipt | Independent reviewer flow | review.md |
+| `failed` | Classify unchanged-contract correction versus an explicit contract change before retrying | review.md |
+| `blocked` | Resolve or wait for the recorded blocker; never route around it | recovery.md |
+| Every task terminal | Close-out and results flow (§6) | — |
 
 Persisted state wins over conversational recollection. Never route a task to an executor merely because
 the user requested implementation or because a plan file exists: its current discussion, planning,
@@ -123,6 +134,12 @@ mkdir -p "$PRUMO_ROOT/.specs/graph/plans"
 export PRUMO_HOME PRUMO_ROOT
 ```
 
+On Windows, match the syntax to the shell you are actually in: in PowerShell use environment assignment
+(`$env:PRUMO_ROOT`) and quoted paths; in Git Bash/MSYS2 the POSIX lines above work. Start background helpers
+hidden. The `progress` line that `start` prints already follows the shell that ran `start` (POSIX when
+`MSYSTEM`/`SHELL` is set, PowerShell otherwise): paste it into a shell of the same kind, and if yours differs,
+adapt only the quoting.
+
 The first line of `node $ENGINE status` identifies the code actually running: version, content ID and the
 harness recorded in its installation marker (a source checkout says so and reports no harness). When it says
 the content ID is missing, or warns that the running `engine.mjs` differs from the marker, run
@@ -155,7 +172,8 @@ three fields carry judgment:
   it. "tests pass" is not that; "suite green + the 3 new cases named in the task" is. When the
   contract is executable, prefer `[{ "run": "<command>", "expect": "<what green means>" }]` so
   the engine executes the approved commands and records their results. Include `kind: "functional"`
-  for behavioral tests and `kind: "static"` for lint/build/typecheck. See the gate rules below.
+  for behavioral tests and `kind: "static"` for lint/build/typecheck. The rules are in
+  [contracts.md](references/contracts.md).
 - **`touches` lists the path prefixes the task writes.** `init` refuses two parallel tasks with
   overlapping paths, catching the collision while it is still a planning mistake. Optional;
   omitting it leaves the dep chain as the only guard.
@@ -180,88 +198,8 @@ prumo dashboard enable  # http://localhost:4949 — per-user background service
 prumo dashboard logs    # recent bounded lifecycle and crash diagnostics
 ```
 
-The global dashboard only observes; it never synchronizes a plan. Before resuming an existing run, use
-`node $ENGINE migrate --check --run <name>` when you need a read-only compatibility report. Every
-single-run engine command automatically applies a safe, versioned structural migration first, creates
-`state.pre-migrate-v<schema>.json`, enables missing discussion and planning gates, and opens no rounds.
-It preserves terminal tasks. A safe partial migration creates the current run structure while marking each
-already-started legacy task to keep its previous lifecycle; those attempts can resume, retry and finish through
-independent review without retroactive planning. New or never-started tasks receive the current discussion and
-planning gates and can proceed when their own dependencies are ready. Explicit `migrate` still names unsafe
-in-flight planning blockers; do not clear attempts, skip real work or rewrite history to bypass them. Synchronize
-corrected contracts with `sync-plan` while finishing existing work. Before `init`, `sync-plan` or resuming
-an existing run, inspect the approved source and persisted graph for legacy contracts. Normalize every
-nonterminal prose or obsolete validation into the current executable validation schema using repository
-evidence, restore declared phase order and membership from the approved plan structure, preserve task IDs,
-dependencies, scope and history, then run `sync-plan` on the same run
-and inspect the persisted result. Do not create an auxiliary run to avoid adapting old tasks. Ask in the
-principal discussion only when a consequential contract meaning cannot be established from the repository.
-
-After the user approves the graph and `init` or `sync-plan` has persisted it, ask what execution scope
-they authorize: the current run, one phase, or selected tasks. Ask whether dispatch should continue
-automatically within that scope (`auto`, the default) or pause for a user prompt before each dispatch
-(`manual`). Record the accepted scope only after the user agrees:
-
-```bash
-node $ENGINE authorize --scope run --mode auto --confirmed-by-user
-node $ENGINE authorize --scope phase:F2 --mode manual --confirmed-by-user
-node $ENGINE authorize --scope tasks:T4,T5 --confirmed-by-user  # auto is the default
-```
-
-Authorization records the user's scope, mode, time and channel. It does not dispatch an agent or open a
-phase. Use `ready` or `status` for per-task authorization, available slots and the next suggested action.
-A run with no recorded scope keeps the earlier behavior: `start` still works and says that no scope is
-recorded. Once any scope is recorded, `start` refuses tasks outside it and tasks whose authorization was
-revoked by a contract change. In auto mode, keep filling free slots from authorized ready tasks after a review
-or completion: when `review` or `done` opens a slot for authorized ready work, the engine prints
-`execution slot freed by ...; authorized next: start <task> ...` and records a `slot_freed` event. Dispatch
-those tasks without asking again; stop only at user gates. In manual
-mode, ask before every dispatch. If `sync-plan` or `refresh-contract` changes a task contract, show the changed contract and get
-fresh acceptance for that task before execution. A changed global plan decision renews acceptance for the
-affected nonterminal tasks; work already running continues under its recorded attempt.
-For manual authorization, pass `--confirmed-by-user` on each `start`, `review` and `retry`. Resuming an
-active attempt through `unblock` also needs that flag. The engine records each confirmation with its
-authorization ID, time and channel in the task event and an ordered `manualConfirmations[]` list on the
-attempt. The older singular confirmation fields keep the latest value for compatibility. Auto mode needs
-no repeated confirmation.
-
-```bash
-node $ENGINE start T4 --agent <executor> --confirmed-by-user  # manual only
-node $ENGINE review T4 --agent <reviewer> --confirmed-by-user # manual only
-node $ENGINE retry T4 --confirmed-by-user                     # manual only
-node $ENGINE unblock T4 --confirmed-by-user                   # resuming active execution
-```
-
-`sync-plan` adds approved tasks and refreshes contracts in every nonterminal state while preserving the
-current lifecycle, agents, attempts, notes and evidence. Active work whose scope changed cannot advance
-through review or completion until current planning is restored; block and replan it without inventing a
-failure. Done/skipped contracts remain immutable history and need an explicit follow-up task. Task removal
-is refused. If a migrated run still names a missing graph-foreman source, `sync-plan` recovers the matching
-plan from the central Prumo workspace. Its output lists bounded per-task field changes, summarizes validation
-contracts without printing their contents and warns when a waiting `blockReason` contradicts dependency
-direction; the event log keeps the same structured audit. A named task in the user's request is a hard scope boundary: its
-dependencies, prerequisites or internal deliverables are context, not permission to add tasks, plan
-siblings or dispatch more planners. Keep one discussion and one planner for that task unless the user
-explicitly approves a broader graph change. Otherwise, adopt a migrated task-scoped run one eligible phase
-at a time with `begin-phase-discussion <phase> --adopt-legacy`. An approved validation change for active
-work needs `refresh-contract`, not fail/retry. Always check the persisted task before review.
-
-`sync-plan` warns without refusing synchronization when it invalidates an open discussion/planning round or
-a current skip. `status` and `ready` also warn when the approved plan source differs from persisted task
-contracts, naming changed fields, new tasks not yet synchronized and tasks missing from the approved plan;
-this warning does not block readiness. Treat it as "run `sync-plan`" after the user approved the edit. Use `show-contract <task> [--diff]` to present complete
-business text before and after a change; it omits executable `validation.run` commands. When a changed
-contract reopens a phase or task that already had a discussion, planning round or current skip, the next
-discussion records the old open round as superseded with its cause and prints the current task digests. Run
-`show-contract <task> --diff` for every affected contract, present the complete business text and ask the user
-to accept the changed behavior. For phase planning, put the exact `{ "task": "...", "digest": "..." }` entries
-for all current targets in `questions[].confirmsContract` on one freshly answered question. For task planning,
-use the single entry printed by `begin-discussion` in one freshly answered question. In both modes, the
-confirmation must be on the same question bound to the current `roundId`; an old-round answer, stale digest,
-discussion skip or planning skip cannot replace it. After the confirmation is recorded, the ordinary explicit
-planning skip remains available.
-
-On Windows, use PowerShell environment assignment ($env:PRUMO_ROOT) and quoted paths instead of POSIX shell syntax. Start background helpers hidden. Keep the actual working directory in the approved validation step; do not translate or rewrite its commands.
+Resuming an existing run instead? Read [recovery.md](references/recovery.md#resuming-or-migrating-an-existing-run)
+first: `migrate --check`, automatic safe migration and the mandatory normalization of legacy contracts.
 
 Ensure the server is available and give the dev the URL before dispatching a single agent. It discovers
 known central workspaces and registered projects and follows their current runs. A taken port may be a
@@ -275,6 +213,13 @@ dispatch. Compare the engine's effective `PRUMO_HOME` with the managed dashboard
 correct the storage mismatch while preserving the existing workspace and history; do not recreate the
 run or claim that the dashboard is ready. Recheck `/api/runs`, then open the URL pinned with
 `?root=<workspace>&run=<run>` so the dev lands on the intended execution.
+
+Then ask the user which execution scope they authorize (run, one phase, or selected tasks) and whether
+dispatch is `auto` (default) or `manual`, and record only what they accepted with
+`node $ENGINE authorize --scope run|phase:<id>|tasks:<ids> [--mode auto|manual] --confirmed-by-user`.
+Manual mode needs `--confirmed-by-user` on every `start`, `review`, `retry` and on an `unblock` that
+resumes an active attempt. Details, auto-mode slot refilling and revocation by contract changes:
+[dispatch.md](references/dispatch.md#authorization-scope-and-mode).
 
 **Two runs at once** work only when neither leans on the defaults: pass `--run <name>` to every
 command for the non-current run, and give the second dashboard its own port AND pin —
@@ -303,639 +248,57 @@ node $ENGINE validate T4 --ok --evidence "..." --cwd <absolute-project>  # the R
 node $ENGINE done T4
 ```
 
-### Two planning levels
-
-Global Plan/Spec mode defines and approves the graph and remains mandatory. Discussion and planning are
-two independent optional gates for every eligible phase; execution and independent review remain mandatory.
-Before each gate, inspect observable signals such as scope size and complexity, ambiguity, impact,
-dependencies, novelty, risk and
-whether the approved contract/context is already sufficient. Give a reasoned recommendation to perform or
-skip that gate, state clearly that it is optional, offer both choices and wait for the user's explicit choice.
-Never use token economy as the reason to skip and never impose the recommendation. Record a skip with a
-nonempty reason and `--confirmed-by-user`. Supported combinations are discuss+plan, skip discussion+plan,
-discuss+skip planning and skip both. A phase can begin discussion
-or planning only when every external dependency of every unfinished member is `done` or `skipped`.
-One blocked member blocks the whole phase, including members without dependencies. Internal dependencies
-within the same phase gate execution, not phase planning. Phase numbering alone never blocks independent
-phases. The user chooses which eligible phases to plan, including multiple phases in parallel; eligibility
-does not authorize opening all phases automatically. Keep the approved phase assignments and dependency
-chains. Overlapping `touches` must be resolved through the approved dependency graph, not by moving tasks.
-
-After `done`, `skip` or `sync-plan`, inspect any `phase_eligible` event and the engine's suggestion. Tell the
-user which phase and tasks are ready for discussion, then recommend `begin-phase-discussion <phase>`. Wait
-for the user's choice before beginning it; eligibility alone never opens a phase.
-
-When the user chooses discussion, the orchestrator runs an agnostic discovery protocol in the principal
-Codex, Claude Code, Kiro or DSH conversation. Load the global plan, settled decisions and dependency outputs;
-scout the phase's current code and artifacts; identify specific PO First gray areas; then ask at
-least one contextual question. Select the question channel from tools actually exposed and allowed in
-the principal session, respecting their current schema and mode restrictions:
-
-Discussion resolves meaning and decisions; it does not deliver a task. Local source inspection is allowed.
-Do not run builds, tests, acceptance commands, database or cluster queries, external API probes, migrations,
-or writes when their output is itself a target task's result or acceptance evidence. The planner may perform
-read-only research needed to determine **how** the executor should work, but it must not produce the requested
-result. The executor performs every task deliverable, including a read-only measurement when that measurement
-is the task. Classify an ambiguous command by its purpose: if a successful result could satisfy a task or one
-of its acceptance criteria, defer it to that task's executor.
-
-- **Codex:** before falling back to chat, inspect the actually exposed tool names. Call
-  `request_user_input_async` first when it is present; it is the preferred nonblocking wrapper and may be
-  available in Default mode. Otherwise call `request_user_input` only when its current mode rules permit.
-  The app-server protocol name `tool/requestUserInput` describes the host/client request beneath these
-  wrappers; it is not itself a model-callable tool name. A Plan-only `request_user_input` being unavailable
-  does not prove that `request_user_input_async` is absent, and remembering a tool from another session does
-  not prove that the current host exposed it.
-- **Claude Code:** use `AskUserQuestion` when exposed. Keep discovery in the principal conversation;
-  do not assume the tool is available to a subagent or a restricted SDK integration.
-- **Kiro, DSH or another harness:** use an exposed native clarification tool if available. Do not invent
-  a tool name or infer support from the product name or Plan mode alone.
-- **Fallback:** only after the current tool inventory has no permitted native wrapper, or the exposed wrapper
-  explicitly reports unsupported operation,
-  ask in the same conversation using **What I understood**, **Gray areas**, **Suggestions** and focused
-  numbered **Questions**, translated to the user's language. In Kiro CLI, the user may optionally use
-  `/reply` to answer point by point; it is a user command, not an agent question tool.
-
-Preserve pending questions when changing channels; do not repeat an unsupported call or change host
-permissions to force it. Wait for actual answers before closing discovery or dispatching its planner.
-An asynchronous call returning, a timeout, an empty result or a preselected suggestion is not an answer.
-Continue independent research while waiting. Record only the channel that actually received each answer.
-Reuse current answers, ask adaptive follow-ups, and stop only when no uncertainty capable of
-changing behavior, scope, acceptance or execution remains. Put out-of-scope ideas in `deferred`.
-
-Edit the approved plan and run `sync-plan` BEFORE `begin-phase-discussion` or `begin-discussion`. Changing a
-task contract while its round is open invalidates that round: `sync-plan` warns, and the next `begin-*`
-prints the superseded round with its cause, including the contract fields `sync-plan` changed. If the
-user's answers change the contract mid-round, record the decision, edit the plan, run `sync-plan`, and then
-begin a fresh round instead of closing the stale one.
-
-Run `begin-phase-discussion` before presenting the first question. It persists the phase as `discussing` and issues the
-current `roundId` and `nonce`. Write the resulting discovery JSON with those values and bind at least
-one freshly answered question to that `roundId`; include light research, the real `native` or
-`chat-fallback` channel, PO First coverage, decisions, deferred ideas, `executionBoundary` and closure.
-`executionBoundary.deferredToExecutor` must name every targeted task and `prematureTaskWork` is normally
-empty. If task work occurred during discussion, record its task and action, stop, tell the user, and do not
-reuse its result. Only after explicit user approval may `finish-*-discussion --accept-premature-work` close
-the round; the executor still repeats the work. Then run:
-
-A phase reopened after a synchronized contract change also needs an explicit acceptance. Run `show-contract
-<task> --diff` for each current target, present its full business text to the user and ask whether to accept
-the changed contract. Add the exact task/digest list printed by `begin-phase-discussion` to
-`questions[].confirmsContract` on one freshly answered question. `finish-phase-discussion` checks that every
-current task and digest is present. A stale digest or a discussion/planning skip cannot satisfy this gate.
-
-```bash
-node $ENGINE finish-phase-discussion F2 --context <discovery.json>
-node $ENGINE plan-phase F2 --agent <planner> --plan-dir <artifact-directory>
-node $ENGINE finish-phase-planning F2 --plan-dir <artifact-directory>
-```
-
-Passing the artifact directory to `plan-phase` is optional; with it, `status` and `ready` count the
-`task-plan-<id>.json` files already written there while the round is open.
-
-When planning is chosen, the planner writes `task-plan-<id>.json` for every targeted member. Never turn steps, evidence gaps,
-prerequisites or dependency outputs inside an explicitly selected task into separate graph tasks or
-planner assignments without explicit user approval. The engine validates the whole batch
-before recording any artifact. Each artifact is immutable and lists incomplete direct dependencies as
-unresolved inputs. A later producer's independently reviewed validation receipt, or an explicit skip waiver,
-satisfies that input at execution time without rewriting the plan. Contract changes stale only the affected
-plan and true downstream scopes; shared phase discovery stales nonterminal plans in that phase; a marked
-plan defect stales only that task.
-
-Every task plan may add `verification[].requires` using the documented resource vocabulary and a `writes`
-list of anticipated project paths. `writes` must fit the task's approved `touches`; no or empty `writes`
-is a warning that the reviewer must resolve from the real diff. A required and unavailable resource is a
-nonblocking planning warning. Keep `manual-inspection` visible as pending for the reviewer and user until
-the inspection has current evidence; never infer it from a harness name.
-
-Existing task-scoped runs use `begin-discussion`, `finish-discussion`, `plan-task` and
-`finish-planning` when the user explicitly selected one existing task or when legacy phase boundaries
-cannot be mapped without broadening scope. That path still receives current discovery and exactly one
-read-only planner. Otherwise adopt one whole safe phase explicitly with
-`begin-phase-discussion <phase> --adopt-legacy`; terminal history is preserved and every adopted
-nonterminal member must still be pre-execution with no open round.
-
-The engine hashes the validated discovery and issued receipt with canonical JSON and binds that digest to
-the planning round and final task plans. Repeating `plan-phase` while that round is active is a no-op.
-`finish-phase-planning` refuses a round whose discovery no longer matches the persisted context.
-
-### Phase research and per-task plans
-
-Every phase gets one planner after its discovery closes. First inspect the actual tools and permissions
-in this session to determine whether a dedicated planner can be dispatched and whether it can write to
-the indicated artifact directory. Never infer either capability from the harness name. The planner
-remains read-only for project work: it researches the phase and may write only the designated plan
-artifact for each targeted task.
-Research the current code, artifacts, dependency outputs, project rules and relevant source
-documentation first; reuse useful prior research, but verify that it still applies. Read-only
-inspection and safe research checks are allowed. The planner writes only its designated task-plan
-artifact; it does not implement the task or edit graph state. If no dedicated planner subagent is
-available, the orchestrator reports that limitation and performs the same planning locally, with
-read-only research and only the designated artifact write. This fallback does not authorize product
-implementation.
-
-Consume the persisted discovery and do not repeat its questions. Apply PO First to research the selected
-implementation approach, impacts and verification in depth. If research reveals a new consequential
-decision, return it to the orchestrator: update discovery through the principal conversation and dispatch
-fresh planning. Never invent an answer or label a material gap nonblocking to pass the gate.
-Ordinary refinement within approved scope needs no new task approval. Material changes to
-scope, behavior, acceptance or shared decisions return to the user and global plan workflow.
-Stop research once every material criterion and dependency is mapped to current evidence and no
-concrete unresolved risk remains. Do not reread equivalent sources or expand the investigation merely
-to accumulate confidence; record a real gap instead of searching indefinitely for certainty.
-
-```text
-You are the read-only PLANNER for the approved phase. Inspect the actual tools and write permissions available
-to you; do not infer capabilities from the harness name. Research every targeted task; do not implement them.
-Read project rules, approved objective/constraints, member contracts and known dependency outputs: <references>.
-Read the persisted phase discovery and its locked decisions: <phaseWorkflows.F2.discovery from state.json>.
-Use the available tools to inspect the current implementation/artifacts, real project rules, dependency outputs
-and relevant sources; identify existing solutions and impacts.
-Apply PO First. Do not repeat discovery questions; return newly found consequential gaps to the orchestrator.
-For product text you recommend, state the observable business rule and why; name its owner only when approved
-context establishes it, otherwise surface the ownership question to the PO. Keep workflow identifiers and
-internal process details out of comments, tests, messages and README drafts; required planning identifiers
-belong only in the designated task-plan contract fields.
-Preserve known decisions; propose any material contract change for the authorized global-plan workflow.
-Include `summary` in each artifact: 1–2 sentences describing the chosen approach and why it meets the expected result.
-Write ONLY task-plan-<id>.json in <absolute artifact directory> for each target: research, decisions,
-steps, verification, open questions, writes, phaseBinding and unresolvedInputs. For every open question,
-state who decides and by when with `decideBy`: `executor` (with the proposed `answer` the executor applies),
-`user-now`, `{ "beforeTask": "<id>" }` or `{ "beforePhase": "<id>" }`. Each verification item may
-declare required resources with `requires`; use only the documented vocabulary. Record anticipated project
-paths in `writes`, all contained by that task's `touches`. Copy the exact phaseBinding and
-that task's unresolvedInputs from the `plan-phase` output; do not recalculate them or renumber plannerRound.
-When discussion was skipped, discussionRoundId is the confirmed skip decisionId printed by the engine.
-Schema: references/runtime.md#task-plan-artifact.
-Inspect the real `git status --short` and relevant staged/unstaged diff while planning. Identify changes
-already present before execution so the reviewer can distinguish them from this task's delivery.
-If you can write to the indicated directory, write only the exact task-plan-<id>.json file there for each
-target. If you cannot write it, return one complete artifact per task: put its exact filename on the line
-immediately before a block opened with ```json containing the entire valid JSON object. Do not abbreviate, omit
-fields, use ellipses or return a partial object. The orchestrator decodes &gt;, &lt;, &amp; and &quot; in JSON
-string values, validates each complete object, writes each artifact to the indicated directory and then
-finishes planning. If validation reports a correction, send it back to the planner to fix; the orchestrator
-must not invent missing plan content.
-Inspect the actual available tools and permissions; never infer file-write or subagent capability from the
-harness name. If no planner subagent is available, report that limitation and do this planning locally with
-read-only research, writing only the designated task-plan artifact. Do not implement product work.
-Do not edit .specs/graph/ state. Report the artifact path, findings and any decision that blocks execution.
-```
-
-The same artifact, capability, complete-JSON fallback and correction rules apply to task-scoped planning.
-Use the artifact directory and task schema given for that task, without adding phase-only binding fields.
-
-When the planning conversation is in Portuguese, use this equivalent planner prompt:
-
-```text
-Você é o PLANEJADOR somente leitura da fase aprovada. Confira as ferramentas e permissões de gravação realmente
-disponíveis; não deduza capacidades pelo nome do harness. Pesquise todas as tarefas alvo sem implementá-las.
-Leia as regras do projeto, o objetivo e as restrições aprovados, os contratos das tarefas e as saídas de
-dependências conhecidas: <referências>.
-Leia a descoberta persistida da fase e suas decisões travadas: <phaseWorkflows.F2.discovery do state.json>.
-Use as ferramentas disponíveis para inspecionar a implementação e os artefatos atuais, as regras reais do
-projeto, as saídas de dependências e as fontes relevantes; identifique soluções existentes e impactos.
-Aplique PO First. Não repita perguntas da descoberta; devolva ao orquestrador novas lacunas consequenciais.
-Se recomendar texto de produto, descreva a regra observável e o motivo; nomeie a área responsável apenas
-quando o contexto aprovado confirmar essa informação; caso contrário, leve a dúvida de responsabilidade ao PO.
-Mantenha identificadores e detalhes internos do fluxo fora de comentários, testes, mensagens e rascunhos de
-README; identificadores exigidos pelo planejamento pertencem somente aos campos do contrato do task-plan.
-Preserve as decisões conhecidas; proponha qualquer mudança material de contrato para o fluxo autorizado do plano global.
-Inclua `summary` em cada artefato: 1–2 frases descrevendo a abordagem escolhida e por que ela atende ao resultado esperado.
-Grave SOMENTE task-plan-<id>.json em <diretório absoluto do artefato> para cada tarefa: research, decisions,
-steps, verification, openQuestions, writes, phaseBinding e unresolvedInputs. Para cada pergunta em aberto,
-diga quem decide e até quando com `decideBy`: `executor` (com a resposta proposta em `answer`, que o executor
-aplica), `user-now`, `{ "beforeTask": "<id>" }` ou `{ "beforePhase": "<id>" }`. Cada item de verificação pode
-declarar recursos exigidos com `requires`; use somente o vocabulário documentado. Registre em `writes` os
-caminhos de projeto previstos, todos contidos nos `touches` da tarefa. Copie exatamente phaseBinding e os
-unresolvedInputs da tarefa do resultado de `plan-phase`; não os recalcule nem renumere plannerRound.
-Quando a discussão foi pulada, discussionRoundId é o decisionId da confirmação do pulo impresso pelo motor.
-Schema: references/runtime.md#task-plan-artifact.
-Inspecione o `git status --short` real e o diff relevante, staged e unstaged, durante o planejamento.
-Identifique mudanças já presentes antes da execução para que o revisor as distinga da entrega desta tarefa.
-Se puder gravar no diretório indicado, grave somente o arquivo exato task-plan-<id>.json para cada tarefa.
-Se não puder gravar, devolva um artefato completo por tarefa: escreva o nome exato do arquivo na linha
-imediatamente antes de um bloco aberto com ```json que contenha o objeto JSON inteiro e válido. Não abrevie,
-omita campos, use reticências nem devolva objeto parcial. O orquestrador decodifica &gt;, &lt;, &amp; e &quot;
-nos valores de texto do JSON, valida cada objeto completo, grava cada artefato no diretório indicado e então
-conclui o planejamento. Se a validação apontar uma correção, ela volta ao planejador; o orquestrador não
-inventa conteúdo de plano ausente.
-Se não houver subagente planejador disponível, informe essa limitação e faça o planejamento localmente, com
-pesquisa somente leitura, gravando apenas o artefato task-plan indicado. Não implemente o trabalho de produto.
-Não edite o estado em .specs/graph/. Reporte o caminho do artefato, as descobertas e qualquer decisão que
-bloqueie a execução.
-```
-The orchestrator parses each returned block as JSON, decodes the listed HTML entities only within its string
-values, validates the complete artifact, writes it under the indicated filename and then records
-finish-phase-planning or finish-planning. If parsing or validation fails, send the concrete correction back to
-the planner. The engine requires research, steps, a mapping to every validation check and no unanswered blocking question;
-it checks structure and freshness, not the truth of research or real agent identity. `init` still
-requires a valid behavioral contract: planning never permits fake `echo` checks or inspection
-exceptions for functional work. The executor reads and rechecks the plan; the independent reviewer
-can challenge an incomplete or incorrect plan against the approved objective and current criteria.
-These roles reduce opportunities for error; none guarantees that models cannot make mistakes.
-Before the executor starts, record the real `git status --short`, staged and unstaged diff for the
-task's declared `writes` (or approved `touches` when `writes` is absent), and relevant pre-existing
-untracked paths in a durable task note or review handoff. The planner identifies those existing
-changes; the reviewer compares against this baseline and excludes them from the delivery judgment.
-
-After `finish-phase-planning` or `finish-planning`, the engine lists open questions for the user now and
-those with a later deadline, and warns when an `executor` question has no proposed answer. Before execution,
-take to the user only the `user-now` questions. A nonblocking question whose proposed answer the executor
-applies is not a user question. A question due before a later task or phase is not asked now and is not
-bundled with the execution authorization; it reappears in that target's discussion or planning.
-
-`openQuestions[].decideBy` may be `executor`, `user-now`, `{ "beforeTask": "T2" }` or
-`{ "beforePhase": "F2" }`; blocking questions still need answers before planning closes and mean
-`user-now`. A future deadline does not hold its source task. At the named task or phase, the reference
-appears in discussion/planning and `status` reports it when overdue. Resolve it in a later `decisions`
-entry with `resolvesQuestion` set to the displayed reference; start remains gated only after that
-deadline has arrived. In task-planning mode, a `{ "beforePhase": "F2" }` deadline becomes due when any
-task in F2 begins discussion or planning.
-
-### Dispatch — recording a role does not create an agent
-
-**Use a native subagent for plan-phase when one is actually available; otherwise report the limitation and follow the local, read-only planner fallback above. Every start still requires an actual native executor dispatch in the SAME message.**
-Dispatch ready planner agents within total capacity and ready execution agents within both caps — parallelism is
-the point of the graph, and tasks that share no dep share no file. The engine only ever sees
-the `--agent` string, so an orchestrator that runs `start` and then writes the code itself
-passes every check and leaves a state file that lies: `--agent` must name an agent that
-EXISTS. That is the one rule here the engine cannot enforce for you.
-Local planning writes only the designated artifact and does not invent a dispatched agent or consume an agent slot.
-
-`review` is a subagent call too — a `review` with no reviewer behind it is the same self-report
-wearing a different label. It is not capacity-capped, so it goes out the moment work finishes.
-
-After an interruption, inspect persisted state and the actual agent status before repeating commands.
-If planning intended a native planner, or start/review was recorded without dispatch, complete that dispatch
-in the same attempt when authorized; do not repeat fail/retry/start. For the documented local-planning
-fallback, resume read-only research and artifact work instead of inventing a dispatch. Record the
-actual agent handle in a note if it differs from the engine label. If dispatch is unavailable
-or the user paused work, block with the real orchestration reason. A recorded label is not
-proof that an agent is running, and a dispatch problem is not an implementation failure.
-
-Each executor gets its current task contract, approved context and recorded task plan when one exists.
-When planning was explicitly skipped, give it the global contract, dependency outputs, recorded gate
-reasons and all available homologation/review feedback; do not invent a task plan or reduce the acceptance contract:
-
-```text
-You are the EXECUTOR for <T4>: <title>. Deliver exactly that; do not hand it to review until you
-reasonably believe every planned step and validation clause is satisfied.
-Read the project's agent rules first.
-For comments, tests, messages and other product text you add, state the observable business rule and why;
-name its owning area or organization only when known. State technical reasons without inventing an owner.
-Do not copy task, round, finding or criterion identifiers, internal process or orchestrator names, people's
-names, or a decision's date or authorship into product text. Dates that support a measurement or describe
-product behavior may be included. Keep traceability in the approved contract, commit or ticket.
-Write ONLY under: <touches>  — another executor owns the rest, right now.
-Build on what these already produced: <deps>.
-Read the current taskPlan and recheck its research/steps against the actual workspace: <artifact, or "planning explicitly skipped" plus its receipt>.
-Report a stale plan or unresolved consequential decision; do not silently change the approved contract.
-Relevant approved context: <purpose, constraints and source references; identify superseded history>.
-Your work must satisfy, clause by clause: <validation>
-  A DIFFERENT agent checks your delivery against that contract and never sees this message.
-<on a retry: the reviewer's --reason, verbatim>
-Treat a recoverable obstacle as executor work, not as a reason to hand incomplete work to review:
-inspect the failure, do targeted additional research when needed, change strategy, try safe alternatives
-inside the approved contract, and rerun the relevant implementation checks. Continue until the complete
-task plan is delivered. Stop early only for missing authority, an unresolved consequential scope/behavior
-decision, unauthorized destructive risk, an unavailable external dependency after proportional attempts,
-or evidenced impossibility. Record that blocker and the attempts made; do not widen scope or rewrite the plan.
-As you begin each planned step, run this progress line with that step's 1-based index:
-<the progress command printed by start, with --step <index>>
-Commit policy: <Project overrides>. Never touch .specs/graph/ — the orchestrator owns the state.
-Report back: what you changed, and what a reviewer needs to reproduce it.
-```
-
-A recoverable obstacle is executor work, not a reason to hand incomplete work to review. If an executor
-reports one, keep that executor working (or resume the interrupted execution in the same attempt) with the
-same immutable plan and current feedback. Do not run `review` merely because the executor reached a wall.
-The reviewer is a validation gate, not failure triage. Handoff is eligible only when the executor reports
-the whole plan delivered, every validation clause addressed, relevant safe checks passing and no known
-recoverable gap. This persistence does not authorize new scope, destructive action or invented business
-decisions; those are real blockers under the conditions above. Planner dispatch remains exactly once per
-approved contract, including while the executor rotates strategies.
-
-Corrections discovered during homologation keep their feedback and attempt history. Recommend discussion
-and planning separately from the observable uncertainty/risk, but let the user skip either or both. An
-unchanged-contract correction normally stays in the executor/reviewer loop; no replanning is invented.
-
-Report each execution step as it starts, using the 1-based index in the recorded `taskPlan.steps`.
-When reporting completion, give the orchestrator a 1–2 sentence result-and-why summary for `task.summary`.
-`start` prints a ready `progress <task> --step 1 --agent <executor> --run <run>` line. Put that line in the
-executor prompt; the executor runs it with the current step index as each step begins. Only when the
-executor has no shell does the orchestrator record the executor's reported steps with the same command.
-`review` and a direct `unblock --reviewer` warn when the recorded position is before the last step.
-`start` records step 1; repeated progress is a no-op, and a new attempt starts over. These counters describe
-the current step, not verified completion; they never replace review. Legacy tasks without a task plan
-have no invented denominator. During validation the engine automatically emits each check's index/total,
-including its start, pass, failure or cache reuse. A retry reruns functional checks as usual.
-
-### Capacity
-
-- **3 executors out of 4 busy agents** by default (`maxExecutors`/`maxParallel` per plan).
-  Scale both, but keep executors **strictly below the total**: that headroom is what keeps
-  review unblockable, and work finished but unverified is the worst state the graph can hold.
-- **Review is never capacity-blocked and runs in parallel.** `review` is a role handoff on a
-  slot the task already holds, so three tasks finishing together get three reviewers at once.
-  They do occupy the total cap: 1 running + 3 reviewing = 4 busy.
-- **Planning uses total capacity, not executor capacity or an execution attempt.** Planning,
-  running and reviewing together occupy `maxParallel`; prioritize ready execution and review
-  when allocating released slots. New tasks cannot bypass planning, dependencies, total capacity
-  or concurrent agent uniqueness with `--force`; the legacy executor-quota override remains.
-- **One agent, one active task**, across planning, execution and review; the engine refuses a busy `--agent`.
-  A label on two concurrent tasks records parallelism that did not happen.
-- **A FRESH reviewer per task.** One agent reviewing thirty accumulates exactly the context the
-  graph exists to avoid, and stops reading with fresh eyes long before the end.
-
-### Domain-neutral contracts
-
-The engine manages dependencies, roles, attempts, pauses and evidence, independent of domain.
-Execution can produce code, transformed data, automation results, migrated configuration or
-other deliverables. Do not infer new scope or prescribe a framework from the task category.
-Here, functional means verifying the intended observable outcome, not necessarily a unit test:
-check migrated values and the destination consumer, resulting records, or an automation's
-completed action, as appropriate. The plan supplies the criterion and verification method.
-When there is no code diff, give the reviewer the delivered artifacts and relevant before/after state.
-An inspection exception is for deliverables whose correctness can be established by inspection;
-it must not replace observing a changed executable workflow or an operational side effect.
-The engine currently collects executable checks through shell commands. It does not itself
-drive a GUI, query a connector or certify a human observation. For such work, use an approved
-verification command when one exists; surface an unsupported verification method rather than
-inventing a passing command or treating unavailable tools as an inspection exception.
-
-Keep these three things distinct, using the existing plan format:
-
-- **Context:** purpose, decisions and background in the plan's `description` or referenced
-  approved documents. Preserve prior criteria in history/backups, clearly marked as superseded.
-- **Current criteria:** consistent, observable acceptance conditions. Each step's `expect`
-  states what that step can actually establish; it is not a place to paste the entire old plan.
-- **Executable proof:** `run` performs the corresponding check against the current delivery.
-  A build proves compilation; writing a behavioral promise beside it does not prove that promise.
-
-When an approved change replaces a criterion, replace the obsolete criterion rather than
-keeping contradictory requirements active. Do not create `echo` steps to store context,
-historical contracts or instructions. For legitimate inspection, a nonempty prose `validation`
-with `validationMode: "inspection"` and `inspectionReason` needs no placeholder command.
-Use the existing plan editor; a custom adaptation script is not required. Before changing a
-plan, keep a uniquely named backup, check for concurrent edits and inspect the resulting diff.
-Record the approved change and its reason in a note; never edit run history to hide a mistake.
-
-### Behavioral validation and legitimate inspection
-
-Before dispatch, check that the approved plan contains executable behavioral checks for
-functional tasks. The default is `validationMode: "functional"`. At least one validation
-step must have `kind: "functional"`, a real `run` command, and an observable `expect`.
-Classify lint, syntax, build and typecheck steps as `kind: "static"`; untyped steps are static.
-An `echo` instruction, static analysis, a test that only searches source text, or a test that
-reimplements the production logic does not qualify as functional coverage. Inspect the test
-and its actual execution count; a successful process with zero relevant tests is insufficient.
-For a bug fix, demonstrate that the behavioral test detects the defect when practical.
-
-At least one functional step is a structural minimum, not sufficient coverage by itself.
-Map every current functional criterion to a relevant check and its observable result before
-dispatch and review. Preserve every result-shaping dimension in that mapping: order and
-precedence, boundaries, malformed or absent input, repetition and state transitions when they
-apply. Do not let a broader check such as membership, success or nonempty output stand in for
-one of those explicit rules. Commands run in order: prepare prerequisites before checks that need
-them, and ensure skipped-build or filtered tests use the current delivery and execute relevant
-cases. Do not hide failures or discard unrelated edits to make a check pass. Preserve earlier
-evidence with distinct output paths when a check writes artifacts. Review existing artifacts
-with read-only checks where sufficient; repeating an operational side effect needs its own
-authorization and must not overwrite the delivery being reviewed.
-
-Documentation and other tasks that do not affect runtime behavior may use
-`validationMode: "inspection"` with a concrete `inspectionReason` in the approved plan.
-Review the actual diff before accepting the exception. Do not use inspection for changed
-runtime behavior, missing tools, unavailable environments, or a failing test. Those need an
-actionable rejection or a blocked task. `requireReview: false` never waives functional checks.
-
-The first reviewer must inspect the full behavioral path and the relevance of the tests, not only
-the changed lines. Independently derive one focused counterexample for the highest-risk applicable
-criterion, especially an ordering, boundary, invalid-input or transition rule; do not copy the
-executor's examples or mirror the implementation. If the approved checks cannot establish a current
-criterion, reject it with an actionable reason instead of approving on unrelated passing tests. Under the
-one-planner rule, unchanged-contract feedback returns to the executor; a missing acceptance decision blocks
-for the user rather than silently dispatching another planner. Keep this probe
-proportional: one discriminating case is preferable to a generic matrix. On a bounded corrective retry,
-the next reviewer inspects the rejection, changed paths and remaining checks, and may trust current step
-receipts that the engine explicitly reuses.
-Once every applicable criterion has current evidence and the independent probe passes, stop the review.
-Continue only for a failure, contradiction, uncovered criterion or concrete risk; repeated equivalent
-commands and broad speculative checks add cost without strengthening the verdict.
-Browser/API workflows need checks that exercise that workflow at the
-appropriate layer; a pure helper test cannot prove a user journey. Keep tests scoped to the
-task and add a final integration check when separate tasks must work together.
-
-Before `validate --ok`, inspect the approved check output. Use `show-check <task> --check N --attempt K`
-for the full stdout, stderr, working directory, exit code and reuse status of a stored check. On a first
-review, run each approved check yourself and inspect its output before recording the verdict. Mark each
-reviewed check or structured inspection criterion with `review-progress <task> --step N --agent <reviewer>`;
-inspection tasks with structured criteria cannot pass validation until every criterion is traversed.
-This progress is a traceable reviewer report, not proof that an inspection happened or that work passed.
-Legacy inspection work without a recorded denominator stays unknown and does not gain invented criteria.
-`validate --ok` reruns the approved commands and prints up to 15 output lines from functional and failed
-checks; use `--tail 0` to suppress that preview. Summary labels only call out output text: judge the exit
-code and relevant result against the criterion, never keywords alone.
-
-Call `validate --ok --summary "<one-sentence PO First verdict>" --evidence "<complete observations against each criterion>" --cwd <absolute-project>`
-after inspecting real `git status --short` and staged/unstaged diffs against the pre-start baseline,
-the declared `writes` and approved `touches`, and the approved commands. Discount paths and hunks
-already present before execution; a dirty path alone does not attribute a change to the current task.
-Check every verification item's `requires`, including pending manual inspection, and record observations.
-This runs the plan's commands and records
-their output and exit codes; inspect those receipts before `done`. Avoid logging credentials.
-Do not mutate the reviewed code while checks run; rerun validation if it changes afterward.
-All steps rerun by default. Mark only deterministic `static` steps as `cacheable: true`; Prumo
-may reuse their passing result within the same attempt and task state when the contract and Git
-workspace are unchanged. Add safe relative `cachePaths` when that static check covers an isolated
-set of files: after a corrective retry, the next reviewer resumes at the first failed or invalidated
-step and reuses earlier passing receipts only while those declared paths are byte-for-byte unchanged.
-Functional steps always run, and unscoped static steps restart on a new attempt. The engine checks
-execution, not the semantic truth of `expect` or the declared `kind`.
-Never label lint as functional to satisfy the gate. Shell commands execute with the caller's
-permissions; the approved plan is not permission for unrelated or destructive side effects.
-
-### Adapting an existing run without redoing delivered work
-
-A skill upgrade does not add business scope, enlarge a data window, or require a new executor.
-Keep validation proportional to the approved task. A reviewer can run missing verification
-on delivered work in the current attempt. Existing artifacts help the review; an executor's
-report alone is still not approval.
-
-For a legacy graph-foreman run, contract adaptation is mandatory before new dispatch. Inspect each
-nonterminal task, translate old prose validation into current executable checks supported by repository
-evidence, update the approved source, and run `sync-plan` against the original run. This graph-wide
-contract normalization does not authorize planning every task. Preserve IDs, dependency edges, phase
-membership, delivered history and existing attempts; never edit `state.json`. When the user selects one
-task, plan only that existing task and keep its internal work inside the one immutable task plan. If work
-is already running or reviewing, keep the attempt and use `refresh-contract` below. If the old wording leaves a consequential meaning unresolved, settle only that
-point in the principal discussion, then complete the migration instead of abandoning it.
-
-After adapting the approved plan, use:
-
-```bash
-node $ENGINE refresh-contract T4 --plan <approved-plan.json> --run <run-name>
-```
-
-This copies only validation, validationMode and inspectionReason to the task, preserving its
-state, executor, reviewer, attempt history and block reason. It invalidates older validation
-receipts, so the reviewer must validate the current contract. It does not dispatch an agent
-or unblock a paused task. Done/skipped history is immutable. Never use fail/retry solely to
-refresh a contract; reserve that path for an actual rejected implementation.
-
-Before executing a check, make its environment and accepted outcomes explicit: use step.env
-for environment variables (Unix NAME=value prefixes do not work in Windows cmd.exe),
-step.expectedExitCodes for approved nonzero outcomes (default [0]), and step.timeoutMs for
-long checks (default 600000; 0 explicitly disables the deadline). Never widen accepted codes
-or increase a data window merely to satisfy the gate. See references/runtime.md for execution options.
-
-### Real rejection, including an approved contract change
-
-Distinguish an implementation that failed an applicable criterion from a request for new scope
-or missing verification. Fixing an actual defect within the approved scope is already authorized.
-Reuse explicit user steering as approval; ask only when a new requirement remains undecided.
-
-| Situation | Next action |
-| --- | --- |
-| Actual rejected delivery, unchanged contract and sound plan | Record the reviewer's actionable `fail --reason`, then `retry` and `start`; the engine reuses the approved plan only while its contract, discovery, scope and dependency binding remain current. |
-| Reviewer finds implementation guidance incomplete, but the approved contract is unchanged | Record an actionable `fail --reason` without `--plan-defect`, then `retry` and send the same task plan plus that reason to the next executor; do not dispatch another planner. |
-| Actual rejected delivery, approved contract also changed | Record the real failure; edit the approved plan; `sync-plan` while `failed`; inspect the persisted contract, `touches` and dependencies; then `retry`, fresh task planning and execution. |
-| Delivered work needs only an approved validation update | `refresh-contract`, then verification by an independent reviewer in the same attempt; no invented failure or executor. |
-| New scope after `done`/`skipped` | Create an explicit follow-up through the approved planning workflow; preserve completed history. |
-
-For the combined rejection case, phased runs use their phase workflow. A selective defect targets only
-the affected task; a shared phase decision targets the phase's nonterminal members. Legacy task-scoped
-runs retain `begin-discussion`, `finish-discussion`, `plan-task` and `finish-planning`. For a phased run:
-
-```bash
-node $ENGINE fail T4 --reason "review: <actual unmet criterion>" --run <run-name>
-# Edit the approved plan; separate current criteria from superseded context.
-node $ENGINE sync-plan --plan <approved-plan.json> --run <run-name>
-node $ENGINE graph --run <run-name>  # inspect T4's persisted definition before retry
-node $ENGINE show-contract T4 --diff --run <run-name>
-node $ENGINE retry T4 --run <run-name>
-node $ENGINE begin-phase-discussion F2 --run <run-name> # before the principal-chat question
-node $ENGINE finish-phase-discussion F2 --context <discovery.json> --run <run-name>
-node $ENGINE plan-phase F2 --agent <planner> --run <run-name> # pair with one read-only planner dispatch
-node $ENGINE finish-phase-planning F2 --plan-dir <artifact-directory> --run <run-name>
-node $ENGINE start T4 --agent <executor> --run <run-name>  # pair with actual dispatch
-```
-
-Resume from the recorded phase if some steps already happened. `retry` alone does not reload
-the plan and refuses to proceed when the recorded failed task differs from its approved source;
-run `sync-plan` and inspect first. `sync-plan` updates every nonterminal definition without changing its
-lifecycle and preserves completed definitions as immutable history; refresh only updates validation fields
-and does not record a rejection. Preserve the prior attempt's
-reason and evidence. A bounded corrective retry records `planSourceAttempt` separately from the
-immediately rejected `correctionOf` attempt and carries that review reason as execution context,
-without changing the approved task plan or adding a fabricated planning round. Missing reviewer rationale,
-`--plan-defect`, or a changed contract, discovery, scope or dependency result makes the engine require
-planning. Do not set `--plan-defect` for unchanged-contract review feedback under the one-planner rule;
-block and obtain an explicit contract decision when the existing contract cannot resolve the gap. Prefer the harness's structured editor for the approved plan. If a
-temporary program is the safest way to change a large plan, verify its backup and exact diff,
-then remove it; that helper is not a Prumo transition.
-
-### Resuming paused work
-
-`unblock <task>` restores the recorded phase (pending, planning, running, reviewing or failed), preserving
-the attempt and previous work. For delivered work paused during execution or review, use
-`unblock <task> --reviewer <independent-agent>` to hand it directly to review in the same attempt.
-This does not acquire an executor slot. It does recheck dependencies, total capacity and the
-reviewer's availability; ordinary execution resume also checks executor capacity. A refusal
-leaves the task blocked. Pending/failed tasks cannot use this handoff to bypass start/retry.
-
-A block that waits for a user decision must be recorded with `--question` and `--option`, not only
-`--reason`; when resuming finds a reason-only block that is really a decision, re-record it with
-`block <task> --reason "..." --question "..." --option "<answer> => <effect>"` before asking the user.
-When a block includes a recorded `blockQuestion`, present that exact question and its `blockOptions`
-through PO First, ask the user for the decision, then pass the answer with `unblock <task> --answer`.
-Keep the recorded reason, question, answer and time in the block history. Older reason-only blocks remain
-resumable with `unblock <task>`.
-
-These commands record state only. Resume the appropriate actual agent or dispatch the reviewer;
-do not start a new executor for work already delivered. Respect the user's pause until resumption
-is authorized. For an approved contract change while paused, refresh-contract comes before
-unblock. Both a pending in-flight validation and a changed contract need fresh verification;
-completed evidence and attempt history remain recorded. Explain an earlier orchestration mistake
-with a note; do not rewrite it as an implementation failure or erase historical attempts.
-
-For tasks requiring planning, task/dependency/global decision changes can make research stale. Pending work needs new planning.
-A reviewer-rejected implementation with an unchanged approved contract must reuse its current approved
-plan for every correction, regardless of retry count, while the complete recorded planning context still
-matches. Review feedback travels to the next executor; it does not dispatch a planner. Only an explicitly
-approved material contract change requires fresh planning while preserving prior plans and evidence. If an active execution
-scope changes, keep its attempt, block it, synchronize the approved change and use its phase discussion/planning workflow.
-`finish-phase-planning` returns this work to **blocked**, preserving its original phase and reason;
-explicit `unblock` then resumes the same attempt. Do not fabricate fail/retry for replanning.
-Validation-only changes can still use `refresh-contract` and fresh review in the same attempt.
-
-### Legacy runs and validation failures
-
-- Existing tasks without `planningRequired` keep their original lifecycle, states and history;
-  do not force completed or active legacy work through planning. Tasks added to an old run get
-  the new planning requirement. Installation never resets a run.
-- `sync-plan` preserves `done` and `skipped` contracts as history. Their old prose does not block synchronization or retry of other tasks. Do not relabel completed functional work as inspection. New and nonterminal tasks still need valid contracts; graph structure is checked for every task.
-- `start --executor <name>` is an alias for `start --agent <name>`. These commands record assignment; they do not spawn the agent.
-- `validate --ok` **executes the contract commands**, including database and network operations. It is not a manual approval flag. Read each check's output and failed index before deciding whether failure is implementation, environment, or contract related.
-- A failed network/VPN check keeps the gate failed even if the reviewer considers the implementation correct. Restore the environment and have the independent reviewer validate again in the same attempt. Use `fail`/`retry` for an actual rejected implementation, not a transient environment failure. Functional checks always rerun; only explicitly cacheable static checks can reuse unchanged evidence.
-- The executor must not approve its own work. The orchestrator must not impersonate the reviewer by issuing approval on its behalf. The engine checks recorded roles, not the identity of the shell caller. If the reviewer session is gone, dispatch a fresh independent review agent; hand off through `block` and `unblock --reviewer <new-agent>`, then let that actual agent run validation.
-- Quote absolute working directories. In a POSIX shell on Windows use forward slashes, for example `--cwd "C:/work/project"`. Invalid directories are rejected before a gate receipt is created.
-
-### What the reviewer gets, and what it decides
-
-Give the reviewer the **current validation contract**, relevant **approved context** and the
-**diff or delivered artifacts**, without the executor's persuasive narrative. Identify
-superseded requirements as history. The reviewer runs the project's gate ITSELF (see Project
-overrides), checks the contract clause by clause, and answers `--ok` or `--failed`.
-
-```text
-You are the REVIEWER for <T4>: <title>. You did NOT produce this delivery.
-Inspect actual `git status --short`, staged and unstaged diffs, then compare with this pre-start baseline: <baseline>.
-Judge only new changes under declared `writes` (or approved `touches` when `writes` is absent): <diff, delivered artifacts or before/after state>
-Against this contract, clause by clause: <validation>
-Relevant approved context and constraints: <references; distinguish superseded history>.
-Recorded taskPlan: <artifact>; treat it as evidence to inspect, not authority over the approved objective.
-Challenge missing or incorrect planning/criteria instead of approving a flawed plan's implementation.
-Read the project's agent rules and the relevant implementation, inputs, outputs and checks.
-Inspect new comments, tests, messages, README and other product text. Reject new references there to
-task/round/finding/criterion identifiers, internal process or orchestrator names, people's names, or a
-decision's date or authorship; those belong in the approved contract, commit or ticket. Preserve dates that
-support a measurement or describe product behavior. Check that business rules
-state why and name the owning area or organization when known. If ownership is unknown, flag it for the PO
-without inventing one; absence of a known owner is a notice, not by itself a rejection. Technical reasons
-must not claim a business owner without evidence.
-Check that the contract proves the changed behavior and that any inspection exception fits the diff.
-Check each verification item's `requires`; report manual inspection as pending until you have inspected it.
-Run the gate YOURSELF through engine validate: <Project overrides, engine path, absolute project cwd>.
-Check the recorded output, actual relevant test count, and results against every criterion.
-Never accept lint/build/typecheck, echo instructions, or zero relevant tests as functional proof.
-Answer:
-  verdict:  ok | failed
-  summary: one sentence stating the result and why it meets or misses acceptance
-  evidence: what you RAN and what it ANSWERED — commands and counts, not impressions.
-  if failed: what is missing, specific enough for the next executor to act on.
-```
-
-What is absent from that message is the point: no executor report, no attempt count, no "the
-suite was already green". A fresh agent, a clean context, and the contract.
-
-- **`--summary` records the reviewer's concise PO First verdict** when supplied; blank values are refused.
-  **`--evidence` records the complete behavioral observations** and must not be empty or replaced by the summary.
-  Command results are collected by the engine; the reviewer still checks their relevance.
-  `done` refuses without a passing review validation for the CURRENT attempt — the one rule
-  that stops "it looks right" from becoming state.
-- **Rejected delivery** → follow "Real rejection" above; synchronize any approved contract
-  change before retry. The reason travels to the next executor and must be actionable.
-- Past **3 attempts** the engine warns — escalate to the dev instead of spending more.
-- Needs the dev → `block T4 --reason "..."`. Blocked is a real state; leaving it `running`
-  while you wait is how a graph lies. When the block is a user decision, record it as one:
-  `block T4 --reason "..." --question "<the decision in one sentence>" --option "<answer> => <effect>"`
-  (repeat `--option` per answer). The block event and the dashboard then carry the question, and
-  `unblock T4 --answer "<answer>"` records what the user chose.
-- `note <task> --text "..."` for what a later reader needs and the states cannot say.
-- Discussion/planning skip receipts never waive the independent reviewer. New Prumo work keeps review on;
-  `requireReview: false` is compatibility state for older runs, not a current routing recommendation.
+### State machine
+
+| State (from `ready`/`status`) | Next move | Command | Read |
+| --- | --- | --- | --- |
+| `ready_for_discussion` | Recommend discuss or skip, with reasons; wait for the user's choice | `begin-phase-discussion` / `skip-phase-discussion --reason --confirmed-by-user` | discussion.md |
+| `discussing` | Ask in the principal conversation until no consequential gray area remains; write discovery JSON | `finish-phase-discussion --context` | discussion.md |
+| `ready_to_plan` | Recommend plan or skip; dispatch one read-only planner, or skip by user choice | `plan-phase --agent [--plan-dir]` / `skip-phase-planning` | planning.md |
+| `planning` | Validate and record the returned artifacts; bring `user-now` questions to the user | `finish-phase-planning --plan-dir` | planning.md |
+| `waiting` | Dependencies incomplete; explain the blocker, do not reshape the graph | — | runtime.md |
+| `ready` | Record the pre-start baseline; dispatch a real executor in the same message | `start --agent` | dispatch.md |
+| `running` | Keep the executor on recoverable obstacles; record step progress | `progress --step`; then `review --agent` | dispatch.md |
+| `reviewing` | Dispatch a fresh reviewer with contract + diff only; the reviewer validates | `show-check`, `review-progress`, `validate --ok\|--failed` | review.md |
+| validated | Close the task | `done` | review.md |
+| `failed` | Unchanged contract: reuse the plan. Changed contract: sync first | `fail --reason`, `retry`, `sync-plan` | review.md |
+| `blocked` | Present the recorded question; resume with the answer | `block --question --option`, `unblock [--answer\|--reviewer]` | recovery.md |
+| plan edited after approval | Synchronize before any new round, then run `begin-*` again (it supersedes the stale round); show the diff and get acceptance. `refresh-contract` only for a validation-only change to active work | `sync-plan`, `show-contract --diff`, `refresh-contract` | recovery.md |
+
+Task-scoped (legacy) runs use `begin-discussion`, `finish-discussion`, `plan-task` and `finish-planning`
+for the same gates ([discussion.md](references/discussion.md#task-scoped-discussion-in-existing-runs)).
+
+### Invariants for every step
+
+These hold in every state; each one protects the property that makes the graph trustworthy.
+
+- **A recorded role is not an agent.** The engine only sees the `--agent` string, so `--agent` must name an
+  agent that exists. Every `start` pairs with an actual native executor dispatch in the SAME message, and
+  every `review` with an actual reviewer. If dispatch is unavailable, report or block; never do the role
+  yourself under another label.
+- **Planner dispatch remains exactly once per approved contract.** Rejections and retries reuse the same
+  immutable task plan; only an explicitly approved contract revision opens a new round.
+- **A recoverable obstacle is executor work, not a reason to hand incomplete work to review.**
+  The reviewer is a validation gate, not failure triage: handing it unfinished work spends a fresh
+  reviewer on a verdict everyone already knows ([dispatch.md](references/dispatch.md#recoverable-obstacles-stay-with-the-executor)).
+- **Author ≠ verifier.** The executor never approves its own work and the orchestrator never impersonates
+  the reviewer. `done` requires a passing independent validation for the current attempt. Discussion and
+  planning skips never waive review.
+- **One agent, one active task; a fresh reviewer per task.** Executors stay strictly below total capacity
+  so review is never capacity-blocked ([dispatch.md](references/dispatch.md#capacity)).
+- **Gates are the user's choice.** Discussion and planning are optional only by the user's explicit choice,
+  recorded with `--reason` and `--confirmed-by-user`; never skip for token economy.
+- **Eligibility is not permission.** A phase opens only when every external dependency of every unfinished member is `done` or `skipped`,
+  and even then it waits for the user to choose it.
+- **A named task in the user's request is a hard scope boundary.** Its prerequisites and internal
+  deliverables stay inside its one task plan; broadening the graph needs explicit approval.
+- **Change the plan, not the state.** Never edit `state.json`, move tasks, drop dependencies or disable
+  gates to manufacture readiness. An approved change goes into the source plan, then `sync-plan`, before
+  any `begin-*` — and a changed contract needs the user's fresh acceptance.
+- **Blocked is a real state.** A wait on the user is `block` with `--question`/`--option`, not a task left
+  `running`.
+- **State is truth.** After any interruption, inspect persisted state and actual agents before repeating a
+  command; a dispatch problem is not an implementation failure.
 
 ## 4. What NOT to ask
 

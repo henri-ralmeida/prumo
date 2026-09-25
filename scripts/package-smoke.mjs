@@ -191,12 +191,16 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
   for (const harness of ['claude', 'kiro', 'codex', 'dsh']) {
     const skillRoot = harness === 'codex' ? '.agents' : '.' + harness
     const installedSkill = readFileSync(join(home, skillRoot, 'skills', 'prumo', 'SKILL.md'), 'utf8')
-    assert.match(installedSkill, /Inspect the actual tools and write permissions/)
-    assert.ok(installedSkill.includes('block opened with ' + String.fromCharCode(96).repeat(3) + 'json'))
+    assert.ok(installedSkill.includes('(references/planning.md)'))
+    const installedPlanning = readFileSync(join(home, skillRoot, 'skills', 'prumo', 'references', 'planning.md'), 'utf8')
+    assert.match(installedPlanning, /Inspect the actual tools and write permissions/)
+    assert.ok(installedPlanning.includes('block opened with ' + String.fromCharCode(96).repeat(3) + 'json'))
   }
+  const stepReferences = ['contracts', 'discussion', 'dispatch', 'planning', 'recovery', 'review', 'runtime']
+    .flatMap(name => [`references/${name}.md`, `references/${name}.pt-BR.md`])
   for (const harness of ['.claude', '.kiro', '.agents', '.dsh']) {
     const skill = join(home, harness, 'skills', 'prumo')
-    for (const file of ['SKILL.md', 'references/po-first.md', 'references/po-first.pt-BR.md', 'scripts/engine.mjs', 'scripts/serve.mjs', 'scripts/installation-bundle.mjs', 'scripts/validation.mjs', 'scripts/atomic-state.mjs', 'scripts/storage.mjs', 'scripts/dashboard.html']) {
+    for (const file of ['SKILL.md', 'references/po-first.md', 'references/po-first.pt-BR.md', ...stepReferences, 'scripts/engine.mjs', 'scripts/serve.mjs', 'scripts/installation-bundle.mjs', 'scripts/validation.mjs', 'scripts/atomic-state.mjs', 'scripts/storage.mjs', 'scripts/dashboard.html']) {
       assert.ok(existsSync(join(skill, file)), `${harness} installation must contain ${file}`)
     }
     const marker = JSON.parse(readFileSync(join(skill, '.prumo-install.json'), 'utf8'))
