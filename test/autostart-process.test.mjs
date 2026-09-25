@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from 'node:net'
@@ -50,7 +50,11 @@ test('Windows Startup launches and restarts a real isolated dashboard process', 
   const firstAbout = await (await fetch(`http://127.0.0.1:${port}/api/about`)).json()
   assert.equal(first.contentCurrent, true)
   assert.equal(first.contentId, firstAbout.contentId)
-  assert.equal(firstAbout.origin, 'global')
+  // The origin follows where the served package lives, not the --global run listing.
+  const packageRoot = options.packageRoot
+  const expectedOrigin = packageRoot.split(/[\\/]+/).includes('node_modules') ? 'global'
+    : existsSync(join(packageRoot, '.git')) ? 'repository' : 'installed'
+  assert.equal(firstAbout.origin, expectedOrigin)
   const root = join(env.PRUMO_HOME, 'fixture/.specs/graph/test')
   mkdirSync(root, { recursive: true })
   writeFileSync(join(root, 'state.json'), JSON.stringify({ plan: { name: 'isolated', phases: [] }, tasks: {} }))
