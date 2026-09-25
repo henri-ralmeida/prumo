@@ -7,3 +7,8 @@ node_modules/
 .npm-cache/
 /.ai-memory.toml
 /.serena/
+
+# Local agent and orchestration workspaces: worktrees, preview config and run scratch files stay per machine.
+.claude/worktrees/
+.claude/launch.json
+.prumo-tmp/
