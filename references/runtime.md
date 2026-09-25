@@ -321,9 +321,10 @@ window because the skill changed. The reviewer can verify delivered work in the 
 `sync-plan` refreshes active contracts while preserving their lifecycle and keeps completed contracts as
 immutable history. It prints bounded per-task field changes, summarizes validation contracts without their
 contents and records dependency/block-reason diagnostics in structured events. Its final line reads
-`run "<run>" synced: +A, updated U, metadata M, preserved P, total T`: `metadata M` counts tasks whose only
-changes were metadata fields such as `label`, `summary`, `validationSummary` or `manualEstimate`; those are
-applied without invalidating planning or execution authorization. Synchronization records the
+`run "<run>" synced: +A, updated U, metadata M, preserved P, total T`: `metadata M` counts tasks that had at least
+one metadata field applied, such as `label`, `summary`, `validationSummary` or `manualEstimate` (a task that
+also changed contract fields appears in `updated` too); metadata changes are applied without invalidating
+planning or execution authorization. Synchronization records the
 approved definition; it is not proof that active work meets it.
 
 Synchronization also warns when it invalidates an open discussion/planning round or a current skip; it
@@ -335,7 +336,7 @@ approved plan is reported as not synchronized; a task missing from it is reporte
 `sync-plan` refuses task removal. Missing or unreadable sources produce a short warning
 without blocking either command. An open planning round shows its age and accepted artifact count (`0/N`);
 a recorded batch shows `N/N`. A round that was still open when a later `sync-plan` demanded a contract
-confirmation no longer counts as work in progress: `status` shows it as
+confirmation no longer counts as work in progress: `status` and `ready` show it as
 `planning round <id> (<n>) is stale after a contract change; artifacts x/y`. Do not wait for its artifacts,
 because `finish-phase-planning`/`finish-planning` would refuse them; begin a fresh discussion round and
 confirm the changed contract as described below. When `plan-phase` received `--plan-dir`, the open round counts the
@@ -775,7 +776,7 @@ Resolve `scripts/engine.mjs` from the installed skill. Add `--run <name>` to sel
 | `migrate [--check]` | Migrates a safe legacy schema with a backup; `--check` only diagnoses |
 | `status`, `ready`, `graph`, `runs` | State, work ready now, full JSON or the list of runs |
 | `status --verify-install` | Also compares the installed files with the installation marker |
-| `authorize --scope run\|phase:<phase>\|tasks:<T1,T2> [--mode auto\|manual] --confirmed-by-user` | Records the dispatch scope and mode the user accepted; `auto` is the default |
+| `authorize --scope run\|phase:<phase>\|tasks:<T1,T2> [--mode auto\|manual] [--channel <name>] --confirmed-by-user` | Records the dispatch scope and mode the user accepted; `auto` is the default |
 | `show-contract <task> [--diff]` | Shows the business contract before/after without `validation.run` commands |
 | `show-check <task> --check <N> --attempt <K>` | Shows the stored check's stdout, stderr, directory, exit code and reuse status |
 | `begin-phase-discussion <phase> [--adopt-legacy]` | Persists the chosen phase discussion before the first question; the option adopts a safe legacy phase |
@@ -787,7 +788,7 @@ Resolve `scripts/engine.mjs` from the installed skill. Add `--run <name>` to sel
 | `begin-discussion <task> [--adopt-legacy]` | Persists an active task discussion; the option adopts only an eligible legacy task |
 | `skip-discussion <task> --reason <text> --confirmed-by-user` | Records the explicit choice to skip the task discussion |
 | `finish-discussion <task> --context <discovery.json>` | Validates the current round's answers and releases planning |
-| `plan-task <task> --agent <name>` | Records the planner after the discussion closed |
+| `plan-task <task> --agent <name> [--context <file>] [--accept-premature-work]` | Records the planner after the discussion closed |
 | `skip-planning <task> --reason <text> --confirmed-by-user` | Records the explicit choice to skip task planning |
 | `finish-planning <task> --plan <artifact.json>` | Checks and records the task plan; releases execution unless a preserved pause remains |
 | `start <task> --agent <name>` | Records the executor and opens an attempt (`--executor` is an alias) |

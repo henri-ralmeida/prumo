@@ -90,7 +90,7 @@ agent state before selecting exactly one current flow:
 | Observed context | Route | Read |
 | --- | --- | --- |
 | No approved global plan | Global planning and user approval; do not initialize or dispatch | — |
-| Approved plan, but no persisted run | Storage/dashboard bootstrap, then `init` and visibility verification (§0–§2) | contracts.md |
+| Approved plan, but no persisted run | Storage/dashboard bootstrap, then `init` and visibility verification (§0–§2); the state machine below then leads through discussion, planning and dispatch | contracts.md |
 | Existing run, first command this session | Compare the `status` version line; check legacy contracts and plan drift | recovery.md |
 | `ready_for_discussion`, `discussing`, `discussed`, `ready_to_plan` or `planning` | Ask for the independent discussion/planning decisions, then follow or explicitly skip each gate | discussion.md, planning.md |
 | `ready` or `running` with a current task plan or planning-skip receipt | Executor flow | dispatch.md |
@@ -256,11 +256,12 @@ node $ENGINE done T4
 | `discussing` | Ask in the principal conversation until no consequential gray area remains; write discovery JSON | `finish-phase-discussion --context` | discussion.md |
 | `ready_to_plan` | Recommend plan or skip; dispatch one read-only planner, or skip by user choice | `plan-phase --agent [--plan-dir]` / `skip-phase-planning` | planning.md |
 | `planning` | Validate and record the returned artifacts; bring `user-now` questions to the user | `finish-phase-planning --plan-dir` | planning.md |
+| `pending` | Awaiting migration or phase adoption of a legacy run; follow the recovery steps before any new round | — | recovery.md |
 | `waiting` | Dependencies incomplete; explain the blocker, do not reshape the graph | — | runtime.md |
 | `ready` | Record the pre-start baseline; dispatch a real executor in the same message | `start --agent` | dispatch.md |
-| `running` | Keep the executor on recoverable obstacles; record step progress | `progress --step`; then `review --agent` | dispatch.md |
+| `running` | Keep the executor on recoverable obstacles; record step progress | `progress --step --agent`; then `review --agent` | dispatch.md |
 | `reviewing` | Dispatch a fresh reviewer with contract + diff only; the reviewer validates | `show-check`, `review-progress`, `validate --ok\|--failed` | review.md |
-| validated | Close the task | `done` | review.md |
+| `reviewing` with an approved validation | Close the task | `done` | review.md |
 | `failed` | Unchanged contract: reuse the plan. Changed contract: sync first | `fail --reason`, `retry`, `sync-plan` | review.md |
 | `blocked` | Present the recorded question; resume with the answer | `block --question --option`, `unblock [--answer\|--reviewer]` | recovery.md |
 | plan edited after approval | Synchronize before any new round, then run `begin-*` again (it supersedes the stale round); show the diff and get acceptance. `refresh-contract` only for a validation-only change to active work | `sync-plan`, `show-contract --diff`, `refresh-contract` | recovery.md |

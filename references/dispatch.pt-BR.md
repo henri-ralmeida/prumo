@@ -130,8 +130,8 @@ Ao relatar a conclusão, entregue ao orquestrador um resumo de 1–2 frases com 
 `start` imprime uma linha pronta `progress <task> --step 1 --agent <executor> --run <run>`. Coloque essa linha no
 prompt do executor; o executor a roda com o índice do passo atual à medida que cada passo começa. Somente quando o
 executor não tem shell é que o orquestrador registra os passos relatados pelo executor com o mesmo comando.
-A linha impressa usa a sintaxe do shell que rodou `start`: POSIX quando `MSYSTEM` ou `SHELL` está definido (Git
-Bash), PowerShell caso contrário. O executor a cola em um shell do mesmo tipo; se o shell dele for diferente, ele
+A linha impressa usa a sintaxe do shell que rodou `start`: fora do Windows é sempre POSIX; no Windows é
+POSIX quando `MSYSTEM` ou `SHELL` está definido (Git Bash), PowerShell caso contrário. O executor a cola em um shell do mesmo tipo; se o shell dele for diferente, ele
 adapta apenas as aspas e o operador de chamada, nunca os caminhos ou argumentos.
 `review` e um `unblock --reviewer` direto avisam quando a posição registrada está antes do último passo.
 `start` registra o passo 1; progresso repetido não tem efeito, e uma nova tentativa recomeça do início. Esses contadores descrevem

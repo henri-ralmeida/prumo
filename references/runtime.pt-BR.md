@@ -322,9 +322,10 @@ dados porque a skill mudou. O revisor pode verificar o trabalho entregue na mesm
 histórico imutável. Ele imprime mudanças de campos por tarefa com tamanho limitado, resume contratos de validação sem seu
 conteúdo e registra diagnósticos de dependência/motivo de bloqueio em eventos estruturados. Sua linha final é
 `run "<run>" synced: +A, updated U, metadata M, preserved P, total T` (em pt-BR:
-`execução "<run>" sincronizada: +A, atualizadas U, metadados M, preservadas P, total T`): `metadata M` conta tarefas cujas únicas
-mudanças foram campos de metadados como `label`, `summary`, `validationSummary` ou `manualEstimate`; essas mudanças são
-aplicadas sem invalidar o planejamento nem a autorização de execução. A sincronização registra a
+`execução "<run>" sincronizada: +A, atualizadas U, metadados M, preservadas P, total T`): `metadata M` conta tarefas que tiveram ao menos
+um campo de metadados aplicado, como `label`, `summary`, `validationSummary` ou `manualEstimate` (uma tarefa que
+também mudou campos do contrato aparece em `updated` também); mudanças de metadados são aplicadas sem invalidar
+o planejamento nem a autorização de execução. A sincronização registra a
 definição aprovada; não é prova de que o trabalho ativo a atende.
 
 A sincronização também avisa quando invalida uma rodada aberta de discussão/planejamento ou um skip atual; ela
@@ -336,7 +337,7 @@ plano aprovado aparece como não sincronizada; uma tarefa ausente dele aparece c
 o `sync-plan` recusa remoção de tarefas. Fontes ausentes ou ilegíveis geram um aviso curto
 sem bloquear nenhum dos comandos. Uma rodada de planejamento aberta mostra sua idade e a contagem de artefatos aceitos (`0/N`);
 um lote registrado mostra `N/N`. Uma rodada que ainda estava aberta quando um `sync-plan` posterior exigiu uma
-confirmação de contrato deixa de contar como trabalho em andamento: `status` a mostra como
+confirmação de contrato deixa de contar como trabalho em andamento: `status` e `ready` a mostram como
 `planning round <id> (<n>) is stale after a contract change; artifacts x/y` (em pt-BR:
 `rodada de planejamento <id> (<n>) obsoleta após mudança de contrato; artefatos x/y`). Não espere pelos artefatos dela,
 porque `finish-phase-planning`/`finish-planning` os recusariam; comece uma nova rodada de discussão e
@@ -778,7 +779,7 @@ Resolva `scripts/engine.mjs` a partir da skill instalada. Acrescente `--run <nam
 | `migrate [--check]` | Migra com backup um schema legado seguro; `--check` apenas diagnostica |
 | `status`, `ready`, `graph`, `runs` | Estado, trabalho pronto agora, JSON completo ou a lista de execuções |
 | `status --verify-install` | Também compara os arquivos instalados com o marcador de instalação |
-| `authorize --scope run\|phase:<phase>\|tasks:<T1,T2> [--mode auto\|manual] --confirmed-by-user` | Registra o escopo e o modo de despacho aceitos pelo usuário; `auto` é o padrão |
+| `authorize --scope run\|phase:<phase>\|tasks:<T1,T2> [--mode auto\|manual] [--channel <name>] --confirmed-by-user` | Registra o escopo e o modo de despacho aceitos pelo usuário; `auto` é o padrão |
 | `show-contract <task> [--diff]` | Exibe o contrato de negócio antes/depois sem os comandos `validation.run` |
 | `show-check <task> --check <N> --attempt <K>` | Exibe stdout, stderr, diretório, código de saída e status de reutilização do check armazenado |
 | `begin-phase-discussion <phase> [--adopt-legacy]` | Persiste a discussão escolhida da fase antes da primeira pergunta; a opção adota uma fase legada segura |
@@ -790,7 +791,7 @@ Resolva `scripts/engine.mjs` a partir da skill instalada. Acrescente `--run <nam
 | `begin-discussion <task> [--adopt-legacy]` | Persiste uma discussão de tarefa ativa; a opção adota somente uma tarefa legada elegível |
 | `skip-discussion <task> --reason <text> --confirmed-by-user` | Registra a escolha explícita de pular a discussão da tarefa |
 | `finish-discussion <task> --context <discovery.json>` | Valida as respostas da rodada atual e libera o planejamento |
-| `plan-task <task> --agent <name>` | Registra o planejador após a discussão fechada |
+| `plan-task <task> --agent <name> [--context <file>] [--accept-premature-work]` | Registra o planejador após a discussão fechada |
 | `skip-planning <task> --reason <text> --confirmed-by-user` | Registra a escolha explícita de pular o planejamento da tarefa |
 | `finish-planning <task> --plan <artifact.json>` | Confere e registra o plano da tarefa; libera a execução se não houver pausa preservada |
 | `start <task> --agent <name>` | Registra o executor e abre uma tentativa (`--executor` é um alias) |

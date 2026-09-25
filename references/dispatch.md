@@ -130,8 +130,8 @@ When reporting completion, give the orchestrator a 1–2 sentence result-and-why
 `start` prints a ready `progress <task> --step 1 --agent <executor> --run <run>` line. Put that line in the
 executor prompt; the executor runs it with the current step index as each step begins. Only when the
 executor has no shell does the orchestrator record the executor's reported steps with the same command.
-The printed line uses the syntax of the shell that ran `start`: POSIX when `MSYSTEM` or `SHELL` is set (Git
-Bash), PowerShell otherwise. The executor pastes it into a shell of the same kind; if its shell differs, it
+The printed line uses the syntax of the shell that ran `start`: outside Windows it is always POSIX; on Windows
+it is POSIX when `MSYSTEM` or `SHELL` is set (Git Bash), PowerShell otherwise. The executor pastes it into a shell of the same kind; if its shell differs, it
 adapts only the quoting and call operator, never the paths or arguments.
 `review` and a direct `unblock --reviewer` warn when the recorded position is before the last step.
 `start` records step 1; repeated progress is a no-op, and a new attempt starts over. These counters describe
