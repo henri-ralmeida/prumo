@@ -117,6 +117,22 @@ test('dashboard selects legacy and central data without writes or translation of
   const runs = await (await get('/api/runs')).json()
   assert.equal(runs.currentRoot, 'work')
   assert.equal(runs.runs.length, 3)
+  const planningRun = runs.runs.find(run => run.root === 'work' && run.run === 'planning-demo')
+  assert.equal(planningRun.activity, 'working')
+  assert.equal(planningRun.complete, false)
+  const graph = join(root, '.specs', 'graph')
+  for (const [name, states] of [['complete-demo', ['done', 'done']], ['almost-demo', ['done', 'skipped']]]) {
+    const directory = join(graph, name)
+    mkdirSync(directory)
+    writeFileSync(join(directory, 'state.json'), JSON.stringify({ plan: { name }, tasks: Object.fromEntries(states.map((state, index) =>
+      [`T${index + 1}`, { id: `T${index + 1}`, state }])) }))
+  }
+  const refreshed = (await (await get('/api/runs')).json()).runs
+  assert.equal(refreshed.find(run => run.run === 'complete-demo')?.complete, true)
+  assert.equal(refreshed.find(run => run.run === 'complete-demo')?.doneCount, 2)
+  assert.equal(refreshed.find(run => run.run === 'almost-demo')?.complete, false,
+    'um plano so entra em no prumo quando todas as tarefas estao done')
+  assert.equal(refreshed.find(run => run.run === 'almost-demo')?.activity, 'idle')
   const selected = await (await get('/api/state?root=work&run=demo')).json()
   assert.equal(selected.tasks.T1.title, 'done')
   assert.equal(selected.derived.T1.effective, 'blocked')

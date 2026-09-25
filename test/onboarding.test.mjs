@@ -219,6 +219,32 @@ test('sem execução carregada, a demonstração mostra checkout-v2, T1–T10 e 
   assert.equal(ui.translate('Illustrative example — not current run data.'), 'Exemplo ilustrativo — não são dados da execução atual.')
 
   const html = readFileSync(new URL('../scripts/dashboard.html', import.meta.url), 'utf8')
+  const style = html.match(/<style>([\s\S]*?)<\/style>/)?.[1]
+  assert.ok(style)
+  assert.match(style, /#onboarding\.presenting \.guide-example \{ width: min\(1080px, 100%\)/,
+    'o quadro de exemplo ocupa espaço suficiente em tela cheia desktop')
+  const desktopPresentation = style.match(/#onboarding\.presenting \{([^}]+)\}/)?.[1]
+  assert.match(desktopPresentation ?? '', /justify-content:\s*safe center/,
+    'desktop centraliza quando cabe e volta ao início se o conteúdo exceder a altura')
+  assert.match(desktopPresentation ?? '', /overflow:\s*auto/,
+    'o modo de apresentação pode rolar quando o conteúdo excede a altura disponível')
+  assert.match(style, /\.guide-example-node > span \{[^}]*font: 600 14px\/1\.3 var\(--font-display\)/,
+    'o nome das tarefas permanece legível no exemplo')
+  assert.match(style, /\.guide-example-node small \{[^}]*font-size: 11px/,
+    'papel ou estado não fica reduzido a microtexto')
+  const mobileRuleStart = style.lastIndexOf('@media (max-width: 700px) {')
+  assert.notEqual(mobileRuleStart, -1)
+  const mobileStyles = style.slice(mobileRuleStart)
+  const mobilePresentation = mobileStyles.match(/#onboarding\.presenting \{([^}]+)\}/)?.[1]
+  assert.match(mobilePresentation ?? '', /height:\s*100dvh/)
+  assert.match(mobilePresentation ?? '', /justify-content:\s*flex-start/,
+    'em celular, conteúdo mais alto que a tela começa no topo e permanece acessível por rolagem')
+  assert.match(mobileStyles, /\.guide-example-chain \{ grid-template-columns: minmax\(0, 1fr\)/,
+    'em tela estreita cada dependência usa a largura inteira')
+  assert.match(mobileStyles, /\.guide-example-arrow \{[^}]*transform: rotate\(90deg\)/,
+    'as setas acompanham a leitura vertical no celular')
+  assert.match(html, /Illustrative example — not current run data\./,
+    'o mock deixa explícito que não é dado real da execução')
   for (const task of ['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10']) assert.match(html, new RegExp(`<b>${task}</b>`))
   for (const [from, to] of [['T1', 'T4'], ['T4', 'T8'], ['T2', 'T5'], ['T5', 'T8'], ['T2', 'T6'], ['T6', 'T9'], ['T3', 'T7'], ['T7', 'T10']]) {
     const edge = new RegExp(`<b>${from}</b>[\\s\\S]*?<span class="guide-example-arrow"[^>]*>→<\\/span>[\\s\\S]*?<b>${to}</b>`)

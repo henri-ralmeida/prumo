@@ -884,5 +884,11 @@
   "When a run is available, open Results to see its summary and measured data.": "Quando houver uma execução, abra Resultados para ver seu resumo e os dados medidos.",
   "Filter this dashboard by status and read how many tasks are in each state.": "Filtre este dashboard por estado e veja quantas tarefas estão em cada etapa.",
   "Open Results to see the selected run's summary and measured data.": "Abra Resultados para ver o resumo e os dados medidos da execução selecionada.",
-  "The legend maps each task state to its color and explains dependency lines.": "A legenda associa cada estado de tarefa à cor correspondente e explica as linhas de dependência."
+  "The legend maps each task state to its color and explains dependency lines.": "A legenda associa cada estado de tarefa à cor correspondente e explica as linhas de dependência.",
+  "Filter plans": "Filtrar planos",
+  "in progress": "em andamento",
+  "paused": "parado",
+  "{0} of {1} tasks in prumo": "{0} de {1} tarefas no prumo",
+  "No completed plans yet.": "Nenhum plano concluído ainda.",
+  "No plans in progress.": "Nenhum plano em andamento."
 }

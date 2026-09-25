@@ -875,7 +875,7 @@ test('Gravidade cards and agent panels show measured activity in the compact das
   assert.match(html, /<summary class="run-trigger"/)
   assert.doesNotMatch(html, /<select[^>]+id="runSelect"/)
   assert.match(html, /<details class="legend-box" data-prumo-guide-anchor="legend">/)
-  assert.match(html, /#eventsBox \{ display: flex; flex: 1;/)
+  assert.match(html, /#eventsBox \{ display: flex; flex: 1 0 170px;[^}]*min-height: 170px;/)
   assert.match(html, /#pop \{[^}]*width: 472px/)
   assert.match(html, /#pop \.pk \{[^}]*10px[^}]*var\(--font-mono\)/)
   assert.match(html, /#pop \.lead \{ font: 400 16px\/1\.45 var\(--font-display\)/)
@@ -969,6 +969,31 @@ test('the dashboard ships its own licensed fonts and the page policy allows only
   assert.match(serve, /font-src data:;/)
 })
 
+test('o seletor separa planos em andamento dos concluidos', () => {
+  const ui = dashboard('pt-BR')
+  const catalog = { currentRoot: 'root', current: 'active', runs: [
+    { root: 'root', run: 'active', plan: 'Plano atual', taskCount: 3, doneCount: 1, complete: false, activity: 'working' },
+    { root: 'root', run: 'paused', plan: 'Aguardando decisao', taskCount: 2, doneCount: 0, complete: false, activity: 'idle' },
+    { root: 'root', run: 'finished', plan: 'Plano entregue', taskCount: 2, doneCount: 2, complete: true, activity: 'idle' },
+  ] }
+  ui.run(`updateRunSelect(${JSON.stringify(catalog)})`)
+  let options = ui.nodes.get('#runOptions').innerHTML
+  assert.match(options, /em andamento/)
+  assert.match(options, /data-run="root\/active" aria-current="true"/)
+  assert.match(options, /em execução/)
+  assert.match(options, /parado/)
+  assert.doesNotMatch(options, /data-run="root\/finished"/)
+
+  ui.run("RUN_FILTER = 'complete'; updateRunSelect(RUN_CATALOG)")
+  options = ui.nodes.get('#runOptions').innerHTML
+  assert.match(options, /data-run="root\/finished"/)
+  assert.match(options, /✓ no prumo/)
+  assert.doesNotMatch(options, /data-run="root\/active"/)
+
+  ui.run("updateRunSelect({ currentRoot: null, current: null, runs: [] })")
+  assert.doesNotMatch(ui.nodes.get('#runOptions').innerHTML, /placeholder-01|data-run-demo/)
+})
+
 test('available tasks say who moves each one next and give way to the selected task', () => {
   const tasks = {
     K: task('K', 'blocked', { blockReason: 'pick <the> API version', blockQuestion: 'Which API version should ship?',
@@ -985,7 +1010,7 @@ test('available tasks say who moves each one next and give way to the selected t
     const list = ui.nodes.get('#available').innerHTML
     assert.equal(ui.nodes.get('#availableBox').hidden, false)
     assert.equal(ui.nodes.get('#selectedBox').hidden, true)
-    assert.deepEqual([...list.matchAll(/openTask\('(\w+)'\)/g)].map(m => m[1]), ['K', 'E', 'P'], 'needs-you first, then the next role in the flow')
+    assert.deepEqual([...list.matchAll(/jumpTo\('(\w+)'\)/g)].map(m => m[1]), ['K', 'E', 'P'], 'needs-you first, then the next role in the flow')
     assert.match(list, /--role:var\(--blocked\)[\s\S]*pick &lt;the&gt; API version/)
     assert.match(list, lang === 'en' ? /Decision question: Which API version should ship\? · Options: v1 \/ v2/ :
       /Pergunta para decisão: Which API version should ship\? · Opções: v1 \/ v2/)
@@ -1001,7 +1026,9 @@ test('available tasks say who moves each one next and give way to the selected t
     assert.match(resultTask, /v2/)
     const availableTarget = { closest(selector) { return selector === '.avail' ? this : null } }
     const emptyTarget = { closest() { return null } }
-    ui.dispatchDocument('click', { target: availableTarget }, () => ui.run("openTask('E')"))
+    ui.run('SIDEBAR_COLLAPSED = true; applySidebar()')
+    ui.dispatchDocument('click', { target: availableTarget }, () => ui.run("jumpTo('E')"))
+    assert.equal(ui.nodes.get('#sidebar').hidden, false, 'explicit task navigation reveals the selected sidebar on desktop')
     assert.equal(ui.nodes.get('#availableBox').hidden, true)
     assert.equal(ui.nodes.get('#selectedBox').hidden, false)
     assert.match(ui.nodes.get('#selectedTask').innerHTML, /E · Task E/)

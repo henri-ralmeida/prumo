@@ -157,6 +157,15 @@ function currentRun(root = ROOT) {
   return existsSync(p) ? safeRun(readFileSync(p, 'utf8').trim()) : null
 }
 
+function runProgress(state) {
+  const tasks = Object.values(state.tasks ?? {})
+  const done = tasks.filter(task => task.state === 'done').length
+  const working = tasks.some(task => ['discussing', 'planning', 'running', 'reviewing'].includes(task.state)) ||
+    Object.values(state.phaseWorkflows ?? {}).some(phase => ['discussing', 'planning'].includes(phase.state))
+  return { taskCount: tasks.length, doneCount: done, complete: tasks.length > 0 && done === tasks.length,
+    activity: working ? 'working' : 'idle' }
+}
+
 function catalog() {
   const { roots, warnings } = graphRoots()
   const runs = []
@@ -177,6 +186,7 @@ function catalog() {
           run: entry.name,
           plan: state.plan?.name ?? '',
           updatedAt: state.updatedAt ?? statSync(statePath).mtime.toISOString(),
+          ...runProgress(state),
         })
       } catch { /* one damaged run must not hide the others */ }
     }
