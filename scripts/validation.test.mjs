@@ -8,6 +8,17 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout } from 'node:timers/promises'
 
 const engine = resolve(process.env.GRAPH_TEST_ENGINE ?? join(dirname(fileURLToPath(import.meta.url)), 'engine.mjs'))
+
+// The slow check signals that it started and then waits for the test to release it, so the concurrent
+// state change always lands while the check is still running, however loaded the machine is.
+const gatedCheck = "const fs = require('node:fs'); fs.writeFileSync('started', 'yes'); const limit = Date.now() + 60000; " +
+  "const wait = () => fs.existsSync('release') || Date.now() > limit ? require('./delivery.test.cjs') : setTimeout(wait, 20); wait();\n"
+
+async function waitForFile(path, timeoutMs = 30000) {
+  const limit = Date.now() + timeoutMs
+  while (!existsSync(path) && Date.now() < limit) await setTimeout(30)
+  assert.ok(existsSync(path), `${path} was not created within ${timeoutMs}ms`)
+}
 const staticStep = { run: 'node --check delivery.cjs', kind: 'static', expect: 'valid JavaScript syntax' }
 const functionalStep = { run: 'node delivery.test.cjs', kind: 'functional', expect: 'express delivery is 1 day; normal delivery is 3 days' }
 
@@ -302,7 +313,7 @@ test('legacy origin is only defaulted for unstarted tasks; completed tasks canno
 
 test('pause and resume during validation cannot revive the in-flight result', async (t) => {
   const f = fixture(t, { validation: [{ ...functionalStep, run: 'node slow.test.cjs' }] })
-  writeFileSync(join(f.project, 'slow.test.cjs'), "require('node:fs').writeFileSync('started','yes'); setTimeout(() => require('./delivery.test.cjs'),1500);\n")
+  writeFileSync(join(f.project, 'slow.test.cjs'), gatedCheck)
   f.beginReview()
   const attempts = f.state().tasks.T1.attempts
   const child = spawn(process.execPath, [engine, 'validate', 'T1', '--ok', '--evidence', 'Reviewed slow test', '--cwd', f.project], f.options)
@@ -310,10 +321,10 @@ test('pause and resume during validation cannot revive the in-flight result', as
   child.stdout.on('data', data => { output += data })
   child.stderr.on('data', data => { output += data })
   const completed = new Promise((resolve, reject) => { child.on('error', reject); child.on('close', resolve) })
-  for (let i = 0; i < 100 && !existsSync(join(f.project, 'started')); i++) await setTimeout(30)
-  assert.ok(existsSync(join(f.project, 'started')))
+  await waitForFile(join(f.project, 'started'))
   f.ok('block', 'T1', '--reason', 'Pause validation')
   f.ok('unblock', 'T1')
+  writeFileSync(join(f.project, 'release'), 'yes')
   assert.notEqual(await completed, 0, output)
   assert.match(output, /task changed during validation/)
   assert.equal(f.state().tasks.T1.state, 'reviewing')
@@ -616,17 +627,17 @@ test('independent reviewer remains mandatory, even with force', (t) => {
 
 test('validation releases run lock and discards results if task changes during execution', async (t) => {
   const f = fixture(t, { validation: [{ kind: 'functional', run: 'node slow.test.cjs', expect: 'delivery scenarios pass' }] })
-  writeFileSync(join(f.project, 'slow.test.cjs'), "require('node:fs').writeFileSync('started','yes'); setTimeout(() => require('./delivery.test.cjs'),1500);\n")
+  writeFileSync(join(f.project, 'slow.test.cjs'), gatedCheck)
   f.beginReview()
   const child = spawn(process.execPath, [engine, 'validate', 'T1', '--ok', '--evidence', 'Reviewed slow test', '--cwd', f.project], f.options)
   let output = ''
   child.stdout.on('data', (data) => { output += data })
   child.stderr.on('data', (data) => { output += data })
   const completed = new Promise((resolve, reject) => { child.on('error', reject); child.on('close', resolve) })
-  for (let i = 0; i < 100 && !existsSync(join(f.project, 'started')); i++) await setTimeout(30)
-  assert.ok(existsSync(join(f.project, 'started')))
+  await waitForFile(join(f.project, 'started'))
   f.ok('note', 'T1', '--text', 'Concurrent update preserved')
   f.ok('block', 'T1', '--reason', 'Requirements changed during execution')
+  writeFileSync(join(f.project, 'release'), 'yes')
   assert.notEqual(await completed, 0, output)
   assert.match(output, /task changed during validation/)
   assert.equal(f.state().tasks.T1.validations.at(-1).ok, false)
@@ -829,7 +840,7 @@ test('refresh refuses invalid contracts and does not rewrite completed history',
 
 test('refresh during validation discards the old result without losing the attempt', async (t) => {
   const f = fixture(t, { validation: [{ ...functionalStep, run: 'node slow.test.cjs' }] })
-  writeFileSync(join(f.project, 'slow.test.cjs'), "require('node:fs').writeFileSync('started','yes'); setTimeout(() => require('./delivery.test.cjs'),1500);\n")
+  writeFileSync(join(f.project, 'slow.test.cjs'), gatedCheck)
   f.beginReview()
   const attempts = f.state().tasks.T1.attempts
   const child = spawn(process.execPath, [engine, 'validate', 'T1', '--ok', '--evidence', 'Reviewed slow test', '--cwd', f.project], f.options)
@@ -837,8 +848,7 @@ test('refresh during validation discards the old result without losing the attem
   child.stdout.on('data', (data) => { output += data })
   child.stderr.on('data', (data) => { output += data })
   const completed = new Promise((resolve, reject) => { child.on('error', reject); child.on('close', resolve) })
-  for (let i = 0; i < 100 && !existsSync(join(f.project, 'started')); i++) await setTimeout(30)
-  assert.ok(existsSync(join(f.project, 'started')))
+  await waitForFile(join(f.project, 'started'))
   const original = structuredClone(f.plan.tasks[0].validation)
   f.plan.tasks[0].validation[0].timeoutMs = 900000
   writeFileSync(f.planPath, JSON.stringify(f.plan))
@@ -846,6 +856,7 @@ test('refresh during validation discards the old result without losing the attem
   f.plan.tasks[0].validation = original
   writeFileSync(f.planPath, JSON.stringify(f.plan))
   f.ok('refresh-contract', 'T1', '--plan', f.planPath)
+  writeFileSync(join(f.project, 'release'), 'yes')
   assert.notEqual(await completed, 0, output)
   assert.match(output, /task changed during validation/)
   assert.equal(f.state().tasks.T1.validations.at(-1).ok, false)

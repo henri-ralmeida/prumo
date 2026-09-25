@@ -25,7 +25,7 @@ function sourceTask(task) {
     maxAttempts: task.maxAttempts,
     tags: task.tags ?? [],
     touches: task.touches ?? [],
-    unavailable: task.unavailable,
+    unavailable: task.unavailable === undefined ? undefined : [...new Set(task.unavailable)],
   }
 }
 

@@ -128,6 +128,7 @@ plans live in the workspace's `.specs/graph/plans/`. Node.js 22+, zero runtime d
       "label": "Card sync",
       "summary": "Approved card details reach the customer account without a second manual step.",
       "validationSummary": "The account shows the approved card status.",
+      "manualEstimate": "4h30",
       "deps": ["T0"],
       "validation": [{ "kind": "functional", "run": "pnpm test:changed", "expect": "the task-specific behavior cases pass" }],
       "touches": ["supabase/functions/scenes/"],
@@ -150,16 +151,26 @@ and a valid validation contract; phase planning refines each task's execution wi
 | `label`         | string                        | —         | Optional business label: 1–3 words, at most 24 characters; display only                      |
 | `summary`       | string                        | —         | Optional 1–2 sentences stating the expected result and why it matters; display only           |
 | `validationSummary` | string                     | —         | Optional acceptance sentence for concise task views; it does not replace `validation`       |
+| `manualEstimate` | number \| string            | —         | Optional estimate for doing the task by hand: whole minutes (`45`) or `4h`, `4h30`, `90m`, `45min`, `PT4H30M`; stored as whole minutes; metadata only |
 | `phase`         | string                        | —         | Id of a `phases[]` entry; groups the task in status and dashboard swimlanes                   |
 | `deps`          | string[]                      | `[]`      | Task ids that must be `done`/`skipped` first — the ENTIRE scheduling model                    |
 | `validation`    | string \| {run, expect, kind, cacheable?, cachePaths?, cwd?, env?, shell?, expectedExitCodes?, timeoutMs?}[]    | `""`      | What must be TRUE before done. Prose, or structured steps (see below)                         |
 | `validationMode` | "functional" \| "inspection" | "functional" | Behavioral checks required unless this is a justified non-runtime inspection. |
 | `inspectionReason` | string | — | Required for inspection; explain why runtime behavior is unaffected. |
 | `touches`       | string[]                      | `[]`      | Path prefixes the task writes; `init` refuses parallel tasks with overlapping paths           |
-| `unavailable`   | resource[]                    | —         | Resources this task cannot use: `database`, `network`, `credential`, `external-service`, `production-data`, `manual-inspection`; changing it requires fresh planning |
+| `unavailable`   | resource[]                    | —         | Resources this task cannot use: `database`, `network`, `credential`, `external-service`, `production-data`, `manual-inspection`; changing it requires fresh planning; repeated entries are stored once |
 | `tags`          | string[]                      | `[]`      | Free labels (`migration`, `docs`…) — informational only                                       |
 | `requireReview` | boolean                       | inherit   | Per-task override of the plan's `requireReview` (e.g. `false` for a mechanical docs task)     |
 | `maxAttempts`   | number                        | `3`       | Per-task retry cap before `retry` demands escalation (`--force` overrides)                    |
+
+`unavailable` is part of the task contract, like `touches`: changing what a task cannot use changes what
+its validation can prove, so `sync-plan` treats it as a contract change and the task needs current planning.
+Repeated resources are normalized to one entry, so listing a resource twice is not reported as drift.
+
+`label`, `summary`, `validationSummary` and `manualEstimate` are metadata. Changing only them through
+`sync-plan` updates the presentation (`metadataUpdated` in the sync event) without changing the contract or
+invalidating planning. `manualEstimate` is a human estimate for the gains view, never a measurement; the
+state keeps it as whole minutes, and invalid values (zero, negative, fractional or unreadable) are refused.
 
 Plan-level fields: `name` (required), `description`, `phases[]` (`{id, title}`),
 `maxParallel` (4), `maxExecutors` (3), `requireReview` (true).
@@ -284,10 +295,14 @@ approved definition; it is not proof that active work meets it.
 
 Synchronization also warns when it invalidates an open discussion/planning round or a current skip; it
 continues applying the approved plan. `begin-phase-discussion` closes a stale open phase round as
-`superseded` and records the cause. `status` and `ready` compare the approved source with persisted task
-contracts and report the task IDs and changed fields. Missing or unreadable sources produce a short warning
+`superseded`, records the cause and prints it, including the contract fields `sync-plan` changed. Edit the
+plan and run `sync-plan` before `begin-*-discussion`. `status` and `ready` compare the approved source with persisted task
+contracts and report the task IDs and changed fields, each followed by "run sync-plan". A task new in the
+approved plan is reported as not synchronized; a task missing from it is reported as missing, because
+`sync-plan` refuses task removal. Missing or unreadable sources produce a short warning
 without blocking either command. An open planning round shows its age and accepted artifact count (`0/N`);
-a recorded batch shows `N/N`.
+a recorded batch shows `N/N`. When `plan-phase` received `--plan-dir`, the open round counts the
+`task-plan-<id>.json` files already present in that directory instead.
 
 Use `show-contract <task> [--diff]` to inspect the complete before/after business contract before accepting a
 change. It includes full `expect` and inspection text while omitting executable `validation.run` commands.
@@ -541,7 +556,10 @@ gate only at that point. `status` reports scheduled and overdue questions. Use t
 question reference in a later resolved decision, for example
 `{ "question": "Which protocol?", "answer": "Use the existing client.", "resolvesQuestion": "T1:plan:abc123" }`.
 In task-planning mode, a `{ "beforePhase": "F2" }` deadline becomes due when any task in F2 begins
-discussion or planning.
+discussion or planning. After a plan is recorded, `finish-phase-planning` and `finish-planning` print the
+questions for the user now (with any proposed answer) and those with a later deadline, and warn when an
+explicit `"executor"` question has no proposed `answer`. Only the `user-now` questions go to the user before
+execution.
 Never invent an answer or downgrade a consequential uncertainty to pass this check.
 
 The engine stores each `taskPlan`, planner/timing/context metadata and immutable planning history, then
@@ -643,8 +661,11 @@ node $ENGINE authorize --scope tasks:T4,T5 --confirmed-by-user  # auto is the de
 
 `authorize` stores the accepted scope, mode, time and channel; it neither starts tasks nor creates
 agents. `ready` and `status` show each task's authorization, available execution slots and a
-suggested action. In auto mode, keep filling free slots from authorized ready tasks after review or
-completion; in manual mode, ask before each dispatch. A task whose contract changes in `sync-plan` or
+suggested action. A run with no recorded scope keeps the earlier behavior: `start` works and reports that
+no scope is recorded. Once any scope exists, `start` refuses tasks outside it. In auto mode, keep filling
+free slots from authorized ready tasks after review or completion; when `review` or `done` opens a slot for
+authorized ready work, the engine prints the next `start` commands and records a `slot_freed` event
+(`freedBy`, `cause`, `slots`, `next`). In manual mode, ask before each dispatch. A task whose contract changes in `sync-plan` or
 `refresh-contract` loses its authorization until the user accepts that task again. A changed global plan decision requires
 renewed acceptance for the affected nonterminal tasks; attempts already running continue under their
 recorded state. In manual mode, require `--confirmed-by-user` on each `start`, `review` and `retry`, and when
@@ -674,7 +695,7 @@ node .claude/skills/prumo/scripts/engine.mjs ready                 # what can st
 node .claude/skills/prumo/scripts/engine.mjs begin-phase-discussion F1 # use --adopt-legacy only for a safe old phase
 node .claude/skills/prumo/scripts/engine.mjs skip-phase-discussion F1 --reason "The approved contract is clear" --confirmed-by-user # after explicit user choice
 node .claude/skills/prumo/scripts/engine.mjs finish-phase-discussion F1 --context <discovery.json>
-node .claude/skills/prumo/scripts/engine.mjs plan-phase F1 --agent plan-server
+node .claude/skills/prumo/scripts/engine.mjs plan-phase F1 --agent plan-server --plan-dir <artifact-dir>  # dir optional
 # The read-only planner writes one task-plan-<id>.json per target.
 node .claude/skills/prumo/scripts/engine.mjs skip-phase-planning F1 --reason "The global contract is sufficient" --confirmed-by-user # after explicit user choice
 node .claude/skills/prumo/scripts/engine.mjs finish-phase-planning F1 --plan-dir <artifact-directory>
@@ -690,7 +711,14 @@ node .claude/skills/prumo/scripts/engine.mjs retry T2              # warns after
 node .claude/skills/prumo/scripts/engine.mjs block T9 --reason "needs dev decision" --question "Which policy applies?" --option "Keep current" --option "Adopt proposed"
 node .claude/skills/prumo/scripts/engine.mjs unblock T9 --answer "Keep current"
 node .claude/skills/prumo/scripts/engine.mjs status | graph        # human table | full JSON
+node .claude/skills/prumo/scripts/engine.mjs status --verify-install # also compare installed files with the marker
 ```
+
+The first `status` line identifies the running code: `Prumo <version> (<contentId>) — <harness>`, read
+from the installation marker beside `scripts/`. A source checkout reports its computed content ID and no
+harness. An old marker without `contentId` asks for `prumo update`. When the running `engine.mjs` differs from
+the marker's `engineHash`, `status` warns without blocking; `status --verify-install` recomputes the content
+ID of the installed files. `prumo status --verify-install` checks every registered installation.
 
 Rules the engine enforces (everything else is the orchestrator's judgment):
 

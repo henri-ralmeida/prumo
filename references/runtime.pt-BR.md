@@ -32,6 +32,7 @@ Cada execução usa `.specs/graph/<run>/state.json` e `events.ndjson`. `CURRENT`
     "label": "Cartões",
     "summary": "Os dados aprovados chegam à conta sem uma segunda etapa manual.",
     "validationSummary": "A conta mostra o status de cartão aprovado.",
+    "manualEstimate": "4h30",
     "phase": "P1", "deps": [], "touches": ["entrega/"],
     "unavailable": ["database", "manual-inspection"],
     "validationMode": "functional",
@@ -46,12 +47,15 @@ Cada execução usa `.specs/graph/<run>/state.json` e `events.ndjson`. `CURRENT`
 `deps` define a ordem. Dependências concluídas ou explicitamente puladas liberam a tarefa. Ciclos, IDs duplicados e dependências desconhecidas são recusados. `touches` detecta gravações sobrepostas entre tarefas paralelas; `--allow-overlap` é uma exceção explícita de agendamento.
 
 `unavailable` é opcional e aceita somente `database`, `network`, `credential`, `external-service`,
-`production-data` e `manual-inspection`. Alterar essa lista muda o contrato da tarefa e exige planejamento atual.
+`production-data` e `manual-inspection`. Assim como `touches`, a lista faz parte do contrato da tarefa: mudar o
+que a tarefa não pode usar muda o que a validação consegue provar, então o `sync-plan` trata a alteração como
+mudança de contrato e exige planejamento atual. Recursos repetidos são gravados uma única vez e não aparecem
+como divergência de contrato.
 `init` e `sync-plan` avisam quando um prefixo de `touches` não existe no cwd da validação ou no `cwd`
 declarado por um passo; o aviso não bloqueia, pois novos arquivos e pastas são legítimos. Cwd inacessível
 é informado como checagem não realizada.
 
-`label` aceita de 1 a 3 palavras e até 24 caracteres; `summary` descreve em 1–2 frases o resultado esperado e por quê; `validationSummary` resume em uma frase o aceite. Todos são textos opcionais e precisam estar preenchidos quando presentes. Uma alteração apenas nesses textos via `sync-plan` atualiza a apresentação sem mudar o contrato nem invalidar o planejamento. O dashboard preserva o `title` completo em detalhes e tooltips; não gera nem corta um rótulo substituto.
+`label` aceita de 1 a 3 palavras e até 24 caracteres; `summary` descreve em 1–2 frases o resultado esperado e por quê; `validationSummary` resume em uma frase o aceite. Todos são textos opcionais e precisam estar preenchidos quando presentes. `manualEstimate` é opcional e estima quanto tempo a tarefa levaria feita à mão: minutos inteiros (`45`) ou `4h`, `4h30`, `90m`, `45min`, `PT4H30M`. O estado guarda o valor em minutos inteiros; zero, negativos, frações ou textos ilegíveis são recusados. É uma estimativa humana para a visão de ganhos, nunca uma medição. Uma alteração apenas nesses campos (`label`, `summary`, `validationSummary`, `manualEstimate`) via `sync-plan` atualiza a apresentação sem mudar o contrato nem invalidar o planejamento. O dashboard preserva o `title` completo em detalhes e tooltips; não gera nem corta um rótulo substituto.
 
 `requireReview` pode ser definido por tarefa ou plano; o padrão exige revisão. Desabilitar revisão não elimina a comprovação funcional. `maxAttempts` por tarefa define o limite de tentativas antes de escalar; o padrão é três. `tags` é uma lista opcional de classificações.
 
@@ -199,7 +203,10 @@ impedimento de execução somente nesse momento. `status` mostra perguntas progr
 Resolva uma pergunta posterior com um item de `decisions` que informe a referência exibida em
 `resolvesQuestion`, por exemplo `{ "question": "Qual protocolo?", "answer": "Use o cliente existente.",
 "resolvesQuestion": "T1:plan:abc123" }`. No planejamento por tarefa, o prazo `{ "beforePhase": "F2" }`
-vence quando qualquer tarefa de F2 inicia discussão ou planejamento. Não invente respostas nem omita uma incerteza consequencial.
+vence quando qualquer tarefa de F2 inicia discussão ou planejamento. Depois de gravar o plano,
+`finish-phase-planning` e `finish-planning` imprimem as perguntas para o usuário agora (com a resposta
+proposta, se houver) e as de prazo futuro, e avisam quando uma pergunta `"executor"` explícita não tem
+`answer` proposto. Antes da execução, só as perguntas `user-now` vão ao usuário. Não invente respostas nem omita uma incerteza consequencial.
 
 Cada plano de tarefa pode ter um `summary` não vazio de 1–2 frases sobre o caminho escolhido e por quê.
 O motor salva cada `taskPlan` e seu histórico imutável. O escopo usa contratos, sem estado mutável das
@@ -261,13 +268,14 @@ Resolva `scripts/engine.mjs` a partir da skill instalada. Acrescente `--run <nom
 | `init --plan <arquivo> --run <nome>` | Inicializa execução do plano aprovado |
 | `migrate [--check]` | Migra com backup o schema legado seguro; `--check` apenas diagnostica |
 | `status`, `ready`, `graph`, `runs` | Consulta estado, trabalho pronto, JSON ou execuções |
+| `status --verify-install` | Também compara os arquivos instalados com o marcador de instalação |
 | `authorize --scope run\|phase:<fase>\|tasks:<T1,T2> [--mode auto\|manual] --confirmed-by-user` | Registra o escopo e o modo de despacho aceitos pelo usuário; `auto` é o padrão |
 | `show-contract <tarefa> [--diff]` | Exibe os contratos de negócio antes/depois sem comandos `validation.run` |
 | `show-check <tarefa> --check <N> --attempt <K>` | Exibe stdout, stderr, diretório, código de saída e reutilização do recibo armazenado |
 | `begin-phase-discussion <fase> [--adopt-legacy]` | Persiste a discussão escolhida da fase antes da primeira pergunta; a opção adota uma fase legada segura |
 | `skip-phase-discussion <fase> --reason <texto> --confirmed-by-user` | Registra a escolha explícita de pular a discussão da fase |
 | `finish-phase-discussion <fase> --context <descoberta.json>` | Valida o recibo e as respostas da rodada atual |
-| `plan-phase <fase> --agent <nome>` | Registra o único planejador somente leitura da fase |
+| `plan-phase <fase> --agent <nome> [--plan-dir <diretório>]` | Registra o único planejador somente leitura da fase; o diretório opcional permite contar os artefatos já gravados |
 | `skip-phase-planning <fase> --reason <texto> --confirmed-by-user` | Registra a escolha explícita de pular o planejamento da fase após a decisão de discussão |
 | `finish-phase-planning <fase> --plan-dir <diretório>` | Valida e grava atomicamente um plano imutável por tarefa alvo |
 | `begin-discussion <tarefa> [--adopt-legacy]` | Persiste discussão ativa; a opção adota somente uma tarefa legada elegível |
@@ -303,8 +311,12 @@ estado legado sem denominador continua sem total inventado.
 Depois que o usuário aprovar o plano, pergunte se a autorização cobre a execução inteira, uma fase ou
 tarefas escolhidas, e se o modo é `auto` ou `manual`. Só então execute `authorize` com
 `--confirmed-by-user`. O comando registra o aceite; não cria agentes nem inicia tarefas ou fases.
-`ready` e `status` mostram autorização por tarefa, vagas livres e uma ação sugerida. No modo `auto`,
-preencha vagas livres com tarefas autorizadas quando revisão ou conclusão liberar capacidade. No modo
+`ready` e `status` mostram autorização por tarefa, vagas livres e uma ação sugerida. Uma execução sem
+nenhum escopo registrado mantém o comportamento anterior: `start` funciona e avisa que não há escopo. Depois
+que algum escopo existir, `start` recusa tarefas fora dele. No modo `auto`, preencha vagas livres com tarefas
+autorizadas quando revisão ou conclusão liberar capacidade: se `review` ou `done` abrir vaga para trabalho
+autorizado pronto, o motor imprime os próximos comandos `start` e grava o evento `slot_freed` (`freedBy`,
+`cause`, `slots`, `next`). No modo
 `manual`, pergunte ao usuário antes de cada despacho. Exija `--confirmed-by-user` em cada `start`,
 `review`, `retry` e `unblock` que retome uma tentativa ativa; o motor registra esse aceite com ID da autorização,
 data e canal no evento e na lista ordenada `manualConfirmations[]` da tentativa. Os campos singulares antigos
@@ -338,7 +350,9 @@ da sessão, incluindo perguntas nativas assíncronas quando disponíveis fora do
 
 `sync-plan` atualiza o contrato completo de qualquer tarefa não terminal sem mudar estado, tentativas, agentes, notas, evidências ou bloqueio. A saída mostra por tarefa os campos aplicados, resume contratos de validação sem imprimir seu conteúdo e registra no evento estruturado avisos de contradição entre dependências e `blockReason`. Mudanças de escopo deixam o planejamento anterior desatualizado e impedem revisão ou conclusão até que o trabalho seja bloqueado e replanejado. Tarefas done/skipped permanecem como histórico imutável e exigem acompanhamento explícito. Remover tarefas pelo sync é recusado. Quando uma run migrada ainda aponta para uma origem graph-foreman removida, o comando recupera o plano correspondente no workspace central do Prumo.
 
-O `sync-plan` também avisa quando invalida uma discussão/rodada de planejamento aberta ou um skip atual, mas continua a sincronização. `begin-phase-discussion` encerra uma rodada aberta desatualizada como `superseded` e registra a causa. `status` e `ready` comparam a fonte aprovada aos contratos persistidos e informam IDs de tarefas e campos divergentes. Fonte ausente ou ilegível gera um aviso curto, sem bloquear os comandos. Uma rodada de planejamento aberta mostra sua idade e a contagem de artefatos aceitos (`0/N`); após gravar o lote, mostra `N/N`.
+O `sync-plan` também avisa quando invalida uma discussão/rodada de planejamento aberta ou um skip atual, mas continua a sincronização. `begin-phase-discussion` encerra uma rodada aberta desatualizada como `superseded`, registra a causa e imprime uma linha com ela, incluindo os campos do contrato que o `sync-plan` alterou. Edite o plano e rode `sync-plan` antes de `begin-*-discussion`. `status` e `ready` comparam a fonte aprovada aos contratos persistidos e informam IDs de tarefas e campos divergentes, sempre com "rode sync-plan". Tarefa nova no plano aprovado aparece como ainda não sincronizada; tarefa ausente dele aparece como ausente, porque o `sync-plan` recusa remoção. Fonte ausente ou ilegível gera um aviso curto, sem bloquear os comandos. Uma rodada de planejamento aberta mostra sua idade e a contagem de artefatos aceitos (`0/N`); após gravar o lote, mostra `N/N`. Se `plan-phase` recebeu `--plan-dir`, a rodada aberta conta os arquivos `task-plan-<id>.json` já presentes nesse diretório.
+
+A primeira linha do `status` identifica o código em execução: `Prumo <versão> (<contentId>) — <harness>`, lidos do marcador de instalação ao lado de `scripts/`. Uma cópia de código-fonte informa o identificador calculado e nenhum harness. Um marcador antigo sem `contentId` pede `prumo update`. Quando o `engine.mjs` em execução difere do `engineHash` do marcador, o `status` avisa sem bloquear; `status --verify-install` recalcula o identificador dos arquivos instalados. `prumo status --verify-install` confere todas as instalações registradas.
 
 Use `show-contract <tarefa> [--diff]` para conferir o contrato de negócio completo antes/depois da alteração. Ele exibe o texto integral de `expect` e da justificativa de inspeção, mas omite os comandos executáveis `validation.run`. Quando uma alteração reabre uma fase que já teve discussão, planejamento ou skip atual, a nova discussão precisa pedir ao usuário que aceite o contrato alterado. Confira cada alvo atual e inclua os pares exatos de tarefa/digest impressos por `begin-phase-discussion` em `questions[].confirmsContract` de uma pergunta respondida. O motor exige todos os digests atuais; um skip não substitui essa confirmação. Depois do aceite registrado, a escolha normal de pular o planejamento continua disponível.
 

@@ -32,12 +32,12 @@
  *   node $ENGINE init --plan <plan.json> --run <name>
  *   node $ENGINE sync-plan --plan <plan.json> [--run <name>]
  *   node $ENGINE migrate [--check] [--run <name>]
- *   node $ENGINE status|ready|graph [--run <name>]
+ *   node $ENGINE status [--verify-install]|ready|graph [--run <name>]
  *   node $ENGINE show-contract <task> [--diff] [--run <name>]
  *   node $ENGINE begin-phase-discussion <phase> [--adopt-legacy]
  *   node $ENGINE skip-phase-discussion <phase> --reason <text> --confirmed-by-user
  *   node $ENGINE finish-phase-discussion <phase> --context <discovery.json> [--accept-premature-work]
- *   node $ENGINE plan-phase <phase> --agent <name>
+ *   node $ENGINE plan-phase <phase> --agent <name> [--plan-dir <directory>]
  *   node $ENGINE skip-phase-planning <phase> --reason <text> --confirmed-by-user
  *   node $ENGINE finish-phase-planning <phase> --plan-dir <directory>
  *   node $ENGINE begin-discussion <task> [--adopt-legacy]
@@ -76,6 +76,7 @@ import { runValidation, assertValidation, validationContract, validationDirector
   taskPlanDigest } from './validation.mjs'
 
 import { basename, dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { findRoot } from './storage.mjs'
 import { log, errorLog, tr } from './i18n.mjs'
@@ -514,12 +515,51 @@ function warnTaskPlan(task, plan) {
     log('[prumo] ' + tr('task plan warning: {0} declares no writes; confirm the executor stays within approved touches', task.id))
   for (let index = 0; index < (plan.verification ?? []).length; index++) {
     const item = plan.verification[index]
-    for (const resource of item.requires ?? []) {
+    for (const resource of new Set(item.requires ?? [])) {
       if (task.unavailable?.includes(resource))
         log('[prumo] ' + tr('planning warning: task {0} verification {1} requires unavailable resource {2}; keep it pending for the reviewer',
           task.id, index + 1, resource))
     }
   }
+}
+
+/* Identifies the code actually running. The installer writes .prumo-install.json beside
+   scripts/; a source checkout has package.json there instead. The harness is only reported
+   when the marker records it, never inferred. */
+async function printEngineIdentity() {
+  const engineFile = fileURLToPath(import.meta.url)
+  const skillDir = dirname(dirname(engineFile))
+  const sha256 = bytes => createHash('sha256').update(bytes).digest('hex')
+  let marker = null
+  try {
+    const value = JSON.parse(readFileSync(join(skillDir, '.prumo-install.json'), 'utf8').replace(/^﻿/, ''))
+    if (value?.product === 'prumo') marker = value
+  } catch { /* source checkout or copied scripts */ }
+  if (!marker) {
+    let version = tr('unknown version'), id = null
+    try { version = JSON.parse(readFileSync(join(skillDir, 'package.json'), 'utf8')).version ?? version } catch { /* copied scripts */ }
+    try { id = (await import('./installation-bundle.mjs')).contentId('en', { packageRoot: skillDir }) } catch { /* incomplete copy */ }
+    log('[prumo] ' + tr('Prumo {0} ({1}) — source checkout without an installation marker; harness not recorded',
+      version, id ?? tr('content identifier unavailable')))
+    return
+  }
+  const harness = typeof marker.harness === 'string' && marker.harness ? marker.harness : tr('harness not recorded')
+  if (marker.contentId) log(`[prumo] Prumo ${marker.version} (${marker.contentId}) — ${harness}`)
+  else log('[prumo] ' + tr('Prumo {0} (content identifier missing — run prumo update) — {1}', marker.version, harness))
+  let engineHash = null
+  try { engineHash = sha256(readFileSync(engineFile)) } catch { /* unreadable engine file */ }
+  if (marker.engineHash && engineHash && marker.engineHash !== engineHash)
+    log('[prumo] ' + tr('WARNING: the running engine.mjs differs from the installation marker ({0} {1}); run prumo status --verify-install, then prumo update',
+      marker.version, marker.contentId ?? tr('content identifier missing')))
+  if (args['verify-install'] !== true) return
+  let current = null
+  try {
+    const lang = ['en', 'pt-BR'].includes(marker.lang) ? marker.lang : 'en'
+    current = (await import('./installation-bundle.mjs')).contentId(lang, { packageRoot: skillDir })
+  } catch { /* incomplete installation */ }
+  if (current && current === marker.contentId) log('[prumo] ' + tr('installed files match the installation marker ({0})', current))
+  else log('[prumo] ' + tr('WARNING: installed files differ from the installation marker (marker {0}, files {1}); run prumo update',
+    marker.contentId ?? tr('content identifier missing'), current ?? tr('content identifier unavailable')))
 }
 
 function printContractDriftWarnings(state) {
@@ -529,9 +569,15 @@ function printContractDriftWarnings(state) {
     return
   }
   if (drift.planFields.length)
-    log('[prumo] ' + tr('contract drift: approved plan fields: {0}', drift.planFields.join(', ')))
-  for (const item of drift.tasks)
-    log('[prumo] ' + tr('contract drift: task {0} fields: {1}', displayIdentifier(item.task), item.fields.join(', ')))
+    log('[prumo] ' + tr('contract drift: approved plan fields: {0} — run sync-plan', drift.planFields.join(', ')))
+  for (const item of drift.tasks) {
+    const task = displayIdentifier(item.task)
+    if (item.fields.includes('notSynchronized'))
+      log('[prumo] ' + tr('contract drift: task {0} is new in the approved plan and not synchronized — run sync-plan', task))
+    else if (item.fields.includes('missingFromApprovedPlan'))
+      log('[prumo] ' + tr('contract drift: task {0} is missing from the approved plan; sync-plan refuses task removal — restore it in the approved plan', task))
+    else log('[prumo] ' + tr('contract drift: task {0} fields: {1} — run sync-plan', task, item.fields.join(', ')))
+  }
 }
 
 function ageLabel(startedAt) {
@@ -552,7 +598,10 @@ function printPlanningRoundProgress(state) {
     const round = phase.planningAttempts?.at(-1)
     if (!round || (round.endedAt && round.result !== 'planned')) continue
     const total = round.targets?.length ?? 0
+    // An open round that knows its artifact directory counts files already written there.
     const recorded = Number.isSafeInteger(round.artifactCount) ? round.artifactCount :
+      !round.endedAt && typeof round.planDir === 'string' ?
+        (round.targets ?? []).filter(id => existsSync(join(round.planDir, `task-plan-${id}.json`))).length :
       (round.targets ?? []).filter(id => {
         const plan = state.tasks[id]?.taskPlan
         return plan?.phaseId === phase.id && plan.phaseBinding?.discussionRoundId === round.discussionRoundId &&
@@ -592,6 +641,26 @@ function manualInspectionPending(state, task) {
     receipt.attempt === task.attempts?.length && currentScope)
 }
 
+/* Optional human estimate for doing the task by hand, stored as whole minutes so every reader
+   compares the same value. Accepts minutes (45), "4h", "4h30", "90m", "45min" or ISO "PT4H30M".
+   It is display metadata for the gains view, never a measurement and never part of the contract. */
+function manualEstimateMinutes(value) {
+  if (typeof value === 'number') return Number.isSafeInteger(value) && value > 0 ? value : null
+  if (typeof value !== 'string') return null
+  const text = value.trim()
+  let hours = 0, minutes = 0, match
+  if ((match = /^PT(?:(\d+)H)?(?:(\d+)M)?$/i.exec(text)) && (match[1] || match[2])) {
+    hours = Number(match[1] ?? 0); minutes = Number(match[2] ?? 0)
+  } else if ((match = /^(\d+)\s*h(?:\s*(\d+)\s*(?:m|min)?)?$/i.exec(text))) {
+    hours = Number(match[1]); minutes = Number(match[2] ?? 0)
+    if (match[2] !== undefined && minutes >= 60) return null
+  } else if ((match = /^(\d+)\s*(?:m|min)$/i.exec(text))) {
+    minutes = Number(match[1])
+  } else return null
+  const total = hours * 60 + minutes
+  return Number.isSafeInteger(total) && total > 0 ? total : null
+}
+
 function validatePlan(plan, allowOverlap = false, historical = new Set()) {
   if (!Array.isArray(plan.tasks) || plan.tasks.length === 0) die('plan has no tasks')
   const ids = new Set()
@@ -615,6 +684,8 @@ function validatePlan(plan, allowOverlap = false, historical = new Set()) {
       if (!words.length || words.length > 3 || Array.from(t.label).length > 24)
         die(tr('task {0} label must have 1 to 3 words and no more than 24 characters', t.id))
     }
+    if (t.manualEstimate !== undefined && manualEstimateMinutes(t.manualEstimate) === null)
+      die(tr('task {0} manualEstimate must be a positive whole number of minutes or a duration such as 4h30, 90m or PT4H30M', t.id))
     if (planningMode === 'phase' && !phaseIds.has(t.phase)) die(`task ${t.id} needs a declared phase for phase planning`)
     try { assertUnavailableResources(t) } catch (error) { die(`task ${t.id}: ${error.message}`) }
     if (!historical.has(t.id))
@@ -734,6 +805,7 @@ function taskFromPlan(t) {
     label: t.label,
     summary: t.summary,
     validationSummary: t.validationSummary,
+    manualEstimate: t.manualEstimate === undefined ? undefined : manualEstimateMinutes(t.manualEstimate),
     deps: t.deps ?? [],
     validation: t.validation ?? '',
     validationMode: t.validationMode,
@@ -742,7 +814,7 @@ function taskFromPlan(t) {
     maxAttempts: t.maxAttempts,
     tags: t.tags ?? [],
     touches: t.touches ?? [],
-    unavailable: t.unavailable,
+    unavailable: t.unavailable === undefined ? undefined : [...new Set(t.unavailable)],
     state: 'pending',
     discussionRequired: true,
     discussionAttempts: [],
@@ -1020,6 +1092,39 @@ function printQuestionsForTarget(state, taskId, phaseId) {
     log(`[prumo] ${item.ref} (from ${item.sourceTask}): ${item.question.question}`)
 }
 
+/* After a plan is recorded, tell the orchestrator which open questions go to the user now and which
+   wait for a later task or phase, so a future decision is not brought forward with the execution
+   authorization. Questions the executor applies from the proposed answer are not listed. */
+function printPlannedQuestionSummary(tasks) {
+  const now = [], later = [], unanswered = []
+  for (const task of tasks) {
+    for (const question of task.taskPlan?.openQuestions ?? []) {
+      const decideBy = question.blocking ? 'user-now' : (question.decideBy ?? 'executor')
+      const item = { ref: question.questionRef ?? task.id, task: task.id, question }
+      if (decideBy === 'user-now') now.push(item)
+      else if (decideBy && typeof decideBy === 'object') later.push({ ...item, decideBy })
+      else if (question.decideBy === 'executor' && !question.answer) unanswered.push(item)
+    }
+  }
+  if (now.length) {
+    log('[prumo] ' + tr('open questions for the user now:'))
+    for (const item of now) log('[prumo]   ' + (item.question.answer
+      ? tr('{0} ({1}): {2} — proposed answer: {3}', item.ref, item.task, item.question.question, item.question.answer)
+      : `${item.ref} (${item.task}): ${item.question.question}`))
+  }
+  if (later.length) {
+    log('[prumo] ' + tr('open questions with a later deadline; do not ask them now, they reappear at their target:'))
+    for (const item of later) {
+      const deadline = item.decideBy.beforeTask ? tr('before task {0}', item.decideBy.beforeTask) :
+        tr('before phase {0}', item.decideBy.beforePhase)
+      log(`[prumo]   ${item.ref} (${item.task}, ${deadline}): ${item.question.question}`)
+    }
+  }
+  for (const item of unanswered)
+    log('[prumo] ' + tr('WARNING: open question {0} ({1}) is decided by the executor but has no proposed answer',
+      item.ref, item.task))
+}
+
 function assertNoOverdueQuestions(state, task) {
   const questions = overdueQuestions(state, task.id, task.phase)
   if (questions.length)
@@ -1040,13 +1145,24 @@ function printQuestionStatus(state) {
 
 function taskAuthorization(task) { return task.executionAuthorization ?? null }
 
-function assertTaskExecutionAuthorized(task) {
-  if (!taskAuthorization(task))
+// A run only restricts dispatch after the user's scope has been recorded at least once.
+// Runs created before authorization existed, or never authorized, keep the earlier behavior.
+function runHasAuthorizationScope(state) {
+  return (state.authorizations?.length ?? 0) > 0 || Object.values(state.tasks ?? {}).some(task =>
+    task.executionAuthorization || task.authorizationHistory?.length)
+}
+
+/** Returns true when start proceeds under the earlier, unscoped behavior. */
+function assertTaskExecutionAuthorized(state, task) {
+  if (taskAuthorization(task)) return false
+  if (task.authorizationHistory?.length || runHasAuthorizationScope(state))
     die(tr('{0} has no execution authorization; ask the user to accept a scope with authorize --confirmed-by-user', task.id))
+  return true
 }
 
 function assertReauthorizedAfterContractChange(task) {
-  if (!taskAuthorization(task) && task.authorizationHistory?.length) assertTaskExecutionAuthorized(task)
+  if (!taskAuthorization(task) && task.authorizationHistory?.length)
+    die(tr('{0} has no execution authorization; ask the user to accept a scope with authorize --confirmed-by-user', task.id))
 }
 
 function manualDispatchConfirmation(task, message) {
@@ -1171,6 +1287,23 @@ function printDispatchSuggestions(state, tasks = null) {
   }
 }
 
+/** Records that a review or completion opened execution capacity for authorized ready work. */
+function announceFreedSlot(name, state, freedBy, cause, slotsBefore) {
+  const slots = executionSlots(state)
+  if (slots <= slotsBefore) return
+  const next = []
+  for (const task of Object.values(derive(state))) {
+    if (next.length >= slots) break
+    if (task.effective === 'ready' && taskAuthorization(task)?.mode === 'auto' &&
+        !overdueQuestions(state, task.id, task.phase).length) next.push(task.id)
+  }
+  // Without authorized ready work there is nothing to signal; the dispatch suggestions still explain why.
+  if (!next.length) return
+  emit(name, 'slot_freed', null, { freedBy, cause, slots, next })
+  log('[prumo] ' + tr('execution slot freed by {0} ({1}); authorized next: {2}', freedBy, tr(cause),
+    next.map(id => `start ${id} --agent <executor>`).join(', ')))
+}
+
 function suggestedActionsByTask(state) {
   const actions = new Map()
   let slots = executionSlots(state)
@@ -1256,6 +1389,26 @@ function latestPlanSyncAuditAt(name) {
   return null
 }
 
+/** Contract fields that sync-plan changed per task since a round opened, read from the event log. */
+function syncChangedFieldsSince(name, since) {
+  const fields = new Map()
+  if (typeof since !== 'string') return fields
+  try {
+    for (const line of readFileSync(join(runDir(name), 'events.ndjson'), 'utf8').split(/\r?\n/)) {
+      if (!line.trim()) continue
+      const event = JSON.parse(line)
+      if (event.type !== 'plan_sync' || typeof event.at !== 'string' || event.at < since) continue
+      for (const change of event.changes ?? []) {
+        if (change?.applied === false || typeof change?.task !== 'string') continue
+        const names = fields.get(change.task) ?? new Set()
+        for (const item of change.fields ?? []) if (typeof item?.field === 'string') names.add(item.field)
+        if (names.size) fields.set(change.task, names)
+      }
+    }
+  } catch { /* uma execução antiga ou incompleta ainda pode não ter log de eventos */ }
+  return fields
+}
+
 function staleReason(name, round, currentSnapshot, currentContext) {
   const saved = round?.contextSnapshot
   const changes = []
@@ -1266,17 +1419,24 @@ function staleReason(name, round, currentSnapshot, currentContext) {
     }
     const previous = new Map((saved.tasks ?? []).map(task => [task.task, task]))
     const current = new Map((currentSnapshot.tasks ?? []).map(task => [task.task, task]))
+    const synced = syncChangedFieldsSince(name, round?.startedAt ?? round?.at)
     for (const id of [...new Set([...previous.keys(), ...current.keys()])].sort()) {
       const before = previous.get(id), after = current.get(id)
       if (!before || !after) {
         changes.push(tr('task {0} entered or left the current context', displayIdentifier(id)))
         continue
       }
+      let changedDigest = false
       for (const field of ['contextDigest', 'inputDigest', 'outputDigest']) {
-        if (before[field] !== after[field])
+        if (before[field] !== after[field]) {
+          changedDigest = true
           changes.push(tr('task {0} {1} digest changed ({2} → {3})', displayIdentifier(id), field,
             String(before[field] ?? 'missing').slice(0, 12), String(after[field] ?? 'missing').slice(0, 12)))
+        }
       }
+      const fields = synced.get(displayIdentifier(id))
+      if (changedDigest && fields?.size)
+        changes.push(tr('task {0} contract fields changed by sync-plan: {1}', displayIdentifier(id), [...fields].join(', ')))
     }
   }
   if (!changes.length && round?.context !== currentContext)
@@ -1287,6 +1447,12 @@ function staleReason(name, round, currentSnapshot, currentContext) {
   const auditAt = latestPlanSyncAuditAt(name)
   if (auditAt) changes.push(tr('last plan_sync_audit: {0}', auditAt))
   return changes.length ? changes.join('; ') : tr('saved and current planning contexts differ')
+}
+
+function logSupersededRounds(owner, superseded) {
+  for (const item of superseded)
+    log('[prumo] ' + tr(item.workflow === 'planning' ? 'previous planning round {0} of {1} closed as superseded: {2}' :
+      'previous discussion round {0} of {1} closed as superseded: {2}', item.roundId ?? item.round ?? '?', owner, item.cause))
 }
 
 function currentPhasePlanningSkip(state, phase) {
@@ -1651,7 +1817,7 @@ const commands = {
         continue
       }
       const next = taskFromPlan(planTask)
-      const metadataChanges = ['label', 'summary', 'validationSummary'].filter(
+      const metadataChanges = ['label', 'summary', 'validationSummary', 'manualEstimate'].filter(
         field => JSON.stringify(current[field]) !== JSON.stringify(next[field]))
       for (const field of metadataChanges) {
         if (next[field] === undefined) delete current[field]
@@ -1920,9 +2086,10 @@ const commands = {
     printDispatchSuggestions(state)
   },
 
-  status() {
+  async status() {
     const name = runName()
     const state = loadState(name)
+    await printEngineIdentity()
     printContractDriftWarnings(state)
     printPendingContractConfirmations(state)
     printPlanningRoundProgress(state)
@@ -1930,6 +2097,7 @@ const commands = {
     const d = derive(state)
     const p = progress(state)
     const actions = suggestedActionsByTask(state)
+    const scoped = runHasAuthorizationScope(state)
     log(`run: ${name}  plan: ${state.plan.name}  ${p.done}/${p.total} done`)
     log(`states: ${JSON.stringify(p.by)}`)
     const countGateSkips = field => new Set([
@@ -1950,7 +2118,7 @@ const commands = {
       const digest = t.taskPlan?.digest ?? t.attempts.at(-1)?.planDigest
       const plan = digest ? `  ${tr('Plan {0}', digest.slice(0, 4))}` : ''
       const auth = t.executionAuthorization ? `  [${tr('authorized')} ${t.executionAuthorization.mode}]` :
-        `  [${tr('authorization required')}]`
+        `  [${tr(scoped ? 'authorization required' : 'no authorization scope recorded')}]`
       const action = actions.get(t.id) ?? ''
       console.log(`  ${t.id.padEnd(width)}  ${tr(t.effective).padEnd(8)}${agent}${attempts}${wait}${manual}${plan}${auth}${action ? `  → ${action}` : ''}`)
     }
@@ -1980,8 +2148,10 @@ const commands = {
     const list = Object.values(d).filter((t) => ['ready_for_discussion', 'ready_to_plan', 'ready'].includes(t.effective))
     const slots = executionSlots(state)
     const actions = suggestedActionsByTask(state)
+    const scoped = runHasAuthorizationScope(state)
     for (const t of list) {
-      const auth = t.executionAuthorization ? tr('authorized {0}', t.executionAuthorization.mode) : tr('authorization required')
+      const auth = t.executionAuthorization ? tr('authorized {0}', t.executionAuthorization.mode) :
+        tr(scoped ? 'authorization required' : 'no authorization scope recorded')
       const action = actions.get(t.id) ?? ''
       console.log(`${t.id}  ${t.title}  [${tr(t.effective)} · ${auth}]${action ? `  → ${action}` : ''}`)
     }
@@ -2087,6 +2257,7 @@ const commands = {
         confirmsContract: round.confirmsContract } : {}),
       ...(args['adopt-legacy'] === true ? { adoptedLegacy: true } : {}) })
     log(`[prumo] ${phaseId} discussing ${round.targets.length} task(s) (round ${round.roundId}, nonce ${round.nonce})`)
+    logSupersededRounds(phaseId, superseded)
     if (requiresContractConfirmation) {
       log('[prumo] ' + tr('contract confirmation required: inspect each task with show-contract, then ask the user to confirm the displayed contracts'))
       log('[prumo] ' + tr('include this exact current task digest list in an answered discovery question:'))
@@ -2202,7 +2373,10 @@ const commands = {
     if (occ.busy.length >= occ.cap) die(`${occ.busy.length} agents busy (cap ${occ.cap})`)
     const busy = agentBusy(state, agent)
     if (busy) die(`agent "${agent}" is already on ${busy.id} — one agent per task or phase`)
+    const planDir = args['plan-dir'] === undefined ? undefined :
+      typeof args['plan-dir'] === 'string' && args['plan-dir'].trim() ? resolve(args['plan-dir']) : die('plan-phase --plan-dir must name a directory')
     const round = { n: phase.planningAttempts.length + 1, agent, startedAt: new Date().toISOString(), context,
+      ...(planDir ? { planDir } : {}),
       contextSnapshot: phaseContextSnapshot(state, discussion.targets.map(id => getTask(state, id))),
       discussionDecision: discussion.kind, discussionDigest: discussion.digest, discussionRoundId: discussion.id,
       ...(discussion.kind === 'discussed' ? { discoveryDigest: discussion.digest } : {}),
@@ -2318,6 +2492,7 @@ const commands = {
     saveState(name, state)
     emit(name, 'phase_planned', null, { phase: phaseId, planner: phase.planner, round: round.n, members: round.targets })
     log(`[prumo] ${phaseId} planned atomically (${round.targets.length} task artifact(s))`)
+    printPlannedQuestionSummary(tasks)
   },
 
   'begin-discussion'() {
@@ -2391,6 +2566,7 @@ const commands = {
         confirmsContract: round.confirmsContract } : {}),
       ...(adoptLegacy ? { adoptedLegacy: true } : {}) })
     log(`[prumo] ${id} discussing (round ${round.roundId}, nonce ${round.nonce})`)
+    logSupersededRounds(id, superseded)
     if (requiresContractConfirmation) {
       log('[prumo] ' + tr('contract confirmation required: inspect each task with show-contract, then ask the user to confirm the displayed contracts'))
       log('[prumo] ' + tr('include this exact current task digest list in an answered discovery question:'))
@@ -2521,10 +2697,12 @@ const commands = {
     try { validationContract(t) } catch (error) { die(error.message) }
     assertAvailable(state, t, 'planning', agent)
     if (pausedExecution) t.planningReturn = { stateBeforeBlock: t.stateBeforeBlock, blockReason: t.blockReason }
+    const superseded = []
     if (stale || changedDiscovery) {
       const oldRound = t.planningAttempts?.at(-1)
       const cause = staleReason(name, oldRound, taskContextSnapshot(state, t), planningContext(state, t))
       closePlanning(t, 'superseded', cause)
+      superseded.push({ workflow: 'planning', round: oldRound?.n, cause })
     }
     if (discovery && !t.discussionRequired) {
       assertDiscussionBoundary(discovery, [id], { acceptPremature: args['accept-premature-work'] === true })
@@ -2538,6 +2716,7 @@ const commands = {
     emit(name, 'task_planning', id, { planner: agent, round: t.planningAttempts.length,
       ...(discovery ? { discoveryQuestions: discovery.questions.length } : {}) })
     log(`[prumo] ${id} in planning (planner ${agent}, round ${t.planningAttempts.length})`)
+    logSupersededRounds(id, superseded)
     log('[prumo] planner guard: read-only research may determine how to execute; task results and acceptance evidence belong to the executor')
   },
 
@@ -2616,6 +2795,7 @@ const commands = {
     emit(name, 'task_planned', id, { planner: t.planner, round: t.planningAttempts.length, state: t.state })
     if (t.state === 'blocked') log(`[prumo] ${id} task plan recorded; still blocked — unblock explicitly to resume the current attempt`)
     else log(`[prumo] ${id} ready to execute (task plan recorded by ${t.planner})`)
+    printPlannedQuestionSummary([t])
   },
 
   start() {
@@ -2627,7 +2807,7 @@ const commands = {
     const state = loadState(name)
     const t = getTask(state, id)
     if (t.state !== 'pending') die(`${id} is ${t.state}, not pending`)
-    assertTaskExecutionAuthorized(t)
+    const unscoped = assertTaskExecutionAuthorized(state, t)
     const dispatchConfirmation = manualDispatchConfirmation(t, 'manual authorization for {0} requires --confirmed-by-user before dispatch')
     assertNoOverdueQuestions(state, t)
     if (!hasCurrentTaskPlan(state, t)) die(id + ' needs completed current planning — run plan-task and finish-planning before start')
@@ -2658,6 +2838,8 @@ const commands = {
       ...(dispatchConfirmation ? { manualDispatchConfirmation: dispatchConfirmation } : {}),
       ...(total ? { current: 1, total } : {}) })
     log(`[prumo] ${id} running (agent ${agent}, attempt ${t.attempts.length})`)
+    if (unscoped)
+      log('[prumo] ' + tr('no execution authorization scope is recorded for this run; {0} started as before — record the user scope with authorize to enable automatic dispatch', id))
     if (total) {
       const command = [...(process.platform === 'win32' ? ['&'] : []), quoteCommandArg(process.execPath),
         quoteCommandArg(process.argv[1]), 'progress', quoteCommandArg(id), '--step', '1', '--agent',
@@ -2713,6 +2895,7 @@ const commands = {
     const busy = agentBusy(state, reviewer)
     if (busy && (!args.force || t.planningRequired || busy.state === 'planning'))
       die(`agent "${reviewer}" is already on ${busy.id} — one agent per task`)
+    const slotsBeforeReview = executionSlots(state)
     t.state = 'reviewing'
     t.reviewer = reviewer
     t.attempts.at(-1).reviewer = reviewer
@@ -2725,8 +2908,10 @@ const commands = {
       ...(denominator ? { current: 1, total: denominator.total, basis: denominator.basis } : {}),
       ...(dispatchConfirmation ? { manualDispatchConfirmation: dispatchConfirmation } : {}) })
     log(`[prumo] ${id} in review (reviewer ${reviewer})`)
-    if (t.taskPlan?.steps?.length > 1 && (t.attempts.at(-1).executionStep ?? 1) === 1)
-      log(`[prumo] WARNING: executor progress stayed at 1/${t.taskPlan.steps.length}; the position is not proof of completed work`)
+    const executedStep = t.attempts.at(-1).executionStep ?? 1
+    if (t.taskPlan?.steps?.length > 1 && executedStep < t.taskPlan.steps.length)
+      log(`[prumo] WARNING: executor progress stayed at ${executedStep}/${t.taskPlan.steps.length}; the position is not proof of completed work`)
+    announceFreedSlot(name, state, id, 'review', slotsBeforeReview)
     printDispatchSuggestions(state)
   },
 
@@ -2922,6 +3107,7 @@ const commands = {
       die('passing validation requires the current independent reviewer')
     try { assertValidation(t, last) } catch (e) { die(e.message) }
     const previouslyEligible = eligibleDiscussionPhases(state)
+    const slotsBeforeDone = executionSlots(state)
     t.state = 'done'
     t.attempts.at(-1).endedAt = new Date().toISOString()
     t.attempts.at(-1).result = 'done'
@@ -2932,6 +3118,7 @@ const commands = {
     )
     log(`[prumo] ${id} done${unlocked.length ? ` — unlocked: ${unlocked.map((u) => u.id).join(', ')}` : ''}`)
     announceNewlyEligiblePhases(name, previouslyEligible, state, 'done')
+    announceFreedSlot(name, state, id, 'done', slotsBeforeDone)
     printDispatchSuggestions(state)
   },
 
@@ -3112,8 +3299,9 @@ const commands = {
       ...(target === 'reviewing' && reviewDenom ? { current: 1, total: reviewDenom.total, basis: reviewDenom.basis } : {}),
       ...(dispatchConfirmation ? { manualDispatchConfirmation: dispatchConfirmation } : {}) })
     log('[prumo] ' + id + ' unblocked to ' + target + '; attempt ' + t.attempts.length + ' preserved; no agent dispatched')
-    if (target === 'reviewing' && t.taskPlan?.steps?.length > 1 && (t.attempts.at(-1).executionStep ?? 1) === 1)
-      log(`[prumo] WARNING: executor progress stayed at 1/${t.taskPlan.steps.length}; the position is not proof of completed work`)
+    const executedStep = t.attempts.at(-1)?.executionStep ?? 1
+    if (target === 'reviewing' && t.taskPlan?.steps?.length > 1 && executedStep < t.taskPlan.steps.length)
+      log(`[prumo] WARNING: executor progress stayed at ${executedStep}/${t.taskPlan.steps.length}; the position is not proof of completed work`)
   },
 
   skip() {

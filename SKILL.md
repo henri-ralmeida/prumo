@@ -63,6 +63,12 @@ contract. The reviewer supplies a one-sentence PO First verdict through `validat
 keeps `--evidence` as the complete behavioral observations. Summaries are optional in stored
 state, but when present they must contain nonblank text.
 
+When the orchestrator writes or synchronizes a task contract, it keeps traceability there: task and round
+ids, process names, who decided and when belong in the contract, task notes or the commit, never in the
+delivered product text. State that explicitly in the contract so the executor and reviewer apply it. Record
+the area that owns a business rule only when approved context confirms it; otherwise ask the PO before
+naming an owner.
+
 For DSH, `prumo install --dsh` integrates only with an already detected external DSH installation and `prumo doctor --dsh` diagnoses that integration. A nonempty `DSH_HOME` takes precedence, otherwise the root is `~/.dsh`; Prumo manages `<DSH_HOME>/skills/prumo` and its PO First block in the global `<DSH_HOME>/AGENTS.md`. It never installs `@deepseek-ai/dsh`; explicit installation fails without writes when DSH is absent. The upstream version validated for this adapter was `0.1.6-alpha.2`, still alpha/developer preview. DSH already supplies skills, instructions, subagents and workflows in applicable profiles, so Prumo does not create or edit Cordis configuration, profiles, plugins, subagents, workflows or credentials. Structural install, doctor and `dsh --profile headless --dump-config` checks do not establish a real model conversation.
 
 ## Invocation router
@@ -116,6 +122,13 @@ PRUMO_ROOT="$PRUMO_HOME/<workspace>"
 mkdir -p "$PRUMO_ROOT/.specs/graph/plans"
 export PRUMO_HOME PRUMO_ROOT
 ```
+
+The first line of `node $ENGINE status` identifies the code actually running: version, content ID and the
+harness recorded in its installation marker (a source checkout says so and reports no harness). When it says
+the content ID is missing, or warns that the running `engine.mjs` differs from the marker, run
+`prumo status --verify-install` before trusting or reporting engine behavior, and propose `prumo update` to
+the user. When you resume a run or diagnose unexpected engine behavior, compare this line with the
+repository you are reading: a fix present in the repository may not be installed yet.
 
 Local harnesses running as the same user share this Prumo store. Preserve explicit compatibility overrides and do not choose a different store per harness. These commands create missing directories. Access still depends on each harness's permissions; cloud sessions do not automatically share local files.
 
@@ -197,7 +210,12 @@ node $ENGINE authorize --scope tasks:T4,T5 --confirmed-by-user  # auto is the de
 
 Authorization records the user's scope, mode, time and channel. It does not dispatch an agent or open a
 phase. Use `ready` or `status` for per-task authorization, available slots and the next suggested action.
-In auto mode, keep filling free slots from authorized ready tasks after a review or completion. In manual
+A run with no recorded scope keeps the earlier behavior: `start` still works and says that no scope is
+recorded. Once any scope is recorded, `start` refuses tasks outside it and tasks whose authorization was
+revoked by a contract change. In auto mode, keep filling free slots from authorized ready tasks after a review
+or completion: when `review` or `done` opens a slot for authorized ready work, the engine prints
+`execution slot freed by ...; authorized next: start <task> ...` and records a `slot_freed` event. Dispatch
+those tasks without asking again; stop only at user gates. In manual
 mode, ask before every dispatch. If `sync-plan` or `refresh-contract` changes a task contract, show the changed contract and get
 fresh acceptance for that task before execution. A changed global plan decision renews acceptance for the
 affected nonterminal tasks; work already running continues under its recorded attempt.
@@ -230,7 +248,8 @@ work needs `refresh-contract`, not fail/retry. Always check the persisted task b
 
 `sync-plan` warns without refusing synchronization when it invalidates an open discussion/planning round or
 a current skip. `status` and `ready` also warn when the approved plan source differs from persisted task
-contracts; this warning does not block readiness. Use `show-contract <task> [--diff]` to present complete
+contracts, naming changed fields, new tasks not yet synchronized and tasks missing from the approved plan;
+this warning does not block readiness. Treat it as "run `sync-plan`" after the user approved the edit. Use `show-contract <task> [--diff]` to present complete
 business text before and after a change; it omits executable `validation.run` commands. When a changed
 contract reopens a phase or task that already had a discussion, planning round or current skip, the next
 discussion records the old open round as superseded with its cause and prints the current task digests. Run
@@ -344,6 +363,12 @@ Continue independent research while waiting. Record only the channel that actual
 Reuse current answers, ask adaptive follow-ups, and stop only when no uncertainty capable of
 changing behavior, scope, acceptance or execution remains. Put out-of-scope ideas in `deferred`.
 
+Edit the approved plan and run `sync-plan` BEFORE `begin-phase-discussion` or `begin-discussion`. Changing a
+task contract while its round is open invalidates that round: `sync-plan` warns, and the next `begin-*`
+prints the superseded round with its cause, including the contract fields `sync-plan` changed. If the
+user's answers change the contract mid-round, record the decision, edit the plan, run `sync-plan`, and then
+begin a fresh round instead of closing the stale one.
+
 Run `begin-phase-discussion` before presenting the first question. It persists the phase as `discussing` and issues the
 current `roundId` and `nonce`. Write the resulting discovery JSON with those values and bind at least
 one freshly answered question to that `roundId`; include light research, the real `native` or
@@ -361,9 +386,12 @@ current task and digest is present. A stale digest or a discussion/planning skip
 
 ```bash
 node $ENGINE finish-phase-discussion F2 --context <discovery.json>
-node $ENGINE plan-phase F2 --agent <planner>
+node $ENGINE plan-phase F2 --agent <planner> --plan-dir <artifact-directory>
 node $ENGINE finish-phase-planning F2 --plan-dir <artifact-directory>
 ```
+
+Passing the artifact directory to `plan-phase` is optional; with it, `status` and `ready` count the
+`task-plan-<id>.json` files already written there while the round is open.
 
 When planning is chosen, the planner writes `task-plan-<id>.json` for every targeted member. Never turn steps, evidence gaps,
 prerequisites or dependency outputs inside an explicitly selected task into separate graph tasks or
@@ -431,7 +459,9 @@ belong only in the designated task-plan contract fields.
 Preserve known decisions; propose any material contract change for the authorized global-plan workflow.
 Include `summary` in each artifact: 1–2 sentences describing the chosen approach and why it meets the expected result.
 Write ONLY task-plan-<id>.json in <absolute artifact directory> for each target: research, decisions,
-steps, verification, open questions, writes, phaseBinding and unresolvedInputs. Each verification item may
+steps, verification, open questions, writes, phaseBinding and unresolvedInputs. For every open question,
+state who decides and by when with `decideBy`: `executor` (with the proposed `answer` the executor applies),
+`user-now`, `{ "beforeTask": "<id>" }` or `{ "beforePhase": "<id>" }`. Each verification item may
 declare required resources with `requires`; use only the documented vocabulary. Record anticipated project
 paths in `writes`, all contained by that task's `touches`. Copy the exact phaseBinding and
 that task's unresolvedInputs from the `plan-phase` output; do not recalculate them or renumber plannerRound.
@@ -461,22 +491,39 @@ When the planning conversation is in Portuguese, use this equivalent planner pro
 Você é o PLANEJADOR somente leitura da fase aprovada. Confira as ferramentas e permissões de gravação realmente
 disponíveis; não deduza capacidades pelo nome do harness. Pesquise todas as tarefas alvo sem implementá-las.
 Leia as regras do projeto, o objetivo e as restrições aprovados, os contratos das tarefas e as saídas de
-dependências conhecidas. Leia a descoberta persistida da fase e inspecione o código, artefatos e fontes
-relevantes com as ferramentas disponíveis.
+dependências conhecidas: <referências>.
+Leia a descoberta persistida da fase e suas decisões travadas: <phaseWorkflows.F2.discovery do state.json>.
+Use as ferramentas disponíveis para inspecionar a implementação e os artefatos atuais, as regras reais do
+projeto, as saídas de dependências e as fontes relevantes; identifique soluções existentes e impactos.
 Aplique PO First. Não repita perguntas da descoberta; devolva ao orquestrador novas lacunas consequenciais.
 Se recomendar texto de produto, descreva a regra observável e o motivo; nomeie a área responsável apenas
-quando o contexto aprovado confirmar essa informação. Mantenha identificadores e detalhes internos do fluxo
-fora de rascunhos de comentários, testes, mensagens e README; identificadores exigidos pertencem aos campos
-do contrato de planejamento.
-Se puder gravar no diretório indicado, grave SOMENTE o arquivo exato task-plan-<id>.json para cada tarefa,
-com JSON completo. Inclua pesquisa, decisões, passos, verificações, perguntas em aberto e caminhos previstos.
-Para planejamento por fase, copie phaseBinding e unresolvedInputs do resultado de plan-phase sem recalcular
-ou renumerar campos. Para planejamento por tarefa, siga o schema recebido e não acrescente campos exclusivos
-de fase. Mapeie todos os critérios de validação e resolva perguntas bloqueantes com o usuário.
+quando o contexto aprovado confirmar essa informação; caso contrário, leve a dúvida de responsabilidade ao PO.
+Mantenha identificadores e detalhes internos do fluxo fora de comentários, testes, mensagens e rascunhos de
+README; identificadores exigidos pelo planejamento pertencem somente aos campos do contrato do task-plan.
+Preserve as decisões conhecidas; proponha qualquer mudança material de contrato para o fluxo autorizado do plano global.
+Inclua `summary` em cada artefato: 1–2 frases descrevendo a abordagem escolhida e por que ela atende ao resultado esperado.
+Grave SOMENTE task-plan-<id>.json em <diretório absoluto do artefato> para cada tarefa: research, decisions,
+steps, verification, openQuestions, writes, phaseBinding e unresolvedInputs. Para cada pergunta em aberto,
+diga quem decide e até quando com `decideBy`: `executor` (com a resposta proposta em `answer`, que o executor
+aplica), `user-now`, `{ "beforeTask": "<id>" }` ou `{ "beforePhase": "<id>" }`. Cada item de verificação pode
+declarar recursos exigidos com `requires`; use somente o vocabulário documentado. Registre em `writes` os
+caminhos de projeto previstos, todos contidos nos `touches` da tarefa. Copie exatamente phaseBinding e os
+unresolvedInputs da tarefa do resultado de `plan-phase`; não os recalcule nem renumere plannerRound.
+Quando a discussão foi pulada, discussionRoundId é o decisionId da confirmação do pulo impresso pelo motor.
+Schema: references/runtime.md#task-plan-artifact.
+Inspecione o `git status --short` real e o diff relevante, staged e unstaged, durante o planejamento.
+Identifique mudanças já presentes antes da execução para que o revisor as distinga da entrega desta tarefa.
+Se puder gravar no diretório indicado, grave somente o arquivo exato task-plan-<id>.json para cada tarefa.
 Se não puder gravar, devolva um artefato completo por tarefa: escreva o nome exato do arquivo na linha
-imediatamente antes de um bloco aberto com ```json que contenha o objeto inteiro. Não abrevie, omita campos
-ou use reticências. Reporte o caminho do artefato, as descobertas e qualquer decisão que bloqueie a execução.
-Não implemente a tarefa nem edite outros arquivos de produto ou o estado do grafo durante o planejamento.
+imediatamente antes de um bloco aberto com ```json que contenha o objeto JSON inteiro e válido. Não abrevie,
+omita campos, use reticências nem devolva objeto parcial. O orquestrador decodifica &gt;, &lt;, &amp; e &quot;
+nos valores de texto do JSON, valida cada objeto completo, grava cada artefato no diretório indicado e então
+conclui o planejamento. Se a validação apontar uma correção, ela volta ao planejador; o orquestrador não
+inventa conteúdo de plano ausente.
+Se não houver subagente planejador disponível, informe essa limitação e faça o planejamento localmente, com
+pesquisa somente leitura, gravando apenas o artefato task-plan indicado. Não implemente o trabalho de produto.
+Não edite o estado em .specs/graph/. Reporte o caminho do artefato, as descobertas e qualquer decisão que
+bloqueie a execução.
 ```
 The orchestrator parses each returned block as JSON, decodes the listed HTML entities only within its string
 values, validates the complete artifact, writes it under the indicated filename and then records
@@ -491,6 +538,12 @@ Before the executor starts, record the real `git status --short`, staged and uns
 task's declared `writes` (or approved `touches` when `writes` is absent), and relevant pre-existing
 untracked paths in a durable task note or review handoff. The planner identifies those existing
 changes; the reviewer compares against this baseline and excludes them from the delivery judgment.
+
+After `finish-phase-planning` or `finish-planning`, the engine lists open questions for the user now and
+those with a later deadline, and warns when an `executor` question has no proposed answer. Before execution,
+take to the user only the `user-now` questions. A nonblocking question whose proposed answer the executor
+applies is not a user question. A question due before a later task or phase is not asked now and is not
+bundled with the execution authorization; it reappears in that target's discussion or planning.
 
 `openQuestions[].decideBy` may be `executor`, `user-now`, `{ "beforeTask": "T2" }` or
 `{ "beforePhase": "F2" }`; blocking questions still need answers before planning closes and mean
@@ -548,6 +601,8 @@ inside the approved contract, and rerun the relevant implementation checks. Cont
 task plan is delivered. Stop early only for missing authority, an unresolved consequential scope/behavior
 decision, unauthorized destructive risk, an unavailable external dependency after proportional attempts,
 or evidenced impossibility. Record that blocker and the attempts made; do not widen scope or rewrite the plan.
+As you begin each planned step, run this progress line with that step's 1-based index:
+<the progress command printed by start, with --step <index>>
 Commit policy: <Project overrides>. Never touch .specs/graph/ — the orchestrator owns the state.
 Report back: what you changed, and what a reviewer needs to reproduce it.
 ```
@@ -567,7 +622,10 @@ unchanged-contract correction normally stays in the executor/reviewer loop; no r
 
 Report each execution step as it starts, using the 1-based index in the recorded `taskPlan.steps`.
 When reporting completion, give the orchestrator a 1–2 sentence result-and-why summary for `task.summary`.
-The orchestrator records actual executor reports with `progress <task> --step <index> --agent <executor>`.
+`start` prints a ready `progress <task> --step 1 --agent <executor> --run <run>` line. Put that line in the
+executor prompt; the executor runs it with the current step index as each step begins. Only when the
+executor has no shell does the orchestrator record the executor's reported steps with the same command.
+`review` and a direct `unblock --reviewer` warn when the recorded position is before the last step.
 `start` records step 1; repeated progress is a no-op, and a new attempt starts over. These counters describe
 the current step, not verified completion; they never replace review. Legacy tasks without a task plan
 have no invented denominator. During validation the engine automatically emits each check's index/total,
@@ -787,6 +845,9 @@ This does not acquire an executor slot. It does recheck dependencies, total capa
 reviewer's availability; ordinary execution resume also checks executor capacity. A refusal
 leaves the task blocked. Pending/failed tasks cannot use this handoff to bypass start/retry.
 
+A block that waits for a user decision must be recorded with `--question` and `--option`, not only
+`--reason`; when resuming finds a reason-only block that is really a decision, re-record it with
+`block <task> --reason "..." --question "..." --option "<answer> => <effect>"` before asking the user.
 When a block includes a recorded `blockQuestion`, present that exact question and its `blockOptions`
 through PO First, ask the user for the decision, then pass the answer with `unblock <task> --answer`.
 Keep the recorded reason, question, answer and time in the block history. Older reason-only blocks remain
@@ -868,7 +929,10 @@ suite was already green". A fresh agent, a clean context, and the contract.
   change before retry. The reason travels to the next executor and must be actionable.
 - Past **3 attempts** the engine warns — escalate to the dev instead of spending more.
 - Needs the dev → `block T4 --reason "..."`. Blocked is a real state; leaving it `running`
-  while you wait is how a graph lies.
+  while you wait is how a graph lies. When the block is a user decision, record it as one:
+  `block T4 --reason "..." --question "<the decision in one sentence>" --option "<answer> => <effect>"`
+  (repeat `--option` per answer). The block event and the dashboard then carry the question, and
+  `unblock T4 --answer "<answer>"` records what the user chose.
 - `note <task> --text "..."` for what a later reader needs and the states cannot say.
 - Discussion/planning skip receipts never waive the independent reviewer. New Prumo work keeps review on;
   `requireReview: false` is compatibility state for older runs, not a current routing recommendation.

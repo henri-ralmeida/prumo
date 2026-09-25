@@ -197,6 +197,32 @@ test('review warns when executor progress remains at the first of several steps'
   assert.equal(f.state().tasks.T4.attempts.at(-1).executionStep, 1)
 })
 
+test('review warns for any unfinished step position and stays quiet once the last step is reported', t => {
+  const f = fixture(t, [{ id: 'T4', title: 'Four steps', validation: [check] }, { id: 'T5', title: 'Two steps', validation: [check] }])
+  for (const id of ['T4', 'T5']) {
+    f.beginPlan(id)
+    f.finish(id, { ...f.artifact(id), steps: ['Inspect', 'Implement', 'Verify', 'Report'] })
+  }
+  f.ok('start', 'T4', '--agent', 'executor-4')
+  f.ok('progress', 'T4', '--step', '3', '--agent', 'executor-4')
+  assert.match(f.ok('review', 'T4', '--agent', 'reviewer-4').output, /WARNING: executor progress stayed at 3\/4/)
+  f.ok('start', 'T5', '--agent', 'executor-5')
+  f.ok('progress', 'T5', '--step', '4', '--agent', 'executor-5')
+  assert.doesNotMatch(f.ok('review', 'T5', '--agent', 'reviewer-5').output, /executor progress stayed/)
+})
+
+test('direct review after a block warns with the recorded unfinished step position', t => {
+  const f = fixture(t, [{ id: 'T4', title: 'Four steps', validation: [check] }])
+  f.beginPlan('T4')
+  f.finish('T4', { ...f.artifact('T4'), steps: ['Inspect', 'Implement', 'Verify', 'Report'] })
+  f.ok('start', 'T4', '--agent', 'executor-4')
+  f.ok('progress', 'T4', '--step', '3', '--agent', 'executor-4')
+  f.ok('block', 'T4', '--reason', 'Waiting for the reviewer handoff')
+  const resumed = f.ok('unblock', 'T4', '--reviewer', 'reviewer-4')
+  assert.match(resumed.output, /WARNING: executor progress stayed at 3\/4/)
+  assert.equal(f.state().tasks.T4.state, 'reviewing')
+})
+
 test('structured inspection criteria must be traversed in order before a passing validation', t => {
   const f = fixture(t, [{ id: 'DOC', title: 'Delivery policy docs', validationMode: 'inspection',
     inspectionReason: 'The task only updates documentation.', validation: 'Compare the documented policy with the implementation.' }])
@@ -998,7 +1024,7 @@ test('status and ready surface contract drift without blocking, and show-contrac
   f.writePlan()
   for (const command of ['status', 'ready']) {
     const output = f.ok(command).stdout
-    assert.match(output, /contract drift: task T1 fields: title, validation/)
+    assert.match(output, /contract drift: task T1 fields: title, validation — run sync-plan/)
     assert.doesNotMatch(output, /secret-validation-command/)
   }
 
@@ -1023,6 +1049,25 @@ test('status and ready surface contract drift without blocking, and show-contrac
   writeFileSync(f.planPath, '{invalid json')
   assert.match(f.ok('status').stdout, /approved plan source unavailable \(unreadable\)/)
   assert.match(f.ok('ready').stdout, /approved plan source unavailable \(unreadable\)/)
+})
+
+test('contract drift names new and removed tasks in plain language, in English and Portuguese', t => {
+  for (const lang of ['en', 'pt-BR']) {
+    const f = fixture(t, [{ id: 'T1', title: 'Delivery estimate' }, { id: 'T2', title: 'Second delivery' }], {}, { lang })
+    f.plan.tasks = [f.plan.tasks[0], { id: 'T3', title: 'New approved task', validation: [check] }]
+    f.writePlan()
+    for (const command of ['status', 'ready']) {
+      const output = f.ok(command).stdout
+      assert.doesNotMatch(output, /notSynchronized|missingFromApprovedPlan/)
+      if (lang === 'en') {
+        assert.match(output, /contract drift: task T3 is new in the approved plan and not synchronized — run sync-plan/)
+        assert.match(output, /contract drift: task T2 is missing from the approved plan; sync-plan refuses task removal/)
+      } else {
+        assert.match(output, /divergência de contrato: a tarefa T3 é nova no plano aprovado e ainda não foi sincronizada — rode sync-plan/)
+        assert.match(output, /divergência de contrato: a tarefa T2 não está no plano aprovado; o sync-plan recusa remover tarefas/)
+      }
+    }
+  }
 })
 
 test('task planning status shows age and accepted artifact counts', t => {
@@ -1103,6 +1148,53 @@ test('empty task summaries and malformed labels are rejected by plan synchroniza
   localized.plan.tasks[0].label = 'quatro palavras no rotulo'
   localized.writePlan()
   localized.rejected(/rótulo da tarefa T1/, 'sync-plan', '--plan', localized.planPath)
+})
+
+test('manual estimates are normalized to minutes and stay metadata during plan synchronization', t => {
+  const f = fixture(t, [{ id: 'T1', title: 'Delivery estimate', manualEstimate: '4h30' }])
+  assert.equal(f.state().tasks.T1.manualEstimate, 270, 'a duration is stored as whole minutes')
+
+  f.planTask()
+  const planned = structuredClone(f.state().tasks.T1)
+  for (const [value, minutes] of [[45, 45], ['90m', 90], ['45min', 45], ['4h', 240], ['PT1H15M', 75]]) {
+    f.plan.tasks[0].manualEstimate = value
+    f.writePlan()
+    f.ok('sync-plan', '--plan', f.planPath)
+    const updated = f.state().tasks.T1
+    assert.equal(updated.manualEstimate, minutes, `${value} becomes ${minutes} minutes`)
+    assert.deepEqual(updated.taskPlan, planned.taskPlan, 'an estimate change preserves the recorded plan')
+    for (const field of ['scopeRevision', 'planningRevision', 'contractRevision'])
+      assert.equal(updated[field], planned[field], field + ' is unchanged')
+  }
+  const sync = JSON.parse(f.events().trim().split(/\r?\n/).at(-1))
+  assert.deepEqual(sync.metadataUpdated, ['T1'])
+  assert.equal(f.graph().derived.T1.effective, 'ready')
+
+  delete f.plan.tasks[0].manualEstimate
+  f.writePlan()
+  f.ok('sync-plan', '--plan', f.planPath)
+  assert.equal('manualEstimate' in f.state().tasks.T1, false, 'removing the estimate removes it from the state')
+
+  for (const value of [0, -1, 4.5, 'abc', '4.5h', '1h75', 'PT', '']) {
+    const invalid = fixture(t)
+    invalid.plan.tasks[0].manualEstimate = value
+    invalid.writePlan()
+    const before = invalid.state(), events = invalid.events()
+    invalid.rejected(/task T1 manualEstimate must be a positive whole number of minutes/, 'sync-plan', '--plan', invalid.planPath)
+    assert.deepEqual(invalid.state(), before)
+    assert.equal(invalid.events(), events)
+  }
+
+  const localized = fixture(t, [{ id: 'T1', title: 'Delivery estimate' }], {}, { lang: 'pt-BR' })
+  localized.plan.tasks[0].manualEstimate = 'abc'
+  localized.writePlan()
+  localized.rejected(/a tarefa T1 tem manualEstimate inválido/, 'sync-plan', '--plan', localized.planPath)
+})
+
+test('repeated unavailable resources are normalized and do not report contract drift', t => {
+  const f = fixture(t, [{ id: 'T1', title: 'Manual review', unavailable: ['database', 'database', 'manual-inspection'] }])
+  assert.deepEqual(f.state().tasks.T1.unavailable, ['database', 'manual-inspection'])
+  assert.doesNotMatch(f.ok('status').stdout, /contract drift/)
 })
 
 test('task-plan summaries are validated and their content digest is stable across replanning attempts', t => {

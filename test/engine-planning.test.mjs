@@ -1205,6 +1205,8 @@ test('contract changes warn, supersede planning with a cause, and require curren
 
   const reopened = f.ok('begin-phase-discussion', 'F1')
   assert.match(reopened.stdout, /contract confirmation required/)
+  assert.match(reopened.stdout, /previous planning round 1 of F1 closed as superseded: .*task A contract fields changed by sync-plan: title/)
+  assert.match(reopened.stdout, /task B contract fields changed by sync-plan: validation/)
   const afterBegin = f.state()
   const oldPlanning = afterBegin.phaseWorkflows.F1.planningAttempts[0]
   assert.equal(oldPlanning.result, 'superseded')
@@ -1283,6 +1285,24 @@ test('status and ready show planning age and accepted artifacts from 0/N through
     const output = f.ok(command).stdout
     assert.match(output, /planning round F1 \(1\) completed for \d+s; artifacts 2\/2/)
   }
+})
+
+test('an open phase round given its artifact directory counts task-plan files already written there', t => {
+  const f = phaseFixture(t, [
+    { id: 'A', phase: 'F1', title: 'First task' },
+    { id: 'B', phase: 'F1', title: 'Second task' },
+  ])
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('plan-phase', 'F1', '--agent', 'planner', '--plan-dir', f.plans)
+  assert.match(f.ok('status').stdout, /planning round F1 \(1\) open for \d+s; artifacts 0\/2/)
+  f.writeArtifacts('F1')
+  rmSync(join(f.plans, 'task-plan-B.json'))
+  assert.match(f.ok('status').stdout, /planning round F1 \(1\) open for \d+s; artifacts 1\/2/)
+  f.writeArtifacts('F1')
+  assert.match(f.ok('ready').stdout, /planning round F1 \(1\) open for \d+s; artifacts 2\/2/)
+  f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  assert.match(f.ok('status').stdout, /planning round F1 \(1\) completed for \d+s; artifacts 2\/2/)
 })
 
 test('sync-plan warns without blocking when it invalidates an open discussion or current skip', t => {

@@ -154,6 +154,34 @@ test('open questions respect deadlines, resurface on their target, and resolve b
   f.ok('start', 'B', '--agent', 'executor-B')
 })
 
+test('finish-planning summarizes questions for the user now, later deadlines and executor questions without a proposal', t => {
+  for (const lang of ['en', 'pt-BR']) {
+    const f = fixture(t, { run: `question-summary-${lang}`, lang })
+    f.discuss('A')
+    f.ok('plan-task', 'A', '--agent', 'planner-A')
+    const path = join(f.root, 'A-summary-plan.json')
+    writeFileSync(path, JSON.stringify(f.basePlan('A', { openQuestions: [
+      { question: 'Which cutoff should the report use?', blocking: false, decideBy: 'user-now', answer: 'Use 90 percent.' },
+      { question: 'Does B replace the current ordering?', blocking: false, decideBy: { beforeTask: 'B' } },
+      { question: 'Who owns the project key?', blocking: false, decideBy: 'executor' },
+      { question: 'Which log level applies?', blocking: false, decideBy: 'executor', answer: 'Keep the current level.' },
+    ] })))
+    const output = f.ok('finish-planning', 'A', '--plan', path).stdout
+    const refs = f.state().tasks.A.taskPlan.openQuestions.map(item => item.questionRef)
+    if (lang === 'en') {
+      assert.ok(output.includes(`open questions for the user now:\n[prumo]   ${refs[0]} (A): Which cutoff should the report use? — proposed answer: Use 90 percent.`), output)
+      assert.ok(output.includes(`do not ask them now, they reappear at their target:\n[prumo]   ${refs[1]} (A, before task B): Does B replace`), output)
+      assert.ok(output.includes(`WARNING: open question ${refs[2]} (A) is decided by the executor but has no proposed answer`), output)
+    } else {
+      assert.match(output, /perguntas em aberto para o usuário agora:/)
+      assert.match(output, /resposta proposta: Use 90 percent\./)
+      assert.match(output, /antes da tarefa B/)
+      assert.match(output, /é decidida pelo executor, mas não tem resposta proposta/)
+    }
+    assert.doesNotMatch(output, /Which log level applies/)
+  }
+})
+
 test('a future question from a completed task survives a global plan sync until answered', t => {
   const f = fixture(t)
   f.planTask('A', { openQuestions: [{ question: 'Which protocol should B use?', blocking: false,
@@ -464,7 +492,6 @@ test('execution authorization records scope and mode, gates only selected tasks,
   f.planTask('B')
   const before = f.state(), eventCount = f.events().length
   f.rejects(/requires --confirmed-by-user/, 'authorize', '--scope', 'tasks:A')
-  f.rejects(/no execution authorization/, 'start', 'A', '--agent', 'executor-A')
   assert.deepEqual(f.state(), before)
   assert.equal(f.events().length, eventCount)
 
@@ -491,6 +518,53 @@ test('execution authorization records scope and mode, gates only selected tasks,
   assert.ok(f.state().tasks.B.executionAuthorization)
   f.rejects(/no execution authorization/, 'start', 'A', '--agent', 'executor-A')
   f.ok('start', 'B', '--agent', 'executor-B')
+})
+
+test('a run without any recorded authorization scope starts as before, including legacy state without the field', t => {
+  const f = fixture(t, { authorize: false })
+  f.planTask('A')
+  f.planTask('B')
+  assert.match(f.ok('ready').stdout, /A  Source  \[ready · no authorization scope recorded\]/)
+  const started = f.ok('start', 'A', '--agent', 'executor-A')
+  assert.match(started.stdout, /no execution authorization scope is recorded for this run; A started as before/)
+  assert.equal(f.state().tasks.A.state, 'running')
+  assert.equal(f.state().tasks.A.executionAuthorization, undefined)
+
+  const legacy = f.state()
+  delete legacy.authorizations
+  f.saveState(legacy)
+  f.ok('start', 'B', '--agent', 'executor-B')
+  assert.equal(f.state().tasks.B.state, 'running')
+
+  const pt = fixture(t, { authorize: false, run: 'legacy-pt', lang: 'pt-BR' })
+  pt.planTask('A')
+  assert.match(pt.ok('start', 'A', '--agent', 'executor-A').stdout,
+    /nenhum escopo de autorização de execução está registrado nesta execução; A foi iniciada como antes/)
+})
+
+test('a recorded scope refuses tasks outside it, and a freed slot names only authorized ready work', t => {
+  const f = fixture(t, { authorize: false, tasks: [{ id: 'A', title: 'Source' }, { id: 'B', title: 'Target' }, { id: 'C', title: 'Outside' }] })
+  const capped = f.state()
+  capped.plan.maxExecutors = 1
+  f.saveState(capped)
+  for (const id of ['A', 'B', 'C']) f.planTask(id)
+  f.ok('authorize', '--scope', 'tasks:A,B', '--confirmed-by-user')
+  const before = f.stateBytes()
+  f.rejects(/C has no execution authorization/, 'start', 'C', '--agent', 'executor-C')
+  assert.deepEqual(f.stateBytes(), before)
+
+  f.ok('start', 'A', '--agent', 'executor-A')
+  const review = f.ok('review', 'A', '--agent', 'reviewer-A')
+  assert.match(review.stdout, /execution slot freed by A \(review\); authorized next: start B --agent <executor>/)
+  const freed = f.events().filter(event => event.type === 'slot_freed')
+  assert.deepEqual(freed.map(({ freedBy, cause, slots, next }) => ({ freedBy, cause, slots, next })),
+    [{ freedBy: 'A', cause: 'review', slots: 1, next: ['B'] }])
+  assert.doesNotMatch(review.stdout, /start C/)
+
+  f.ok('start', 'B', '--agent', 'executor-B')
+  const second = f.ok('review', 'B', '--agent', 'reviewer-B')
+  assert.doesNotMatch(second.stdout, /execution slot freed/)
+  assert.equal(f.events().filter(event => event.type === 'slot_freed').length, 1)
 })
 
 test('refresh-contract revokes only the changed task authorization and preserves its acceptance history', t => {
