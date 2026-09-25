@@ -20,6 +20,35 @@ Historical tag and commit corrections are documented in [Release history recover
 - Require a SemVer bump when distributed package bytes differ from the last-release baseline.
 - Validate local CLI archives in isolation and restore the previous global package if replacement verification fails.
 
+### Added — Decisions and execution authorization
+
+- Link open questions to a decision deadline, bring them back when their target is discussed or planned, and retain unresolved questions across plan synchronization.
+- Record user-approved execution scope and automatic or manual dispatch, with fresh confirmation for each manual dispatch and renewed authorization after contract changes.
+- Announce newly eligible phases without opening them, and preserve blocking questions, options and answers in task history.
+
+### Fixed — Planning contracts and diagnostics
+
+- Explain stale discussion and planning rounds, show unsynchronized plan changes, and require explicit acceptance of changed task contracts.
+- Reject conflicting validation requirements, writes outside approved task paths and nonexistent path prefixes before execution.
+- Persist short task and plan summaries, identify the plan followed by each attempt, and keep those fields outside the execution contract.
+
+### Improved — Evidence and dashboard workflow
+
+- Show validation output and individual checks, track reported executor and reviewer progress, and reject empty notes.
+- Keep the dashboard's task selection, dependency context, fixed-scale scrolling, event labels, history and brand consistent across the graph and results.
+- Exclude waiting and unmeasured planning envelopes from agent work time and the critical path; fold long idle gaps in the results timeline.
+
+### Improved — Measured activity and parallel gain
+
+- Load the complete event history for the selected run and keep the graph and results tied to that run during refreshes.
+- Count activity between nearby recorded milestones; mark longer gaps and incomplete event history as unmeasured.
+- Compare recorded work done one task at a time with overlapping work, and show manual dispatch, review and retry coordination as a separate editable estimate.
+
+### Added — First-run dashboard guide
+
+- Walk through Prumo roles, task flow and the live dashboard in six steps, with an explicitly illustrative example when no run is available.
+- Explain measured gains only for a completed run with complete measurements; keep keyboard controls and a reopen action available.
+
 ## 1.3.17 — 2026-09-21
 
 ### Fixed — Safe plan synchronization

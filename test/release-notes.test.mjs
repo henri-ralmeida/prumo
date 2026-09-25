@@ -8,11 +8,17 @@ const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.u
 test('current release has concise English update highlights with descriptive subtitles', () => {
   const notes = releaseNotes(version)
   assert.deepEqual(notes.map(section => section.title), [
-    'Fixed — Safe plan synchronization',
-    'Improved — Actionable graph diagnostics',
-    'Fixed — Partial run migration'
+    'Fixed — Content-addressed installations',
+    'Fixed — Durable dashboard refresh',
+    'Improved — Versioned package safety',
+    'Added — Decisions and execution authorization',
+    'Fixed — Planning contracts and diagnostics',
+    'Improved — Evidence and dashboard workflow',
+    'Improved — Measured activity and parallel gain',
+    'Added — First-run dashboard guide'
   ])
-  assert.ok(notes.flatMap(section => section.items).includes('Show bounded field-level changes and exact dependency differences after sync-plan'))
+  assert.ok(notes.flatMap(section => section.items).includes('Count activity between nearby recorded milestones and mark longer gaps unmeasured'))
+  assert.ok(releaseNotes('1.3.17').flatMap(section => section.items).includes('Show bounded field-level changes and exact dependency differences after sync-plan'))
   assert.ok(releaseNotes('1.3.11').flatMap(section => section.items).includes('Keep every task and phase visible while dimming cards outside the selected filter'))
   assert.ok(releaseNotes('1.3.2').flatMap(section => section.items).includes('Keep one discussion and one planner when the user names one task'))
   assert.ok(releaseNotes('1.3.1').flatMap(section => section.items).includes('Open phases in declared order after earlier work is terminal'))
