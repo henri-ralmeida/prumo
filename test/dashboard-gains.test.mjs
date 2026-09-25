@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import { createTranslator, messages } from '../scripts/i18n.mjs'
-import { DEFAULT_GAIN_ASSUMPTIONS, calculateGain, gainAssumptionKey, renderGainPanel } from '../scripts/dashboard-gains.mjs'
+import { calculateGain, renderGainPanel, taskManualEstimateMinutes } from '../scripts/dashboard-gains.mjs'
 
 const esc = (value) => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;')
   .replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;')
@@ -30,16 +30,13 @@ test('ganho medido soma o trabalho por tarefa e une intervalos paralelos, sem co
     A: { attempts: [{}, {}], validations: [{ by: 'review' }, { by: 'review' }] },
     B: { attempts: [{}], validations: [{ by: 'review' }] },
   }
-  const gain = calculateGain(analysis, tasks, { execution: 5, review: 2, retry: 3 }, true)
+  const gain = calculateGain(analysis, tasks, true)
   assert.equal(gain.oneAtATimeMs, 40_000)
   assert.equal(gain.withPrumoMs, 35_000)
   assert.equal(gain.savingsMs, 5_000)
   assert.equal(gain.factor, 40_000 / 35_000)
   assert.equal(gain.criticalPathMs, null, 'an unmeasured planning envelope cannot leak into the critical path')
   assert.equal(gain.partial, true, 'planning envelopes without progress telemetry are marked as unmeasured')
-  assert.deepEqual(gain.eventCounts, { execution: 3, review: 3, retry: 1 })
-  assert.equal(gain.manualEstimateMs, 24 * 60_000)
-  assert.equal(gain.retryScenarioMs, 10 * 60_000)
   assert.equal(gain.runActive, true)
 })
 
@@ -66,7 +63,7 @@ test('envelope de fase de 115h e total legado não entram; caminho crítico cont
     cpLen: 115 * 60 * 60_000,
     unmeasuredActivity: true,
     anyLive: true,
-  }, { A: { attempts: [], validations: [] } }, DEFAULT_GAIN_ASSUMPTIONS, true)
+  }, { A: { attempts: [], validations: [] } }, true)
   assert.equal(gain.oneAtATimeMs, 20_000)
   assert.equal(gain.withPrumoMs, 20_000)
   assert.equal(gain.savingsMs, 0)
@@ -84,7 +81,7 @@ test('envelope de planejamento de tarefa sem telemetria não vira atividade medi
   const gain = calculateGain({
     per: [{ id: 'A', agentTime: elapsed, spans: spans(['plan', 1_000, 1_000 + elapsed]) }],
     cpLen: elapsed,
-  }, { A: { planningAttempts: [{ startedAt: 1_000, endedAt: 1_000 + elapsed }], attempts: [], validations: [] } }, DEFAULT_GAIN_ASSUMPTIONS, true)
+  }, { A: { planningAttempts: [{ startedAt: 1_000, endedAt: 1_000 + elapsed }], attempts: [], validations: [] } }, true)
   assert.equal(gain.oneAtATimeMs, null)
   assert.equal(gain.withPrumoMs, null)
   assert.equal(gain.savingsMs, null)
@@ -104,7 +101,7 @@ test('revisão aferida em 20s continua em 20s mesmo se done veio horas depois', 
     endAt: fourHours,
     wall: fourHours,
     anyLive: false,
-  }, { T: { attempts: [{ startedAt: 1_000, endedAt: fourHours }], validations: [{ by: 'review', at: 21_000 }] } }, DEFAULT_GAIN_ASSUMPTIONS, true)
+  }, { T: { attempts: [{ startedAt: 1_000, endedAt: fourHours }], validations: [{ by: 'review', at: 21_000 }] } }, true)
   assert.equal(gain.oneAtATimeMs, 20_000)
   assert.equal(gain.withPrumoMs, 20_000)
   assert.equal(gain.savingsMs, 0)
@@ -114,8 +111,8 @@ test('revisão aferida em 20s continua em 20s mesmo se done veio horas depois', 
   assert.match(html, /completed/)
   assert.doesNotMatch(html, /4h/)
   const htmlPt = renderGainPanel(gain, localizer('pt-BR'), fmtMs, esc, 'pt-BR')
-  assert.match(htmlPt, /<span>execução concluída<\/span>/)
-  assert.doesNotMatch(htmlPt, /<span>concluídas<\/span>/)
+  assert.match(htmlPt, /<span class="gain-status">execução concluída<\/span>/)
+  assert.doesNotMatch(htmlPt, />concluídas<\/span>/)
 })
 
 test('lacuna de atividade torna caminho crítico não aferido mesmo com histórico completo', () => {
@@ -125,7 +122,7 @@ test('lacuna de atividade torna caminho crítico não aferido mesmo com históri
     cpLen: elapsed,
     criticalPathMeasured: false,
     unmeasuredActivity: true,
-  }, { T: { attempts: [{}], validations: [] } }, DEFAULT_GAIN_ASSUMPTIONS, true)
+  }, { T: { attempts: [{}], validations: [] } }, true)
   assert.equal(gain.oneAtATimeMs, 20_000)
   assert.equal(gain.criticalPathMs, null)
   const html = renderGainPanel(gain, localizer('pt-BR'), fmtMs, esc, 'pt-BR')
@@ -137,47 +134,81 @@ test('sem atividade suficiente mostra não aferido e não fabrica economia, mant
     phasePlanning: [{ elapsed: 115 * 60 * 60_000, duration: 0 }],
     unmeasuredActivity: true,
     anyLive: true,
-  }, { T: { attempts: [{}], validations: [] } }, DEFAULT_GAIN_ASSUMPTIONS, true)
+  }, { T: { attempts: [{}], validations: [] } }, true)
   assert.equal(gain.oneAtATimeMs, null)
   assert.equal(gain.withPrumoMs, null)
   assert.equal(gain.savingsMs, null)
   assert.equal(gain.factor, null)
-  assert.equal(gain.retryScenarioMs, null)
+  assert.equal(gain.humanEstimateMs, null)
   const html = renderGainPanel(gain, localizer('pt-BR'), fmtMs, esc, 'pt-BR')
   assert.match(html, /até agora/)
   assert.match(html, /Não aferido/)
   assert.match(html, /não há atividade de agente registrada suficiente/i)
-  assert.match(html, /0 eventos/)
-  assert.doesNotMatch(html.slice(0, html.indexOf('<div class="gain-human">')), /115h|0s/)
+  assert.doesNotMatch(html, /115h|0s/)
 })
 
-test('contagens e cenários humanos usam tarefas sem manualEstimate e distinguem ausência de retry', () => {
+test('sem manualEstimate não há estimativa humana nem minutos editáveis por evento', () => {
   const analysis = { per: [{ id: 'T', spans: spans(['exec', 0, 10_000]) }], cpLen: 10_000 }
-  const gain = calculateGain(analysis, { T: { attempts: [{}], validations: [{ by: 'review', ok: true }] } }, DEFAULT_GAIN_ASSUMPTIONS, true)
-  assert.deepEqual(gain.perEventMinutes, DEFAULT_GAIN_ASSUMPTIONS)
-  assert.deepEqual(gain.eventCounts, { execution: 1, review: 1, retry: 0 })
-  assert.equal(gain.manualEstimateMs, 8 * 60_000)
-  assert.equal(gain.retryScenarioMs, null)
+  const gain = calculateGain(analysis, { T: { attempts: [{}, {}], validations: [{ by: 'review', ok: false }, { by: 'review', ok: true }] } }, true)
+  assert.equal(gain.humanEstimateMs, null)
+  assert.equal(gain.humanEstimateTasks, 0)
   for (const lang of ['en', 'pt-BR']) {
     const html = renderGainPanel(gain, localizer(lang), fmtMs, esc, lang)
-    assert.match(html, /ESTIMATE|ESTIMATIVA/)
-    assert.match(html, /Execution command|Comando de execução/)
-    assert.match(html, /Review command|Comando de revisão/)
-    assert.match(html, /Retry coordination|Coordenação de retry/)
-    assert.match(html, /No retries recorded|Nenhum retry registrado/)
-    assert.match(html, /data-gain-minutes="execution" oninput="updateGainEstimate\(\)" onchange="updateGainEstimate\(\)"/)
-    assert.match(html, /value="5"/)
+    assert.doesNotMatch(html, /<input|<button|data-gain-minutes|gain-human|Human estimate|Estimativa humana/)
+    assert.doesNotMatch(html, /Manual coordination|Coordenação manual|Execution command|Comando de execução|Retry coordination/i)
     assert.match(html, /sum of recorded agent intervals|soma dos intervalos registrados dos agentes/)
     assert.match(html, /union of recorded activity intervals|união dos intervalos de atividade registrados/)
   }
 })
 
-test('estimativas recalculadas anunciam mudanças para leitores de tela', () => {
-  const gain = calculateGain({ per: [{ id: 'T', spans: spans(['exec', 0, 10_000]) }] }, {}, DEFAULT_GAIN_ASSUMPTIONS, true)
-  const html = renderGainPanel(gain, localizer('en'), fmtMs, esc, 'en')
-  for (const id of ['gainExecutionSummary', 'gainReviewSummary', 'gainRetrySummary', 'gainManualTotal', 'gainScenario']) {
-    assert.match(html, new RegExp(`(?:<small|<strong|<div) id="${id}" aria-live="polite" aria-atomic="true"`))
+test('manualEstimate por tarefa soma minutos válidos, ignora o resto em silêncio e sai rotulado como estimativa', () => {
+  assert.equal(taskManualEstimateMinutes({ manualEstimate: 45 }), 45)
+  assert.equal(taskManualEstimateMinutes({ manualEstimate: '30' }), 30)
+  for (const value of [undefined, null, -5, 'PT4H', '4h', NaN, Infinity, {}, []]) assert.equal(taskManualEstimateMinutes({ manualEstimate: value }), null)
+  assert.equal(taskManualEstimateMinutes(null), null)
+
+  const analysis = { per: [{ id: 'A', spans: spans(['exec', 0, 60_000]) }, { id: 'B', spans: spans(['exec', 0, 60_000]) }] }
+  const tasks = {
+    A: { state: 'done', manualEstimate: 120 }, B: { state: 'done', manualEstimate: 'oops' },
+    C: { state: 'done', manualEstimate: 30 }, S: { state: 'skipped', manualEstimate: 999 },
   }
+  const gain = calculateGain(analysis, tasks, true)
+  assert.equal(gain.humanEstimateMs, 150 * 60_000, 'skipped tasks and invalid values stay out')
+  assert.equal(gain.humanEstimateTasks, 2)
+  assert.equal(gain.countedTasks, 3)
+  for (const [lang, label, badge, coverage] of [
+    ['en', /Human estimate: 2h30/, /estimate · not measured/, /for 2 of 3 tasks\. It is not a measurement\./],
+    ['pt-BR', /Estimativa humana: 2h30/, /estimativa · não é medição/, /para 2 de 3 tarefas\. Não é medição\./],
+  ]) {
+    const html = renderGainPanel(gain, localizer(lang), fmtMs, esc, lang)
+    assert.match(html, label)
+    assert.match(html, badge)
+    assert.match(html, coverage)
+    assert.match(html, /class="gain-human" data-kind="estimate"/)
+    assert.doesNotMatch(html, /<input|data-gain-minutes/)
+  }
+})
+
+test('ganho com bloqueio e tarefas paralelas: bloqueio fora das contas, paralelo conta uma vez', () => {
+  // A trabalha 0–10s, fica bloqueada 10–40s (sem span) e volta 40–50s; B roda em paralelo 5–25s.
+  const analysis = {
+    per: [
+      { id: 'A', spans: spans(['exec', 0, 10_000], ['exec', 40_000, 50_000]), blocks: [[10_000, 40_000]] },
+      { id: 'B', spans: spans(['exec', 5_000, 20_000], ['review', 20_000, 25_000]) },
+    ],
+    cpLen: 20_000, criticalPathMeasured: true, anyLive: false,
+  }
+  const gain = calculateGain(analysis, { A: { state: 'done' }, B: { state: 'done' } }, true)
+  assert.equal(gain.oneAtATimeMs, 40_000, 'one at a time sums each task: 20s + 20s')
+  assert.equal(gain.withPrumoMs, 35_000, 'with Prumo is the union 0–25s + 40–50s; the block is excluded')
+  assert.equal(gain.savingsMs, 5_000)
+  assert.equal(gain.factor, 40_000 / 35_000)
+  assert.equal(gain.criticalPathMs, 20_000)
+  assert.equal(gain.runActive, false)
+  const html = renderGainPanel(gain, localizer('en'), fmtMs, esc, 'en')
+  assert.match(html, /Run completed/)
+  assert.match(html, /class="gain-bars"/)
+  assert.match(html, /<i class="par" style="width:87\.50%"><\/i><i class="save" style="width:12\.50%"><\/i>/, 'bars share one scale')
 })
 
 test('renderização escapa o catálogo e o builder injeta somente helpers gerados', () => {
@@ -194,8 +225,23 @@ test('renderização escapa o catálogo e o builder injeta somente helpers gerad
   assert.doesNotThrow(() => new vm.Script(script), 'the generated browser script parses')
 })
 
-test('premissas do mesmo run ficam separadas por root', () => {
-  assert.notEqual(gainAssumptionKey('root-a', 'same-run'), gainAssumptionKey('root-b', 'same-run'))
-  assert.notEqual(gainAssumptionKey('root-a', 'run-a'), gainAssumptionKey('root-a', 'run-b'))
-  assert.equal(gainAssumptionKey(undefined, 'same-run'), gainAssumptionKey('default', 'same-run'))
+test('a estimativa humana só ganha barra contra o tempo aferido das mesmas tarefas', () => {
+  // 4 tarefas aferidas (10 min cada); só A e B têm estimativa, de 30 min cada.
+  const analysis = { per: ['A', 'B', 'C', 'D'].map((id) => ({ id, spans: spans(['exec', 0, 600_000]) })) }
+  const tasks = { A: { state: 'done', manualEstimate: 30 }, B: { state: 'done', manualEstimate: 30 }, C: { state: 'done' }, D: { state: 'done' } }
+  const gain = calculateGain(analysis, tasks, true)
+  assert.equal(gain.oneAtATimeMs, 2_400_000)
+  assert.equal(gain.humanComparedMs, 1_200_000, 'only the estimated tasks enter the comparison')
+  const html = renderGainPanel(gain, localizer('pt-BR'), fmtMs, esc, 'pt-BR')
+  const [measuredBars, humanBlock] = html.split('class="gain-human"')
+  assert.doesNotMatch(measuredBars, /class="est"/, 'the estimate never shares the whole-run scale')
+  assert.match(humanBlock, /estimativa · não é medição/)
+  assert.match(humanBlock, /class="est" style="width:100\.00%"[\s\S]*Agentes nas mesmas tarefas[\s\S]*class="seq" style="width:33\.33%"/)
+
+  // Se uma tarefa estimada não tem tempo aferido, não há base comparável: sem barra, só o texto rotulado.
+  const partial = calculateGain({ per: [{ id: 'A', spans: spans(['exec', 0, 600_000]) }, { id: 'B', spans: [] }] }, tasks, true)
+  assert.equal(partial.humanComparedMs, null)
+  const partialHtml = renderGainPanel(partial, localizer('pt-BR'), fmtMs, esc, 'pt-BR')
+  assert.match(partialHtml, /Estimativa humana: 1h00/)
+  assert.doesNotMatch(partialHtml, /class="est"|Agentes nas mesmas tarefas/)
 })

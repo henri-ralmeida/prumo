@@ -54,7 +54,7 @@ class FakeNode {
 }
 
 function createHarness({ lang = 'en', storage = new Map(), storageThrows = false, sidebarCollapsed = false,
-  storageGetterThrows = false, hasRun = true, summary = () => null } = {}) {
+  storageGetterThrows = false, hasRun = true, summary = () => null, snapshot = () => null } = {}) {
   const elements = new Map()
   const sidePanel = new FakeNode({ hidden: sidebarCollapsed })
   const guide = new FakeNode({ hidden: true })
@@ -81,10 +81,10 @@ function createHarness({ lang = 'en', storage = new Map(), storageThrows = false
   const childIds = [
     '#guideTitle', '#guideDescription', '#guideCount', '#guideAnnouncement', '#guidePrevious', '#guideNext',
     '#guideSkip', '#guidePresentation', '#guideGainsLabel', '#guideGainsSummary', '#guideOpenLegend',
-    '#guideGainPanel', '#guideCommandPanel', '#guideFlowPanel', '#guideRoleCard', '#guideRoleName', '#guideRoleIcon', '#guideExamplePanel',
+    '#guideGainPanel', '#guideCommandPanel', '#guideFlowPanel', '#guideRoleCard', '#guideRoleName', '#guideRoleIcon', '#guideExamplePanel', '#guideVisual',
   ]
   for (const id of childIds) create(id, {
-    hidden: ['#guideGainPanel', '#guideCommandPanel', '#guideFlowPanel', '#guideRoleCard', '#guideOpenLegend', '#guideExamplePanel'].includes(id),
+    hidden: ['#guideGainPanel', '#guideCommandPanel', '#guideFlowPanel', '#guideRoleCard', '#guideOpenLegend', '#guideExamplePanel', '#guideVisual'].includes(id),
     parent: guide,
   })
 
@@ -124,7 +124,7 @@ function createHarness({ lang = 'en', storage = new Map(), storageThrows = false
   const translate = createTranslator(messages, lang)
   const runStatus = { available: hasRun }
   const api = createPrumoOnboarding({ root: guide, launcher, document, window, translate,
-    getCompletedRunSummary: summary, getRunAvailability: () => runStatus.available })
+    getCompletedRunSummary: summary, getRunAvailability: () => runStatus.available, getRunSnapshot: snapshot })
   guide.requestFullscreen = async () => { document.fullscreenElement = guide; document.dispatch('fullscreenchange', {}) }
 
   return { api, anchors, document, elements, guide, launcher, runStatus, sidePanel, sidebarToggle, storage, translate }
@@ -384,4 +384,46 @@ test('títulos e descrições de todas as demonstrações têm pt-BR nos modos c
       assert.ok(expectedTexts.has(description), `descrição sem pt-BR: ${description}`)
     }
   }
+})
+
+async function walkVisuals(ui) {
+  const seen = []
+  for (let index = 0; index < 40; index += 1) {
+    const visual = ui.elements.get('#guideVisual')
+    seen.push({ title: ui.elements.get('#guideTitle').textContent, kind: visual.dataset.kind, hidden: visual.hidden,
+      example: !ui.elements.get('#guideExamplePanel').hidden, html: String(visual.innerHTML ?? '') })
+    if (/Finish guide|Concluir guia/.test(ui.elements.get('#guideNext').textContent) && seen.length > 1) break
+    await ui.elements.get('#guideNext').click()
+  }
+  return seen
+}
+
+test('cada passo do guia tem visualização: mocks rotulados sem execução e números reais quando há execução', async () => {
+  const empty = await walkVisuals(createHarness({ lang: 'pt-BR', hasRun: false }))
+  for (const step of empty) {
+    assert.ok(step.example || (!step.hidden && step.html.length > 0), `passo sem visualização: ${step.title}`)
+    assert.doesNotMatch(step.html, /Da sua execução/, 'sem execução nada é apresentado como dado real')
+    assert.doesNotMatch(step.html, /@|\d{3}\.\d{3}\.\d{3}/, 'nenhum dado pessoal nos exemplos')
+  }
+  const mocks = empty.filter((step) => /gv-tag mock/.test(step.html))
+  assert.ok(mocks.length >= 4)
+  for (const step of mocks) assert.match(step.html, /Exemplo ilustrativo — não são dados da execução atual\./)
+  const flow = empty.find((step) => step.kind === 'flow')
+  assert.ok(flow)
+  for (const state of ['reprovada', 'bloqueada', 'no prumo']) assert.match(flow.html, new RegExp(state))
+  assert.match(empty[0].html, /10 tarefas em 3 fases · 4 no prumo/)
+
+  const figures = { oneAtATimeMs: 3_600_000, withPrumoMs: 900_000, oneAtATime: '1h00', withPrumo: '15m', savings: '45m', factor: '4×' }
+  const live = await walkVisuals(createHarness({ lang: 'pt-BR', hasRun: true,
+    snapshot: () => ({ run: 'demo-<run>', tasks: 12, phases: 3, done: 5 }),
+    summary: () => ({ completed: true, measurementComplete: true, text: '45m poupados', figures }) }))
+  assert.match(live[0].html, /Da sua execução: demo-&lt;run&gt;/, 'o nome da execução entra escapado')
+  assert.match(live[0].html, /12 tarefas em 3 fases · 5 no prumo/)
+  const gains = live.find((step) => step.kind === 'gains')
+  assert.ok(gains)
+  assert.match(gains.html, /Medido em uma execução concluída/)
+  assert.match(gains.html, /<strong>1h00<\/strong>[\s\S]*<strong>15m<\/strong>[\s\S]*<strong>45m<\/strong>/)
+  assert.match(gains.html, /class="par" style="width:25\.0%"/)
+  const liveFlow = live.find((step) => step.kind === 'flow')
+  assert.match(liveFlow.html, /gv-tag mock/, 'estados que a execução pode não ter continuam como exemplo rotulado')
 })

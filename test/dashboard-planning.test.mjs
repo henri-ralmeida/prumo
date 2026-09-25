@@ -1514,6 +1514,12 @@ test('results count shared phase planning once and keep pending runs live', () =
   assert.doesNotMatch(results, /open for|elapsed /)
 })
 
+// Folded idle bands on the results timeline state the clock length of the pause on purpose;
+// everything else must still keep that envelope out of sight.
+const withoutPauseBands = (html) => html
+  .replace(/<span class="gbl idle"[^>]*>[^<]*<\/span>/g, '')
+  .replace(/<i class="gband idle"[^>]*><\/i>/g, '')
+
 test('gain card omits a long phase-planning envelope without active telemetry', () => {
   const elapsedSeconds = 115 * 3600 + 23 * 60
   const start = instant(100 - elapsedSeconds)
@@ -1527,7 +1533,7 @@ test('gain card omits a long phase-planning envelope without active telemetry', 
   ui.run('STATE = input; FULL_EVENTS = []; renderResults(input)', { input: state })
   const results = ui.nodes.get('#results').innerHTML
   const cardStart = results.indexOf('<section class="gcard gain"')
-  const cardEnd = results.indexOf('<div class="gain-human">', cardStart)
+  const cardEnd = results.indexOf('</section>', cardStart)
   const measured = results.slice(cardStart, cardEnd)
   assert.ok(cardStart >= 0)
   assert.match(measured, /até agora/)
@@ -1622,10 +1628,13 @@ test('gain waits for complete events when an old block falls outside the last 12
     ['exec', Date.parse(instant(0)), Date.parse(instant(10))],
     ['exec', Date.parse(instant(pauseSeconds + 10)), Date.parse(instant(doneSeconds))],
   ], 'somente os intervalos comprovados por marcos de início, bloqueio, retomada e progresso entram na medição')
+  const gainCardOf = (html) => html.slice(html.indexOf('<section class="gcard gain"'), html.indexOf('</section>', html.indexOf('<section class="gcard gain"')))
   const completeHtml = ui.nodes.get('#results').innerHTML
-  const completeCard = completeHtml.slice(completeHtml.indexOf('<section class="gcard gain"'), completeHtml.indexOf('<div class="gain-human">'))
+  const completeCard = gainCardOf(completeHtml)
   assert.match(completeCard, /20s/)
   assert.doesNotMatch(completeCard, /115h|115:23/)
+  assert.match(completeHtml, /<span class="gbl idle"[^>]*>⋯ 115h23 parado<\/span>/, 'the folded pause states how long nobody worked')
+  assert.doesNotMatch(withoutPauseBands(completeHtml), /115h|115:23/, 'the pause length appears only on its folded band')
 
   ui.run('EVENTS_COMPLETE = false; FULL_EVENTS = recent; renderResults(input)', { input, recent: recentEvents })
   const truncatedResult = ui.run('analyse(input, recent)', { input, recent: recentEvents })
@@ -1634,36 +1643,42 @@ test('gain waits for complete events when an old block falls outside the last 12
   assert.deepEqual(JSON.parse(JSON.stringify(truncatedResult.per[0].spans)), [])
   assert.equal(truncatedResult.criticalPathMeasured, false)
   const incompleteHtml = ui.nodes.get('#results').innerHTML
-  const incompleteCard = incompleteHtml.slice(incompleteHtml.indexOf('<section class="gcard gain"'), incompleteHtml.indexOf('<div class="gain-human">'))
+  const incompleteCard = gainCardOf(incompleteHtml)
   assert.match(incompleteCard, /não foi aferido/)
   assert.match(incompleteCard, /Não aferido/)
   assert.doesNotMatch(incompleteCard, /115h|115:23/)
 
   ui.run('EVENTS_COMPLETE = true; FULL_EVENTS = full; renderResults(input)', { input, full: fullEvents })
-  const restoredCard = ui.nodes.get('#results').innerHTML
-    .slice(ui.nodes.get('#results').innerHTML.indexOf('<section class="gcard gain"'), ui.nodes.get('#results').innerHTML.indexOf('<div class="gain-human">'))
+  const restoredCard = gainCardOf(ui.nodes.get('#results').innerHTML)
   assert.match(restoredCard, /20s/)
   assert.doesNotMatch(restoredCard, /115h|115:23/)
 })
 
-test('live results polling keeps a focused gain assumption field mounted', async () => {
+test('the gain card opens the results tab and shows a human estimate only from manualEstimate', async () => {
   const ui = dashboard('en')
   const first = { run: 'first', createdAt: instant(0), plan: {}, tasks: { A: task('A') }, derived: {} }
   const next = { ...first, tasks: { A: task('A', 'done', { title: 'Updated task' }) }, derived: { A: { effective: 'done' } } }
   ui.run("STATE = input; SELECTED_ROOT = 'root-a'; SELECTED_RUN = 'first'; CURRENT_ROOT = 'root-a'; CURRENT_RUN = 'first'; STATE_RUN_KEY = 'root-a\\0first'; EVENT_HISTORY_KEY = STATE_RUN_KEY; EVENTS_COMPLETE = true; RESULTS_OPEN = true; renderResults(input)", { input: first })
   const original = ui.nodes.get('#results').innerHTML
-  const focusedInput = { dataset: { gainMinutes: 'execution' }, value: '17' }
-  ui.run("const originalGainQuery = document.querySelector.bind(document); const originalGainQueryAll = document.querySelectorAll.bind(document); document.activeElement = gainInput; document.querySelector = selector => selector === '#gainPanel input[data-gain-minutes=\"execution\"]' ? gainInput : originalGainQuery(selector); document.querySelectorAll = selector => selector === '#gainPanel input[data-gain-minutes]' ? [gainInput] : originalGainQueryAll(selector)", { gainInput: focusedInput })
+  assert.equal(original.trimStart().indexOf('<section class="gcard gain"'), 0, 'the gain card is the first thing in the tab')
+  assert.ok(original.indexOf('id="gainPanel"') < original.indexOf('class="rhead"'))
+  assert.doesNotMatch(original, /<input|data-gain-minutes|Manual coordination estimate|Human estimate/,
+    'without manualEstimate there is no human estimate and no editable per-event minutes')
+
   ui.run('STATE = input', { input: next })
   const fetch = async () => ({ json: async () => ({ events: [] }) })
   await ui.run('loadResults()', { fetch })
-  assert.equal(ui.nodes.get('#results').innerHTML, original)
-  assert.equal(ui.run('document.activeElement.value'), '17')
-
-  ui.run('document.activeElement = { dataset: {} }')
-  await ui.run('loadResults()', { fetch })
   assert.notEqual(ui.nodes.get('#results').innerHTML, original)
   assert.match(ui.nodes.get('#results').innerHTML, /Updated task/)
+
+  const estimated = { ...next, tasks: {
+    A: task('A', 'done', { manualEstimate: 90 }), B: task('B', 'done', { manualEstimate: 'not a number' }), C: task('C', 'done'),
+  }, derived: {} }
+  ui.run('STATE = input; renderResults(input)', { input: estimated })
+  const card = ui.nodes.get('#results').innerHTML.split('</section>')[0]
+  assert.match(card, /Human estimate: 1h30/)
+  assert.match(card, /estimate · not measured/)
+  assert.match(card, /for 1 of 3 tasks/, 'invalid or missing estimates are ignored silently and the coverage is stated')
 })
 
 test('the results time axis folds long gaps but keeps measured spans and boundaries exact', () => {
@@ -1881,8 +1896,8 @@ test('blocked execution keeps only its two measured slices across graph, results
   ui.run('FULL_EVENTS = inputEvents; RESULTS_OPEN = true; renderResults(STATE)', { inputEvents: events })
   const results = ui.nodes.get('#results').innerHTML
   assert.match(results, /10s/)
-  assert.match(results, /⋯ parado/)
-  assert.doesNotMatch(results, /115h|76h|192h|115:23|24h|115 hours/)
+  assert.match(results, /⋯ 115h23 parado/)
+  assert.doesNotMatch(withoutPauseBands(results), /115h|76h|192h|115:23|24h|115 hours/)
 
   ui.run("POP = { id: 'A', pinned: true }; POP_MODE = 'lean'; fillPop('A')")
   const popover = ui.nodes.get('#popBody').innerHTML
@@ -1935,7 +1950,8 @@ test('more than 120 events preserve long pauses and never display unmeasured env
   assert.match(ui.nodes.get('#orch').innerHTML, /aria-label="Agent time: 00:00:10 · not measured"/)
   const visibleWithCompleteHistory = ['#orch', '#doneCount', '#parallel', '#results', '#popBody']
     .map((selector) => ui.nodes.get(selector).innerHTML + ui.nodes.get(selector).textContent).join('\n')
-  assert.doesNotMatch(visibleWithCompleteHistory, /115h|115:23|415390s/)
+  assert.match(ui.nodes.get('#results').innerHTML, /⋯ 115h23 idle/, 'the folded wait on the timeline states its length')
+  assert.doesNotMatch(withoutPauseBands(visibleWithCompleteHistory), /115h|115:23|415390s/)
 })
 
 test('late event pages from a previous run cannot contaminate the newly selected run', async () => {
@@ -2128,7 +2144,7 @@ test('opening results while the selected run state is still loading never shows 
   assert.equal(ui.nodes.get('#results').getAttribute('aria-busy'), 'false')
 })
 
-test('tick preserva a premissa em edição; ao trocar de run, limpa A e exibe B', async () => {
+test('tick repinta o ganho sem campos editáveis; ao trocar de run, limpa A e exibe B', async () => {
   const ui = dashboard()
   const makeRun = (run, id) => ({
     run, createdAt: instant(0), plan: { phases: [] },
@@ -2152,13 +2168,10 @@ test('tick preserva a premissa em edição; ao trocar de run, limpa A e exibe B'
   } })
   ui.run("STATE = input; SELECTED_ROOT = 'root-a'; SELECTED_RUN = 'run-a'; CURRENT_ROOT = 'root-a'; CURRENT_RUN = 'run-a'; TICK_GENERATION = 1; STATE_RUN_KEY = 'root-a\\0run-a'; EVENT_HISTORY_KEY = STATE_RUN_KEY; EVENTS_COMPLETE = true; RESULTS_OPEN = true; renderResults(STATE)", { input: stateA })
   const previousMarkup = ui.nodes.get('#results').innerHTML
-  const focusedInput = { dataset: { gainMinutes: 'execution' }, value: '17' }
-  ui.run("document.activeElement = focusedGainInput; const originalQuery = document.querySelector.bind(document); const originalQueryAll = document.querySelectorAll.bind(document); document.querySelector = selector => selector === '#gainPanel input[data-gain-minutes=\"execution\"]' && $('#results').innerHTML.includes('id=\"gainPanel\"') ? focusedGainInput : originalQuery(selector); document.querySelectorAll = selector => selector === '#gainPanel input[data-gain-minutes]' && $('#results').innerHTML.includes('id=\"gainPanel\"') ? [focusedGainInput] : originalQueryAll(selector)", { focusedGainInput: focusedInput })
+  assert.doesNotMatch(previousMarkup, /<input|data-gain-minutes|gain-input/, 'o cartão de ganho não tem minutos editáveis')
 
   await ui.run('loadResults(true)')
-  assert.equal(ui.nodes.get('#results').innerHTML, previousMarkup, 'refreshing an open results tab does not replace the focused input')
-  assert.equal(ui.run('document.activeElement === focusedGainInput'), true)
-  assert.match(ui.nodes.get('#gainExecutionSummary').textContent, /17m/, 'the edited assumption is used in the refreshed estimate')
+  assert.equal(ui.nodes.get('#results').innerHTML, previousMarkup, 'o mesmo estado repinta o mesmo cartão')
 
   ui.run("selectRun('root-b/run-b')")
   assert.equal(ui.nodes.get('#results').innerHTML, '')
@@ -2239,6 +2252,9 @@ test('115h task planning envelopes stay unmeasured and cannot inflate the critic
   const results = ui.nodes.get('#results').innerHTML
   assert.match(results, /tempo ativo não aferido/)
   assert.doesNotMatch(results, /class="cp-tag"|115h|115:23|415390s/)
+  assert.match(results, /class="gband unmeasured"[^>]*title="Sem registro de atividade de [^"]+ a [^"]+; recolhido/,
+    'the unmeasured band says when it happened, without a length that could read as work')
+  assert.doesNotMatch(results, /class="kcp"/, 'the legend omits the critical path when it was not measured')
   ui.run("POP = { id: 'P', pinned: true }; POP_MODE = 'lean'; fillPop('P')")
   assert.match(ui.nodes.get('#popBody').innerHTML, /Agent time[\s\S]*· 5s · não aferido/)
   assert.doesNotMatch(ui.nodes.get('#popBody').innerHTML, /115h|115:23|415390s/)
@@ -2481,4 +2497,26 @@ test('task labels, summaries and plan identities stay visible across concise and
   assert.ok(history.includes('A conta ainda mostra o status anterior.'), 'the reviewer gate prefers its validation summary')
   assert.ok(history.includes('Complete observation two.'), 'selected history retains the full evidence')
   assert.ok(history.includes('mudou de aaaa'), 'selected history records the plan change')
+})
+
+test('adjacent unmeasured and idle stretches fold into side-by-side bands, never on the same spot', () => {
+  const planStart = instant(100 - 6 * 3600)
+  const taskValue = task('P', 'done', {
+    planningAttempts: [{ startedAt: planStart, endedAt: instant(100 - 3 * 3600) }],
+    attempts: [{ n: 1, startedAt: instant(95), endedAt: instant(100) }],
+  })
+  const state = { run: 'adjacent-bands', createdAt: planStart, plan: {}, tasks: { P: taskValue }, derived: { P: { effective: 'done' } } }
+  const events = [
+    { type: 'task_start', task: 'P', attempt: 1, at: instant(95) },
+    { type: 'task_progress', task: 'P', attempt: 1, at: instant(100) },
+    { type: 'task_done', task: 'P', attempt: 1, at: instant(100) },
+  ]
+  const ui = dashboard('en')
+  ui.run('FULL_EVENTS = inputEvents; renderResults(input)', { input: state, inputEvents: events })
+  const results = ui.nodes.get('#results').innerHTML
+  const bands = [...results.matchAll(/<i class="gband (idle|unmeasured)" style="left:([\d.]+)px"/g)].map(([, kind, left]) => [kind, Number(left)])
+  assert.deepEqual(bands.map(([kind]) => kind).sort(), ['idle', 'unmeasured'])
+  assert.ok(Math.abs(bands[0][1] - bands[1][1]) >= 20, `bands overlap: ${JSON.stringify(bands)}`)
+  assert.match(results, /⋯ 2h59 idle/)
+  assert.doesNotMatch(withoutPauseBands(results), /2h59/)
 })
