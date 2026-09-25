@@ -890,5 +890,12 @@
   "paused": "parado",
   "{0} of {1} tasks in prumo": "{0} de {1} tarefas no prumo",
   "No completed plans yet.": "Nenhum plano concluído ainda.",
-  "No plans in progress.": "Nenhum plano em andamento."
+  "No plans in progress.": "Nenhum plano em andamento.",
+  "Pinned": "Fixado",
+  "repository": "repositório",
+  "repository @ {0}": "repositório @ {0}",
+  "installed copy": "cópia instalada",
+  "At least one group stays visible": "Pelo menos um grupo fica visível",
+  "No plans yet.": "Nenhum plano ainda.",
+  "No summary recorded": "Sem resumo registrado"
 }

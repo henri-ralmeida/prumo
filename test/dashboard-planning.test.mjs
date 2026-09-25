@@ -255,6 +255,22 @@ test('dashboard footer shows package version, origin, content ID and path, with 
   }
 })
 
+test('dashboard footer names a source checkout as the repository, with its short commit when known', async () => {
+  for (const [lang, withCommit, without] of [['en', 'repository @ 641017a', 'repository'], ['pt-BR', 'repositório @ 641017a', 'repositório']]) {
+    for (const [about, label] of [
+      [{ version: '2.0.0', origin: 'repository', commit: '641017a', contentId: 'a1b2c3d4e5f6', path: 'C:\\src\\prumo' }, withCommit],
+      [{ version: '2.0.0', origin: 'repository', contentId: 'a1b2c3d4e5f6', path: 'C:\\src\\prumo' }, without],
+      [{ version: '2.0.0', origin: 'repository', commit: '<b>x</b>', contentId: 'a1b2c3d4e5f6', path: 'C:\\src\\prumo' }, without],
+    ]) {
+      const ui = dashboard(lang)
+      await ui.run('loadIdentity()', { fetch: async () => ({ ok: true, json: async () => about }) })
+      const text = ui.nodes.get('#identity').textContent
+      assert.ok(text.includes(` · ${label} · `), text)
+      assert.doesNotMatch(text, /pacote global|global package|<b>/)
+    }
+  }
+})
+
 test('dashboard renders separate planning queues, active planner hub and execution readiness in both languages', () => {
   const tasks = {
     P: task('P', 'pending', { planningRequired: true }),
@@ -875,12 +891,22 @@ test('Gravidade cards and agent panels show measured activity in the compact das
   assert.match(html, /<summary class="run-trigger"/)
   assert.doesNotMatch(html, /<select[^>]+id="runSelect"/)
   assert.match(html, /<details class="legend-box" data-prumo-guide-anchor="legend">/)
-  assert.match(html, /#eventsBox \{ display: flex; flex: 1 0 170px;[^}]*min-height: 170px;/)
-  assert.match(html, /#pop \{[^}]*width: 472px/)
+  assert.match(html, /#eventsBox \{ display: flex; flex: 1 1 0;[^}]*min-height: 64px; \}/, 'the event log gives way when the legend opens')
+  assert.match(html, /#events \{ flex: 1 1 0; min-height: 40px; overflow-y: auto; \}/, 'and scrolls inside itself')
+  assert.match(html, /#pop \{[^}]*width: min\(472px, calc\(100vw - 24px\)\)/, '472px as designed, never wider than a phone')
   assert.match(html, /#pop \.pk \{[^}]*10px[^}]*var\(--font-mono\)/)
   assert.match(html, /#pop \.lead \{ font: 400 16px\/1\.45 var\(--font-display\)/)
   assert.match(html, /#pop \.detail-head \{ display: flex; align-items: baseline; flex-wrap: nowrap/)
-  assert.match(html, /#pop\.expanded \.pk, #pop\.expanded dt \{[^}]*16px[^}]*var\(--font-display\)/)
+  // detail design: main-column sections are Bricolage 16 titles; the side column and the Summary
+  // box keep the mono 10px label; plan labels are mono grey; attempt dots are 13px; the pill is mono
+  assert.match(html, /#pop\.expanded \.pmain > dt \{[^}]*font: 600 16px\/1\.25 var\(--font-display\)/)
+  assert.match(html, /#pop\.expanded \.pside > dt \{[^}]*font: 500 10px\/1\.4 var\(--font-mono\)[^}]*text-transform: uppercase/)
+  assert.match(html, /#pop \.summary-block \.pk \{[^}]*font: 500 10px\/1\.4 var\(--font-mono\)[^}]*text-transform: uppercase/)
+  assert.match(html, /#pop \.plan-label \{ color: var\(--dim\); font: 400 12px\/1\.5 var\(--font-mono\)/)
+  assert.match(html, /#pop \.jstep::before, #pop \.attempt-row::before \{[^}]*width: 13px; height: 13px/)
+  assert.match(html, /#pop \.st \{[^}]*font: 400 11px\/1\.3 var\(--font-mono\)/)
+  assert.match(html, /#pop \.chip, #pop \.dep \{[^}]*height: 26px[^}]*margin: 0[^}]*font: 400 11px\/1 var\(--font-mono\)/,
+    'the phase chip and the dependency buttons share one box and one type')
 
   const tasks = {
     T0: task('T0', 'done', { attempts: [{ n: 1, agent: 'exec-a', startedAt: instant(1), endedAt: instant(5), result: 'passed', planDigest: 'a'.repeat(64) }],
@@ -933,7 +959,7 @@ test('Gravidade cards and agent panels show measured activity in the compact das
 
   ui.run("POP_MODE = 'lean'; fillPop('T1')")
   const lean = ui.nodes.get('#popBody').innerHTML
-  for (const text of ['T1', '2 of 3', 'Linha um', 'Linha dois', 'Linha três', 'Depends on', 'T0', 'Unlocks', 'T2', 'changed from aaaa', 'Pin', 'Agent time', 'see detail'])
+  for (const text of ['T1', '2 of 3', 'Linha um', 'Linha dois', 'Linha três', 'Depends on', 'T0', 'Unlocks', 'T2', 'changed from aaaa', 'Agent time', 'see detail'])
     assert.ok(lean.includes(text), text)
   assert.ok(lean.includes('SUMMARY_SENTINEL'), 'an explicit summary remains complete in the concise view')
   assert.doesNotMatch(lean, /115:00:00|115h/)
@@ -984,11 +1010,40 @@ test('o seletor separa planos em andamento dos concluidos', () => {
   assert.match(options, /parado/)
   assert.doesNotMatch(options, /data-run="root\/finished"/)
 
-  ui.run("RUN_FILTER = 'complete'; updateRunSelect(RUN_CATALOG)")
+  const pressed = (markup, group) => markup.match(new RegExp(`data-run-filter="${group}" aria-pressed="(true|false)"`))?.[1]
+  assert.equal(pressed(options, 'progress'), 'true')
+  assert.equal(pressed(options, 'complete'), 'false')
+  assert.match(options, /aria-label="em andamento: 2"[^>]*>em andamento<small>2<\/small>/, 'each group shows its count')
+  assert.match(options, /aria-label="no prumo: 1"[^>]*>no prumo<small>1<\/small>/)
+
+  // the two groups are independent filters: turning one on keeps the other on
+  ui.run("toggleRunFilter('complete')")
   options = ui.nodes.get('#runOptions').innerHTML
-  assert.match(options, /data-run="root\/finished"/)
+  assert.equal(pressed(options, 'progress'), 'true')
+  assert.equal(pressed(options, 'complete'), 'true')
+  assert.match(options, /data-run="root\/active"[\s\S]*data-run="root\/paused"[\s\S]*data-run="root\/finished"/, 'both groups, in progress first')
   assert.match(options, /✓ no prumo/)
+
+  ui.run("toggleRunFilter('progress')")
+  options = ui.nodes.get('#runOptions').innerHTML
+  assert.equal(pressed(options, 'progress'), 'false')
+  assert.equal(pressed(options, 'complete'), 'true')
+  assert.match(options, /data-run="root\/finished"/)
   assert.doesNotMatch(options, /data-run="root\/active"/)
+
+  // the last group still lit stays on, and says why
+  ui.run("toggleRunFilter('complete')")
+  options = ui.nodes.get('#runOptions').innerHTML
+  assert.equal(pressed(options, 'complete'), 'true')
+  assert.match(options, /data-run-filter="complete" aria-pressed="true"[^>]*title="Pelo menos um grupo fica visível"/)
+  assert.match(options, /data-run="root\/finished"/)
+
+  // clicks on the tab bar reach the same toggle
+  ui.run("toggleRunFilter('progress')")
+  ui.dispatchElement('#runOptions', 'click', { target: { closest: selector => selector === '[data-run-filter]' ? { dataset: { runFilter: 'complete' } } : null } })
+  options = ui.nodes.get('#runOptions').innerHTML
+  assert.equal(pressed(options, 'progress'), 'true')
+  assert.equal(pressed(options, 'complete'), 'false')
 
   ui.run("updateRunSelect({ currentRoot: null, current: null, runs: [] })")
   assert.doesNotMatch(ui.nodes.get('#runOptions').innerHTML, /placeholder-01|data-run-demo/)
@@ -1109,14 +1164,122 @@ test('lean popover shows role-written summaries, escaped, and never the full pla
   for (const text of ['passo secreto do plano', 'doze testes passam', 'caminho do planejador', 'evidencia longa', 'reprovado: HTTP 500']) assert.ok(detail.includes(text), text)
 })
 
-test('lean popover falls back to clamped full text when no summary was recorded', () => {
+test('lean popover without a summary shows the notice once and never repeats the title', () => {
   const ui = dashboard('pt-BR')
-  ui.render({ run: 'old', plan: {}, tasks: { T: task('T', 'pending', { summary: '   ', validation: 'contrato antigo em prosa' }) }, derived: { T: { effective: 'ready' } } })
+  ui.render({ run: 'old', plan: {}, tasks: {
+    T: task('T', 'pending', { summary: '   ', validation: 'contrato antigo em prosa' }),
+    L: task('L', 'pending', { label: 'Webhooks do gateway', title: 'Linha original 1\nLinha original 2\nLinha original 3\nLinha original 4' }),
+  }, derived: { T: { effective: 'ready' }, L: { effective: 'ready' } } })
   ui.run("POP_MODE = 'lean'; fillPop('T')")
-  const lean = ui.nodes.get('#popBody').innerHTML
-  assert.match(lean, /class="lead">Task T/)
+  let lean = ui.nodes.get('#popBody').innerHTML
+  assert.equal((lean.match(/Task T/g) ?? []).length, 2, 'the title appears only in the header (text and tooltip)')
+  assert.doesNotMatch(lean, /class="lead"/, 'no summary body repeats the header title')
   assert.match(lean, /class="ptxt clamp">contrato antigo em prosa/)
-  assert.equal((lean.match(/class="nosum"/g) ?? []).length, 1, 'a blank summary counts as absent')
+  assert.equal((lean.match(/class="nosum"/g) ?? []).length, 1, 'a blank summary counts as absent and the notice appears once')
+  assert.equal((lean.match(/No summary recorded/g) ?? []).length, 2, 'one notice: its i18n key and its text')
+
+  // with a short label in the header, the original text is new information: first 3 lines only
+  ui.run("fillPop('L')")
+  lean = ui.nodes.get('#popBody').innerHTML
+  const preview = lean.match(/class="psec nosum-box">[\s\S]*?<div class="lead">([\s\S]*?)<\/div>/)?.[1] ?? ''
+  assert.equal(preview, 'Linha original 1\nLinha original 2\nLinha original 3')
+  assert.equal((lean.match(/class="nosum"/g) ?? []).length, 1)
+
+  // expanded/detail follows the same rule, but keeps every line
+  ui.run("POP_MODE = 'detail'; fillPop('T')")
+  let detail = ui.nodes.get('#popBody').innerHTML
+  assert.equal((detail.match(/Task T/g) ?? []).length, 2, 'the detail header alone carries the title (text and tooltip)')
+  assert.doesNotMatch(detail, /class="psec summary-block"/)
+  assert.match(detail, /class="psec nosum-box">[\s\S]*data-i18n="No summary recorded">No summary recorded</)
+  assert.match(detail, /class="detail-title full"/, 'without a label the header title wraps instead of being cut')
+  ui.run("fillPop('L')")
+  detail = ui.nodes.get('#popBody').innerHTML
+  assert.match(detail, /class="psec summary-block">[\s\S]*<div class="lead">Linha original 1\nLinha original 2\nLinha original 3\nLinha original 4<\/div>/)
+  assert.match(detail, /class="detail-title"/)
+  assert.match(html, /#pop \.detail-title\.full \{[^}]*white-space: pre-wrap/)
+})
+
+test('the hub (orchestrator and roles) stays inside the viewport while the board scrolls down', () => {
+  for (const width of [1110, 30]) { // 1440 and 360 wide windows (the harness adds 330px of sidebar)
+    const ui = dashboard('en', width)
+    ui.render(graphState(120, 6))
+    const hubTop = ui.run('HUB_TOP')
+    ui.run('VIEW.y = 0; applyView()')
+    assert.equal(ui.nodes.get('#hub').style.transform, '', 'at the top the hub sits in its natural place')
+    assert.equal(ui.nodes.get('#hub').classList.contains('stuck'), false)
+    ui.run(`VIEW.y = -${hubTop + 12}; applyView()`)
+    assert.equal(ui.nodes.get('#hub').style.transform, 'translateY(12px)', 'no jump: the hub moves by the distance past its padding')
+    for (const scrolled of [-600, -1500, -100000]) {
+      ui.run(`VIEW.y = ${scrolled}; applyView()`)
+      const y = ui.run('VIEW.y')
+      assert.ok(y < -hubTop, `the fixture scrolls (VIEW.y = ${y})`)
+      const offset = Number(ui.nodes.get('#hub').style.transform.match(/translateY\((\d+(?:\.\d+)?)px\)/)?.[1])
+      const shadeTopOnScreen = y + offset + hubTop
+      assert.equal(shadeTopOnScreen, 0, 'the pinned shade starts at the top edge of the graph area')
+      const orchTopOnScreen = y + offset + ui.run('PAD')
+      assert.ok(orchTopOnScreen > 0 && orchTopOnScreen + ui.run('ORCH_H') < 700, 'the orchestrator card is fully in the viewport')
+      assert.equal(ui.nodes.get('#hub').classList.contains('stuck'), true)
+    }
+    ui.run('VIEW.y = 0; applyView()')
+    assert.equal(ui.nodes.get('#hub').style.transform, '', 'scrolling back returns it to its place')
+  }
+  // the frame lines move with the hub; the base line and plumb stay with the phases
+  const ui = dashboard('en', 1110)
+  ui.render(graphState(3, 1))
+  assert.match(ui.nodes.get('#hubPaths').innerHTML, /class="s-frame"/)
+  assert.doesNotMatch(ui.nodes.get('#structPaths').innerHTML, /class="s-frame"/)
+  assert.match(ui.nodes.get('#structPaths').innerHTML, /class="s-base"/)
+  assert.match(html, /#hub \{ position: absolute; top: 0; left: 0; z-index: 4;/)
+  assert.match(html, /#hub\.stuck \.hub-shade \{ display: block; background: var\(--bg\); border-bottom: 1px solid var\(--line\);/,
+    'pinned: opaque ground and a hairline, no new colours')
+  assert.match(html, /<div id="hub">[\s\S]*id="orchNode"[\s\S]*id="planNode"[\s\S]*id="execNode"[\s\S]*id="revNode"[\s\S]*<\/div>\n    <svg id="edges">/)
+})
+
+test('on a phone the pinned hub folds into a compact strip fixed to the visible area', () => {
+  const ui = dashboard('en', 30)
+  ui.run("matchMedia = (query) => ({ matches: query === '(max-width: 700px)' })")
+  ui.render(graphState(120, 6))
+  const hub = ui.nodes.get('#hub')
+  ui.run('VIEW.y = 0; VIEW.x = -140; applyView()')
+  assert.equal(hub.classList.contains('compact'), false, 'at the top the hub keeps its full layout')
+  ui.run('VIEW.y = -900; VIEW.x = -140; applyView()')
+  const x = ui.run('VIEW.x'), y = ui.run('VIEW.y'), hubTop = ui.run('HUB_TOP')
+  assert.equal(hub.classList.contains('compact'), true)
+  assert.equal(hub.classList.contains('stuck'), true)
+  const [, dx, dy] = hub.style.transform.match(/translate\((-?\d+(?:\.\d+)?)px, (\d+(?:\.\d+)?)px\)/) ?? []
+  assert.equal(x + Number(dx), 0, 'the horizontal pan is cancelled: the strip starts at the left edge of the graph area')
+  assert.equal(y + Number(dy) + hubTop, 0, 'and at its top edge')
+  ui.run('VIEW.y = 0; applyView()')
+  assert.equal(hub.classList.contains('compact'), false)
+  assert.equal(hub.style.transform, '')
+  assert.match(html, /#hub\.compact svg#hubPaths \{ display: none; \}/)
+  assert.match(html, /#hub\.compact \{ --hub-col: calc\(\(100vw - 48px\) \/ 2\); \}/, 'two columns, 32px left for the sidebar toggle')
+})
+
+test('the hub stays hidden until the layout has placed its roles', () => {
+  const ui = dashboard('en', 1110)
+  const hub = ui.run("$('#hub')")
+  assert.equal(hub.classList.contains('placed'), false, 'before the first paint the cards are not shown at 0,0')
+  ui.render(graphState(3, 1))
+  assert.equal(hub.classList.contains('placed'), true)
+  ui.run("selectRun('root-b/run-b')")
+  assert.equal(hub.classList.contains('placed'), false, 'a run switch hides it again until the new layout')
+  assert.match(html, /#hub:not\(\.placed\) \{ visibility: hidden; \}/)
+})
+
+test('page never scrolls sideways: hidden sidebar leaves the layout, main rows are pinned, long tokens wrap', () => {
+  assert.match(html, /main > aside\[hidden\] \{ display: none; \}/, 'aside display:flex must not beat [hidden]')
+  assert.match(html, /main \{ grid-area: 2 \/ 1; display: grid; grid-template-columns: minmax\(0, 1fr\) 360px; grid-template-rows: minmax\(0, 1fr\);\s*min-height: 0; overflow: hidden;/,
+    'the sidebar scrolls inside its row instead of growing past the viewport')
+  assert.match(html, /#pop \.ptxt \{[^}]*overflow-wrap: anywhere; \}/)
+})
+
+test('an open sidebar on a phone overlays the graph instead of widening the page', () => {
+  const phone = html.slice(html.indexOf('main.sidebar-collapsed #sidebarToggle { right: 0; }'))
+  const block = phone.slice(phone.indexOf('@media (max-width: 700px) {'), phone.indexOf('\n  }', phone.indexOf('@media (max-width: 700px) {')))
+  assert.match(block, /main, main\.sidebar-collapsed \{ grid-template-columns: minmax\(0, 1fr\); \}/)
+  assert.match(block, /main > aside \{ position: absolute;[^}]*width: min\(360px, calc\(100vw - 32px\)\)/)
+  assert.match(block, /#sidebarToggle \{ right: min\(360px, calc\(100vw - 32px\)\); \}/)
 })
 
 test('detail preserves every recorded line in summaries, plans and validations while lean remains a preview', () => {
@@ -1163,7 +1326,7 @@ test('detail preserves every recorded line in summaries, plans and validations w
 
   const fallback = 'Título original 1\nTítulo original 2\nTítulo original 3\nTítulo original 4 <em>completo</em>'
   const fallbackUi = dashboard('pt-BR')
-  fallbackUi.render({ run: 'fallback', plan: {}, tasks: { F: task('F', 'pending', { title: fallback, summary: '  ' }) }, derived: { F: { effective: 'ready' } } })
+  fallbackUi.render({ run: 'fallback', plan: {}, tasks: { F: task('F', 'pending', { label: 'Título curto', title: fallback, summary: '  ' }) }, derived: { F: { effective: 'ready' } } })
   fallbackUi.run("POP_MODE = 'lean'; fillPop('F')")
   const fallbackLean = fallbackUi.nodes.get('#popBody').innerHTML
   const fallbackPreview = fallbackLean.match(/<div class="lead">([\s\S]*?)<\/div>/)?.[1] ?? ''
@@ -1545,6 +1708,89 @@ test('mobile header puts filters and counters behind a compact menu below 700px'
   assert.equal(small.nodes.get('#filterPanel').hidden, true)
   assert.equal(small.nodes.get('#filterToggle').getAttribute('aria-expanded'), 'false')
   assert.match(html, /@media \(max-width: 700px\)/)
+})
+
+test('the guide button sits before the filter menu, which is the right-most header control', () => {
+  const header = html.slice(html.indexOf('<header>'), html.indexOf('</header>'))
+  const guide = header.indexOf('id="guideButton"'), menu = header.indexOf('<details class="header-menu"')
+  assert.ok(guide > header.indexOf('id="resBtn"') && guide < menu, 'results · guide · filters')
+  assert.equal(header.slice(header.indexOf('</details>', menu)).trim(), '</details>', 'nothing follows the filter menu')
+  assert.match(html, /header #guideButton \{ margin-left: auto; \}/)
+  // on a phone the guide takes the middle cell and the filter menu the right one, so its panel
+  // (anchored right: 0, at most the viewport minus the gutters) cannot open past the left edge
+  assert.match(html, /header #guideButton \{ grid-column: 2; grid-row: 2;/)
+  assert.match(html, /header \.header-menu \{ grid-column: 3; grid-row: 2;/)
+  assert.match(html, /\.header-menu-content \{[^}]*right: 0;[^}]*width: min\(calc\(100vw - 20px\), 300px\)/)
+})
+
+test('results and back-to-graph are one CTA whose label alternates', async () => {
+  const ui = dashboard('pt-BR')
+  ui.run('loadResults = async () => {}')
+  assert.match(html, /#resBtn \{[^}]*min-width: 112px; height: 32px;[^}]*background: var\(--accent\)/)
+  assert.doesNotMatch(html, /class="rback"/, 'no second, differently styled back button')
+  await ui.run('toggleResults()')
+  assert.equal(ui.nodes.get('#resBtn').textContent, '← grafo')
+  assert.equal(ui.nodes.get('#resBtn').getAttribute('aria-pressed'), 'true')
+  await ui.run('toggleResults()')
+  assert.equal(ui.nodes.get('#resBtn').textContent, 'resultados')
+  assert.equal(ui.nodes.get('#resBtn').getAttribute('aria-pressed'), 'false')
+})
+
+test('the legend summary aligns its label and a drawn chevron', () => {
+  assert.match(html, /\.legend-box summary h3 \{ margin: 0; line-height: 1; \}/)
+  assert.match(html, /\.legend-box summary::after \{ content: ''; flex: none; width: 6px; height: 6px;/)
+  assert.doesNotMatch(html, /\.legend-box summary::after \{ content: '⌄'/)
+  assert.match(html, /<details class="legend-box"[^>]*>\s*<summary><h3><span data-i18n="Legend">Legend<\/span><\/h3><\/summary>/)
+})
+
+test('active agents lead with the per-agent list; the role counters are a quiet footnote', () => {
+  const box = html.slice(html.indexOf('<section id="agentsBox">'), html.indexOf('</section>', html.indexOf('<section id="agentsBox">')))
+  assert.ok(box.indexOf('id="parallel"') < box.indexOf('id="parTitle"'), 'list first, counters after')
+  assert.match(html, /#parTitle \{ display: flex;[^}]*font-size: 10px; \}/)
+  assert.match(html, /#parTitle b \{ font: 700 10px\/1\.4 var\(--font-mono\)/)
+  assert.doesNotMatch(html, /#parTitle b \{ font: 700 15px/)
+})
+
+test('Pin lives in the popover header and reflects the pinned state', () => {
+  const ui = dashboard('pt-BR')
+  ui.render({ run: 'x', plan: {}, tasks: { T: task('T'), U: task('U', 'pending', { deps: ['T'] }) }, derived: { T: { effective: 'ready' }, U: { effective: 'waiting' } } })
+  const tools = html.slice(html.indexOf('<div class="ptools">'), html.indexOf('<div id="popBody">'))
+  assert.ok(tools.indexOf('id="popExpand"') < tools.indexOf('id="popPin"') && tools.indexOf('id="popPin"') < tools.indexOf('onclick="closePop()"'),
+    'expand · pin · close, as in the design')
+  ui.run("POP_MODE = 'lean'; openPop('T', false)")
+  assert.equal(ui.nodes.get('#popPin').getAttribute('aria-pressed'), 'false')
+  assert.doesNotMatch(ui.nodes.get('#popBody').innerHTML, /pin-action/, 'the footer no longer carries a Pin button')
+  assert.match(ui.nodes.get('#popBody').innerHTML, /class="pfoot"[\s\S]*Agent time[\s\S]*see detail →/)
+  ui.run('pinTaskPopover()')
+  assert.equal(ui.run('POP.pinned'), true)
+  assert.equal(ui.nodes.get('#popPin').getAttribute('aria-pressed'), 'true')
+  assert.equal(ui.nodes.get('#popPin').getAttribute('aria-label'), 'Fixado')
+})
+
+test('clicks on popover controls that re-render the popover keep it pinned (see detail, dependency chips)', () => {
+  const ui = dashboard('pt-BR')
+  ui.render({ run: 'x', plan: {}, tasks: { T: task('T'), U: task('U', 'pending', { deps: ['T'] }) },
+    derived: { T: { effective: 'ready' }, U: { effective: 'waiting' } } })
+  const pop = { matches: selector => selector === '#pop' }
+  // the clicked control was replaced by fillPop: it is detached, so closest() finds nothing,
+  // but the dispatch path captured before the re-render still contains #pop
+  const detached = path => ({ target: { closest: () => null }, composedPath: () => [{ matches: () => false }, ...path] })
+
+  ui.run("POP_MODE = 'lean'; openPop('T', true)")
+  ui.dispatchDocument('click', detached([pop]), () => ui.run("setPopMode('detail')"))
+  assert.equal(ui.run('POP?.id'), 'T', '"see detail" keeps the pinned popover open')
+  assert.equal(ui.run('POP_MODE'), 'detail')
+  assert.equal(ui.nodes.get('#selectedBox').hidden, false)
+
+  ui.dispatchDocument('click', detached([pop]), () => ui.run("jumpTo('U')"))
+  assert.equal(ui.run('POP?.id'), 'U', 'a dependency chip opens the linked task')
+  assert.equal(ui.run('POP.pinned'), true)
+  assert.equal(ui.nodes.get('#selectedBox').hidden, false, 'and fills "Selected task"')
+  assert.match(ui.nodes.get('#selectedTask').innerHTML, /U · Task U/)
+  assert.equal(ui.cards.find(card => card.dataset.id === 'U').classList.contains('lit-self'), true, 'the linked card is highlighted')
+
+  ui.dispatchDocument('click', { target: { closest: () => null }, composedPath: () => [{ matches: () => false }] })
+  assert.equal(ui.run('POP'), null, 'a click outside still closes it')
 })
 
 test('115h23 phase envelope stays out of displayed time while measured work and critical path stay exact', () => {

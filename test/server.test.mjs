@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, realpathSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, realpathSync, cpSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,6 +8,52 @@ import { spawn, execFileSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import { setTimeout } from 'node:timers/promises'
 import { contentId } from '../lib/install.mjs'
+
+const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
+/** The short commit git reports for this checkout, or undefined when git cannot answer. */
+function checkoutCommit(root = packageRoot) {
+  try {
+    return execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: root, encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }).trim() || undefined
+  } catch { return undefined }
+}
+
+/** Start a dashboard server on a free port and return a fetch helper bound to it. */
+async function startDashboard(t, script, args, env) {
+  const child = spawn(process.execPath, [script, ...args, '--port', '0'], { env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
+  let output = ''
+  child.stdout.on('data', chunk => { output += chunk })
+  child.stderr.on('data', chunk => { output += chunk })
+  const closed = new Promise((resolve, reject) => { child.on('close', resolve); child.on('error', reject) })
+  t.after(async () => { if (child.exitCode === null) child.kill(); await closed })
+  const deadline = Date.now() + 15000
+  while (!/localhost:\d+/.test(output) && child.exitCode === null && Date.now() < deadline) await setTimeout(30)
+  const port = output.match(/localhost:(\d+)/)?.[1]
+  assert.ok(port && port !== '0', output)
+  return path => fetch(`http://127.0.0.1:${port}${path}`, { signal: AbortSignal.timeout(10000) })
+}
+
+test('/api/about reports where the package lives, not the --global serving mode', async t => {
+  const home = mkdtempSync(join(realpathSync(tmpdir()), 'prumo-origin-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
+  const env = { ...process.env, HOME: home, USERPROFILE: home, PRUMO_HOME: join(home, 'central'), PRUMO_LANG: 'en' }
+
+  // the source checkout served with --global is still the repository
+  const fromCheckout = await startDashboard(t, join(packageRoot, 'scripts', 'serve.mjs'), ['--global'], env)
+  const checkout = await (await fromCheckout('/api/about')).json()
+  assert.equal(checkout.origin, 'repository')
+  assert.equal(checkout.commit, checkoutCommit())
+  assert.equal(checkout.path, packageRoot)
+
+  // the same files installed under node_modules are the global package, with no commit
+  const installed = join(home, 'npm', 'node_modules', '@henri-ralmeida', 'prumo')
+  for (const entry of ['bin', 'lib', 'scripts', 'references', 'SKILL.md', 'package.json'])
+    cpSync(join(packageRoot, entry), join(installed, entry), { recursive: true })
+  const fromNpm = await startDashboard(t, join(installed, 'scripts', 'serve.mjs'), ['--global'], env)
+  const npm = await (await fromNpm('/api/about')).json()
+  assert.equal(npm.origin, 'global')
+  assert.equal(npm.commit, undefined)
+  assert.equal(npm.path, installed)
+})
 
 test('dashboard selects legacy and central data without writes or translation of user content', async t => {
   const base = realpathSync(tmpdir())
@@ -110,7 +156,8 @@ test('dashboard selects legacy and central data without writes or translation of
   const about = await (await get('/api/about')).json()
   assert.equal(about.product, 'prumo')
   assert.equal(about.version, JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version)
-  assert.equal(about.origin, 'workspace')
+  assert.equal(about.origin, 'repository', 'a source checkout reports the repository, whatever the serving mode')
+  assert.equal(about.commit, checkoutCommit())
   assert.equal(about.contentId, contentId('pt-BR'))
   assert.equal(about.path, dirname(dirname(fileURLToPath(import.meta.url))))
   assert.match(about.contentId, /^[a-f0-9]{12}$/)

@@ -10,7 +10,7 @@
 import { createServer } from 'node:http'
 import { randomUUID } from 'node:crypto'
 import { readFileSync, existsSync, readdirSync, statSync, openSync, readSync, closeSync } from 'node:fs'
-import { execFile } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { join, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -422,6 +422,31 @@ function productVersion() {
 
 const VERSION = productVersion()
 const PACKAGE_ROOT = dirname(HERE)
+
+/* Where the served files come from, decided by where the package lives — never by --global,
+ * which only chooses WHICH runs are listed. A package inside node_modules is an npm install;
+ * a folder with its own .git is a source checkout (commit when git answers); a copied skill
+ * carries .prumo-install.json. Anything else is reported as unknown rather than guessed. */
+function packageOrigin(root) {
+  if (root.split(/[\\/]+/).includes('node_modules')) return { origin: 'global' }
+  if (existsSync(join(root, '.git'))) {
+    let commit = null
+    try {
+      const out = execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
+        cwd: root, encoding: 'utf8', timeout: 2000, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim()
+      if (/^[0-9a-f]{4,40}$/i.test(out)) commit = out
+    } catch { /* git missing or not a repository: the origin still stands, without a commit */ }
+    return commit ? { origin: 'repository', commit } : { origin: 'repository' }
+  }
+  if (existsSync(join(root, '.prumo-install.json'))) return { origin: 'installed' }
+  return { origin: 'unknown' }
+}
+const PACKAGE_ORIGIN = packageOrigin(PACKAGE_ROOT)
+const originLabel = about => about.origin === 'global' ? tr('global package')
+  : about.origin === 'repository' ? (about.commit ? tr('repository @ {0}', about.commit) : tr('repository'))
+  : about.origin === 'installed' ? tr('installed copy')
+  : about.origin === 'workspace' ? tr('workspace source') : tr('unknown')
 const LANG = language(flag('lang', undefined))
 let CONTENT_ID = null
 try { CONTENT_ID = contentId(LANG, { packageRoot: PACKAGE_ROOT }) }
@@ -440,7 +465,7 @@ const server = createServer((req, res) => {
     readOnly: true, host: '127.0.0.1', port: server.address().port,
   })
   if (url.pathname === '/api/about') return json(res, 200, {
-    product: 'prumo', version: VERSION, origin: GLOBAL ? 'global' : 'workspace',
+    product: 'prumo', version: VERSION, ...PACKAGE_ORIGIN,
     contentId: CONTENT_ID, path: PACKAGE_ROOT,
   })
 
@@ -545,7 +570,7 @@ const server = createServer((req, res) => {
       }
     } catch { /* the port may belong to a non-HTTP or unknown process */ }
     if (occupant) errorLog(tr('Port {0} is used by Prumo {1} ({2}; content {3}; path {4})', PORT,
-      occupant.version ?? tr('unknown'), tr(occupant.origin === 'global' ? 'global package' : occupant.origin === 'workspace' ? 'workspace source' : 'unknown'),
+      occupant.version ?? tr('unknown'), originLabel(occupant),
       occupant.contentId ?? tr('unknown'), occupant.path ?? tr('unknown')))
     else errorLog(tr('Port {0} is used by an unidentified process', PORT))
     errorLog(`${tr('To run a second dashboard, use --port <other>')}${RUN_FLAG ? '' : ` (${tr('add --run <name> to pin it to one run')})`}`)
