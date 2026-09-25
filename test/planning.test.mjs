@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, copyFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, copyFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -150,8 +150,9 @@ test('event progress counts executor plan steps and actual reviewer checks per a
   assert.equal(log().at(-1).attempt, 2)
 })
 
-test('start prints a PowerShell-safe command for paths and shell metacharacters', t => {
-  if (process.platform !== 'win32') return t.skip('PowerShell command-line compatibility')
+// Roda `start` a partir de uma cópia do motor num caminho com metacaracteres e devolve a linha de
+// `progress` impressa, com o ambiente usado. `shellEnv` simula o shell que invocou o motor.
+function startWithQuotedPaths(t, shellEnv) {
   const f = fixture(t, [{ id: 'T4', title: 'Command quoting' }])
   f.beginPlan('T4')
   f.finish('T4', { ...f.artifact('T4'), steps: ['Inspect', 'Report'] })
@@ -165,18 +166,50 @@ test('start prints a PowerShell-safe command for paths and shell metacharacters'
   const home = dirname(f.root)
   const env = { ...process.env, GRAPH_FOREMAN_HOME: home, GRAPH_ROOT: f.root, PRUMO_HOME: home,
     PRUMO_ROOT: f.root, PRUMO_LANG: 'en' }
+  delete env.MSYSTEM
+  delete env.SHELL
+  Object.assign(env, shellEnv)
   const agent = "executor & 'quoted'"
   const started = spawnSync(process.execPath, [copiedEngine, 'start', 'T4', '--agent', agent, '--run', 'planning'],
     { cwd: f.project, env, encoding: 'utf8', timeout: 20000, windowsHide: true })
   assert.ifError(started.error)
   const output = started.stdout + started.stderr
   assert.equal(started.status, 0, output)
-  const command = output.split(/\r?\n/).find(line => line.startsWith('& '))
-  assert.ok(command, output)
+  const lines = output.split(/\r?\n/)
+  const command = lines[lines.findIndex(line => line.includes('report each actual execution step with:')) + 1]
+  assert.ok(command?.includes(' progress '), output)
+  return { f, env, agent, command }
+}
+
+test('start prints a PowerShell-safe command for paths and shell metacharacters', t => {
+  if (process.platform !== 'win32') return t.skip('PowerShell command-line compatibility')
+  const { f, env, agent, command } = startWithQuotedPaths(t, {})
+  assert.ok(command.startsWith('& '), command)
   assert.ok(command.includes("engine path & ''quoted''"), command)
   assert.ok(command.includes(`--agent '${agent.replaceAll("'", "''")}'`), command)
 
   const executed = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command],
+    { cwd: f.project, env, encoding: 'utf8', timeout: 20000, windowsHide: true })
+  assert.ifError(executed.error)
+  assert.equal(executed.status, 0, executed.stdout + executed.stderr)
+  assert.match(executed.stdout + executed.stderr, /execution position already recorded at 1\/2/)
+  assert.equal(f.state().tasks.T4.agent, agent)
+})
+
+test('start prints a POSIX command when invoked from Git Bash or another POSIX shell', t => {
+  // No Windows, só o bash do Git for Windows; o bash.exe do System32 é o WSL e não serve aqui.
+  const shell = process.platform === 'win32'
+    ? [process.env.ProgramFiles, process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, 'Programs')]
+      .filter(Boolean).map(base => join(base, 'Git', 'bin', 'bash.exe')).find(path => existsSync(path))
+    : '/bin/sh'
+  if (!shell || !existsSync(shell)) return t.skip('POSIX shell not available')
+  const { f, env, agent, command } = startWithQuotedPaths(t,
+    process.platform === 'win32' ? { MSYSTEM: 'MINGW64', SHELL: '/usr/bin/bash' } : {})
+  assert.ok(!command.startsWith('&'), command)
+  assert.ok(command.includes(`engine path & '\\''quoted'\\''`), command)
+  assert.ok(command.includes(`--agent 'executor & '\\''quoted'\\'''`), command)
+
+  const executed = spawnSync(shell, ['-c', command],
     { cwd: f.project, env, encoding: 'utf8', timeout: 20000, windowsHide: true })
   assert.ifError(executed.error)
   assert.equal(executed.status, 0, executed.stdout + executed.stderr)
@@ -559,6 +592,25 @@ test('task contract changes invalidate completed planning, including a later ret
   f.planTask('T1', 'fresh-planner')
   assert.equal(f.state().tasks.T1.planningHistory.length, 2)
   f.ok('start', 'T1', '--agent', 'executor')
+})
+
+test('status marks an open planning round stale after sync-plan invalidates it, and sync counts metadata updates', t => {
+  const f = fixture(t)
+  f.beginPlan('T1', 'open-planner')
+  assert.match(f.ok('status').stdout, /planning round T1 \(1\) open for/)
+  f.plan.tasks[0].title = 'Updated accepted delivery policy'
+  f.writePlan()
+  f.ok('sync-plan', '--plan', f.planPath)
+  assert.ok(f.state().tasks.T1.contractConfirmationRequired)
+  const status = f.ok('status').stdout
+  assert.match(status, /planning round T1 \(1\) is stale after a contract change; artifacts 0\/1/)
+  assert.doesNotMatch(status, /planning round T1 \(1\) open/)
+
+  f.plan.tasks[0].summary = 'Metadata-only change'
+  f.writePlan()
+  const synced = f.ok('sync-plan', '--plan', f.planPath).stdout
+  assert.match(synced, /synced: \+0, updated 0, metadata 1, preserved/)
+  assert.equal(f.state().tasks.T1.summary, 'Metadata-only change')
 })
 
 test('task contract changes require a same-round answered acceptance; skips cannot replace it', t => {

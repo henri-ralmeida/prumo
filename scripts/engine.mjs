@@ -359,9 +359,19 @@ function reviewProgressRecord(task, agent, denominator) {
   return record
 }
 
-function quoteCommandArg(value) {
+// Shell que vai colar a linha de `progress` impressa por `start`. Fora do Windows é sempre POSIX.
+// No Windows, o executor típico roda no Git Bash/MSYS2 (ferramenta Bash do Claude Code), que exporta
+// MSYSTEM e/ou SHELL aos processos filhos; PowerShell e cmd não definem nenhuma das duas. Por isso a
+// evidência positiva de shell POSIX decide e, só na ausência dela, a linha sai em PowerShell (o padrão
+// do Windows). PSModulePath não serve de critério: é variável de sistema e aparece também no Git Bash.
+function invokingShell(env = process.env) {
+  if (process.platform !== 'win32') return 'posix'
+  return env.MSYSTEM || env.SHELL ? 'posix' : 'powershell'
+}
+
+function quoteCommandArg(value, shell = invokingShell()) {
   const text = String(value)
-  return process.platform === 'win32'
+  return shell === 'powershell'
     ? `'${text.replaceAll("'", "''")}'`
     : `'${text.replaceAll("'", "'\\''")}'`
 }
@@ -589,11 +599,18 @@ function ageLabel(startedAt) {
 }
 
 function printPlanningRoundProgress(state) {
-  const line = (id, round, recorded, total) => round.endedAt
+  // A round still open when a later contract change (sync-plan) demanded confirmation no longer counts
+  // as work in progress: it must not read as "open", or the orchestrator waits for artifacts that
+  // finish-planning would refuse.
+  const invalidated = (owner, round) => !round.endedAt && typeof owner.contractConfirmationRequired?.at === 'string' &&
+    Date.parse(owner.contractConfirmationRequired.at) >= Date.parse(round.startedAt)
+  const line = (id, round, recorded, total, owner) => round.endedAt
     ? tr('planning round {0} ({1}) completed for {2}; artifacts {3}/{4}',
       id, round.n, ageLabel(round.startedAt), recorded, total)
-    : tr('planning round {0} ({1}) {2} for {3}; artifacts {4}/{5}',
-      id, round.n, tr('open'), ageLabel(round.startedAt), recorded, total)
+    : invalidated(owner, round)
+      ? tr('planning round {0} ({1}) is stale after a contract change; artifacts {2}/{3}', id, round.n, recorded, total)
+      : tr('planning round {0} ({1}) {2} for {3}; artifacts {4}/{5}',
+        id, round.n, tr('open'), ageLabel(round.startedAt), recorded, total)
   for (const phase of Object.values(state.phaseWorkflows ?? {})) {
     const round = phase.planningAttempts?.at(-1)
     if (!round || (round.endedAt && round.result !== 'planned')) continue
@@ -607,7 +624,7 @@ function printPlanningRoundProgress(state) {
         return plan?.phaseId === phase.id && plan.phaseBinding?.discussionRoundId === round.discussionRoundId &&
           plan.phaseBinding?.plannerRound === round.n
       }).length
-    log('[prumo] ' + line(phase.id, round, recorded, total))
+    log('[prumo] ' + line(phase.id, round, recorded, total, phase))
   }
   for (const task of Object.values(state.tasks ?? {})) {
     if (task.phase || state.plan.planningMode === 'phase') continue
@@ -615,7 +632,7 @@ function printPlanningRoundProgress(state) {
     if (!round || (round.endedAt && round.result !== 'planned')) continue
     const recorded = Number.isSafeInteger(round.artifactCount) ? round.artifactCount :
       (task.taskPlan?.startedAt === round.startedAt && task.taskPlan?.context === round.context ? 1 : 0)
-    log('[prumo] ' + line(task.id, round, recorded, 1))
+    log('[prumo] ' + line(task.id, round, recorded, 1, task))
   }
 }
 
@@ -1973,7 +1990,7 @@ const commands = {
     })
     printSyncPlanAudit(changes, diagnostics)
     log(
-      `[prumo] run "${name}" synced: +${added.length}, updated ${updated.length}, ` +
+      `[prumo] run "${name}" synced: +${added.length}, updated ${updated.length}, metadata ${metadataUpdated.length}, ` +
         `preserved ${preserved.length}, total ${Object.keys(state.tasks).length}`,
     )
     announceNewlyEligiblePhases(name, previouslyEligible, state, 'sync-plan')
@@ -2841,9 +2858,11 @@ const commands = {
     if (unscoped)
       log('[prumo] ' + tr('no execution authorization scope is recorded for this run; {0} started as before — record the user scope with authorize to enable automatic dispatch', id))
     if (total) {
-      const command = [...(process.platform === 'win32' ? ['&'] : []), quoteCommandArg(process.execPath),
-        quoteCommandArg(process.argv[1]), 'progress', quoteCommandArg(id), '--step', '1', '--agent',
-        quoteCommandArg(agent), '--run', quoteCommandArg(name)].join(' ')
+      const shell = invokingShell()
+      const quote = value => quoteCommandArg(value, shell)
+      const command = [...(shell === 'powershell' ? ['&'] : []), quote(process.execPath),
+        quote(process.argv[1]), 'progress', quote(id), '--step', '1', '--agent',
+        quote(agent), '--run', quote(name)].join(' ')
       log('[prumo] report each actual execution step with:')
       console.log(command)
     }

@@ -739,6 +739,7 @@ test('legend follows the workflow and event history names actions with their col
       { type: 'task_validate', task: 'T4', at: instant(6), by: 'review', ok: false, evidence: 'The reviewer checked the current result.' },
       { type: 'task_validate', task: 'T4', at: instant(7), by: 'review', ok: true, evidence: 'All required checks passed.' },
       { type: 'phase_planning', phase: 'P2', at: instant(8), planner: 'planner-2' },
+      { type: 'slot_freed', at: instant(9), freedBy: 'T4', cause: 'review', slots: 1, next: ['T5'] },
       { type: 'task_start', task: 'OLD', at: instant(0) },
     ]
     ui.render({ run: 'events', plan: {}, tasks: { T4: taskValue }, derived: { T4: { effective: 'ready' } } }, events)
@@ -758,6 +759,8 @@ test('legend follows the workflow and event history names actions with their col
     assert.ok(visibleLog.includes(lang === 'en' ? 'reviewer approved T4' : 'revisor aprovou T4'))
     assert.ok(visibleLog.includes(lang === 'en' ? 'reviewer rejected T4' : 'revisor reprovou T4'))
     assert.ok(visibleLog.includes(lang === 'en' ? 'planner started planning for phase P2' : 'planejador iniciou o planejamento da fase P2'))
+    assert.ok(visibleLog.includes(lang === 'en' ? 'orchestrator freed an execution slot when task T4 went to review; next authorized: T5'
+      : 'orquestrador liberou uma vaga de execução quando a tarefa T4 foi para revisão; próxima autorizada: T5'), visibleLog)
     assert.match(log, /class="ev-phase" style="color:var\(--planning\)">P2/)
     assert.match(log, /class="t-task_validate" data-ok="true"/)
     assert.match(log, /class="t-task_validate" data-ok="false"/)

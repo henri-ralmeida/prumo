@@ -24,8 +24,11 @@ export function createTranslator(dictionary, lang) {
       if (/^\{\d+\}$/.test(part)) { slots.push(Number(part.slice(1, -1))); return numericDuration ? '(\\d+)' : '(.*?)' }
       return part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     }).join('')
-    return { pattern: new RegExp(`^${pattern}$`, 's'), slots, translated }
+    return { pattern: new RegExp(`^${pattern}$`, 's'), slots, translated, literal: key.replace(/\{\d+\}/g, '').length }
   })
+  // The most specific template wins: a generic key such as "{0} of {1}" must not swallow a sentence that
+  // has its own key merely because it contains " of ". Sorting by literal text keeps catalog order as tiebreak.
+  templates.sort((a, b) => b.literal - a.literal)
   function translate(value, ...parameters) {
     if (typeof value !== 'string') return value
     const fill = (text, values) => text.replace(/\{(\d+)\}/g, (all, index) => values[index] === undefined ? all : String(values[index]))
@@ -34,7 +37,8 @@ export function createTranslator(dictionary, lang) {
     if (Object.hasOwn(dictionary, value)) return dictionary[value]
     for (const { pattern, slots, translated } of templates) {
       const match = pattern.exec(value)
-      if (match) return translated.replace(/\{(\d+)\}/g, (all, index) => match[slots.indexOf(Number(index)) + 1] ?? all)
+      // A slot never absorbs the "[prumo] " log prefix; that prefix is stripped below and the rest retried.
+      if (match && !match.slice(1).some(part => /^\s*\[prumo\] /.test(part))) return translated.replace(/\{(\d+)\}/g, (all, index) => match[slots.indexOf(Number(index)) + 1] ?? all)
     }
     const prefix = /^(\s*\[prumo\] )(ERROR: )?([\s\S]*)$/.exec(value)
     if (prefix) return prefix[1] + (prefix[2] ? 'ERRO: ' : '') + translate(prefix[3])

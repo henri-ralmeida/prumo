@@ -45,6 +45,15 @@ test('language selection and interpolation preserve data and placeholders', () =
   assert.equal(pt('2h'), '2 h')
   assert.equal(pt('{0} requires a fresh answered contract confirmation; begin-discussion and ask the user before skipping discussion', 'T1'),
     'T1 exige uma nova confirmação respondida do contrato; execute begin-discussion e pergunte ao usuário antes de pular a discussão')
+  // The most specific template wins over generic ones, and a slot never absorbs the "[prumo] " prefix.
+  assert.equal(pt('[prumo] WARNING: executor progress stayed at 2/3; the position is not proof of completed work'),
+    '[prumo] AVISO: o progresso do executor permaneceu em 2/3; a posição não comprova trabalho concluído')
+  assert.equal(pt('[prumo] A validation recorded by review: OK'), '[prumo] validação de A registrada por review: OK')
+  assert.equal(pt('3 of 5'), '3 de 5')
+  assert.equal(pt('[prumo] P1 discussing 2 task(s) (round A, nonce n1)'), '[prumo] P1 em discussão com 2 tarefa(s) (rodada A, nonce n1)')
+  assert.equal(pt('[prumo] P1 planned atomically (2 task artifact(s))'), '[prumo] P1 planejada atomicamente (2 artefato(s) de tarefa)')
+  assert.equal(pt('[prumo] P1 ready to plan (2 task(s))'), '[prumo] P1 pronta para planejar (2 tarefa(s))')
+  assert.equal(pt('[prumo] T1 ready to plan (discussion A closed)'), '[prumo] T1 pronta para planejar (discussão A encerrada)')
   for (const [key, value] of Object.entries(messages)) {
     const slots = text => [...new Set(text.match(/\{\d+\}/g) ?? [])].sort()
     assert.deepEqual(slots(key), slots(value), key)
