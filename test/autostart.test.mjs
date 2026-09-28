@@ -118,6 +118,34 @@ test('reinício recupera consulta indisponível e encerra somente o processo com
   assert.equal(preference(f.home).pid, 5201)
 })
 
+for (const startupDelay of [80, Infinity]) {
+  test(`reinício no Windows aguarda inicialização ${startupDelay === Infinity ? 'indisponível com limite' : 'após cinco segundos'}`, async t => {
+    let running = true, launched = false, ticks = 0, pid = 5300
+    const killed = [], launches = []
+    const f = fixture(t, 'win32', {
+      readinessAttempts: undefined, lang: 'en',
+      portAvailable: async () => !running,
+      delay: async () => { if (launched && ++ticks >= startupDelay) running = true },
+      fetch: async () => {
+        if (!running) throw new Error('Inicialização pendente')
+        return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0', pid }) }
+      },
+      exec(file, args) { if (file === 'wscript.exe') { launched = true; pid = 5301; launches.push(args) } return { status: 0 } },
+      readProcessCommand: () => [f.node, f.script, '--global', '--port', '4949', '--lang', 'en'],
+      kill(value) { killed.push(value); running = false },
+    })
+    const data = join(f.home, '.local/share/prumo')
+    mkdirSync(data, { recursive: true })
+    writeFileSync(join(data, 'dashboard.json'), JSON.stringify({ enabled: true, mechanism: 'windows-startup', node: f.node, script: f.script, pid: 5300, lang: 'en' }))
+    const result = await restartDashboard(f.options)
+    assert.equal(result.ok, startupDelay !== Infinity, 'o prazo deve aceitar início lento e recusar um serviço que nunca inicia')
+    assert.deepEqual(killed, [5300])
+    assert.equal(launches.length, 1)
+    if (startupDelay !== Infinity) assert.equal(preference(f.home).pid, 5301)
+    else { assert.equal(ticks, 149); assert.equal(preference(f.home).pid, null) }
+  })
+}
+
 for (const platform of ['linux', 'win32']) for (const previousLang of ['en', 'pt-BR']) {
   test(`${platform}: desativação recusada conserva identidade ${previousLang} para uma nova tentativa`, async t => {
     let running = true
