@@ -85,6 +85,7 @@ import {
   sanitizeChanges, sanitizeDiagnostics, sanitizeTaskIds,
 } from './sync-plan-audit.mjs'
 import { businessContract, contractDrift, GLOBAL_PLAN_FIELDS, TASK_CONTRACT_FIELDS } from './contract-drift.mjs'
+import { parseEngineArgs } from './engine-args.mjs'
 
 let ROOT
 try { ROOT = findRoot() } catch (error) { errorLog('[prumo] ERROR: ' + error.message); process.exit(1) }
@@ -99,19 +100,8 @@ const LOCK_STALE_MS = 30000       // a lock older than this belonged to a proces
 
 // ---------- tiny arg parser ----------
 const [, , cmd, ...rest] = process.argv
-const args = { _: [] }
-for (let i = 0; i < rest.length; i++) {
-  const a = rest[i]
-  if (a.startsWith('--')) {
-    const key = a.slice(2)
-    const next = rest[i + 1]
-    if (next !== undefined && !next.startsWith('--')) {
-      if (key === 'option') (args[key] ??= []).push(next)
-      else args[key] = next
-      i++
-    } else args[key] = true
-  } else args._.push(a)
-}
+let args
+try { args = parseEngineArgs(cmd, rest) } catch (error) { die(error.message) }
 
 function die(msg) {
   errorLog(`[prumo] ERROR: ${msg}`)
@@ -306,7 +296,12 @@ function withLock(name, fn) {
       /* A process killed mid-command leaves its lock behind. Age is the only evidence
          available, so an old one is presumed abandoned and broken — a run that can never
          write again would be a worse failure than the collision this guards against. */
-      const age = Date.now() - statSync(lock).mtimeMs
+      let age
+      try { age = Date.now() - statSync(lock).mtimeMs } catch (error) {
+        // Outro comando pode liberar o bloqueio entre a disputa e a leitura; tente adquiri-lo novamente.
+        if (error.code === 'ENOENT') continue
+        throw error
+      }
       if (age > LOCK_STALE_MS) {
         rmSync(lock, { recursive: true, force: true })
         continue
@@ -2063,16 +2058,22 @@ const commands = {
 
   runs() {
     if (!existsSync(GRAPH_DIR)) return log('(no runs)')
-    for (const d of readdirSync(GRAPH_DIR)) {
-      if (d === 'CURRENT') continue
+    for (const entry of readdirSync(GRAPH_DIR, { withFileTypes: true })) {
+      const d = entry.name
+      if (!entry.isDirectory() || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(d)) continue
       /* Probed, not caught: `loadState` answers a missing state.json with `die()`, which
          exits the process — so a `try/catch` around it can never run. `plans/` lives in
          this directory and is not a run; so does anything else a person drops here. */
       if (!existsSync(join(GRAPH_DIR, d, 'state.json'))) continue
-      const s = loadState(d)
-      const p = progress(s)
-      const migration = migrationStatus(s)
-      log(`${d}  ${p.done}/${p.total} done  (updated ${s.updatedAt})${migration.needed ? '  [migration required]' : ''}`)
+      try {
+        const s = loadState(d)
+        if (Number(s?.schemaVersion) > STATE_SCHEMA_VERSION) throw new Error('newer schema; update Prumo before opening it')
+        const p = progress(s)
+        const migration = migrationStatus(s)
+        log(`${d}  ${p.done}/${p.total} done  (updated ${s.updatedAt})${migration.needed ? '  [migration required]' : ''}`)
+      } catch (error) {
+        errorLog(`[prumo] WARNING: could not inspect run ${d}: ${error.message}`)
+      }
     }
   },
 
@@ -3365,7 +3366,7 @@ const commands = {
   },
 }
 
-if (!cmd || !commands[cmd]) {
+if (!cmd || !Object.hasOwn(commands, cmd)) {
   errorLog(`usage: engine.mjs <${Object.keys(commands).join('|')}> — see file header for details`)
   process.exit(1)
 }

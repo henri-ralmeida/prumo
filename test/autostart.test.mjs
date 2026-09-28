@@ -1,13 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, rmdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { dashboardHealth, dashboardNeedsRepair, dashboardStatus, disableDashboard, enableDashboard, readDashboardEvents, restartDashboard, runDashboardForeground } from '../lib/autostart.mjs'
 
 function fixture(t, platform, extra = {}) {
   const home = mkdtempSync(join(tmpdir(), 'prumo autostart-'))
-  t.after(() => rmSync(home, { recursive: true, force: true }))
+  t.after(() => {
+    assert.ok(home.startsWith(join(tmpdir(), 'prumo autostart-')))
+    rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  })
   const calls = []
   let task = false
   let running = false
@@ -15,7 +18,7 @@ function fixture(t, platform, extra = {}) {
   const node = join(home, 'Node JS', platform === 'win32' ? 'node.exe' : 'node')
   const script = join(home, 'Prumo Package', 'scripts', 'serve.mjs')
   const options = {
-    platform, home, node, script, version: '1.3.0', contentId, env: {}, uid: () => 1234,
+    platform, home, node, script, version: '1.3.0', contentId, env: {}, lang: extra.lang, uid: () => 1234,
     portAvailable: async () => true,
     listProcessIds: () => [],
     delay: async () => {},
@@ -49,6 +52,127 @@ function fixture(t, platform, extra = {}) {
 }
 
 const preference = home => JSON.parse(readFileSync(join(home, '.local', 'share', 'prumo', 'dashboard.json'), 'utf8'))
+
+for (const platform of ['linux', 'win32']) for (const previousLang of ['en', 'pt-BR']) {
+  test(`${platform}: desativação recusada conserva identidade ${previousLang} para uma nova tentativa`, async t => {
+    let running = true
+    const killed = [], lang = previousLang === 'en' ? 'pt-BR' : 'en'
+    const f = fixture(t, platform, {
+      lang, exec: () => ({ status: 1 }),
+      fetch: async () => {
+        if (!running) throw new Error('stopped')
+        return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0', pid: 4311 }) }
+      },
+      readProcessCommand: () => [f.node, f.script, '--global', '--port', '4949', '--lang', previousLang],
+      kill(pid) {
+        killed.push(pid)
+        if (killed.length === 1) throw Object.assign(new Error('Acesso recusado'), { code: 'EPERM' })
+        running = false
+      },
+    })
+    f.options.env.APPDATA = join(f.home, 'AppData')
+    const data = join(f.home, '.local/share/prumo')
+    mkdirSync(data, { recursive: true })
+    const before = { enabled: true, mechanism: platform === 'win32' ? 'windows-startup' : 'xdg',
+      node: f.node, script: f.script, pid: 4311, lang: previousLang }
+    writeFileSync(join(data, 'dashboard.json'), JSON.stringify(before))
+    assert.equal((await disableDashboard(f.options)).ok, false)
+    assert.deepEqual(preference(f.home), { ...before, enabled: false })
+    assert.equal((await disableDashboard(f.options)).ok, true)
+    assert.deepEqual(killed, [4311, 4311])
+    assert.equal(preference(f.home).pid, undefined)
+    assert.equal(preference(f.home).enabled, false)
+  })
+}
+
+for (const platform of ['linux', 'win32']) for (const previousLang of ['en', 'pt-BR']) {
+  test(`${platform}: falha no registro preserva PID e idioma ${previousLang} do dashboard atual`, async t => {
+    const lang = previousLang === 'en' ? 'pt-BR' : 'en', killed = []
+    let running = true
+    const f = fixture(t, platform, {
+      lang, exec: () => ({ status: 1 }),
+      fetch: async () => {
+        if (!running) throw new Error('stopped')
+        return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0', pid: 4301 }) }
+      },
+      readProcessCommand: () => [f.node, f.script, '--global', '--port', '4949', '--lang', previousLang],
+      kill(pid) { killed.push(pid); running = false },
+    })
+    f.options.env.APPDATA = join(f.home, 'AppData')
+    const data = join(f.home, '.local/share/prumo')
+    mkdirSync(data, { recursive: true })
+    const before = { enabled: true, mechanism: platform === 'win32' ? 'windows-startup' : 'xdg',
+      node: f.node, script: f.script, pid: 4301, lang: previousLang }
+    writeFileSync(join(data, 'dashboard.json'), JSON.stringify(before))
+    const entry = platform === 'win32'
+      ? join(f.options.env.APPDATA, 'Microsoft/Windows/Start Menu/Programs/Startup/Prumo Dashboard.vbs')
+      : join(f.home, '.config/autostart/prumo-dashboard.desktop')
+    mkdirSync(entry, { recursive: true })
+    const result = await enableDashboard(f.options)
+    assert.equal(result.ok, false)
+    assert.match(result.error, /Startup registration failed/)
+    assert.deepEqual(preference(f.home), before)
+    assert.deepEqual(killed, [])
+    rmdirSync(entry)
+    const disabled = await disableDashboard(f.options)
+    assert.equal(disabled.ok, true)
+    assert.deepEqual(killed, [4301])
+  })
+}
+
+for (const platform of ['linux', 'win32']) for (const previousLang of ['en', 'pt-BR']) for (const action of ['enable', 'restart']) {
+  test(`${platform}: ${action} ao trocar idioma reconhece o processo gerenciado no idioma anterior ${previousLang}`, async t => {
+    const lang = previousLang === 'en' ? 'pt-BR' : 'en', killed = []
+    let running = true, liveLang = previousLang
+    const f = fixture(t, platform, {
+      lang,
+      exec(file) {
+        if (file === 'wscript.exe') { running = true; liveLang = lang; return { status: 0 } }
+        return { status: 1 }
+      },
+      spawn: () => { running = true; liveLang = lang; return { pid: 4301 } },
+      fetchAbout: async () => ({ ok: true, json: async () => ({ product: 'prumo', version: '1.3.0', origin: 'global',
+        contentId: liveLang === lang ? 'fixture-content' : 'previous-content', path: f.home }) }),
+      fetch: async () => {
+        if (!running) throw new Error('stopped')
+        return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0', pid: 4301 }) }
+      },
+      readProcessCommand: () => {
+        const args = [f.node, f.script, '--global', '--port', '4949', '--lang', liveLang]
+        return platform === 'win32' ? { executable: f.node, commandLine: args.map(arg => `"${arg}"`).join(' ') } : args
+      },
+      kill(pid) { killed.push(pid); running = false },
+    })
+    f.options.env.APPDATA = join(f.home, 'AppData')
+    const data = join(f.home, '.local/share/prumo')
+    mkdirSync(data, { recursive: true })
+    writeFileSync(join(data, 'dashboard.json'), JSON.stringify({ enabled: true, mechanism: platform === 'win32' ? 'windows-startup' : 'xdg',
+      node: f.node, script: f.script, pid: 4301, lang: previousLang }))
+    const result = await (action === 'enable' ? enableDashboard : restartDashboard)(f.options)
+    assert.equal(result.ok, true, JSON.stringify(result))
+    assert.deepEqual(killed, [4301])
+    assert.equal(preference(f.home).lang, lang)
+    assert.equal(liveLang, lang)
+  })
+}
+
+for (const lang of [undefined, 'en', 'pt-BR']) test(`reinício recusado preserva preferência de idioma ${String(lang)}`, async t => {
+  const f = fixture(t, 'win32', {
+    lang: 'pt-BR',
+    fetch: async () => ({ ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0' }) }),
+    kill: () => assert.fail('Processo sem identidade não pode ser encerrado'),
+  })
+  f.options.env.APPDATA = join(f.home, 'AppData')
+  const data = join(f.home, '.local/share/prumo')
+  mkdirSync(data, { recursive: true })
+  const before = { enabled: true, mechanism: 'windows-startup', pid: 424242, node: f.node, script: f.script,
+    ...(lang === undefined ? {} : { lang }) }
+  writeFileSync(join(data, 'dashboard.json'), JSON.stringify(before))
+  const result = await restartDashboard(f.options)
+  assert.equal(result.ok, false)
+  assert.match(result.error, /ownership verification failed/)
+  assert.deepEqual(preference(f.home), before)
+})
 
 test('disable remove o Startup criado por um restart que falhou na identificação do processo', async t => {
   const f = fixture(t, 'win32', {
@@ -125,6 +249,22 @@ test('Windows creates one ONLOGON task with absolute quoted paths and persists o
   assert.equal(preference(f.home).enabled, false)
   await disableDashboard(f.options)
   assert.equal(preference(f.home).enabled, false)
+})
+
+test('O idioma escolhido para o dashboard continua após reiniciar, mantendo a interface na preferência salva', async t => {
+  const f = fixture(t, 'win32', { lang: 'pt-BR' })
+  const enabled = await enableDashboard(f.options)
+  assert.equal(enabled.ok, true)
+  assert.equal(preference(f.home).lang, 'pt-BR')
+
+  const task = f.calls.find(([file, args]) => file === 'schtasks' && args[0] === '/Create')[1].at(-1)
+  assert.match(task, /"--lang" "pt-BR"$/)
+
+  const options = { ...f.options }
+  delete options.lang
+  let invocation
+  runDashboardForeground({ ...options, spawnSync(file, args) { invocation = args; return { status: 0 } } })
+  assert.deepEqual(invocation, [f.script, '--global', '--port', '4949', '--lang', 'pt-BR'])
 })
 
 test('Windows falls back to one hidden per-user Startup entry when task creation is unavailable', async t => {

@@ -1,0 +1,55 @@
+const definitions = {
+  init: [0, 'plan run', 'force allow-overlap'],
+  migrate: [0, '', 'check'],
+  'sync-plan': [0, 'plan', 'allow-overlap'],
+  status: [0, '', 'verify-install'], ready: [0], graph: [0], runs: [0],
+  'show-contract': [1, '', 'diff'], 'show-check': [1, 'check attempt'],
+  authorize: [0, 'scope mode channel', 'confirmed-by-user'],
+  'begin-phase-discussion': [1, '', 'adopt-legacy'],
+  'skip-phase-discussion': [1, 'reason', 'confirmed-by-user'],
+  'finish-phase-discussion': [1, 'context', 'accept-premature-work'],
+  'plan-phase': [1, 'agent plan-dir'],
+  'skip-phase-planning': [1, 'reason', 'confirmed-by-user'],
+  'finish-phase-planning': [1, 'plan-dir'],
+  'begin-discussion': [1, '', 'adopt-legacy'],
+  'skip-discussion': [1, 'reason', 'confirmed-by-user'],
+  'finish-discussion': [1, 'context', 'accept-premature-work'],
+  'plan-task': [1, 'agent context', 'accept-premature-work'],
+  'skip-planning': [1, 'reason', 'confirmed-by-user'],
+  'finish-planning': [1, 'plan'],
+  start: [1, 'agent executor channel', 'confirmed-by-user'],
+  progress: [1, 'agent step'], review: [1, 'agent channel', 'confirmed-by-user'],
+  'review-progress': [1, 'agent step'],
+  'refresh-contract': [1, 'plan'],
+  validate: [1, 'evidence summary cwd tail', 'ok failed'],
+  done: [1], fail: [1, 'reason', 'plan-defect'],
+  retry: [1, 'channel', 'confirmed-by-user'],
+  block: [1, 'reason question option'],
+  unblock: [1, 'answer reviewer channel', 'confirmed-by-user'],
+  skip: [1, 'reason'], note: [1, 'text'],
+}
+
+// Argumentos inválidos são recusados antes de qualquer gravação, para que erros de
+// digitação não executem uma transição diferente da solicitada.
+export function parseEngineArgs(command, tokens) {
+  if (!Object.hasOwn(definitions, command)) throw new Error(`Unknown engine command: ${command ?? ''}`)
+  const [positionals, strings = '', booleans = ''] = definitions[command]
+  const stringFlags = new Set(('run lang ' + strings).trim().split(/\s+/))
+  const booleanFlags = new Set(('force ' + booleans).trim().split(/\s+/))
+  const args = { _: [] }
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]
+    if (!token.startsWith('--')) { args._.push(token); continue }
+    const key = token.slice(2)
+    if (!stringFlags.has(key) && !booleanFlags.has(key)) throw new Error(`Unknown option --${key} for ${command}`)
+    if (Object.hasOwn(args, key) && key !== 'option') throw new Error(`Duplicate option --${key}`)
+    if (booleanFlags.has(key)) { args[key] = true; continue }
+    const next = tokens[++i]
+    if (next === undefined || next.startsWith('--')) throw new Error(`Option --${key} requires a value`)
+    if (key === 'option') (args[key] ??= []).push(next)
+    else args[key] = next
+  }
+  if (args._.length > positionals) throw new Error(`${command} accepts at most ${positionals} positional argument(s)`)
+  if (args.ok && args.failed) throw new Error('Choose only one of --ok or --failed')
+  return args
+}

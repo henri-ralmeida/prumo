@@ -12,9 +12,9 @@ const pkg = JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8'))
 const fromVersion = process.argv[2] ?? '1.0.8'
 assert.match(fromVersion, /^\d+\.\d+\.\d+$/)
 const archive = process.argv[3] ?? join(repo, `henri-ralmeida-prumo-${fromVersion}.tgz`)
-const phaseEra = Number(fromVersion.split('.')[1]) >= 3
 // From 1.1.0 prose validation is accepted only for a justified inspection task.
 const since = version => fromVersion.split('.').map(Number).reduce((result, value, index) => result || value - version.split('.').map(Number)[index], 0) >= 0
+const phaseEra = since('1.3.0')
 const inspectionEra = since('1.1.0')
 // 1.2.x planned each task before execution; 1.2.1 added the discovery context.
 const taskEra = since('1.2.0') && !phaseEra
@@ -205,6 +205,8 @@ try {
   const oldEnv = { PRUMO_ROOT: oldRoot, PRUMO_HOME: dirname(oldRoot) }
   const old = (...args) => run(process.execPath, [engine, ...args, '--run', 'legacy'], oldEnv)
   old('init', '--plan', planPath)
+  // Versões com autorização explícita precisam registrar o aceite da execução simulada.
+  if (readFileSync(engine, 'utf8').includes('  authorize() {')) old('authorize', '--scope', 'run', '--confirmed-by-user')
   if (phaseEra) {
     old('skip', 'SKIP', '--reason', 'Approved scope removal')
     const state = () => JSON.parse(readFileSync(join(oldRoot, '.specs/graph/legacy/state.json'), 'utf8'))
@@ -246,6 +248,8 @@ try {
   old('start', 'DONE', '--agent', 'executor')
   saveFlow('running')
   old('review', 'DONE', '--agent', 'reviewer')
+  // A inspeção só pode ser aprovada após o revisor registrar o critério percorrido.
+  if (readFileSync(engine, 'utf8').includes('review-progress')) old('review-progress', 'DONE', '--step', '1', '--agent', 'reviewer')
   saveFlow('reviewing')
   for (const [label, command] of [['blocked', 'block'], ['failed', 'fail']]) {
     saveFlow(label)
@@ -388,6 +392,8 @@ try {
     unresolvedInputs: planning.requiredInputs.NEXT,
   })
   modern('finish-phase-planning', 'F2', '--plan-dir', project)
+  // O contrato de NEXT mudou; o aceite anterior não autoriza a execução do novo escopo.
+  modern('authorize', '--scope', 'tasks:NEXT', '--confirmed-by-user')
   modern('start', 'NEXT', '--agent', 'executor-next')
   modern('review', 'NEXT', '--agent', 'reviewer-next')
   modern('validate', 'NEXT', '--ok', '--evidence', 'Migrated functional behavior verified', '--cwd', project)

@@ -7,7 +7,7 @@ import { existsSync, statSync } from 'node:fs'
 const nonempty = (value) => typeof value === 'string' && value.trim().length > 0
 const insist = (condition, message) => { if (!condition) throw new Error(message) }
 const expectedExitCodes = (step) => step.expectedExitCodes ?? [0]
-const passed = (step, check) => expectedExitCodes(step).includes(check.exitCode) && !check.error && !check.signal
+const passed = (step, check) => !!check && expectedExitCodes(step).includes(check.exitCode) && !check.error && !check.signal
 const RESOURCE_VALUES = ['database', 'network', 'credential', 'external-service', 'production-data', 'manual-inspection']
 
 function assertResources(value, field) {
@@ -115,13 +115,12 @@ export function validationContract(task) {
   else insist(steps.length > 0 || nonempty(task.validation), 'inspection validation must not be empty')
   for (const step of steps) {
     insist(step && nonempty(step.run) && nonempty(step.expect), 'each validation step needs nonempty run and expect')
-    insist(['static', 'functional'].includes(step.kind ?? 'static'), 'step kind must be static or functional')
+    insist(step.kind === undefined || ['static', 'functional'].includes(step.kind), 'step kind must be static or functional')
     if (step.cacheable !== undefined) insist(typeof step.cacheable === 'boolean', 'cacheable must be true or false')
     if (step.cacheable) insist((step.kind ?? 'static') === 'static', 'only static validation steps can be cacheable')
     if (step.cachePaths !== undefined) {
       insist(step.cacheable === true, 'cachePaths requires cacheable: true')
-      insist(Array.isArray(step.cachePaths) && step.cachePaths.length > 0 && step.cachePaths.every(path =>
-        nonempty(path) && !isAbsolute(path) && !path.split(/[\\/]/).includes('..') && !path.includes('\0')),
+      insist(Array.isArray(step.cachePaths) && step.cachePaths.length > 0 && step.cachePaths.every(safeRelativePath),
       'cachePaths must be a nonempty array of safe relative paths')
     }
     if (step.expectedExitCodes !== undefined)
@@ -571,13 +570,13 @@ export function assertValidation(task, receipt) {
   insist(Array.isArray(receipt.checks), 'validation receipt has no checks')
   if (receipt.checks.length !== contract.steps.length) {
     const index = receipt.checks.length - 1
-    if (index >= 0 && !passed(contract.steps[index], receipt.checks[index]))
+    if (index >= 0 && index < contract.steps.length && !passed(contract.steps[index], receipt.checks[index]))
       throw new Error(failureMessage(contract.steps[index], receipt.checks[index], index, contract.steps.length))
     throw new Error('not all validation commands completed')
   }
   for (const [index, step] of contract.steps.entries()) {
     const check = receipt.checks[index]
-    insist(check.run === step.run && check.kind === (step.kind ?? 'static') &&
+    insist(check && check.run === step.run && check.kind === (step.kind ?? 'static') &&
       check.expect === step.expect && passed(step, check),
     failureMessage(step, check, index, contract.steps.length))
   }

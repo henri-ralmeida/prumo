@@ -597,7 +597,7 @@ test('dashboard reconciliation is partial-safe, resumable, dry-run inert and res
   assert.deepEqual(calls.map(([action]) => action), ['enable', 'restart'])
 })
 
-test('same-version CLI refresh persists new dashboard content across source removal and later enable', { timeout: 90000 }, async t => {
+test('same-version CLI refresh persists new dashboard content across source removal and later enable', { timeout: 240000 }, async t => {
   const home = mkdtempSync(join(realpathSync(tmpdir()), 'prumo-content-reconcile-'))
   const prefix = join(home, 'npm-prefix')
   const checkout = join(home, 'temporary-checkout')
@@ -606,7 +606,9 @@ test('same-version CLI refresh persists new dashboard content across source remo
   const children = new Map()
   const commands = new Map()
   t.after(async () => {
-    if (active?.exitCode === null) await new Promise(resolve => { active.once('exit', resolve); active.kill() })
+    if (active?.exitCode === null && active.signalCode === null && !active.startupError) {
+      await new Promise(resolve => { active.ref(); active.once('exit', resolve); active.kill() })
+    }
     assert.ok(home.startsWith(join(realpathSync(tmpdir()), 'prumo-content-reconcile-')))
     rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   })
@@ -728,7 +730,7 @@ test('same-version CLI refresh persists new dashboard content across source remo
   const currentPreference = JSON.parse(read(preferenceFile))
   const currentChild = children.get(currentPreference.pid)
   assert.ok(currentChild, 'the restarted process is owned by the isolated service')
-  await new Promise(resolve => { currentChild.once('exit', resolve); currentChild.kill() })
+  await new Promise(resolve => { currentChild.ref(); currentChild.once('exit', resolve); currentChild.kill() })
   await setTimeout(80)
   const updatedGlobalAutostart = await import(pathToFileURL(join(globalRoot, 'lib', 'autostart.mjs')).href)
   const reopened = await updatedGlobalAutostart.enableDashboard({ ...dashboardOptions, packageRoot: globalRoot, script: currentPreference.script })

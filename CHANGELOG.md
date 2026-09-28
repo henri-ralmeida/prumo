@@ -2,6 +2,23 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.1.2 — 2026-09-28
+
+### Corrigido — Comandos, concorrência e recuperação
+
+- Rejeite argumentos inválidos, repetidos e incompatíveis antes de alterar dados ou iniciar serviços.
+- Recupere a liberação concorrente de bloqueios e mantenha execuções válidas visíveis quando outra execução tiver estado inválido.
+- Valide contratos malformados e caminhos de atualização antes da execução.
+- Preserve PID e idioma do dashboard quando uma troca de idioma, registro ou encerramento falhar, permitindo nova tentativa sem encerrar processos alheios.
+- Mantenha os filtros do dashboard exclusivos e inclua as dependências necessárias ao motor e ao servidor instalados.
+
+### Melhorado — Testes e integração contínua
+
+- Amplie os testes de comandos, planejamento, validação, instalação, atualização e dashboard.
+- Corrija o cancelamento de testes no Node.js 22 e a limpeza de pastas temporárias no Windows.
+- Siga o planejamento e os critérios de revisão de cada versão histórica; registre novo aceite quando o contrato da tarefa mudar.
+- Inclua o histórico de releases no CI, limite a concorrência e reserve prazo suficiente para as integrações ampliadas.
+
 ## 2.1.1 — 2026-09-28
 
 ### Fixed — Dashboard restart after update

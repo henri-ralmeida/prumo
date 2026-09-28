@@ -32,7 +32,7 @@ async function checkVersion([version, pkg]) {
   console.log(`${version}: ${status === 0 ? 'PASS' : 'FAIL'}${status ? `\n${output}` : ''}`)
 }
 const pending = Object.entries(metadata.versions)
-await Promise.all(Array.from({ length: 3 }, async () => {
+await Promise.all(Array.from({ length: 2 }, async () => {
   while (pending.length) await checkVersion(pending.shift())
 }))
 assert.ok(results.length > 0)

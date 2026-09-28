@@ -159,7 +159,7 @@ function startWithQuotedPaths(t, shellEnv) {
 
   const copiedScripts = join(f.root, "engine path & 'quoted'")
   mkdirSync(copiedScripts)
-  for (const file of ['engine.mjs', 'atomic-state.mjs', 'validation.mjs', 'storage.mjs', 'i18n.mjs',
+  for (const file of ['engine.mjs', 'engine-args.mjs', 'atomic-state.mjs', 'validation.mjs', 'storage.mjs', 'i18n.mjs',
     'messages.json', 'region.mjs', 'sync-plan-audit.mjs', 'contract-drift.mjs'])
     copyFileSync(join(dirname(engine), file), join(copiedScripts, file))
   const copiedEngine = join(copiedScripts, 'engine.mjs')

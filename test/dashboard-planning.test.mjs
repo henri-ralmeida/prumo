@@ -882,6 +882,27 @@ test('visual polish keeps arrowless curves, full card labels and a controllable 
   assert.match(linked.nodes.get('#edgePaths').innerHTML, /<path class="e-hot"[^>]* d="M [^"]* C [^"]*"/)
 })
 
+test('O grupo in progress mostra apenas execuções não concluídas ao trocar a execução selecionada', () => {
+  const ui = dashboard('en')
+  const runs = [
+    { root: 'workspace', run: 'completed', plan: 'completed-plan', complete: true, doneCount: 4, taskCount: 4 },
+    { root: 'workspace', run: 'running', plan: 'running-plan', complete: false, activity: 'working', doneCount: 2, taskCount: 5 },
+    { root: 'workspace', run: 'paused', plan: 'paused-plan', complete: false, activity: 'idle', doneCount: 1, taskCount: 3 },
+  ]
+  ui.run('updateRunSelect(input)', { input: { currentRoot: 'workspace', current: 'completed', runs } })
+  ui.run('updateRunSelect(input)', { input: { currentRoot: 'workspace', current: 'running', runs } })
+
+  const progress = ui.nodes.get('#runOptions').innerHTML
+  assert.match(progress, /workspace\/running/)
+  assert.match(progress, /workspace\/paused/)
+  assert.doesNotMatch(progress, /workspace\/completed/)
+
+  ui.run("toggleRunFilter('complete')")
+  const completed = ui.nodes.get('#runOptions').innerHTML
+  assert.match(completed, /workspace\/completed/)
+  assert.doesNotMatch(completed, /workspace\/running/)
+})
+
 test('Gravidade cards and agent panels show measured activity in the compact dashboard layout', () => {
   assert.match(html, /grid-template: 64px minmax\(0, 1fr\) 48px/)
   assert.match(html, /grid-template-columns: minmax\(0, 1fr\) 360px/)
@@ -1019,34 +1040,35 @@ test('o seletor separa planos em andamento dos concluidos', () => {
   assert.match(options, /aria-label="em andamento: 2"[^>]*>em andamento<small>2<\/small>/, 'each group shows its count')
   assert.match(options, /aria-label="no prumo: 1"[^>]*>no prumo<small>1<\/small>/)
 
-  // the two groups are independent filters: turning one on keeps the other on
+  // selecting a group replaces the prior filter so completed plans stay out of "in progress"
   ui.run("toggleRunFilter('complete')")
   options = ui.nodes.get('#runOptions').innerHTML
-  assert.equal(pressed(options, 'progress'), 'true')
+  assert.equal(pressed(options, 'progress'), 'false')
   assert.equal(pressed(options, 'complete'), 'true')
-  assert.match(options, /data-run="root\/active"[\s\S]*data-run="root\/paused"[\s\S]*data-run="root\/finished"/, 'both groups, in progress first')
+  assert.ok(options.includes('data-run="root/finished"'))
+  assert.equal(options.includes('data-run="root/active"'), false)
+  assert.equal(options.includes('data-run="root/paused"'), false)
   assert.match(options, /✓ no prumo/)
 
   ui.run("toggleRunFilter('progress')")
   options = ui.nodes.get('#runOptions').innerHTML
-  assert.equal(pressed(options, 'progress'), 'false')
-  assert.equal(pressed(options, 'complete'), 'true')
-  assert.match(options, /data-run="root\/finished"/)
-  assert.doesNotMatch(options, /data-run="root\/active"/)
+  assert.equal(pressed(options, 'progress'), 'true')
+  assert.equal(pressed(options, 'complete'), 'false')
+  assert.ok(options.includes('data-run="root/active"'))
+  assert.ok(options.includes('data-run="root/paused"'))
+  assert.equal(options.includes('data-run="root/finished"'), false)
 
-  // the last group still lit stays on, and says why
-  ui.run("toggleRunFilter('complete')")
-  options = ui.nodes.get('#runOptions').innerHTML
-  assert.equal(pressed(options, 'complete'), 'true')
-  assert.match(options, /data-run-filter="complete" aria-pressed="true"[^>]*title="Pelo menos um grupo fica visível"/)
-  assert.match(options, /data-run="root\/finished"/)
-
-  // clicks on the tab bar reach the same toggle
+  // selecting the active group again leaves it selected
   ui.run("toggleRunFilter('progress')")
-  ui.dispatchElement('#runOptions', 'click', { target: { closest: selector => selector === '[data-run-filter]' ? { dataset: { runFilter: 'complete' } } : null } })
   options = ui.nodes.get('#runOptions').innerHTML
   assert.equal(pressed(options, 'progress'), 'true')
   assert.equal(pressed(options, 'complete'), 'false')
+
+  // clicking a group tab reaches the same exclusive selection
+  ui.dispatchElement('#runOptions', 'click', { target: { closest: selector => selector === '[data-run-filter]' ? { dataset: { runFilter: 'complete' } } : null } })
+  options = ui.nodes.get('#runOptions').innerHTML
+  assert.equal(pressed(options, 'progress'), 'false')
+  assert.equal(pressed(options, 'complete'), 'true')
 
   ui.run("updateRunSelect({ currentRoot: null, current: null, runs: [] })")
   assert.doesNotMatch(ui.nodes.get('#runOptions').innerHTML, /placeholder-01|data-run-demo/)
@@ -1080,9 +1102,12 @@ test('um plano com todas as tarefas concluidas conta como no prumo mesmo sem os 
     { root: 'root', run: 'finished', taskCount: 6, doneCount: 6, complete: true, activity: 'idle' },
     { root: 'root', run: 'halfway', taskCount: 4, doneCount: 2, complete: false, activity: 'idle' },
   ] })})`)
+  ui.run("toggleRunFilter('complete')")
   options = ui.nodes.get('#runOptions').innerHTML
   assert.match(option('finished'), /✓ no prumo/)
   assert.doesNotMatch(option('finished'), /parado/)
+  ui.run("toggleRunFilter('progress')")
+  options = ui.nodes.get('#runOptions').innerHTML
   assert.match(option('halfway'), /<span class="run-state idle"><i aria-hidden="true"><\/i>parado<\/span>/)
 })
 
@@ -1096,8 +1121,7 @@ test('um plano com tarefas puladas e as demais concluidas fica em no prumo e nom
     { root: 'root', run: 'only-skipped', taskCount: 2, doneCount: 0, skippedCount: 2 },
   ]
   ui.run(`updateRunSelect(${JSON.stringify({ currentRoot: 'root', current: 'sonar', runs })})`)
-  ui.run("toggleRunFilter('progress')")
-  const options = ui.nodes.get('#runOptions').innerHTML
+  let options = ui.nodes.get('#runOptions').innerHTML
   const option = (run) => options.slice(options.indexOf(`data-run="root/${run}"`), options.indexOf('</button>', options.indexOf(`data-run="root/${run}"`)))
   assert.match(options, /aria-label="no prumo: 2"/)
   assert.match(options, /aria-label="em andamento: 2"/)
@@ -1107,6 +1131,14 @@ test('um plano com tarefas puladas e as demais concluidas fica em no prumo e nom
   assert.match(option('legacy-skip'), /✓ no prumo[\s\S]*2 de 3 tarefas no prumo · 1 pulada/)
   assert.doesNotMatch(option('legacy-open'), /run-state complete/,'without skippedCount an old server needs every task done')
   assert.doesNotMatch(option('only-skipped'), /✓ no prumo/, 'nothing done means nothing delivered')
+
+  ui.run("toggleRunFilter('progress')")
+  options = ui.nodes.get('#runOptions').innerHTML
+  assert.ok(options.includes('data-run="root/legacy-open"'))
+  assert.ok(options.includes('data-run="root/only-skipped"'))
+  assert.equal(options.includes('data-run="root/sonar"'), false)
+  assert.equal(options.includes('data-run="root/legacy-skip"'), false)
+
   assert.equal(ui.run(`completedRunGainSummary({ anyLive: false }, {}, { A: { state: 'skipped' } }, true, true).completed`), false)
   assert.equal(ui.run(`completedRunGainSummary({ anyLive: false }, {}, { A: { state: 'done' }, B: { state: 'skipped' } }, true, true).completed`), true)
 })

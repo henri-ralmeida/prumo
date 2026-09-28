@@ -1,4 +1,11 @@
 {
+  "2.1.2": {
+    "en": [
+      { "title": "Fixed — Command validation and concurrent writes", "items": ["Reject invalid, repeated and incompatible arguments before changing data or starting services", "Recover concurrent lock release and keep healthy runs visible when another run has invalid state", "Validate malformed contracts and update paths before execution"] },
+      { "title": "Fixed — Dashboard recovery and language", "items": ["Preserve the managed dashboard process identity when language changes or registration and shutdown fail", "Keep run filters exclusive and expose installed engine and server dependencies correctly"] },
+      { "title": "Improved — Tests and continuous integration", "items": ["Expand command, planning, validation, installation and dashboard regression coverage", "Fix Node 22 test cleanup and historical update scenarios without weakening execution authorization", "Fetch release history and bound parallel verification with enough time for the expanded integrations"] }
+    ]
+  },
   "2.1.1": {
     "en": [
       { "title": "Fixed — Dashboard restart after update", "items": ["Restart the automatic dashboard after prumo update even when the recorded process id is missing or stale", "Prove dashboard ownership through a fast Windows process query and keep the record until the old process is replaced", "Never stop a program that is not the managed Prumo dashboard and explain how to free the port"] }

@@ -120,20 +120,14 @@ import { language, localizeDashboard, log, errorLog, tr } from './i18n.mjs'
 import { discoveryDigest, hasCurrentTaskPlan, phasePlanningContext, planningContext, usesCurrentPlanning, currentPlanningSkip } from './validation.mjs'
 import { dashboardDiagnostics } from './dashboard-diagnostics.mjs'
 import { contentId } from './installation-bundle.mjs'
+import { parseServeArgs } from './serve-args.mjs'
 
-const argv = process.argv.slice(2)
-const flag = (name, fallback) => {
-  const i = argv.indexOf(`--${name}`)
-  return i >= 0 && argv[i + 1] ? argv[i + 1] : fallback
-}
-const PORT = Number(flag('port', 4949))
-const RUN_FLAG = flag('run', null)
-const SYNC_PLAN = argv.includes('--sync-plan')
-const GLOBAL = argv.includes('--global')
-if (GLOBAL && SYNC_PLAN) {
-  errorLog('[prumo] ERROR: --global is read-only and cannot be combined with --sync-plan')
+let options
+try { options = parseServeArgs(process.argv.slice(2)) } catch (error) {
+  errorLog('[prumo] ERROR: ' + error.message)
   process.exit(1)
 }
+const { port: PORT, run: RUN_FLAG, syncPlan: SYNC_PLAN, global: GLOBAL } = options
 
 let ROOT = null
 if (!GLOBAL) try { ROOT = findRoot() } catch (error) { errorLog('[prumo] ERROR: ' + error.message); process.exit(1) }
@@ -450,7 +444,7 @@ const originLabel = about => about.origin === 'global' ? tr('global package')
   : about.origin === 'repository' ? (about.commit ? tr('repository @ {0}', about.commit) : tr('repository'))
   : about.origin === 'installed' ? tr('installed copy')
   : about.origin === 'workspace' ? tr('workspace source') : tr('unknown')
-const LANG = language(flag('lang', undefined))
+const LANG = language(options.lang)
 let CONTENT_ID = null
 try { CONTENT_ID = contentId(LANG, { packageRoot: PACKAGE_ROOT }) }
 catch { /* a partial development fixture can serve runs while reporting unknown package identity */ }
@@ -527,7 +521,7 @@ const server = createServer((req, res) => {
   }
 
   if (url.pathname === '/' || url.pathname === '/index.html') {
-    const page = localizeDashboard(readFileSync(join(HERE, 'dashboard.html'), 'utf8'), language(flag('lang', undefined)))
+    const page = localizeDashboard(readFileSync(join(HERE, 'dashboard.html'), 'utf8'), language(options.lang))
     res.writeHead(200, {
       'Content-Type': 'text/html; charset=utf-8',
       'Cache-Control': 'no-store',

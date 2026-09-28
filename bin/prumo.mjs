@@ -10,6 +10,7 @@ import { assertUpdateVersion, ensureGlobalCliContent, globalCliContentCurrent, g
 import { releaseHistory } from '../lib/release-notes.mjs'
 import { dashboardNeedsRepair, dashboardStatus, disableDashboard, enableDashboard, readDashboardEvents, runDashboardForeground } from '../lib/autostart.mjs'
 import { selectHarnesses } from '../lib/prompt.mjs'
+import { assertCliOptions } from '../lib/cli-args.mjs'
 import { language, createTranslator, messages } from '../scripts/i18n.mjs'
 
 let t = createTranslator(messages, language())
@@ -139,6 +140,7 @@ try {
   t = createTranslator(messages, lang)
   if (values['verify-install'] && positionals[0] !== 'status') throw new Error(t('Use --verify-install with status'))
   const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
+  if (!values.version && !values.help && positionals.length) assertCliOptions(positionals[0], values)
   if (values.version) print(version)
   else if (values.help || positionals.length === 0) {
     print(`Prumo ${version} — graph-foreman + PO First\n\nprumo install [--all | --claude|--kiro|--codex|--dsh] [--lang en|pt-BR] [--dry-run] [--project <path>]\nprumo update [--dry-run] [--lang en|pt-BR] [--project <path>]\nprumo status [--verify-install] [--project <path>]\nprumo migrate [--check] [--run <name>]\nprumo doctor --claude|--kiro|--codex|--dsh [--lang en|pt-BR] [--project <path>]\nprumo dashboard [enable|disable|status|logs]\nprumo restore <backup>\n`)
@@ -250,7 +252,7 @@ try {
         } catch (error) { console.error(`[prumo] ${t(error.message)}`); process.exitCode = 2 }
       }
       const globalPackage = globalCliState(packageRoot).packageRoot ?? packageRoot
-      const dashboard = await reconcileDashboardUpdate({ dryRun: request.dryRun, before: dashboardBefore, dashboardOptions: { packageRoot: globalPackage } })
+      const dashboard = await reconcileDashboardUpdate({ dryRun: request.dryRun, before: dashboardBefore, lang: request.lang, dashboardOptions: { packageRoot: globalPackage } })
       if (dashboard.action === 'enable' && request.dryRun) print('Would enable and start the Prumo dashboard')
       if (dashboard.action === 'restart' && request.dryRun) print('Would restart the enabled Prumo dashboard')
       else if (dashboard.action === 'disabled' && request.dryRun) print('Dashboard remains disabled by user preference')

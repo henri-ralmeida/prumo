@@ -42,8 +42,8 @@ function releaseTags() {
 function selectedTags(tags) {
   const requested = process.env.PRUMO_UPGRADE_TAGS
   if (requested === 'all') return tags
-  const wanted = requested ? requested.split(',').map(tag => tag.trim()).filter(Boolean) : representative
-  return wanted.filter(tag => tags.includes(tag))
+  const wanted = requested ? requested.split(',').map(tag => tag.trim()).filter(Boolean) : [...representative, tags.at(-1)]
+  return tags.filter(tag => wanted.includes(tag))
 }
 
 function packTag(tag, work) {

@@ -361,4 +361,8 @@ test('update preserves dashboard preference and adopts a running unconfigured le
   const result = await reconcileDashboardUpdate({ dashboardOptions: { packageRoot: '/global/prumo' } }, { status: async () => ({ enabled: true }), restart })
   assert.equal(result.ok, true)
   assert.deepEqual(calls, [{ packageRoot: '/global/prumo' }])
+  calls.length = 0
+  const localized = await reconcileDashboardUpdate({ lang: 'pt-BR', dashboardOptions: { packageRoot: '/global/prumo' } }, { status: async () => ({ enabled: true }), restart })
+  assert.equal(localized.ok, true)
+  assert.deepEqual(calls, [{ packageRoot: '/global/prumo', lang: 'pt-BR' }])
 })

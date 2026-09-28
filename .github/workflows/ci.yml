@@ -13,14 +13,16 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         node: [22, 24]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node }}
       - uses: oven-sh/setup-bun@v2
-      - run: npm test
+      - run: node --test --test-concurrency=4 scripts/*.test.mjs test/*.test.mjs
       - run: npm run check
       - run: npm pack
       - run: node scripts/package-smoke.mjs
