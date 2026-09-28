@@ -168,7 +168,10 @@ test('dashboard selects legacy and central data without writes or translation of
   assert.equal(planningRun.activity, 'working')
   assert.equal(planningRun.complete, false)
   const graph = join(root, '.specs', 'graph')
-  for (const [name, states] of [['complete-demo', ['done', 'done']], ['almost-demo', ['done', 'skipped']]]) {
+  // A run whose remaining task was skipped by the user's decision is finished, as the header and gain card say;
+  // only a run with pending work, or with nothing done at all, stays out of "in prumo".
+  for (const [name, states] of [['complete-demo', ['done', 'done']], ['skipped-demo', ['done', 'skipped']],
+    ['all-skipped-demo', ['skipped', 'skipped']], ['almost-demo', ['done', 'pending']]]) {
     const directory = join(graph, name)
     mkdirSync(directory)
     writeFileSync(join(directory, 'state.json'), JSON.stringify({ plan: { name }, tasks: Object.fromEntries(states.map((state, index) =>
@@ -177,8 +180,13 @@ test('dashboard selects legacy and central data without writes or translation of
   const refreshed = (await (await get('/api/runs')).json()).runs
   assert.equal(refreshed.find(run => run.run === 'complete-demo')?.complete, true)
   assert.equal(refreshed.find(run => run.run === 'complete-demo')?.doneCount, 2)
+  const skippedRun = refreshed.find(run => run.run === 'skipped-demo')
+  assert.equal(skippedRun?.complete, true, 'done + skipped por decisao do usuario conta como no prumo')
+  assert.equal(skippedRun?.doneCount, 1)
+  assert.equal(skippedRun?.skippedCount, 1)
+  assert.equal(refreshed.find(run => run.run === 'all-skipped-demo')?.complete, false, 'sem nenhuma tarefa done nao ha plano entregue')
   assert.equal(refreshed.find(run => run.run === 'almost-demo')?.complete, false,
-    'um plano so entra em no prumo quando todas as tarefas estao done')
+    'trabalho pendente mantem o plano em andamento')
   assert.equal(refreshed.find(run => run.run === 'almost-demo')?.activity, 'idle')
   const selected = await (await get('/api/state?root=work&run=demo')).json()
   assert.equal(selected.tasks.T1.title, 'done')

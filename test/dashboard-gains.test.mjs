@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import { createTranslator, messages } from '../scripts/i18n.mjs'
-import { calculateGain, renderGainPanel, taskManualEstimateMinutes } from '../scripts/dashboard-gains.mjs'
+import { calculateGain, renderGainPanel, renderManualCoordination, taskManualEstimateMinutes } from '../scripts/dashboard-gains.mjs'
 
 const esc = (value) => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;')
   .replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;')
@@ -244,4 +244,49 @@ test('a estimativa humana só ganha barra contra o tempo aferido das mesmas tare
   const partialHtml = renderGainPanel(partial, localizer('pt-BR'), fmtMs, esc, 'pt-BR')
   assert.match(partialHtml, /Estimativa humana: 1h00/)
   assert.doesNotMatch(partialHtml, /class="est"|Agentes nas mesmas tarefas/)
+})
+
+test('coordenação manual estima 3 min fixos por comando, separada da economia aferida', () => {
+  const analysis = { per: [{ id: 'A', spans: spans(['exec', 0, 60_000]) }, { id: 'B', spans: spans(['exec', 0, 60_000]) }] }
+  const tasks = {
+    A: { state: 'done', attempts: [{ reviewStartedAt: 'x' }, { reviewStartedAt: 'y' }, {}], validations: [{ by: 'review' }] },
+    B: { state: 'done', attempts: [{}], validations: [{ by: 'review' }, { by: 'executor' }] },
+  }
+  const gain = calculateGain(analysis, tasks, true)
+  assert.deepEqual(gain.commandCounts, { execution: 4, review: 3, retry: 2 }, 'reviews count the larger of verdicts and review dispatches')
+  assert.equal(gain.commandTotal, 9)
+  assert.equal(gain.minutesPerCommand, 3)
+  assert.equal(gain.manualCoordinationMs, 27 * 60_000)
+  assert.equal(gain.retryScenarioMs, 2 * 9 * 60_000)
+  assert.equal(gain.savingsMs, 60_000, 'the estimate never changes the measured savings')
+  for (const [lang, lead, badge, note] of [
+    ['en', /If you had to dispatch and re-dispatch every command by hand, you would spend about <strong>27m00<\/strong> just coordinating the agents \(3 min per command × 9 commands\)\./,
+      /ESTIMATE · not a measurement/, /Fixed assumption of 3 min per command\. It is not added to the measured savings above\./],
+    ['pt-BR', /Se você tivesse que disparar e redisparar cada comando manualmente, gastaria cerca de <strong>27m00<\/strong> só coordenando os agentes \(3 min por comando × 9 comandos\)\./,
+      /ESTIMATIVA · não é medição/, /Premissa fixa de 3 min por comando\. Não entra na economia aferida acima\./],
+  ]) {
+    const html = renderManualCoordination(gain, localizer(lang), fmtMs, esc)
+    assert.match(html, lead)
+    assert.match(html, badge)
+    assert.match(html, note)
+    assert.match(html, /class="gline manual-scenario">[^<]*18m00/)
+    assert.match(html, lang === 'en' ? /<b>4 commands<\/b>[\s\S]*Retry coordination<\/span><b>2 commands<\/b>/
+      : /<b>4 comandos<\/b>[\s\S]*Coordenação de novas tentativas<\/span><b>2 comandos<\/b>/)
+    assert.doesNotMatch(html, lang === 'en' ? /events/ : /eventos|retry/i, 'counts are commands; pt-BR says nova tentativa')
+    assert.doesNotMatch(html, /<input|<button|data-gain-minutes/, 'no editable assumptions and no +/- buttons')
+    assert.doesNotMatch(renderGainPanel(gain, localizer(lang), fmtMs, esc, lang), /27m00|manualPanel/, 'the measured card stays unchanged')
+  }
+
+  const single = calculateGain({ per: [] }, { A: { attempts: [{}] } }, true)
+  assert.match(renderManualCoordination(single, localizer('pt-BR'), fmtMs, esc), /<strong>3m00<\/strong>[^<]*\(3 min por comando × 1 comando\)/)
+  assert.doesNotMatch(renderManualCoordination(single, localizer('en'), fmtMs, esc), /manual-scenario/, 'no retry, no scenario line')
+
+  const empty = renderManualCoordination(calculateGain({ per: [] }, {}, true), localizer('en'), fmtMs, esc)
+  assert.match(empty, /No execution, review or retry command recorded yet; there is nothing to estimate\./)
+  assert.match(renderManualCoordination(calculateGain({ per: [] }, {}, true), localizer('pt-BR'), fmtMs, esc),
+    /Nenhum comando de execução, revisão ou nova tentativa registrada ainda/)
+  assert.doesNotMatch(empty, /<strong>|manual-counts/)
+
+  const hostile = (key, ...values) => key === 'Manual coordination estimate' ? '<script>bad()</script>' : localizer('en')(key, ...values)
+  assert.doesNotMatch(renderManualCoordination(gain, hostile, fmtMs, esc), /<script>bad/)
 })

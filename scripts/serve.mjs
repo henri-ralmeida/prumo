@@ -160,10 +160,13 @@ function currentRun(root = ROOT) {
 function runProgress(state) {
   const tasks = Object.values(state.tasks ?? {})
   const done = tasks.filter(task => task.state === 'done').length
+  const skipped = tasks.filter(task => task.state === 'skipped').length
   const working = tasks.some(task => ['discussing', 'planning', 'running', 'reviewing'].includes(task.state)) ||
     Object.values(state.phaseWorkflows ?? {}).some(phase => ['discussing', 'planning'].includes(phase.state))
-  return { taskCount: tasks.length, doneCount: done, complete: tasks.length > 0 && done === tasks.length,
-    activity: working ? 'working' : 'idle' }
+  // Complete = every task settled (done, or skipped by the user's decision) and at least one done:
+  // the same rule as the dashboard header and the gain card.
+  return { taskCount: tasks.length, doneCount: done, skippedCount: skipped,
+    complete: done > 0 && done + skipped === tasks.length, activity: working ? 'working' : 'idle' }
 }
 
 function catalog() {

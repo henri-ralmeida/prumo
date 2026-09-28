@@ -51,6 +51,22 @@ export function calculateGain(analysis, tasks = {}, eventsComplete = false) {
   const humanComparedMs = measured && estimatedIds.size > 0 && sameTaskTimes.length === estimatedIds.size
     ? sameTaskTimes.reduce((total, [, ms]) => total + ms, 0) : null
 
+  // Coordenação manual: estimativa fixa de 3 min por comando, contada a partir das tentativas e revisões registradas.
+  // Nunca entra na economia aferida; é um cenário, não uma medição.
+  const minutesPerCommand = 3
+  // Cada nova tentativa evitada poupa três comandos: a reexecução, a revisão dela e a própria coordenação do retry.
+  const commandsPerRetry = 3
+  let executionCount = 0, reviewCount = 0, retryCount = 0
+  for (const task of Object.values(tasks ?? {})) {
+    const attempts = Array.isArray(task?.attempts) ? task.attempts : []
+    executionCount += attempts.length
+    retryCount += Math.max(0, attempts.length - 1)
+    const reviewVerdicts = Array.isArray(task?.validations) ? task.validations.filter((item) => item?.by === 'review').length : 0
+    reviewCount += Math.max(reviewVerdicts, attempts.filter((attempt) => attempt?.reviewStartedAt).length)
+  }
+  const commandCounts = { execution: executionCount, review: reviewCount, retry: retryCount }
+  const commandTotal = executionCount + reviewCount + retryCount
+
   return {
     oneAtATimeMs: measured ? oneAtATimeMs : null,
     withPrumoMs: measured ? withPrumoMs : null,
@@ -64,6 +80,11 @@ export function calculateGain(analysis, tasks = {}, eventsComplete = false) {
     humanEstimateTasks: estimates.length,
     humanComparedMs,
     countedTasks: counted.length,
+    minutesPerCommand,
+    commandCounts,
+    commandTotal,
+    manualCoordinationMs: commandTotal * minutesPerCommand * 60_000,
+    retryScenarioMs: retryCount > 0 ? retryCount * commandsPerRetry * minutesPerCommand * 60_000 : null,
   }
 }
 
@@ -108,5 +129,32 @@ export function renderGainPanel(gain, tr, fmtMs, esc, locale = 'en') {
     ${critical}
     ${human}
     <p class="gline gain-note">${esc(stateNote)}</p>
+  </section>`
+}
+
+/** Renderiza a estimativa de coordenação manual (3 min fixos por comando), separada do ganho aferido. */
+export function renderManualCoordination(gain, tr, fmtMs, esc) {
+  const counts = gain.commandCounts ?? { execution: 0, review: 0, retry: 0 }
+  const total = gain.commandTotal ?? 0
+  const minutes = gain.minutesPerCommand ?? 3
+  const mark = '\u0001'
+  const headline = total > 0
+    ? esc(tr(total === 1
+      ? 'If you had to dispatch and re-dispatch every command by hand, you would spend about {0} just coordinating the agents ({1} min per command × 1 command).'
+      : 'If you had to dispatch and re-dispatch every command by hand, you would spend about {0} just coordinating the agents ({1} min per command × {2} commands).',
+      mark, minutes, total)).replace(mark, `<strong>${esc(fmtMs(gain.manualCoordinationMs))}</strong>`)
+    : esc(tr('No execution, review or retry command recorded yet; there is nothing to estimate.'))
+  const commands = (count) => count === 1 ? tr('1 command') : tr('{0} commands', count)
+  const breakdown = total > 0 ? `<div class="manual-counts">${[
+    ['execution', 'Execution command'], ['review', 'Review command'], ['retry', 'Retry coordination'],
+  ].map(([kind, label]) => `<div><span>${esc(tr(label))}</span><b>${esc(commands(counts[kind] ?? 0))}</b><small>${esc(fmtMs((counts[kind] ?? 0) * minutes * 60_000))}</small></div>`).join('')}</div>` : ''
+  const scenario = gain.retryScenarioMs == null ? ''
+    : `<p class="gline manual-scenario">${esc(tr('Scenario only: if planning avoided all recorded retries, estimated manual coordination avoided would be {0}.', fmtMs(gain.retryScenarioMs)))} ${esc(tr('This is hypothetical and is excluded from measured savings.'))}</p>`
+  return `<section class="gcard manual" id="manualPanel" aria-labelledby="manualTitle">
+    <div class="gh"><b id="manualTitle">${esc(tr('Manual coordination estimate'))}</b><span class="gain-badge">${esc(tr('ESTIMATE · not a measurement'))}</span></div>
+    <p class="manual-lead">${headline}</p>
+    ${breakdown}
+    ${scenario}
+    <p class="gline gain-note">${esc(tr('Fixed assumption of {0} min per command. It is not added to the measured savings above.', minutes))}</p>
   </section>`
 }

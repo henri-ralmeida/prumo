@@ -1086,6 +1086,31 @@ test('um plano com todas as tarefas concluidas conta como no prumo mesmo sem os 
   assert.match(option('halfway'), /<span class="run-state idle"><i aria-hidden="true"><\/i>parado<\/span>/)
 })
 
+test('um plano com tarefas puladas e as demais concluidas fica em no prumo e nomeia as puladas', () => {
+  const ui = dashboard('pt-BR')
+  const runs = [
+    { root: 'root', run: 'sonar', plan: 'Saneamento', taskCount: 14, doneCount: 13, skippedCount: 1, complete: true, activity: 'idle' },
+    // servidor antigo: sem complete; as contagens decidem, com ou sem skippedCount
+    { root: 'root', run: 'legacy-skip', taskCount: 3, doneCount: 2, skippedCount: 1 },
+    { root: 'root', run: 'legacy-open', taskCount: 3, doneCount: 2 },
+    { root: 'root', run: 'only-skipped', taskCount: 2, doneCount: 0, skippedCount: 2 },
+  ]
+  ui.run(`updateRunSelect(${JSON.stringify({ currentRoot: 'root', current: 'sonar', runs })})`)
+  ui.run("toggleRunFilter('progress')")
+  const options = ui.nodes.get('#runOptions').innerHTML
+  const option = (run) => options.slice(options.indexOf(`data-run="root/${run}"`), options.indexOf('</button>', options.indexOf(`data-run="root/${run}"`)))
+  assert.match(options, /aria-label="no prumo: 2"/)
+  assert.match(options, /aria-label="em andamento: 2"/)
+  assert.match(option('sonar'), /✓ no prumo/)
+  assert.match(option('sonar'), /13 de 14 tarefas no prumo · 1 pulada/)
+  assert.doesNotMatch(option('sonar'), /parado/)
+  assert.match(option('legacy-skip'), /✓ no prumo[\s\S]*2 de 3 tarefas no prumo · 1 pulada/)
+  assert.doesNotMatch(option('legacy-open'), /run-state complete/,'without skippedCount an old server needs every task done')
+  assert.doesNotMatch(option('only-skipped'), /✓ no prumo/, 'nothing done means nothing delivered')
+  assert.equal(ui.run(`completedRunGainSummary({ anyLive: false }, {}, { A: { state: 'skipped' } }, true, true).completed`), false)
+  assert.equal(ui.run(`completedRunGainSummary({ anyLive: false }, {}, { A: { state: 'done' }, B: { state: 'skipped' } }, true, true).completed`), true)
+})
+
 test('available tasks say who moves each one next and give way to the selected task', () => {
   const tasks = {
     K: task('K', 'blocked', { blockReason: 'pick <the> API version', blockQuestion: 'Which API version should ship?',
@@ -1112,10 +1137,11 @@ test('available tasks say who moves each one next and give way to the selected t
     assert.match(list, /--role:var\(--running\)[\s\S]*\$ bun test auth[\s\S]*12 tests pass/)
     assert.match(list, /--role:var\(--planning\)/)
     assert.match(list, lang === 'en' ? /needs you/ : /precisa de você/)
-    const resultTask = ui.run("RESULT_TASK_ID = 'K'; renderResultTaskDetail(STATE)")
-    assert.match(resultTask, lang === 'en' ? /Decision question/ : /Pergunta para decisão/)
-    assert.match(resultTask, /v1 \/ v2/)
-    assert.match(resultTask, /v2/)
+    ui.run("POP_MODE = 'detail'; fillPop('K')")
+    const blockedDetail = ui.nodes.get('#popBody').innerHTML
+    assert.match(blockedDetail, lang === 'en' ? /Decision question/ : /Pergunta para decisão/)
+    assert.match(blockedDetail, /v1 \/ v2/)
+    ui.run('closePop()')
     const availableTarget = { closest(selector) { return selector === '.avail' ? this : null } }
     const emptyTarget = { closest() { return null } }
     ui.run('SIDEBAR_COLLAPSED = true; applySidebar()')
@@ -1386,56 +1412,36 @@ test('expanding the popover pins it, switches to detail and closing resets it', 
   assert.equal(ui.nodes.get('#popScrim').classList.contains('on'), false)
 })
 
-test('results task rows select inline details, preserve them on refresh, and navigate with arrows', () => {
+test('results tab holds only the gain card and the manual-coordination estimate', () => {
   const state = graphState(3, 3)
   state.tasks.T001.summary = 'A <summary>'
-  state.tasks.T001.validationSummary = 'Proof A'
-  state.tasks.T001.attempts = [{ n: 1, agent: 'exec-a', startedAt: instant(1), endedAt: instant(2), result: 'passed' }]
-  state.tasks.T001.validations = [{ ok: true, at: instant(2), evidence: 'check A passed' }]
-  const ui = dashboard()
-  ui.render(state)
-  ui.run("RESULTS_OPEN = true; $('#results').classList.add('open'); renderResults(STATE)")
-  assert.match(ui.nodes.get('#results').innerHTML, /role="button"[^>]*onclick="selectResultTask\('T001'\)"/)
-  const resultsTarget = { closest(selector) { return selector === '#results' ? this : null } }
+  state.tasks.T001.attempts = [{ n: 1, agent: 'exec-a', startedAt: instant(1), reviewStartedAt: instant(2), endedAt: instant(3), result: 'passed' },
+    { n: 2, agent: 'exec-a', startedAt: instant(4), endedAt: instant(5), result: 'passed' }]
+  state.tasks.T001.validations = [{ by: 'review', ok: false, at: instant(3), evidence: 'check A failed' }]
+  for (const lang of ['en', 'pt-BR']) {
+    const ui = dashboard(lang)
+    ui.render(state)
+    ui.run("RESULTS_OPEN = true; $('#results').classList.add('open'); renderResults(STATE)")
+    const results = ui.nodes.get('#results').innerHTML
+    assert.match(results, /^<div class="rstack" data-results-run="fixture-3">\s*<section class="gcard gain" id="gainPanel"[\s\S]*<\/section>\s*<section class="gcard manual" id="manualPanel"[\s\S]*<\/section><\/div>$/)
+    assert.equal((results.match(/<section /g) ?? []).length, 2, 'nothing else is rendered in the tab')
+    assert.doesNotMatch(results, /gantt|class="grow|result-task|gcard gate|gcard atime|class="rhead|class="insights|A &lt;summary&gt;/)
+    assert.doesNotMatch(results, lang === 'en' ? /Reviewer gate|Timeline|Agent time|Task detail/ : /Portão do revisor|Linha do tempo|Tempo dos agentes|Detalhe da tarefa/)
+    // 2 execution + 1 review + 1 retry = 4 commands at 3 min each
+    assert.match(results, lang === 'en'
+      ? /you would spend about <strong>12m00<\/strong> just coordinating the agents \(3 min per command × 4 commands\)/
+      : /gastaria cerca de <strong>12m00<\/strong> só coordenando os agentes \(3 min por comando × 4 comandos\)/)
+    assert.match(results, lang === 'en' ? /ESTIMATE · not a measurement/ : /ESTIMATIVA · não é medição/)
+    assert.doesNotMatch(results, /<input|<button|data-gain-minutes/, 'the 3-minute assumption is fixed, with no editable fields')
 
-  ui.dispatchDocument('click', { target: resultsTarget }, () => ui.run("selectResultTask('T001')"))
-  assert.equal(ui.run('RESULTS_OPEN'), true, 'selecting a timeline row keeps the results tab open')
-  assert.equal(ui.run('POP'), null, 'row selection renders inside the tab without a graph popover')
-  assert.match(ui.nodes.get('#results').innerHTML, /T001 · Task T001/)
-  assert.match(ui.nodes.get('#results').innerHTML, /A &lt;summary&gt;/)
-  assert.match(ui.nodes.get('#results').innerHTML, /Proof A/)
-  assert.match(ui.nodes.get('#results').innerHTML, /onclick="jumpTo\('T001'\)"/)
-
-  ui.dispatchDocument('click', { target: resultsTarget }, () => ui.run("selectResultTask('T002')"))
-  assert.equal(ui.run('RESULT_TASK_ID'), 'T002', 'a second row replaces the selected detail')
-  assert.match(ui.nodes.get('#results').innerHTML, /T002 · Task T002/)
-  assert.doesNotMatch(ui.nodes.get('#results').innerHTML, /A &lt;summary&gt;/)
-  ui.run('renderResults(STATE)')
-  assert.equal(ui.run('RESULT_TASK_ID'), 'T002', 'the selected detail survives a live results refresh')
-
-  const key = (value) => ui.dispatchDocument('keydown', {
-    key: value, target: { tagName: 'BODY' }, preventDefault() {},
-  })
-  key('ArrowUp')
-  assert.equal(ui.run('RESULT_TASK_ID'), 'T001')
-  key('ArrowDown')
-  assert.equal(ui.run('RESULT_TASK_ID'), 'T002')
-  ui.dispatchDocument('keydown', {
-    key: 'ArrowUp', target: { tagName: 'SELECT', closest() { return this } }, preventDefault() {},
-  })
-  assert.equal(ui.run('RESULT_TASK_ID'), 'T002', 'arrows keep working in the run selector')
-
-  const nextRun = graphState(1, 1)
-  nextRun.run = 'next-run'
-  ui.render(nextRun)
-  ui.run('renderResults(STATE)')
-  assert.equal(ui.run('RESULT_TASK_ID'), null, 'switching to a run without the task clears its detail')
-  assert.doesNotMatch(ui.nodes.get('#results').innerHTML, /class="result-task"/)
-
-  ui.run("selectResultTask('T001')")
-  ui.dispatchDocument('click', { target: resultsTarget }, () => ui.run("jumpTo('T001')"))
-  assert.equal(ui.run('RESULTS_OPEN'), false, 'the separate graph link closes the results tab')
-  assert.equal(ui.run('POP.id'), 'T001', 'the separate graph link keeps jumpTo navigation working')
+    const key = (value) => ui.dispatchDocument('keydown', { key: value, target: { tagName: 'BODY' }, preventDefault() {} })
+    key('ArrowDown')
+    assert.equal(ui.run('RESULTS_OPEN'), true, 'arrows no longer walk timeline rows')
+    const resultsTarget = { closest(selector) { return selector === '#results' ? this : null } }
+    ui.dispatchDocument('click', { target: resultsTarget }, () => ui.run("jumpTo('T001')"))
+    assert.equal(ui.run('RESULTS_OPEN'), false, 'task navigation still closes the results tab')
+    assert.equal(ui.run('POP.id'), 'T001')
+  }
 })
 
 test('jumping from results pans a tall graph until the target task is visible', () => {
@@ -1467,7 +1473,6 @@ test('explicit results navigation survives the click suppression left by draggin
 
   ui.run('toggleResults(); renderResults(STATE)')
   assert.equal(ui.run('RESULTS_OPEN'), true)
-  ui.run("selectResultTask('T048')")
   const resultsTarget = { closest(selector) { return selector === '#results' ? this : null } }
   ui.dispatchDocument('click', { target: resultsTarget }, () => ui.run("jumpTo('T048')"))
 
@@ -1515,10 +1520,7 @@ test('task planning envelopes stay unmeasured and are subtracted from execution 
   assert.equal(result.per.find((t) => t.id === 'P').queue, null)
   assert.equal(result.per.find((t) => t.id === 'L').queue, 10000)
   ui.run('FULL_EVENTS = inputEvents; renderResults(input)', { input: state, inputEvents: events })
-  assert.match(ui.nodes.get('#results').innerHTML, /Planning share/)
-  assert.match(ui.nodes.get('#results').innerHTML, /not measured/)
-  assert.doesNotMatch(ui.nodes.get('#results').innerHTML, /<i class="gs"[^>]*background:var\(--planning\)/)
-  assert.match(ui.nodes.get('#results').innerHTML, /Run still active/)
+  assert.match(ui.nodes.get('#results').innerHTML, /so far/, 'a live run is labelled as partial in the gain card')
 })
 
 test('results count shared phase planning once and keep pending runs live', () => {
@@ -1546,16 +1548,8 @@ test('results count shared phase planning once and keep pending runs live', () =
   assert.equal(result.criticalPathMeasured, false, 'a path that omits unmeasured phase planning is not authoritative')
   ui.run('FULL_EVENTS = inputEvents; renderResults(input)', { input: state, inputEvents: events })
   const results = ui.nodes.get('#results').innerHTML
-  assert.equal((results.match(/Active time not measured/g) ?? []).length, 5,
-    'the phase label, tooltip and critical-path indicator identify unmeasured time without showing the envelope')
-  assert.doesNotMatch(results, /open for|elapsed /)
+  assert.doesNotMatch(results, /open for|elapsed |1m40/, 'the unmeasured phase envelope never shows as time')
 })
-
-// Folded idle bands on the results timeline state the clock length of the pause on purpose;
-// everything else must still keep that envelope out of sight.
-const withoutPauseBands = (html) => html
-  .replace(/<span class="gbl idle"[^>]*>[^<]*<\/span>/g, '')
-  .replace(/<i class="gband idle"[^>]*><\/i>/g, '')
 
 test('gain card omits a long phase-planning envelope without active telemetry', () => {
   const elapsedSeconds = 115 * 3600 + 23 * 60
@@ -1670,8 +1664,7 @@ test('gain waits for complete events when an old block falls outside the last 12
   const completeCard = gainCardOf(completeHtml)
   assert.match(completeCard, /20s/)
   assert.doesNotMatch(completeCard, /115h|115:23/)
-  assert.match(completeHtml, /<span class="gbl idle"[^>]*>⋯ 115h23 parado<\/span>/, 'the folded pause states how long nobody worked')
-  assert.doesNotMatch(withoutPauseBands(completeHtml), /115h|115:23/, 'the pause length appears only on its folded band')
+  assert.doesNotMatch(completeHtml, /115h|115:23/, 'the pause length never appears on the results tab')
 
   ui.run('EVENTS_COMPLETE = false; FULL_EVENTS = recent; renderResults(input)', { input, recent: recentEvents })
   const truncatedResult = ui.run('analyse(input, recent)', { input, recent: recentEvents })
@@ -1694,19 +1687,20 @@ test('gain waits for complete events when an old block falls outside the last 12
 test('the gain card opens the results tab and shows a human estimate only from manualEstimate', async () => {
   const ui = dashboard('en')
   const first = { run: 'first', createdAt: instant(0), plan: {}, tasks: { A: task('A') }, derived: {} }
-  const next = { ...first, tasks: { A: task('A', 'done', { title: 'Updated task' }) }, derived: { A: { effective: 'done' } } }
+  const next = { ...first, tasks: { A: task('A', 'done', { attempts: [{ n: 1 }] }) }, derived: { A: { effective: 'done' } } }
   ui.run("STATE = input; SELECTED_ROOT = 'root-a'; SELECTED_RUN = 'first'; CURRENT_ROOT = 'root-a'; CURRENT_RUN = 'first'; STATE_RUN_KEY = 'root-a\\0first'; EVENT_HISTORY_KEY = STATE_RUN_KEY; EVENTS_COMPLETE = true; RESULTS_OPEN = true; renderResults(input)", { input: first })
   const original = ui.nodes.get('#results').innerHTML
-  assert.equal(original.trimStart().indexOf('<section class="gcard gain"'), 0, 'the gain card is the first thing in the tab')
-  assert.ok(original.indexOf('id="gainPanel"') < original.indexOf('class="rhead"'))
-  assert.doesNotMatch(original, /<input|data-gain-minutes|Manual coordination estimate|Human estimate/,
+  assert.match(original, /^<div class="rstack" data-results-run="first">\s*<section class="gcard gain"/, 'the gain card is the first thing in the tab')
+  assert.ok(original.indexOf('id="gainPanel"') < original.indexOf('id="manualPanel"'), 'the estimate sits below the gain card')
+  assert.doesNotMatch(original, /<input|data-gain-minutes|Human estimate/,
     'without manualEstimate there is no human estimate and no editable per-event minutes')
+  assert.match(original, /No execution, review or retry command recorded yet/)
 
   ui.run('STATE = input', { input: next })
   const fetch = async () => ({ json: async () => ({ events: [] }) })
   await ui.run('loadResults()', { fetch })
   assert.notEqual(ui.nodes.get('#results').innerHTML, original)
-  assert.match(ui.nodes.get('#results').innerHTML, /Updated task/)
+  assert.match(ui.nodes.get('#results').innerHTML, /about <strong>3m00<\/strong>[^<]*\(3 min per command × 1 command\)/)
 
   const estimated = { ...next, tasks: {
     A: task('A', 'done', { manualEstimate: 90 }), B: task('B', 'done', { manualEstimate: 'not a number' }), C: task('C', 'done'),
@@ -1716,26 +1710,6 @@ test('the gain card opens the results tab and shows a human estimate only from m
   assert.match(card, /Human estimate: 1h30/)
   assert.match(card, /estimate · not measured/)
   assert.match(card, /for 1 of 3 tasks/, 'invalid or missing estimates are ignored silently and the coverage is stated')
-})
-
-test('the results time axis folds long gaps but keeps measured spans and boundaries exact', () => {
-  const ui = dashboard()
-  const values = JSON.parse(ui.run("(() => { const m = 60000; const axis = buildTimeAxis(0, 600*m, [[0, 5*m], [360*m, 365*m]], [[120*m, 240*m]]); const overlap = buildTimeAxis(0, 10*m, [[0, 6*m], [4*m, 10*m]]); const exact = buildTimeAxis(0, 30*m, [], []); const over = buildTimeAxis(0, 31*m, [], []); const zero = buildTimeAxis(7, 7, [[NaN, 20]], [[7, NaN]]); return JSON.stringify({ width: axis.width, activeFirst: axis.position(5*m) - axis.position(0), activeSecond: axis.position(365*m) - axis.position(360*m), idle: axis.breaks.map(gap => gap.duration), unmeasured: axis.unmeasured.map(gap => gap.duration), unmeasuredWidth: axis.position(240*m) - axis.position(120*m), overlapWidth: overlap.width, exactWidth: exact.width, exactBreaks: exact.breaks.length, overWidth: over.width, overBreaks: over.breaks.map(gap => gap.duration), zeroWidth: zero.width, zeroPosition: zero.position(7), zeroTime: zero.timeAt(1) }) })()"))
-  assert.equal(values.width, 130 * 60000)
-  assert.equal(values.activeFirst, 5 * 60000)
-  assert.equal(values.activeSecond, 5 * 60000)
-  assert.deepEqual(values.idle, [115, 120, 235].map(minutes => minutes * 60000))
-  assert.deepEqual(values.unmeasured, [120 * 60000])
-  assert.equal(values.unmeasuredWidth, 30 * 60000)
-  assert.equal(values.overlapWidth, 10 * 60000, 'overlapping activity counts once and retains its true width')
-  assert.equal(values.exactWidth, 30 * 60000, 'the exact threshold does not fold')
-  assert.equal(values.exactBreaks, 0)
-  assert.equal(values.overWidth, 30 * 60000, 'gaps above the threshold fold to 30 minutes')
-  assert.deepEqual(values.overBreaks, [31 * 60000])
-  assert.equal(values.zeroWidth, 1, 'an empty or invalid timeline stays finite')
-  assert.equal(values.zeroPosition, 0)
-  assert.equal(values.zeroTime, 7)
-  assert.match(html, /\.grow \.gs[^}]*min-width: 5px/)
 })
 
 test('mobile header puts filters and counters behind a compact menu below 700px', () => {
@@ -1781,7 +1755,7 @@ test('results and back-to-graph are one CTA whose label alternates', async () =>
   assert.match(html, /#resBtn \{[^}]*min-width: 112px; height: 32px;[^}]*background: var\(--accent\)/)
   assert.doesNotMatch(html, /class="rback"/, 'no second, differently styled back button')
   await ui.run('toggleResults()')
-  assert.equal(ui.nodes.get('#resBtn').textContent, '← grafo')
+  assert.equal(ui.nodes.get('#resBtn').textContent, 'grafo')
   assert.equal(ui.nodes.get('#resBtn').getAttribute('aria-pressed'), 'true')
   await ui.run('toggleResults()')
   assert.equal(ui.nodes.get('#resBtn').textContent, 'resultados')
@@ -1889,15 +1863,8 @@ test('115h23 phase envelope stays out of displayed time while measured work and 
     assert.doesNotMatch(graph, /115h|76h|192h|115:23|24h/)
     ui.run('FULL_EVENTS = inputEvents; renderResults(input)', { input: state, inputEvents: events })
     const results = ui.nodes.get('#results').innerHTML
-    assert.equal((results.match(/tempo ativo não aferido/g) ?? []).length, 3,
-      'phase label, tooltip and critical-path indicator state the measurement limit without elapsed hours')
-    assert.ok(results.includes('F0 · Fase curta'))
-    assert.ok(results.includes('F0 · Título completo da fase F0 muito grande'))
-    assert.ok(results.includes('title="A tarefa tem um título muito comprido"'))
-    assert.ok(results.includes('Tarefa curta'))
-    assert.ok(results.includes('>5s</span>'))
-    assert.doesNotMatch(results, /class="cp-tag"/)
-    assert.match(results, /Caminho crítico[\s\S]*tempo ativo não aferido/)
+    assert.match(results, /Ganho com paralelismo/)
+    assert.doesNotMatch(results, /Caminho crítico/, 'an unmeasured critical path is not shown')
     assert.doesNotMatch(results, /115h|76h|192h|115h23|aberta por|decorrido/)
   }
 })
@@ -1932,9 +1899,8 @@ test('blocked execution keeps only its two measured slices across graph, results
 
   ui.run('FULL_EVENTS = inputEvents; RESULTS_OPEN = true; renderResults(STATE)', { inputEvents: events })
   const results = ui.nodes.get('#results').innerHTML
-  assert.match(results, /10s/)
-  assert.match(results, /⋯ 115h23 parado/)
-  assert.doesNotMatch(withoutPauseBands(results), /115h|76h|192h|115:23|24h|115 hours/)
+  assert.match(results, /Ganho com paralelismo/)
+  assert.doesNotMatch(results, /115h|76h|192h|115:23|24h|115 hours/)
 
   ui.run("POP = { id: 'A', pinned: true }; POP_MODE = 'lean'; fillPop('A')")
   const popover = ui.nodes.get('#popBody').innerHTML
@@ -1975,7 +1941,7 @@ test('more than 120 events preserve long pauses and never display unmeasured env
   assert.match(ui.nodes.get('#popBody').innerHTML, /Agent time[\s\S]*· not measured/)
   ui.run('FULL_EVENTS = inputEvents; RESULTS_OPEN = true; renderResults(STATE)', { inputEvents: truncated })
   const incompleteResults = ui.nodes.get('#results').innerHTML
-  assert.match(incompleteResults, /tempo ativo não aferido|Active time not measured/)
+  assert.match(incompleteResults, /Event history is incomplete; technical gain is not measured\./)
   assert.doesNotMatch(incompleteResults, /115h|115:23|415390s/)
 
   ui.run('EVENTS_COMPLETE = true; FULL_EVENTS = inputEvents; EVENTS = inputEvents; render(STATE, inputEvents); renderResults(STATE)',
@@ -1987,8 +1953,7 @@ test('more than 120 events preserve long pauses and never display unmeasured env
   assert.match(ui.nodes.get('#orch').innerHTML, /aria-label="Agent time: 00:00:10 · not measured"/)
   const visibleWithCompleteHistory = ['#orch', '#doneCount', '#parallel', '#results', '#popBody']
     .map((selector) => ui.nodes.get(selector).innerHTML + ui.nodes.get(selector).textContent).join('\n')
-  assert.match(ui.nodes.get('#results').innerHTML, /⋯ 115h23 idle/, 'the folded wait on the timeline states its length')
-  assert.doesNotMatch(withoutPauseBands(visibleWithCompleteHistory), /115h|115:23|415390s/)
+  assert.doesNotMatch(visibleWithCompleteHistory, /115h|115:23|415390s/)
 })
 
 test('late event pages from a previous run cannot contaminate the newly selected run', async () => {
@@ -2132,12 +2097,12 @@ test('late result events from run A cannot replace results for run B', async () 
   for (let tries = 0; tries < 60 && ui.run("STATE?.run !== 'run-b' || !EVENTS_COMPLETE || !$('#results').innerHTML.includes('run-b')"); tries++)
     await Promise.resolve()
   assert.equal(ui.run('STATE.run'), 'run-b')
-  assert.match(ui.nodes.get('#results').innerHTML, /results · run-b/)
+  assert.match(ui.nodes.get('#results').innerHTML, /data-results-run="run-b"/)
 
   resolveEventsA({ events: [{ id: 'stale-run-a-event' }], next: 1, total: 1, complete: true, revision: 'rev-a' })
   await oldResults
-  assert.match(ui.nodes.get('#results').innerHTML, /results · run-b/)
-  assert.doesNotMatch(ui.nodes.get('#results').innerHTML, /results · run-a|stale-run-a-event/)
+  assert.match(ui.nodes.get('#results').innerHTML, /data-results-run="run-b"/)
+  assert.doesNotMatch(ui.nodes.get('#results').innerHTML, /data-results-run="run-a"|stale-run-a-event/)
   assert.equal(ui.run('EVENT_HISTORY_KEY'), 'root-b\u0000run-b')
   assert.deepEqual(JSON.parse(ui.run('JSON.stringify(FULL_EVENTS)')), [{ id: 'run-b-event' }])
 })
@@ -2177,7 +2142,7 @@ test('opening results while the selected run state is still loading never shows 
   for (let tries = 0; tries < 60 && ui.run("STATE?.run !== 'run-b' || !EVENTS_COMPLETE || !$('#results').innerHTML.includes('run-b')"); tries++)
     await Promise.resolve()
   assert.equal(ui.run('STATE.run'), 'run-b')
-  assert.match(ui.nodes.get('#results').innerHTML, /results · run-b/)
+  assert.match(ui.nodes.get('#results').innerHTML, /data-results-run="run-b"/)
   assert.equal(ui.nodes.get('#results').getAttribute('aria-busy'), 'false')
 })
 
@@ -2214,11 +2179,11 @@ test('tick repinta o ganho sem campos editáveis; ao trocar de run, limpa A e ex
   assert.equal(ui.nodes.get('#results').innerHTML, '')
   assert.equal(ui.nodes.get('#results').getAttribute('aria-busy'), 'true')
   assert.equal(ui.run('STATE'), null)
-  for (let tries = 0; tries < 60 && ui.run("STATE?.run !== 'run-b' || !EVENTS_COMPLETE || !$('#results').innerHTML.includes('results · run-b')"); tries++)
+  for (let tries = 0; tries < 60 && ui.run("STATE?.run !== 'run-b' || !EVENTS_COMPLETE || !$('#results').innerHTML.includes('data-results-run=\"run-b\"')"); tries++)
     await Promise.resolve()
   assert.equal(ui.run('STATE.run'), 'run-b')
-  assert.match(ui.nodes.get('#results').innerHTML, /results · run-b/)
-  assert.doesNotMatch(ui.nodes.get('#results').innerHTML, /results · run-a|data-run="A"/)
+  assert.match(ui.nodes.get('#results').innerHTML, /data-results-run="run-b"/)
+  assert.doesNotMatch(ui.nodes.get('#results').innerHTML, /data-results-run="run-a"|data-run="A"/)
 })
 test('closing results while event history is pending prevents a late repaint', async () => {
   const ui = dashboard()
@@ -2287,11 +2252,8 @@ test('115h task planning envelopes stay unmeasured and cannot inflate the critic
   assert.doesNotMatch(graph, /115h|115:23|415390s/)
   ui.run('FULL_EVENTS = inputEvents; renderResults(input)', { input: state, inputEvents: events })
   const results = ui.nodes.get('#results').innerHTML
-  assert.match(results, /tempo ativo não aferido/)
-  assert.doesNotMatch(results, /class="cp-tag"|115h|115:23|415390s/)
-  assert.match(results, /class="gband unmeasured"[^>]*title="Sem registro de atividade de [^"]+ a [^"]+; recolhido/,
-    'the unmeasured band says when it happened, without a length that could read as work')
-  assert.doesNotMatch(results, /class="kcp"/, 'the legend omits the critical path when it was not measured')
+  assert.match(results, /períodos não aferidos ficam fora/)
+  assert.doesNotMatch(results, /Caminho crítico|115h|115:23|415390s/, 'an unmeasured critical path is not shown')
   ui.run("POP = { id: 'P', pinned: true }; POP_MODE = 'lean'; fillPop('P')")
   assert.match(ui.nodes.get('#popBody').innerHTML, /Agent time[\s\S]*· 5s · não aferido/)
   assert.doesNotMatch(ui.nodes.get('#popBody').innerHTML, /115h|115:23|415390s/)
@@ -2445,7 +2407,7 @@ test('open execution without progress telemetry stays unmeasured in every visibl
   assert.match(graph, /não aferido/)
   assert.doesNotMatch(graph, /115h|76h|192h|115:23|24h/)
   ui.run('FULL_EVENTS = inputEvents; renderResults(STATE)', { inputEvents: events })
-  assert.match(ui.nodes.get('#results').innerHTML, /tempo ativo não aferido/)
+  assert.match(ui.nodes.get('#results').innerHTML, /Não aferido/)
   assert.doesNotMatch(ui.nodes.get('#results').innerHTML, /115h|76h|192h|115:23|24h/)
   ui.run("POP = { id: 'A', pinned: true }; POP_MODE = 'lean'; fillPop('A')")
   assert.match(ui.nodes.get('#popBody').innerHTML, /não aferido/)
@@ -2527,33 +2489,8 @@ test('task labels, summaries and plan identities stay visible across concise and
   assert.ok(lean.includes('Plano bbbb'))
   assert.ok(lean.includes('mudou de aaaa'), 'the journey calls out a changed plan between attempts')
 
-  ui.run("RESULTS_OPEN = true; $('#results').classList.add('open'); selectResultTask('T001')")
-  const history = ui.nodes.get('#results').innerHTML
-  assert.ok(history.includes('Cartões'), 'the timeline and rework history use the business label')
-  assert.ok(history.includes(value.title), 'history retains the full title in its tooltip')
-  assert.ok(history.includes('A conta ainda mostra o status anterior.'), 'the reviewer gate prefers its validation summary')
-  assert.ok(history.includes('Complete observation two.'), 'selected history retains the full evidence')
-  assert.ok(history.includes('mudou de aaaa'), 'selected history records the plan change')
-})
-
-test('adjacent unmeasured and idle stretches fold into side-by-side bands, never on the same spot', () => {
-  const planStart = instant(100 - 6 * 3600)
-  const taskValue = task('P', 'done', {
-    planningAttempts: [{ startedAt: planStart, endedAt: instant(100 - 3 * 3600) }],
-    attempts: [{ n: 1, startedAt: instant(95), endedAt: instant(100) }],
-  })
-  const state = { run: 'adjacent-bands', createdAt: planStart, plan: {}, tasks: { P: taskValue }, derived: { P: { effective: 'done' } } }
-  const events = [
-    { type: 'task_start', task: 'P', attempt: 1, at: instant(95) },
-    { type: 'task_progress', task: 'P', attempt: 1, at: instant(100) },
-    { type: 'task_done', task: 'P', attempt: 1, at: instant(100) },
-  ]
-  const ui = dashboard('en')
-  ui.run('FULL_EVENTS = inputEvents; renderResults(input)', { input: state, inputEvents: events })
-  const results = ui.nodes.get('#results').innerHTML
-  const bands = [...results.matchAll(/<i class="gband (idle|unmeasured)" style="left:([\d.]+)px"/g)].map(([, kind, left]) => [kind, Number(left)])
-  assert.deepEqual(bands.map(([kind]) => kind).sort(), ['idle', 'unmeasured'])
-  assert.ok(Math.abs(bands[0][1] - bands[1][1]) >= 20, `bands overlap: ${JSON.stringify(bands)}`)
-  assert.match(results, /⋯ 2h59 idle/)
-  assert.doesNotMatch(withoutPauseBands(results), /2h59/)
+  ui.run("POP_MODE = 'detail'; fillPop('T001')")
+  const history = ui.nodes.get('#popBody').innerHTML
+  assert.ok(history.includes('A conta ainda mostra o status anterior.'), 'the detail view keeps the validation summary')
+  assert.ok(history.includes('Complete observation two.'), 'the detail view retains the full evidence')
 })
