@@ -18,7 +18,7 @@ const smoke = join(repo, 'scripts/legacy-update-smoke.mjs')
 // PRUMO_UPGRADE_TAGS=all runs every tag from v1.0.2; a comma list selects specific tags.
 const representative = ['v1.0.2', 'v1.2.2', 'v1.3.2', 'v1.3.16']
 const scenarioTimeout = Number(process.env.PRUMO_UPGRADE_SCENARIO_TIMEOUT ?? 360000)
-const parallel = Math.max(1, Number(process.env.PRUMO_UPGRADE_PARALLEL ?? 2))
+const parallel = Math.max(1, Number(process.env.PRUMO_UPGRADE_PARALLEL ?? (process.platform === 'win32' ? 1 : 2)))
 
 const npm = args => process.platform === 'win32'
   ? [process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', 'npm', ...args]] : ['npm', args]

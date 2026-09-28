@@ -54,7 +54,7 @@ async function waitForDashboard(accept, preparation = '') {
     if (Date.now() > deadline) {
       let events = ''
       try { events = readFileSync(join(home, '.local/share/prumo/dashboard-events.ndjson'), 'utf8').trim().split('\n').slice(-10).join('\n') } catch { /* no events */ }
-      throw new Error(`dashboard did not reach the expected state: ${JSON.stringify(body)}\n${events}\n${preparation}`)
+      throw new Error(`dashboard did not reach the expected state: ${JSON.stringify(body)}\n${events}\n${typeof preparation === 'function' ? preparation() : preparation}`)
     }
     await new Promise(resolve => setTimeout(resolve, 200))
   }
@@ -160,7 +160,7 @@ function startDone(root, label) {
     resume('start', 'DONE', '--agent', 'executor')
   }
 }
-let registry
+let registry, previousDashboardClosed
 try {
   mkdirSync(project)
   put(join(home, '.claude/settings.json'), {})
@@ -180,14 +180,25 @@ try {
     dashboardPort = await freePort()
     env.PRUMO_TEST_DASHBOARD_PORT = String(dashboardPort)
     put(dashboardPreference, { enabled: false, mechanism: process.platform === 'win32' ? 'windows-startup' : 'xdg' })
+    // O cenário de atualização começa com o dashboard antigo em execução, inclusive quando seu lançador histórico falha.
+    const previousDashboard = spawn(process.execPath, [join(installed, 'scripts/serve.mjs'), '--global', '--port', '4949'],
+      { cwd: project, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
+    dashboardPids.add(previousDashboard.pid)
+    previousDashboardClosed = new Promise(resolve => previousDashboard.once('close', resolve))
+    let previousOutput = ''
+    previousDashboard.on('error', error => { previousOutput += error.message })
+    previousDashboard.stdout.on('data', value => { previousOutput += value })
+    previousDashboard.stderr.on('data', value => { previousOutput += value })
+    await waitForDashboard(body => body.product === 'prumo' && body.version === fromVersion,
+      () => `dashboard (${fromVersion}): exit=${previousDashboard.exitCode}\n${previousOutput}`)
     const enable = spawnSync(process.execPath, [cli, 'dashboard', 'enable'], { cwd: project, env, encoding: 'utf8', windowsHide: true, timeout: 180000 })
     // The old release may not confirm the pid it started (seen on Windows); the dashboard must still serve.
     evidence.push({ args: ['dashboard', 'enable'], status: enable.status, stdout: enable.stdout, stderr: enable.stderr })
     assert.ifError(enable.error)
     const health = await waitForDashboard(body => body.product === 'prumo' && body.version === fromVersion,
-      `dashboard enable (${fromVersion}): status=${enable.status}\n${enable.stdout}\n${enable.stderr}`)
+      `dashboard enable (${fromVersion}): status=${enable.status}\n${enable.stdout}\n${enable.stderr}\n${previousOutput}`)
     const preference = JSON.parse(readFileSync(dashboardPreference, 'utf8'))
-    dashboardBefore = { pid: health.pid ?? preference.pid }
+    dashboardBefore = { pid: health.pid ?? preference.pid ?? previousDashboard.pid }
     if (dashboardBefore.pid) dashboardPids.add(dashboardBefore.pid)
     // The state a failed restart left on the user's machine: enabled, without a recorded pid.
     delete preference.pid
@@ -411,6 +422,7 @@ try {
 } finally {
   await dashboardHealth()
   for (const pid of dashboardPids) try { process.kill(pid) } catch { /* already stopped */ }
+  if (previousDashboardClosed) await previousDashboardClosed
   if (registry && registry.exitCode === null && registry.signalCode === null) { const closed = new Promise(resolve => registry.once('exit', resolve)); registry.kill(); await closed }
   put(join(repo, `.test-output/legacy-update-${fromVersion}.json`), evidence)
   assert.equal(dirname(home), realpathSync(tmpdir()))
