@@ -1,0 +1,176 @@
+{
+  "run": "legacy",
+  "plan": {
+    "name": "Legacy release",
+    "description": "",
+    "phases": [
+      {
+        "id": "F1",
+        "title": "Merged"
+      },
+      {
+        "id": "F2",
+        "title": "Remaining"
+      }
+    ],
+    "maxParallel": 4,
+    "maxExecutors": 3,
+    "requireReview": true,
+    "source": "legacy.plan.json"
+  },
+  "createdAt": "2026-09-28T13:18:50.342Z",
+  "tasks": {
+    "DONE": {
+      "id": "DONE",
+      "phase": "F1",
+      "title": "Merged task",
+      "deps": [],
+      "validation": "Documentation inspected",
+      "validationMode": "inspection",
+      "inspectionReason": "Inspect fixture documentation",
+      "tags": [],
+      "touches": [],
+      "state": "running",
+      "discoveryRequired": true,
+      "planningRequired": true,
+      "planner": "planner",
+      "planningAttempts": [
+        {
+          "n": 1,
+          "agent": "planner",
+          "startedAt": "2026-09-28T13:18:50.873Z",
+          "context": "8b7cb586d2e08cc526b4cfa4016c7647b2e1fc926ec8347faa35749bce57445f",
+          "attempt": 1,
+          "discoveryDigest": "21d61c5f249ba382ca711285617824336e23c74260bb0d9a8834ed6d9a8eabe0",
+          "endedAt": "2026-09-28T13:18:51.248Z",
+          "result": "planned"
+        }
+      ],
+      "planningHistory": [
+        {
+          "research": [
+            {
+              "source": "plan.json",
+              "findings": "Documentation inspection is sufficient for this task."
+            }
+          ],
+          "decisions": [],
+          "steps": [
+            "Inspect the fixture document."
+          ],
+          "verification": [
+            {
+              "criterion": "Documentation inspected",
+              "check": "inspection"
+            }
+          ],
+          "openQuestions": [],
+          "planner": "planner",
+          "startedAt": "2026-09-28T13:18:50.873Z",
+          "completedAt": "2026-09-28T13:18:51.245Z",
+          "context": "8b7cb586d2e08cc526b4cfa4016c7647b2e1fc926ec8347faa35749bce57445f",
+          "scope": "9c57ea4af5b960ca9f49d3eac76cb642fa41f6555ae29006bf86d3e391028f6e",
+          "attempt": 1,
+          "discoveryDigest": "21d61c5f249ba382ca711285617824336e23c74260bb0d9a8834ed6d9a8eabe0"
+        }
+      ],
+      "agent": "executor",
+      "reviewer": null,
+      "attempts": [
+        {
+          "n": 1,
+          "agent": "executor",
+          "startedAt": "2026-09-28T13:18:51.586Z",
+          "executionStep": 1
+        }
+      ],
+      "validations": [],
+      "notes": [],
+      "discovery": {
+        "research": [
+          {
+            "source": "plan.json",
+            "findings": "Documentation-only task with an approved inspection contract."
+          }
+        ],
+        "questions": [
+          {
+            "question": "Inspect the fixture document?",
+            "answer": "Yes.",
+            "channel": "chat-fallback",
+            "round": 1
+          }
+        ],
+        "coverage": {
+          "problem": "Documentation",
+          "affected": "Readers",
+          "outcome": "Reviewed document",
+          "currentBehavior": "Pending",
+          "desiredBehavior": "Reviewed",
+          "rules": "Independent review",
+          "exceptions": "None",
+          "scope": "DONE",
+          "acceptance": "Document inspected"
+        },
+        "decisions": [],
+        "deferred": [],
+        "closure": "Inspection scope approved.",
+        "recordedAt": "2026-09-28T13:18:50.869Z",
+        "context": "8b7cb586d2e08cc526b4cfa4016c7647b2e1fc926ec8347faa35749bce57445f",
+        "attempt": 1,
+        "digest": "21d61c5f249ba382ca711285617824336e23c74260bb0d9a8834ed6d9a8eabe0"
+      },
+      "taskPlan": {
+        "research": [
+          {
+            "source": "plan.json",
+            "findings": "Documentation inspection is sufficient for this task."
+          }
+        ],
+        "decisions": [],
+        "steps": [
+          "Inspect the fixture document."
+        ],
+        "verification": [
+          {
+            "criterion": "Documentation inspected",
+            "check": "inspection"
+          }
+        ],
+        "openQuestions": [],
+        "planner": "planner",
+        "startedAt": "2026-09-28T13:18:50.873Z",
+        "completedAt": "2026-09-28T13:18:51.245Z",
+        "context": "8b7cb586d2e08cc526b4cfa4016c7647b2e1fc926ec8347faa35749bce57445f",
+        "scope": "9c57ea4af5b960ca9f49d3eac76cb642fa41f6555ae29006bf86d3e391028f6e",
+        "attempt": 1,
+        "discoveryDigest": "21d61c5f249ba382ca711285617824336e23c74260bb0d9a8834ed6d9a8eabe0"
+      }
+    },
+    "NEXT": {
+      "id": "NEXT",
+      "phase": "F2",
+      "title": "Pending",
+      "deps": [
+        "DONE"
+      ],
+      "validation": "Legacy prose",
+      "validationMode": "inspection",
+      "inspectionReason": "Inspect",
+      "tags": [],
+      "touches": [],
+      "state": "pending",
+      "discoveryRequired": true,
+      "planningRequired": true,
+      "planner": null,
+      "planningAttempts": [],
+      "planningHistory": [],
+      "agent": null,
+      "reviewer": null,
+      "attempts": [],
+      "validations": [],
+      "notes": []
+    }
+  },
+  "updatedAt": "2026-09-28T13:18:51.590Z"
+}

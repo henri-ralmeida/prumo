@@ -191,8 +191,8 @@ function migrationStatus(state) {
       // and phase planners while that workflow is in flight. An already
       // started legacy attempt is safe to keep on its old lifecycle, however;
       // making it a migration blocker is what used to freeze unrelated work.
-      const currentPlanning = task.planningRequired === true ||
-        (!executionStarted && task.planningRequired !== false)
+      // A 1.2 task-mode attempt also closed its own task plan before execution.
+      const currentPlanning = !executionStarted && task.planningRequired !== false
       if (currentPlanning && !['pending', 'failed', 'blocked'].includes(task.state)) reasons.push(`state ${task.state}`)
       if (currentPlanning && executionStarted) reasons.push(`${task.attempts.length} execution attempt(s)`)
       if (openDiscussion) reasons.push('open discussion')
@@ -2827,7 +2827,9 @@ const commands = {
     const unscoped = assertTaskExecutionAuthorized(state, t)
     const dispatchConfirmation = manualDispatchConfirmation(t, 'manual authorization for {0} requires --confirmed-by-user before dispatch')
     assertNoOverdueQuestions(state, t)
-    if (!hasCurrentTaskPlan(state, t)) die(id + ' needs completed current planning — run plan-task and finish-planning before start')
+    if (!hasCurrentTaskPlan(state, t)) die(state.plan.planningMode === 'phase' && t.phase
+      ? `${id} needs completed current planning for phase ${t.phase} — run begin-phase-discussion ${t.phase}, finish-phase-discussion, plan-phase and finish-phase-planning before start`
+      : id + ' needs completed current planning — run plan-task and finish-planning before start')
     try { validationContract(t) } catch (error) {
       die(`${id} has an invalid legacy validation contract: ${error.message} — correct the approved plan and run sync-plan before start`)
     }
@@ -3384,7 +3386,10 @@ function assertMigrationCommandAllowed(state, command) {
   const phase = state.phaseWorkflows?.[args._[0]]
   if (command === 'finish-phase-discussion' && phase?.discussionAttempts?.some(round => !round.endedAt)) return
   if (command === 'finish-phase-planning' && phase?.planningAttempts?.some(round => !round.endedAt)) return
-  const legacyAttempt = task && task.planningRequired !== true && (task.attempts?.length ?? 0) > 0
+  // A 1.2 task-mode attempt carries planningRequired, but its task plan closed before execution:
+  // it continues on that recorded plan while other blockers defer the structural migration.
+  const openWorkflow = task?.discussionAttempts?.some(round => !round.endedAt) || task?.planningAttempts?.some(round => !round.endedAt)
+  const legacyAttempt = task && (task.attempts?.length ?? 0) > 0 && (task.planningRequired !== true || !openWorkflow)
   if (legacyAttempt && LEGACY_MIGRATION_CONTINUATIONS.has(command)) return
   die('migration is blocked by unsafe in-flight planning; only legacy attempt continuation, read-only commands, sync-plan and note are allowed')
 }

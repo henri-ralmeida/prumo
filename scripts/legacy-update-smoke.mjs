@@ -3,7 +3,8 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { spawnSync, fork } from 'node:child_process'
+import { spawnSync, spawn, fork } from 'node:child_process'
+import { createServer } from 'node:net'
 
 // Exercise an actual published updater against a local registry serving the candidate.
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -12,6 +13,13 @@ const fromVersion = process.argv[2] ?? '1.0.8'
 assert.match(fromVersion, /^\d+\.\d+\.\d+$/)
 const archive = process.argv[3] ?? join(repo, `henri-ralmeida-prumo-${fromVersion}.tgz`)
 const phaseEra = Number(fromVersion.split('.')[1]) >= 3
+// From 1.1.0 prose validation is accepted only for a justified inspection task.
+const since = version => fromVersion.split('.').map(Number).reduce((result, value, index) => result || value - version.split('.').map(Number)[index], 0) >= 0
+const inspectionEra = since('1.1.0')
+// 1.2.x planned each task before execution; 1.2.1 added the discovery context.
+const taskEra = since('1.2.0') && !phaseEra
+// A tag-built archive can replace the repository-root candidate produced by `npm pack`.
+const candidate = process.env.PRUMO_CANDIDATE_ARCHIVE ?? join(repo, `henri-ralmeida-prumo-${pkg.version}.tgz`)
 const home = realpathSync(mkdtempSync(join(tmpdir(), 'prumo-legacy-smoke-')))
 const project = join(home, 'project'), prefix = join(home, 'npm-global')
 const installed = join(prefix, process.platform === 'win32' ? 'node_modules' : 'lib/node_modules', '@henri-ralmeida/prumo')
@@ -42,6 +50,88 @@ function run(file, args, extra = {}, expected = 0) {
   assert.equal(result.status, expected, result.stdout + result.stderr)
   return result.stdout
 }
+async function freePort() {
+  const probe = createServer()
+  await new Promise((resolve, reject) => { probe.once('error', reject); probe.listen(0, '127.0.0.1', resolve) })
+  const { port } = probe.address()
+  await new Promise(resolve => probe.close(resolve))
+  return port
+}
+// The updated global dashboard must read untouched legacy state files without errors.
+async function checkDashboard(labels) {
+  const port = await freePort()
+  const server = spawn(process.execPath, [join(installed, 'scripts/serve.mjs'), '--global', '--port', String(port)],
+    { cwd: project, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
+  let output = ''
+  server.stdout.on('data', value => { output += value })
+  server.stderr.on('data', value => { output += value })
+  const exited = new Promise(resolve => server.once('exit', resolve))
+  const get = async path => {
+    const response = await fetch(`http://127.0.0.1:${port}${path}`, { signal: AbortSignal.timeout(10000) })
+    return { status: response.status, body: await response.json() }
+  }
+  try {
+    const deadline = Date.now() + 30000
+    for (;;) {
+      if (server.exitCode !== null) throw new Error(`dashboard exited early: ${output}`)
+      try { if ((await get('/api/health')).status === 200) break } catch { /* not listening yet */ }
+      if (Date.now() > deadline) throw new Error(`dashboard did not start: ${output}`)
+      await new Promise(resolve => setTimeout(resolve, 200))
+    }
+    const health = await get('/api/health')
+    assert.equal(health.body.version, pkg.version)
+    const runs = await get('/api/runs')
+    assert.equal(runs.status, 200)
+    for (const label of labels) {
+      const root = `${basename(newRoot)}-${label}`
+      assert.ok(runs.body.runs.some(entry => entry.root === root && entry.run === 'legacy'), `dashboard lists ${root}: ${JSON.stringify(runs.body)}`)
+      const state = await get(`/api/state?root=${encodeURIComponent(root)}&run=legacy`)
+      assert.equal(state.status, 200, JSON.stringify(state.body))
+      assert.equal(state.body.plan.name, 'Legacy release')
+      assert.ok(state.body.derived && state.body.tasks.DONE, `derived state for ${root}`)
+    }
+    evidence.push({ dashboard: { port, runs: runs.body.runs.length, warnings: runs.body.warnings } })
+  } finally {
+    if (server.exitCode === null) server.kill()
+    await exited
+  }
+}
+// Starts DONE; a 1.2 task-planned task without a current plan follows the adopted phase
+// workflow that the engine names, which is the path a user takes after the update.
+function startDone(root, label) {
+  const resume = (...args) => run(process.execPath, [engine, ...args, '--run', 'legacy'], { PRUMO_ROOT: root })
+  const stateFile = join(root, '.specs/graph/legacy/state.json')
+  const start = ['start', 'DONE', '--agent', 'executor', '--run', 'legacy']
+  const first = spawnSync(process.execPath, [engine, ...start], { cwd: project, env: { ...env, PRUMO_ROOT: root }, encoding: 'utf8', windowsHide: true, timeout: 120000 })
+  evidence.push({ args: start, status: first.status, stdout: first.stdout, stderr: first.stderr })
+  assert.ifError(first.error)
+  if (first.status !== 0) {
+    assert.ok(taskEra, first.stdout + first.stderr)
+    assert.match(first.stderr, /DONE needs completed current planning for phase F1 — run begin-phase-discussion F1, finish-phase-discussion, plan-phase and finish-phase-planning before start/)
+    const current = () => JSON.parse(readFileSync(stateFile, 'utf8'))
+    // The fixture removes SKIP from scope; record that before discussing the phase's remaining work.
+    if (!['done', 'skipped'].includes(current().tasks.SKIP.state)) resume('skip', 'SKIP', '--reason', 'Approved scope removal')
+    resume('begin-phase-discussion', 'F1')
+    const round = current().phaseWorkflows.F1.discussionAttempts.at(-1)
+    const context = join(project, `retry-discovery-${label}.json`)
+    put(context, { roundId: round.roundId, nonce: round.nonce,
+      research: [{ source: 'legacy.plan.json', findings: 'The legacy task needs a current plan before a new attempt.' }],
+      questions: [{ question: 'Plan the inspection under the current workflow?', answer: 'Yes.', channel: 'chat-fallback', round: 1, roundId: round.roundId }],
+      coverage: { problem: 'Failed attempt', affected: 'Readers', outcome: 'Reviewed document', currentBehavior: 'Failed', desiredBehavior: 'Reviewed',
+        rules: 'Independent review', exceptions: 'None', scope: 'DONE', acceptance: 'Document inspected' },
+      decisions: [], deferred: [], executionBoundary: { deferredToExecutor: round.targets, prematureTaskWork: [] }, closure: 'Retry scope approved.' })
+    resume('finish-phase-discussion', 'F1', '--context', context)
+    resume('plan-phase', 'F1', '--agent', 'planner')
+    const planning = current().phaseWorkflows.F1.planningAttempts.at(-1)
+    const planDir = join(project, `retry-plan-${label}`)
+    put(join(planDir, 'task-plan-DONE.json'), {
+      research: [{ source: 'legacy.plan.json', findings: 'Documentation inspection is sufficient for this task.' }], decisions: [],
+      steps: ['Inspect the fixture document.'], verification: [{ criterion: 'Documentation inspected', check: 'inspection' }], openQuestions: [],
+      phaseBinding: { phaseId: 'F1', discussionRoundId: planning.discussionRoundId, plannerRound: planning.n }, unresolvedInputs: planning.requiredInputs.DONE })
+    resume('finish-phase-planning', 'F1', '--plan-dir', planDir)
+    resume('start', 'DONE', '--agent', 'executor')
+  }
+}
 let registry
 try {
   mkdirSync(project)
@@ -59,7 +149,7 @@ try {
     { id: 'SKIP', phase: 'F1', title: 'Removed scope', deps: [], validation: 'Historical prose' },
     { id: 'NEXT', phase: 'F2', title: 'Pending legacy work', deps: ['DONE', 'SKIP'], validation: 'Legacy prose to repair' },
   ] }
-  if (phaseEra) for (const task of plan.tasks) {
+  if (inspectionEra) for (const task of plan.tasks) {
     task.validationMode = 'inspection'
     task.inspectionReason = 'Inspect fixture documentation'
   }
@@ -92,6 +182,20 @@ try {
     })
     old('finish-phase-planning', 'F1', '--plan-dir', project)
   }
+  if (taskEra) {
+    const discovery = join(project, 'task-discovery.json')
+    put(discovery, { research: [{ source: 'legacy.plan.json', findings: 'Documentation-only task with an approved inspection contract.' }],
+      questions: [{ question: 'Inspect the fixture document?', answer: 'Yes.', channel: 'chat-fallback', round: 1 }],
+      coverage: { problem: 'Documentation', affected: 'Readers', outcome: 'Reviewed document', currentBehavior: 'Pending', desiredBehavior: 'Reviewed',
+        rules: 'Independent review', exceptions: 'None', scope: 'DONE', acceptance: 'Document inspected' },
+      decisions: [], deferred: [], closure: 'Inspection scope approved.' })
+    put(join(project, 'task-plan-legacy.json'), {
+      research: [{ source: 'legacy.plan.json', findings: 'Documentation inspection is sufficient for this task.' }], decisions: [],
+      steps: ['Inspect the fixture document.'], verification: [{ criterion: 'Documentation inspected', check: 'inspection' }], openQuestions: [] })
+    old('plan-task', 'DONE', '--agent', 'planner', ...(since('1.2.1') ? ['--context', discovery] : []))
+    saveFlow('task-planning')
+    old('finish-planning', 'DONE', '--plan', join(project, 'task-plan-legacy.json'))
+  }
   old('start', 'DONE', '--agent', 'executor')
   saveFlow('running')
   old('review', 'DONE', '--agent', 'reviewer')
@@ -116,7 +220,7 @@ try {
   mkdirSync(dirname(join(oldRoot, dependency)), { recursive: true })
   symlinkSync(join(oldRoot, 'attempt4/source/packages/desktop'), join(oldRoot, dependency), 'junction')
   registry = fork(join(repo, 'test/fixtures/update-registry.mjs'), [], { silent: true, env: { ...env,
-    PRUMO_TEST_PACKAGE: join(repo, 'package.json'), PRUMO_TEST_ARCHIVE: join(repo, `henri-ralmeida-prumo-${pkg.version}.tgz`),
+    PRUMO_TEST_PACKAGE: join(repo, 'package.json'), PRUMO_TEST_ARCHIVE: candidate,
     PRUMO_TEST_REQUESTS: join(home, 'requests'), PRUMO_TEST_FAILURE: join(home, 'failure') } })
   const address = await new Promise((resolve, reject) => { registry.once('message', resolve); registry.once('error', reject) })
   env.npm_config_registry = address.url
@@ -127,8 +231,8 @@ try {
     if (compare(released, fromVersion) > 0 && compare(released, pkg.version) <= 0)
       assert.ok(output.includes(`Prumo v${released}\n`), `missing release notes for published ${released}`)
   }
-  if (!phaseEra) assert.match(output, /Prumo v1\.0\.9/)
-  if (fromVersion === '1.3.3' || !phaseEra) assert.match(output, /Prumo v1\.3\.4/)
+  if (!since('1.0.9')) assert.match(output, /Prumo v1\.0\.9/)
+  if (!since('1.3.4')) assert.match(output, /Prumo v1\.3\.4/)
   assert.ok(output.includes(`Prumo v${pkg.version}`))
   assert.equal(JSON.parse(readFileSync(join(installed, 'package.json'), 'utf8')).version, pkg.version)
   run(process.execPath, [cli, 'install', '--dsh', '--lang', 'en'])
@@ -149,6 +253,7 @@ try {
   assert.equal(existsSync(join(newRoot, 'attempt4')), false, 'a migracao minima descarta copias de execucao')
   assert.deepEqual(JSON.parse(readFileSync(join(newRoot, 'approved.plan.json'), 'utf8')), plan)
   assert.deepEqual(JSON.parse(readFileSync(join(newRoot, 'backups/approved.plan.json'), 'utf8')), plan)
+  await checkDashboard([...flows.keys()])
   plan.tasks[2].validationMode = 'functional'
   plan.tasks[2].validation = [{ kind: 'functional', run: 'node check.cjs', expect: 'migrated behavior passes' }]
   put(join(project, 'check.cjs'), "require('node:assert/strict').equal(1 + 1, 2)\n")
@@ -167,16 +272,29 @@ try {
       resume('finish-phase-planning', 'F1', '--plan-dir', project)
       resume('start', 'DONE', '--agent', 'executor')
     }
+    if (label === 'task-planning') {
+      resume('finish-planning', 'DONE', '--plan', join(project, 'task-plan-legacy.json'))
+      startDone(root, label)
+    }
     if (label === 'blocked') resume('unblock', 'DONE')
     if (label === 'failed') {
       if (!phaseEra) resume('skip', 'SKIP', '--reason', 'Approved scope removal')
       resume('sync-plan', '--plan', planPath)
       resume('retry', 'DONE')
-      resume('start', 'DONE', '--agent', 'executor')
+      startDone(root, label)
     }
-    if (['running', 'failed', 'discussing', 'planning'].includes(label)) resume('review', 'DONE', '--agent', 'reviewer')
-    // An old validation receipt may require fresh verification under the new gate.
-    resume('validate', 'DONE', '--ok', '--evidence', 'Documentation inspected after update')
+    if (['running', 'failed', 'discussing', 'planning', 'task-planning'].includes(label)) resume('review', 'DONE', '--agent', 'reviewer')
+    // An old validation receipt may require fresh verification under the new gate. Structured
+    // inspection criteria must first be traversed by the reviewer; the engine names the command.
+    const validate = ['validate', 'DONE', '--ok', '--evidence', 'Documentation inspected after update', '--run', 'legacy']
+    const gated = spawnSync(process.execPath, [engine, ...validate], { cwd: project, env: { ...env, PRUMO_ROOT: root }, encoding: 'utf8', windowsHide: true, timeout: 120000 })
+    evidence.push({ args: validate, status: gated.status, stdout: gated.stdout, stderr: gated.stderr })
+    assert.ifError(gated.error)
+    if (gated.status !== 0) {
+      assert.match(gated.stderr, /inspection criteria are not fully traversed; record reviewer-reported progress for each criterion with review-progress DONE --step <index> --agent reviewer/, gated.stdout + gated.stderr)
+      resume('review-progress', 'DONE', '--step', '1', '--agent', 'reviewer')
+      resume('validate', 'DONE', '--ok', '--evidence', 'Documentation inspected after update')
+    }
     resume('done', 'DONE')
     const completed = JSON.parse(readFileSync(stateFile, 'utf8')).tasks.DONE
     assert.equal(completed.state, 'done')
