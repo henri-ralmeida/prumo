@@ -235,7 +235,7 @@ test('dashboard marks declared manual inspection as pending and displays plan wr
   }
 })
 
-test('dashboard footer shows package version, origin, content ID and path, with an unavailable fallback', async () => {
+test('dashboard footer shows only the package version, with an unavailable fallback', async () => {
   for (const lang of ['en', 'pt-BR']) {
     const ui = dashboard(lang)
     const about = { version: '2.0.0', origin: 'global', contentId: 'a1b2c3d4e5f6', path: 'C:\\Prumo\\global\\package' }
@@ -244,7 +244,7 @@ test('dashboard footer shows package version, origin, content ID and path, with 
       return { ok: true, json: async () => about }
     } })
     const identity = ui.nodes.get('#identity')
-    const expected = ui.run("tr('Prumo v{0} · {1} · content {2} · path {3}', '2.0.0', tr('global package'), 'a1b2c3d4e5f6', 'C:\\\\Prumo\\\\global\\\\package')")
+    const expected = ui.run("tr('Prumo v{0}', '2.0.0')")
     assert.equal(identity.textContent, expected)
     assert.equal(identity.getAttribute('title'), expected)
     assert.equal(identity.getAttribute('aria-label'), expected)
@@ -255,18 +255,31 @@ test('dashboard footer shows package version, origin, content ID and path, with 
   }
 })
 
-test('dashboard footer names a source checkout as the repository, with its short commit when known', async () => {
-  for (const [lang, withCommit, without] of [['en', 'repository @ 641017a', 'repository'], ['pt-BR', 'repositório @ 641017a', 'repositório']]) {
-    for (const [about, label] of [
-      [{ version: '2.0.0', origin: 'repository', commit: '641017a', contentId: 'a1b2c3d4e5f6', path: 'C:\\src\\prumo' }, withCommit],
-      [{ version: '2.0.0', origin: 'repository', contentId: 'a1b2c3d4e5f6', path: 'C:\\src\\prumo' }, without],
-      [{ version: '2.0.0', origin: 'repository', commit: '<b>x</b>', contentId: 'a1b2c3d4e5f6', path: 'C:\\src\\prumo' }, without],
+test('dashboard footer uses an unknown version when the package version is missing or invalid', async () => {
+  for (const version of [undefined, '', 2.1, {}]) {
+    const ui = dashboard('en')
+    await ui.run('loadIdentity()', { fetch: async () => ({
+      ok: true,
+      json: async () => ({ version, origin: 'global', contentId: 'a1b2c3d4e5f6', path: 'C:\\Prumo\\global\\package' }),
+    }) })
+    const identity = ui.nodes.get('#identity')
+    assert.equal(identity.textContent, 'Prumo vunknown')
+    assert.equal(identity.getAttribute('title'), 'Prumo vunknown')
+    assert.equal(identity.getAttribute('aria-label'), 'Prumo vunknown')
+  }
+})
+
+test('dashboard footer shows only the version for a source checkout', async () => {
+  for (const lang of ['en', 'pt-BR']) {
+    for (const about of [
+      { version: '2.0.0', origin: 'repository', commit: '641017a', contentId: 'a1b2c3d4e5f6', path: 'C:\\src\\prumo' },
+      { version: '2.0.0', origin: 'repository', contentId: 'a1b2c3d4e5f6', path: 'C:\\src\\prumo' },
+      { version: '2.0.0', origin: 'repository', commit: '<b>x</b>', contentId: 'a1b2c3d4e5f6', path: 'C:\\src\\prumo' },
     ]) {
       const ui = dashboard(lang)
       await ui.run('loadIdentity()', { fetch: async () => ({ ok: true, json: async () => about }) })
       const text = ui.nodes.get('#identity').textContent
-      assert.ok(text.includes(` · ${label} · `), text)
-      assert.doesNotMatch(text, /pacote global|global package|<b>/)
+      assert.equal(text, 'Prumo v2.0.0')
     }
   }
 })
@@ -1768,17 +1781,24 @@ test('mobile header puts filters and counters behind a compact menu below 700px'
   assert.match(html, /@media \(max-width: 700px\)/)
 })
 
-test('the guide button sits before the filter menu, which is the right-most header control', () => {
+test('the guide is a separate right-most header control and stays at the top right on mobile', () => {
   const header = html.slice(html.indexOf('<header>'), html.indexOf('</header>'))
   const guide = header.indexOf('id="guideButton"'), menu = header.indexOf('<details class="header-menu"')
-  assert.ok(guide > header.indexOf('id="resBtn"') && guide < menu, 'results · guide · filters')
-  assert.equal(header.slice(header.indexOf('</details>', menu)).trim(), '</details>', 'nothing follows the filter menu')
-  assert.match(html, /header #guideButton \{ margin-left: auto; \}/)
-  // on a phone the guide takes the middle cell and the filter menu the right one, so its panel
-  // (anchored right: 0, at most the viewport minus the gutters) cannot open past the left edge
-  assert.match(html, /header #guideButton \{ grid-column: 2; grid-row: 2;/)
-  assert.match(html, /header \.header-menu \{ grid-column: 3; grid-row: 2;/)
+  const slot = header.indexOf('<div class="header-guide">')
+  assert.ok(menu > header.indexOf('id="resBtn"') && slot > menu && guide > slot, 'results · filters · separated guide')
+  assert.match(html, /\.header-guide \{[^}]*margin-left: auto;[^}]*padding-left: 16px;[^}]*border-left: 1px solid var\(--line\);/)
+  assert.match(html, /header \.run-menu \{ grid-column: 2; grid-row: 1;/)
+  assert.match(html, /header \.header-guide \{ grid-column: 3; grid-row: 1;[^}]*border: 0;/)
+  assert.match(html, /header #resBtn \{ grid-column: 1; grid-row: 2;/)
+  assert.match(html, /header \.header-menu \{ grid-column: 2 \/ 4; grid-row: 2;/)
   assert.match(html, /\.header-menu-content \{[^}]*right: 0;[^}]*width: min\(calc\(100vw - 20px\), 300px\)/)
+})
+
+test('guide button is labeled with one word in English and Brazilian Portuguese', () => {
+  for (const [lang, label] of [['en', 'Open guide'], ['pt-BR', 'Guia']]) {
+    assert.match(html, /id="guideButton"[^>]*data-i18n="Open guide">Open guide<\/button>/)
+    assert.equal(dashboard(lang).run("tr('Open guide')"), label)
+  }
 })
 
 test('results and back-to-graph are one CTA whose label alternates', async () => {
