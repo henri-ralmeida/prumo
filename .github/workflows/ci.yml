@@ -32,4 +32,5 @@ jobs:
         with:
           name: verification-${{ matrix.os }}-node-${{ matrix.node }}
           path: .test-output/
+          include-hidden-files: true
           if-no-files-found: ignore

@@ -34,7 +34,7 @@ const env = { ...process.env, HOME: home, USERPROFILE: home, APPDATA: join(home,
 for (const key of ['PRUMO_ROOT', 'GRAPH_ROOT', 'GRAPH_FOREMAN_HOME', 'NODE_OPTIONS']) delete env[key]
 // Every process of the scenario serves and probes the fixed dashboard port on an isolated one, so the
 // old release's autostart and the updater's restart run for real without touching the user's dashboard.
-const dashboardPort = await freePort()
+let dashboardPort = await freePort()
 env.PRUMO_TEST_DASHBOARD_PORT = String(dashboardPort)
 env.NODE_OPTIONS = `--import="${pathToFileURL(join(repo, 'test/fixtures/dashboard-port.mjs')).href}"`
 const dashboardPreference = join(home, '.local/share/prumo/dashboard.json')
@@ -46,7 +46,7 @@ async function dashboardHealth() {
     return body
   } catch { return null }
 }
-async function waitForDashboard(accept) {
+async function waitForDashboard(accept, preparation = '') {
   const deadline = Date.now() + 30000
   for (;;) {
     const body = await dashboardHealth()
@@ -54,7 +54,7 @@ async function waitForDashboard(accept) {
     if (Date.now() > deadline) {
       let events = ''
       try { events = readFileSync(join(home, '.local/share/prumo/dashboard-events.ndjson'), 'utf8').trim().split('\n').slice(-10).join('\n') } catch { /* no events */ }
-      throw new Error(`dashboard did not reach the expected state: ${JSON.stringify(body)}\n${events}`)
+      throw new Error(`dashboard did not reach the expected state: ${JSON.stringify(body)}\n${events}\n${preparation}`)
     }
     await new Promise(resolve => setTimeout(resolve, 200))
   }
@@ -176,12 +176,16 @@ try {
   const autostartEra = ['win32', 'linux'].includes(process.platform) && existsSync(join(installed, 'lib/autostart.mjs'))
   let dashboardBefore
   if (autostartEra) {
+    // Selecionar a porta imediatamente antes de iniciar evita reutilizar a porta escolhida antes da instalação.
+    dashboardPort = await freePort()
+    env.PRUMO_TEST_DASHBOARD_PORT = String(dashboardPort)
     put(dashboardPreference, { enabled: false, mechanism: process.platform === 'win32' ? 'windows-startup' : 'xdg' })
     const enable = spawnSync(process.execPath, [cli, 'dashboard', 'enable'], { cwd: project, env, encoding: 'utf8', windowsHide: true, timeout: 180000 })
     // The old release may not confirm the pid it started (seen on Windows); the dashboard must still serve.
     evidence.push({ args: ['dashboard', 'enable'], status: enable.status, stdout: enable.stdout, stderr: enable.stderr })
     assert.ifError(enable.error)
-    const health = await waitForDashboard(body => body.product === 'prumo' && body.version === fromVersion)
+    const health = await waitForDashboard(body => body.product === 'prumo' && body.version === fromVersion,
+      `dashboard enable (${fromVersion}): status=${enable.status}\n${enable.stdout}\n${enable.stderr}`)
     const preference = JSON.parse(readFileSync(dashboardPreference, 'utf8'))
     dashboardBefore = { pid: health.pid ?? preference.pid }
     if (dashboardBefore.pid) dashboardPids.add(dashboardBefore.pid)

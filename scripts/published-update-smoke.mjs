@@ -32,7 +32,9 @@ async function checkVersion([version, pkg]) {
   console.log(`${version}: ${status === 0 ? 'PASS' : 'FAIL'}${status ? `\n${output}` : ''}`)
 }
 const pending = Object.entries(metadata.versions)
-await Promise.all(Array.from({ length: 2 }, async () => {
+// As versões antigas consultam processos via PowerShell; serializar no Windows evita disputar a inicialização do dashboard.
+const workers = process.platform === 'win32' ? 1 : 2
+await Promise.all(Array.from({ length: workers }, async () => {
   while (pending.length) await checkVersion(pending.shift())
 }))
 assert.ok(results.length > 0)
