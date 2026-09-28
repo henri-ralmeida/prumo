@@ -2,6 +2,15 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.1.3 — 2026-09-28
+
+### Corrigido — Histórico e verificação entre sistemas
+
+- Reinicie a paginação do histórico quando o arquivo for substituído e o sistema de arquivos reutilizar seu identificador, mesmo com registros iniciais idênticos.
+- Repita consultas temporariamente indisponíveis do dashboard por um prazo limitado antes de informar conflito de porta. Respostas de outro programa continuam recusadas e somente processos comprovadamente gerenciados podem ser encerrados.
+- Resolva o caminho real das pastas temporárias nos testes de instalação para respeitar aliases do macOS sem enfraquecer as proteções contra links.
+- Cubra reutilização de identidade de arquivo, recuperação de consultas e limites de verificação com regressões determinísticas.
+
 ## 2.1.2 — 2026-09-28
 
 ### Corrigido — Comandos, concorrência e recuperação

@@ -9,7 +9,7 @@
  */
 import { createServer } from 'node:http'
 import { randomUUID } from 'node:crypto'
-import { readFileSync, existsSync, readdirSync, statSync, openSync, readSync, closeSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync, statSync, fstatSync, openSync, readSync, closeSync } from 'node:fs'
 import { execFile, execFileSync } from 'node:child_process'
 import { join, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -17,6 +17,12 @@ import { fileURLToPath } from 'node:url'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ENGINE = join(HERE, 'engine.mjs')
 const eventHistoryCache = new Map()
+
+function forgetEventHistory(path) {
+  const history = eventHistoryCache.get(path)
+  if (history) closeSync(history.file)
+  eventHistoryCache.delete(path)
+}
 
 function parseEventChunk(buffer) {
   return buffer.toString('utf8').split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line))
@@ -61,14 +67,22 @@ function saveHistoryTail(path, history) {
 function readEventHistory(path) {
   const stat = statSync(path)
   let history = eventHistoryCache.get(path)
-  if (!history || stat.dev !== history.dev || stat.ino !== history.ino || stat.size < history.readOffset ||
+  if (!history || fstatSync(history.file).nlink === 0 || stat.dev !== history.dev || stat.ino !== history.ino || stat.size < history.readOffset ||
     (stat.size === history.readOffset && (stat.mtimeMs !== history.mtimeMs || stat.ctimeMs !== history.ctimeMs)) ||
     (history && stat.size > history.readOffset && !tailMatches(path, history))) {
-    const content = readFileSync(path)
+    forgetEventHistory(path)
+    // Manter o arquivo aberto impede reutilizar seu inode enquanto a paginação estiver em cache.
+    const file = openSync(path, 'r')
+    let content, events
+    try {
+      content = readFileSync(file)
+      const completeEnd = content.lastIndexOf(0x0a)
+      events = parseEventChunk(completeEnd < 0 ? Buffer.alloc(0) : content.subarray(0, completeEnd + 1))
+    } catch (error) { closeSync(file); throw error }
     const end = content.lastIndexOf(0x0a)
-    const complete = end < 0 ? Buffer.alloc(0) : content.subarray(0, end + 1)
     history = {
-      events: parseEventChunk(complete),
+      events,
+      file,
       readOffset: content.length,
       pending: Buffer.from(content.subarray(end + 1)),
       revision: randomUUID(),
@@ -77,7 +91,7 @@ function readEventHistory(path) {
       dev: stat.dev,
       ino: stat.ino,
     }
-    saveHistoryTail(path, history)
+    try { saveHistoryTail(path, history) } catch (error) { closeSync(file); throw error }
   } else if (stat.size > history.readOffset) {
     const file = openSync(path, 'r')
     const added = Buffer.alloc(stat.size - history.readOffset)
@@ -106,12 +120,12 @@ function readEventHistory(path) {
   }
   try {
     const finalStat = statSync(path)
-    history.stable = finalStat.dev === history.dev && finalStat.ino === history.ino &&
+    history.stable = fstatSync(history.file).nlink > 0 && finalStat.dev === history.dev && finalStat.ino === history.ino &&
       finalStat.size === history.readOffset && finalStat.mtimeMs === history.mtimeMs && finalStat.ctimeMs === history.ctimeMs
   } catch { history.stable = false }
   eventHistoryCache.delete(path)
   eventHistoryCache.set(path, history)
-  while (eventHistoryCache.size > 32) eventHistoryCache.delete(eventHistoryCache.keys().next().value)
+  while (eventHistoryCache.size > 32) forgetEventHistory(eventHistoryCache.keys().next().value)
   return history
 }
 
@@ -500,10 +514,13 @@ const server = createServer((req, res) => {
       return json(res, 404, { error: 'no run' })
     }
     const p = join(selected.graphDir, run, 'events.ndjson')
-    if (!existsSync(p)) return json(res, 200, hasCursor
+    if (!existsSync(p)) {
+      forgetEventHistory(p)
+      return json(res, 200, hasCursor
       ? { events: [], next: 0, total: 0, complete: false, revision: 'empty',
         reset: after > 0 || (url.searchParams.has('revision') && url.searchParams.get('revision') !== 'empty') }
       : { events: [] })
+    }
     if (hasCursor) {
       const history = readEventHistory(p)
       const requestedRevision = url.searchParams.get('revision')

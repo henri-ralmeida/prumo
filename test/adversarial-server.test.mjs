@@ -3,11 +3,11 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, cpSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { spawn } from 'node:child_process'
 import { setTimeout } from 'node:timers/promises'
 
-async function fixture(t, { sync = false, damagedRoot = false } = {}) {
+async function fixture(t, { sync = false, damagedRoot = false, reuseIdentity = false } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'prumo-adversarial-'))
   const pkg = join(home, 'package')
   cpSync(fileURLToPath(new URL('../scripts', import.meta.url)), join(pkg, 'scripts'), { recursive: true })
@@ -21,7 +21,24 @@ async function fixture(t, { sync = false, damagedRoot = false } = {}) {
   const state = JSON.stringify({ plan: { name: 'Healthy', phases: [] }, tasks: {} })
   put(stateFile, sync ? '{partial write' : state)
   if (damagedRoot) put(join(central, 'broken', '.specs', 'graph'), 'not a directory')
-  const child = spawn(process.execPath, [join(pkg, 'scripts', 'serve.mjs'), '--port', '0', ...(sync ? ['--sync-plan'] : ['--global'])], {
+  const preload = join(home, 'reused-file-identity.mjs')
+  if (reuseIdentity) {
+    put(preload, `
+import fs from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
+const stat = fs.statSync
+fs.statSync = (path, ...options) => {
+  const result = stat(path, ...options)
+  if (String(path).endsWith('events.ndjson')) {
+    result.dev = 1; result.ino = 1
+    result.birthtimeMs = result.ctimeMs
+  }
+  return result
+}
+syncBuiltinESMExports()
+`)
+  }
+  const child = spawn(process.execPath, [...(reuseIdentity ? ['--import', pathToFileURL(preload).href] : []), join(pkg, 'scripts', 'serve.mjs'), '--port', '0', ...(sync ? ['--sync-plan'] : ['--global'])], {
     cwd: home, env: { ...process.env, HOME: home, USERPROFILE: home, PRUMO_HOME: central,
       PRUMO_ROOT: root, GRAPH_ROOT: '', GRAPH_FOREMAN_HOME: '', PRUMO_LANG: 'en' },
     stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
@@ -152,6 +169,42 @@ test('event history paging resets replacements and waits for complete NDJSON lin
   assert.equal(largerRewrite.total, 8)
   assert.notEqual(largerRewrite.revision, replaced.revision)
   assert.equal(largerRewrite.events[0].id, 10000)
+})
+
+test('histórico reinicia após reutilização de inode mesmo com prefixo idêntico', async t => {
+  const f = await fixture(t, { reuseIdentity: true })
+  const log = join(f.graph, 'demo', 'events.ndjson')
+  const encode = count => Array.from({ length: count }, (_, id) => JSON.stringify({ type: 'task_note', id }) + '\n').join('')
+  f.put(log, encode(2))
+  const before = await (await f.get('/api/events?root=healthy&run=demo&after=0&limit=10')).json()
+  assert.equal(before.complete, true)
+  rmSync(log)
+  f.put(log, encode(4))
+  const replaced = await (await f.get(`/api/events?root=healthy&run=demo&after=2&limit=10&revision=${encodeURIComponent(before.revision)}`)).json()
+  assert.equal(replaced.reset, true, 'a nova geração deve reiniciar a leitura, mesmo quando os registros iniciais coincidem')
+  assert.notEqual(replaced.revision, before.revision)
+  assert.deepEqual(replaced.events.map(event => event.id), [0, 1, 2, 3])
+  assert.equal(replaced.complete, true)
+  appendFileSync(log, encode(1))
+  const appended = await (await f.get(`/api/events?root=healthy&run=demo&after=4&limit=10&revision=${encodeURIComponent(replaced.revision)}`)).json()
+  assert.equal(appended.reset, false)
+  assert.equal(appended.revision, replaced.revision)
+  assert.equal(appended.events.length, 1)
+  assert.equal(appended.complete, true)
+})
+
+test('inclusão preserva a paginação quando a data de criação acompanha a alteração', async t => {
+  const f = await fixture(t, { reuseIdentity: true })
+  const log = join(f.graph, 'demo', 'events.ndjson')
+  f.put(log, '{"id":0}\n')
+  const first = await (await f.get('/api/events?root=healthy&run=demo&after=0')).json()
+  await setTimeout(25)
+  appendFileSync(log, '{"id":1}\n')
+  const next = await (await f.get(`/api/events?root=healthy&run=demo&after=1&revision=${encodeURIComponent(first.revision)}`)).json()
+  assert.equal(next.reset, false, 'acrescentar um registro deve preservar o cursor mesmo sem data de criação independente')
+  assert.equal(next.revision, first.revision)
+  assert.deepEqual(next.events, [{ id: 1 }])
+  assert.equal(next.complete, true)
 })
 
 test('workspace auto-sync tolerates incomplete state both at startup and during its timer', async t => {

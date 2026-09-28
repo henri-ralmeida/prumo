@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync, spawn } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -15,11 +15,12 @@ const commands = ['init', 'migrate', 'sync-plan', 'status', 'ready', 'graph', 'r
   'review', 'review-progress', 'refresh-contract', 'validate', 'done', 'fail', 'retry', 'block', 'unblock', 'skip', 'note']
 
 function fixture(t) {
-  const home = mkdtempSync(join(tmpdir(), 'prumo-command-tests-')), root = join(home, 'workspace')
+  const base = realpathSync(tmpdir())
+  const home = mkdtempSync(join(base, 'prumo-command-tests-')), root = join(home, 'workspace')
   mkdirSync(root)
   t.after(() => {
-    assert.equal(dirname(home), resolve(tmpdir()))
-    assert.ok(home.startsWith(join(resolve(tmpdir()), 'prumo-command-tests-')))
+    assert.equal(dirname(home), base)
+    assert.ok(home.startsWith(join(base, 'prumo-command-tests-')))
     rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   })
   const env = { ...process.env, HOME: home, USERPROFILE: home, PRUMO_HOME: home, PRUMO_ROOT: root,

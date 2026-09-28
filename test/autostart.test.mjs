@@ -53,6 +53,71 @@ function fixture(t, platform, extra = {}) {
 
 const preference = home => JSON.parse(readFileSync(join(home, '.local', 'share', 'prumo', 'dashboard.json'), 'utf8'))
 
+test('porta ocupada com consulta temporariamente indisponível confirma o dashboard antes de agir', async t => {
+  let probes = 0, delays = 0
+  const f = fixture(t, 'win32', {
+    portAvailable: async () => false,
+    delay: async () => { delays += 1 },
+    fetch: async () => {
+      probes += 1
+      if (probes < 3) throw Object.assign(new Error('Consulta temporariamente indisponível'), { name: 'TimeoutError' })
+      return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0' }) }
+    },
+  })
+  assert.equal((await dashboardHealth(f.options)).state, 'running')
+  assert.equal(probes, 3)
+  assert.equal(delays, 2)
+  assert.deepEqual(f.calls, [])
+})
+
+test('porta ocupada sem identidade continua protegida após consultas limitadas', async t => {
+  let probes = 0, delays = 0
+  const f = fixture(t, 'win32', {
+    portAvailable: async () => false,
+    delay: async () => { delays += 1 },
+    fetch: async () => { probes += 1; throw new Error('Sem resposta') },
+  })
+  assert.equal((await dashboardHealth(f.options)).state, 'conflict')
+  assert.equal(probes, 3)
+  assert.equal(delays, 2)
+  assert.deepEqual(f.calls, [])
+})
+
+test('resposta de outro programa recusa a operação sem novas consultas', async t => {
+  let probes = 0, delays = 0
+  const f = fixture(t, 'win32', {
+    delay: async () => { delays += 1 },
+    fetch: async () => { probes += 1; return { ok: true, json: async () => ({ product: 'outro' }) } },
+  })
+  assert.equal((await dashboardHealth(f.options)).state, 'conflict')
+  assert.equal(probes, 1)
+  assert.equal(delays, 0)
+  assert.deepEqual(f.calls, [])
+})
+
+test('reinício recupera consulta indisponível e encerra somente o processo comprovado', async t => {
+  let probes = 0, running = true, activePid = 5200
+  const killed = [], spawned = []
+  const f = fixture(t, 'linux', {
+    lang: 'en', exec: () => ({ status: 1 }), portAvailable: async () => !running,
+    fetch: async () => {
+      probes += 1
+      if (probes <= 2 || !running) throw new Error('Consulta indisponível')
+      return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0', pid: activePid }) }
+    },
+    readProcessCommand: () => [f.node, f.script, '--global', '--port', '4949', '--lang', 'en'],
+    kill(pid) { killed.push(pid); running = false },
+    spawn(node, args) { spawned.push([node, args]); running = true; activePid = 5201; return { pid: activePid } },
+  })
+  const data = join(f.home, '.local/share/prumo')
+  mkdirSync(data, { recursive: true })
+  writeFileSync(join(data, 'dashboard.json'), JSON.stringify({ enabled: true, mechanism: 'xdg', node: f.node, script: f.script, pid: 5200, lang: 'en' }))
+  assert.equal((await restartDashboard(f.options)).ok, true)
+  assert.deepEqual(killed, [5200])
+  assert.equal(spawned.length, 1)
+  assert.equal(preference(f.home).pid, 5201)
+})
+
 for (const platform of ['linux', 'win32']) for (const previousLang of ['en', 'pt-BR']) {
   test(`${platform}: desativação recusada conserva identidade ${previousLang} para uma nova tentativa`, async t => {
     let running = true

@@ -1,4 +1,8 @@
 {
+  "Fixed — Cross-platform dashboard and verification": "Corrigido — Dashboard e verificação entre sistemas",
+  "Reset event history after file replacement even when the filesystem reuses its identifier and preserves the initial records": "Reinicie o histórico após substituir o arquivo, mesmo quando o sistema reutilizar seu identificador e preservar os registros iniciais",
+  "Retry temporarily unavailable dashboard health checks within a bounded interval while keeping foreign processes protected": "Repita consultas temporariamente indisponíveis do dashboard por um prazo limitado, mantendo processos alheios protegidos",
+  "Resolve temporary directory aliases in installation tests without weakening linked-path protections": "Resolva aliases de pastas temporárias nos testes de instalação sem enfraquecer as proteções contra links",
   "Fixed — Command validation and concurrent writes": "Corrigido — Validação de comandos e gravações concorrentes",
   "Reject invalid, repeated and incompatible arguments before changing data or starting services": "Rejeite argumentos inválidos, repetidos e incompatíveis antes de alterar dados ou iniciar serviços",
   "Recover concurrent lock release and keep healthy runs visible when another run has invalid state": "Recupere a liberação concorrente de bloqueios e mantenha execuções válidas visíveis quando outra execução tiver estado inválido",

@@ -1,4 +1,9 @@
 {
+  "2.1.3": {
+    "en": [
+      { "title": "Fixed — Cross-platform dashboard and verification", "items": ["Reset event history after file replacement even when the filesystem reuses its identifier and preserves the initial records", "Retry temporarily unavailable dashboard health checks within a bounded interval while keeping foreign processes protected", "Resolve temporary directory aliases in installation tests without weakening linked-path protections"] }
+    ]
+  },
   "2.1.2": {
     "en": [
       { "title": "Fixed — Command validation and concurrent writes", "items": ["Reject invalid, repeated and incompatible arguments before changing data or starting services", "Recover concurrent lock release and keep healthy runs visible when another run has invalid state", "Validate malformed contracts and update paths before execution"] },
