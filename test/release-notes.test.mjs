@@ -7,11 +7,11 @@ const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.u
 
 test('current release has concise English update highlights with descriptive subtitles', () => {
   const notes = releaseNotes(version)
-  assert.deepEqual(notes.map(section => section.title), ['Fixed — Cross-platform dashboard and verification'])
-  assert.deepEqual(releaseNotes('2.1.2').map(section => section.title), [
+  assert.deepEqual(notes.map(section => section.title), [
     'Fixed — Command validation and concurrent writes',
     'Fixed — Dashboard recovery and language',
     'Improved — Tests and continuous integration',
+    'Fixed — Cross-platform dashboard and verification',
   ])
   assert.deepEqual(releaseNotes('2.1.1').map(section => section.title), ['Fixed — Dashboard restart after update'])
   assert.deepEqual(releaseNotes('2.1.0').map(section => section.title), [

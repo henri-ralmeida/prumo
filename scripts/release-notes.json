@@ -1,14 +1,10 @@
 {
-  "2.1.3": {
-    "en": [
-      { "title": "Fixed — Cross-platform dashboard and verification", "items": ["Reset event history after file replacement even when the filesystem reuses its identifier and preserves the initial records", "Retry temporarily unavailable dashboard health checks within a bounded interval while keeping foreign processes protected", "Allow slower Windows dashboard startup while keeping readiness checks bounded", "Resolve temporary directory aliases in installation tests without weakening linked-path protections"] }
-    ]
-  },
   "2.1.2": {
     "en": [
       { "title": "Fixed — Command validation and concurrent writes", "items": ["Reject invalid, repeated and incompatible arguments before changing data or starting services", "Recover concurrent lock release and keep healthy runs visible when another run has invalid state", "Validate malformed contracts and update paths before execution"] },
       { "title": "Fixed — Dashboard recovery and language", "items": ["Preserve the managed dashboard process identity when language changes or registration and shutdown fail", "Keep run filters exclusive and expose installed engine and server dependencies correctly"] },
-      { "title": "Improved — Tests and continuous integration", "items": ["Expand command, planning, validation, installation and dashboard regression coverage", "Fix Node 22 test cleanup and historical update scenarios without weakening execution authorization", "Fetch release history and bound parallel verification with enough time for the expanded integrations"] }
+      { "title": "Improved — Tests and continuous integration", "items": ["Expand command, planning, validation, installation and dashboard regression coverage", "Fix Node 22 test cleanup and historical update scenarios without weakening execution authorization", "Fetch release history and bound parallel verification with enough time for the expanded integrations"] },
+      { "title": "Fixed — Cross-platform dashboard and verification", "items": ["Reset event history after file replacement even when the filesystem reuses its identifier and preserves the initial records", "Retry temporarily unavailable dashboard health checks within a bounded interval while keeping foreign processes protected", "Allow slower Windows dashboard startup while keeping readiness checks bounded", "Resolve temporary directory aliases in installation tests without weakening linked-path protections"] }
     ]
   },
   "2.1.1": {
