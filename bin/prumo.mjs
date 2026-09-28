@@ -175,7 +175,8 @@ try {
       print(t('Dashboard: {0}; {1}; {2}', t(result.process), t(result.registered ? 'registered' : 'not registered'), t(result.enabled ? 'enabled' : result.disabled ? 'disabled' : 'not configured')))
       print(t('version: {0}; content: {1}; port: {2}; URL: {3}', result.version ?? version, result.contentId ?? t('unknown'), result.port, result.url))
       if (result.origin || result.path) print(t('origin: {0}; path: {1}', result.origin ?? t('unknown'), result.path ?? t('unknown')))
-      if (result.conflict) console.error(`[prumo] Port ${result.port} is used by another process`)
+      if (result.error) console.error(`[prumo] ${t(result.error)}`)
+      else if (result.conflict) console.error(`[prumo] ${t('Port {0} is used by another process', result.port)}`)
       if (result.conflict || 'ok' in result && !result.ok) process.exitCode = 2
     }
   } else if (['update', '_update'].includes(positionals[0])) {
@@ -186,6 +187,9 @@ try {
       const code = await launchUpdate(request, {
         onCurrent: current => print(t('Prumo is already up to date'), `v${current}`),
         onDashboardRepair: dryRun => print(dryRun ? 'Would restart the enabled Prumo dashboard' : 'Dashboard restarted: http://localhost:4949'),
+      }).catch(error => {
+        if (error.dashboardFailure === undefined) throw error
+        throw new Error(t('Dashboard restart failed: {0}', t(error.dashboardFailure)))
       })
       if (code === null) print('No Prumo installations found; install an environment first')
       else process.exitCode = code
@@ -251,7 +255,8 @@ try {
       if (dashboard.action === 'restart' && request.dryRun) print('Would restart the enabled Prumo dashboard')
       else if (dashboard.action === 'disabled' && request.dryRun) print('Dashboard remains disabled by user preference')
       if (!dashboard.ok) {
-        console.error(`[prumo] Dashboard restart failed${dashboard.status.conflict ? `: port ${dashboard.status.port} is used by another process` : dashboard.status.error ? `: ${dashboard.status.error}` : ''}`)
+        const detail = dashboard.status.error ?? (dashboard.status.conflict ? `port ${dashboard.status.port} is used by another process` : undefined)
+        console.error(`[prumo] ${detail ? t('Dashboard restart failed: {0}', t(detail)) : t('Dashboard restart failed')}`)
         process.exitCode = 2
       }
       if (quiet && !process.exitCode) {
@@ -369,7 +374,8 @@ try {
       else if (dashboard.action === 'restart') print(dryRun ? 'Would restart the enabled Prumo dashboard' : `Dashboard restarted: ${dashboard.status.url}`)
       else if (dashboard.action === 'disabled') print('Dashboard remains disabled by user preference')
       if (!dashboard.ok) {
-        console.error(`[prumo] Dashboard setup failed${dashboard.status?.error ? `: ${dashboard.status.error}` : dashboard.status?.conflict ? `: port ${dashboard.status.port} is used by another process` : ''}`)
+        const detail = dashboard.status?.error ?? (dashboard.status?.conflict ? `port ${dashboard.status.port} is used by another process` : undefined)
+        console.error(`[prumo] ${detail ? t('Dashboard setup failed: {0}', t(detail)) : t('Dashboard setup failed')}`)
         process.exitCode = 2
       }
     } else {

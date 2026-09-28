@@ -921,5 +921,14 @@
   "{0} ({1}): {2} — proposed answer: {3}": "{0} ({1}): {2} — resposta proposta: {3}",
   "open questions with a later deadline; do not ask them now, they reappear at their target:": "perguntas em aberto com prazo futuro; não pergunte agora, elas reaparecem no alvo:",
   "WARNING: open question {0} ({1}) is decided by the executor but has no proposed answer": "AVISO: a pergunta em aberto {0} ({1}) é decidida pelo executor, mas não tem resposta proposta",
-  "task {0} manualEstimate must be a positive whole number of minutes or a duration such as 4h30, 90m or PT4H30M": "a tarefa {0} tem manualEstimate inválido: use minutos inteiros positivos ou uma duração como 4h30, 90m ou PT4H30M"
+  "task {0} manualEstimate must be a positive whole number of minutes or a duration such as 4h30, 90m or PT4H30M": "a tarefa {0} tem manualEstimate inválido: use minutos inteiros positivos ou uma duração como 4h30, 90m ou PT4H30M",
+  "Dashboard restart failed": "Falha ao reiniciar o dashboard",
+  "Dashboard restart failed: {0}": "Falha ao reiniciar o dashboard: {0}",
+  "Dashboard setup failed": "Falha ao configurar o dashboard",
+  "Dashboard setup failed: {0}": "Falha ao configurar o dashboard: {0}",
+  "Port {0} is used by another process": "A porta {0} está ocupada por outro processo",
+  "port {0} is used by another process": "a porta {0} está ocupada por outro processo",
+  "Port {0} is used by another program that is not the Prumo dashboard, so it was not stopped. Close that program or free the port, then run prumo dashboard enable": "A porta {0} está ocupada por outro programa que não é o dashboard do Prumo, por isso ele não foi encerrado. Feche esse programa ou libere a porta e depois execute prumo dashboard enable",
+  "Startup ownership verification failed: managed process not found; the dashboard on port {0} (pid {1}) is not the Prumo process managed by this installation, so it was not stopped. Stop process {2}, then run prumo dashboard enable": "Não foi possível confirmar a posse do dashboard: o processo gerenciado não foi encontrado; o dashboard na porta {0} (pid {1}) não é o processo do Prumo gerenciado por esta instalação, por isso não foi encerrado. Encerre o processo {2} e depois execute prumo dashboard enable",
+  "Startup ownership verification failed: managed process not found; the dashboard on port {0} did not report a verifiable Prumo process, so it was not stopped. Stop it, then run prumo dashboard enable": "Não foi possível confirmar a posse do dashboard: o processo gerenciado não foi encontrado; o dashboard na porta {0} não informou um processo do Prumo verificável, por isso não foi encerrado. Encerre-o e depois execute prumo dashboard enable"
 }

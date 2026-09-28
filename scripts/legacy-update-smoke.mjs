@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync, cpSync, symlinkSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { spawnSync, spawn, fork } from 'node:child_process'
 import { createServer } from 'node:net'
 
@@ -32,6 +32,34 @@ const env = { ...process.env, HOME: home, USERPROFILE: home, APPDATA: join(home,
   PRUMO_LANG: 'en', npm_config_prefix: prefix, npm_config_cache: join(home, 'npm-cache'),
   npm_config_userconfig: join(home, 'npmrc'), npm_config_fetch_retries: '0' }
 for (const key of ['PRUMO_ROOT', 'GRAPH_ROOT', 'GRAPH_FOREMAN_HOME', 'NODE_OPTIONS']) delete env[key]
+// Every process of the scenario serves and probes the fixed dashboard port on an isolated one, so the
+// old release's autostart and the updater's restart run for real without touching the user's dashboard.
+const dashboardPort = await freePort()
+env.PRUMO_TEST_DASHBOARD_PORT = String(dashboardPort)
+env.NODE_OPTIONS = `--import="${pathToFileURL(join(repo, 'test/fixtures/dashboard-port.mjs')).href}"`
+const dashboardPreference = join(home, '.local/share/prumo/dashboard.json')
+const dashboardPids = new Set()
+async function dashboardHealth() {
+  try {
+    const body = await (await fetch(`http://127.0.0.1:${dashboardPort}/api/health`, { signal: AbortSignal.timeout(2000) })).json()
+    if (body.pid) dashboardPids.add(body.pid)
+    return body
+  } catch { return null }
+}
+async function waitForDashboard(accept) {
+  const deadline = Date.now() + 30000
+  for (;;) {
+    const body = await dashboardHealth()
+    if (body && accept(body)) return body
+    if (Date.now() > deadline) {
+      let events = ''
+      try { events = readFileSync(join(home, '.local/share/prumo/dashboard-events.ndjson'), 'utf8').trim().split('\n').slice(-10).join('\n') } catch { /* no events */ }
+      throw new Error(`dashboard did not reach the expected state: ${JSON.stringify(body)}\n${events}`)
+    }
+    await new Promise(resolve => setTimeout(resolve, 200))
+  }
+}
+const alive = pid => { try { process.kill(pid, 0); return true } catch { return false } }
 const put = (file, value) => { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, typeof value === 'string' ? value : JSON.stringify(value)) }
 const evidence = []
 const flows = new Map()
@@ -143,6 +171,25 @@ try {
   run('npm', ['install', '--global', '--ignore-scripts', '--no-audit', '--no-fund', archive])
   assert.equal(run(process.execPath, [cli, '-v']).trim(), fromVersion)
   for (const harness of ['claude', 'kiro', 'codex']) run(process.execPath, [cli, 'install', `--${harness}`, '--lang', 'en'])
+  // A release with autostart keeps its dashboard running through the update, as a user has it. The
+  // per-user Startup entry (Windows) or XDG entry (Linux) lives in this temporary home.
+  const autostartEra = ['win32', 'linux'].includes(process.platform) && existsSync(join(installed, 'lib/autostart.mjs'))
+  let dashboardBefore
+  if (autostartEra) {
+    put(dashboardPreference, { enabled: false, mechanism: process.platform === 'win32' ? 'windows-startup' : 'xdg' })
+    const enable = spawnSync(process.execPath, [cli, 'dashboard', 'enable'], { cwd: project, env, encoding: 'utf8', windowsHide: true, timeout: 180000 })
+    // The old release may not confirm the pid it started (seen on Windows); the dashboard must still serve.
+    evidence.push({ args: ['dashboard', 'enable'], status: enable.status, stdout: enable.stdout, stderr: enable.stderr })
+    assert.ifError(enable.error)
+    const health = await waitForDashboard(body => body.product === 'prumo' && body.version === fromVersion)
+    const preference = JSON.parse(readFileSync(dashboardPreference, 'utf8'))
+    dashboardBefore = { pid: health.pid ?? preference.pid }
+    if (dashboardBefore.pid) dashboardPids.add(dashboardBefore.pid)
+    // The state a failed restart left on the user's machine: enabled, without a recorded pid.
+    delete preference.pid
+    put(dashboardPreference, preference)
+    evidence.push({ dashboardBefore: { health, preference } })
+  }
   const planPath = join(project, 'legacy.plan.json')
   const plan = { name: 'Legacy release', phases: [{ id: 'F1', title: 'Merged' }, { id: 'F2', title: 'Remaining' }], tasks: [
     { id: 'DONE', phase: 'F1', title: 'Merged task', deps: [], validationMode: 'inspection', inspectionReason: 'Inspect fixture documentation', validation: 'Documentation inspected' },
@@ -235,6 +282,17 @@ try {
   if (!since('1.3.4')) assert.match(output, /Prumo v1\.3\.4/)
   assert.ok(output.includes(`Prumo v${pkg.version}`))
   assert.equal(JSON.parse(readFileSync(join(installed, 'package.json'), 'utf8')).version, pkg.version)
+  if (autostartEra) {
+    assert.doesNotMatch(output, /Dashboard restart failed|Update incomplete/)
+    const health = await waitForDashboard(body => body.product === 'prumo')
+    assert.equal(health.version, pkg.version, 'the update restarted the dashboard with the new release')
+    assert.equal(JSON.parse(readFileSync(dashboardPreference, 'utf8')).pid, health.pid, 'the new dashboard pid is recorded')
+    if (dashboardBefore.pid) {
+      assert.notEqual(health.pid, dashboardBefore.pid)
+      assert.equal(alive(dashboardBefore.pid), false, 'the previous dashboard was stopped')
+    }
+    evidence.push({ dashboardAfter: health })
+  }
   run(process.execPath, [cli, 'install', '--dsh', '--lang', 'en'])
   const dshAgents = readFileSync(join(home, '.dsh/AGENTS.md'), 'utf8')
   assert.match(dshAgents, /Keep this legacy DSH instruction/)
@@ -341,6 +399,8 @@ try {
   assert.equal(readFileSync(join(newRoot, relativeState), 'utf8'), completedState, 'migration is idempotent')
   console.log(`Published ${fromVersion} updated to ${pkg.version}; notes, three legacy harnesses plus current DSH, junctions, merged tasks and ${[...flows.keys()].join('/')} continuation verified`)
 } finally {
+  await dashboardHealth()
+  for (const pid of dashboardPids) try { process.kill(pid) } catch { /* already stopped */ }
   if (registry && registry.exitCode === null && registry.signalCode === null) { const closed = new Promise(resolve => registry.once('exit', resolve)); registry.kill(); await closed }
   put(join(repo, `.test-output/legacy-update-${fromVersion}.json`), evidence)
   assert.equal(dirname(home), realpathSync(tmpdir()))

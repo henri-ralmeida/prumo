@@ -2,12 +2,13 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { createServer } from 'node:net'
 import { fileURLToPath } from 'node:url'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { setTimeout } from 'node:timers/promises'
 import { enableDashboard, restartDashboard, disableDashboard } from '../lib/autostart.mjs'
+import { createTranslator, messages } from '../scripts/i18n.mjs'
 
 test('Windows Startup launches and restarts a real isolated dashboard process', { skip: process.platform !== 'win32', timeout: 60000 }, async t => {
   const home = mkdtempSync(join(tmpdir(), 'prumo startup process-'))
@@ -97,4 +98,135 @@ test('Windows Startup launches and restarts a real isolated dashboard process', 
   const disabled = await disableDashboard(options)
   assert.equal(disabled.ok, true, JSON.stringify(disabled))
   assert.equal(disabled.registered, false)
+})
+
+// Real processes on an isolated port. The recorded state reproduces `prumo update` on Windows after an
+// earlier restart erased `pid` from dashboard.json; the default process inspection is exercised.
+const repo = fileURLToPath(new URL('..', import.meta.url))
+async function freePort() {
+  const probe = createServer()
+  await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve))
+  const { port } = probe.address()
+  await new Promise(resolve => probe.close(resolve))
+  return port
+}
+function alive(pid) { try { process.kill(pid, 0); return true } catch { return false } }
+async function waitFor(check, attempts = 200) {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const value = await check()
+    if (value) return value
+    await setTimeout(50)
+  }
+  return null
+}
+async function isolatedDashboard(t) {
+  const home = mkdtempSync(join(tmpdir(), 'prumo-restart-ownership-'))
+  const port = await freePort()
+  const target = join(home, 'target.txt')
+  const script = join(home, 'dashboard.mjs')
+  // The managed command line stays `<node> <script> --global --port 4949`; the wrapper serves elsewhere.
+  writeFileSync(script, [
+    "import { readFileSync } from 'node:fs'",
+    "import { pathToFileURL } from 'node:url'",
+    `process.argv[process.argv.indexOf('--port') + 1] = '${port}'`,
+    `await import(pathToFileURL(readFileSync(${JSON.stringify(target)}, 'utf8').trim()).href)`, ''].join('\n'))
+  writeFileSync(target, join(repo, 'scripts/serve.mjs'))
+  const env = { ...process.env, HOME: home, USERPROFILE: home, PRUMO_HOME: join(home, 'data'),
+    APPDATA: join(home, 'AppData/Roaming'), PRUMO_ROOT: '', GRAPH_ROOT: '', GRAPH_FOREMAN_HOME: '', PRUMO_LANG: 'en' }
+  const pids = new Set(), killed = [], children = []
+  const redirect = async (url, init) => {
+    const response = await fetch(String(url).replace(':4949/', `:${port}/`), init)
+    if (response.ok) try { const body = await response.clone().json(); if (body.pid) pids.add(body.pid) } catch {}
+    return response
+  }
+  const options = { home, script, packageRoot: repo, env, readinessAttempts: 100, readinessInterval: 50,
+    fetch: redirect, portAvailable: async () => true, kill: pid => { killed.push(pid); process.kill(pid) } }
+  const file = join(home, '.local/share/prumo/dashboard.json')
+  mkdirSync(dirname(file), { recursive: true })
+  t.after(async () => {
+    for (const pid of pids) try { process.kill(pid) } catch {}
+    for (const child of children) if (child.exitCode === null) child.kill()
+    await setTimeout(300)
+    assert.ok(home.startsWith(join(tmpdir(), 'prumo-restart-ownership-')))
+    rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
+  })
+  const health = async () => {
+    try { return await (await redirect('http://127.0.0.1:4949/api/health', { signal: AbortSignal.timeout(1000) })).json() }
+    catch { return null }
+  }
+  // `managed` starts the dashboard with the managed command line; otherwise `args` run as given.
+  const start = (args, managed = false) => {
+    const child = spawn(process.execPath, managed ? [script, '--global', '--port', '4949'] : args,
+      { env, detached: managed, stdio: 'ignore', windowsHide: true })
+    children.push(child)
+    return child
+  }
+  return { home, port, target, script, options, killed, health, start,
+    preference: () => JSON.parse(readFileSync(file, 'utf8')),
+    write: value => writeFileSync(file, JSON.stringify(value)) }
+}
+// The previous release is served from its tag when available, as the user had before updating.
+function previousRelease(home) {
+  mkdirSync(join(home, 'previous'))
+  const archive = spawnSync('git', ['archive', '--format=tar', '-o', join(home, 'previous.tar'), 'v2.0.0'], { cwd: repo, windowsHide: true, timeout: 60000 })
+  if (archive.status !== 0) return null
+  // Relative paths keep GNU tar from reading a Windows drive letter as a remote host.
+  const extract = spawnSync('tar', ['-xf', 'previous.tar', '-C', 'previous'], { cwd: home, windowsHide: true, timeout: 60000 })
+  return extract.status === 0 ? join(home, 'previous') : null
+}
+
+for (const recorded of ['missing', 'stale']) {
+  test(`update restart replaces the running Prumo dashboard when the recorded pid is ${recorded}`, { skip: process.platform !== 'win32', timeout: 120000 }, async t => {
+    const f = await isolatedDashboard(t)
+    const previous = previousRelease(f.home)
+    if (previous) writeFileSync(f.target, join(previous, 'scripts/serve.mjs'))
+    const old = f.start(null, true)
+    const before = await waitFor(async () => { const body = await f.health(); return body?.pid === old.pid && body })
+    assert.ok(before, 'the previous dashboard serves the isolated port')
+    if (previous) assert.equal(before.version, '2.0.0')
+    // A stale pid that now belongs to an unrelated live process must not be stopped either.
+    const unrelated = f.start(['-e', 'setInterval(() => {}, 1000)'])
+    f.write({ enabled: true, mechanism: 'windows-startup', ...(recorded === 'stale' && { pid: unrelated.pid }), node: process.execPath, script: f.script })
+    writeFileSync(f.target, join(repo, 'scripts/serve.mjs'))
+    const restarted = await restartDashboard(f.options)
+    assert.equal(restarted.ok, true, JSON.stringify(restarted))
+    const after = await f.health()
+    assert.equal(after.version, JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8')).version)
+    assert.notEqual(after.pid, old.pid)
+    assert.equal(restarted.contentCurrent, true)
+    assert.equal(f.preference().pid, after.pid, 'the new dashboard pid is recorded')
+    assert.deepEqual(f.killed, [old.pid])
+    assert.equal(await waitFor(() => !alive(old.pid)), true)
+    assert.equal(alive(unrelated.pid), true, 'an unrelated process is never stopped')
+  })
+}
+
+test('update restart never stops a port occupant that is not the managed Prumo dashboard', { skip: process.platform !== 'win32', timeout: 120000 }, async t => {
+  const f = await isolatedDashboard(t)
+  const pt = createTranslator(messages, 'pt-BR')
+  const server = body => `require('node:http').createServer((q, s) => { s.setHeader('content-type', 'application/json'); s.end(JSON.stringify(${body})) }).listen(${f.port}, '127.0.0.1')`
+  const recordedPreference = { enabled: true, mechanism: 'windows-startup', pid: 424242, node: process.execPath, script: f.script }
+  // Another program on the port is a conflict.
+  const foreign = f.start(['-e', server(`{ product: 'other' }`)])
+  assert.ok(await waitFor(async () => (await f.health())?.product === 'other'))
+  f.write(recordedPreference)
+  const conflict = await restartDashboard(f.options)
+  assert.equal(conflict.ok, false)
+  assert.equal(conflict.conflict, true)
+  assert.equal(conflict.error, 'Port 4949 is used by another program that is not the Prumo dashboard, so it was not stopped. Close that program or free the port, then run prumo dashboard enable')
+  assert.match(pt(conflict.error), /^A porta 4949 está ocupada por outro programa que não é o dashboard do Prumo, por isso ele não foi encerrado\. Feche esse programa/)
+  assert.deepEqual(f.killed, [])
+  assert.equal(alive(foreign.pid), true)
+  foreign.kill()
+  assert.ok(await waitFor(async () => !(await f.health())))
+  // A process that claims to be the Prumo dashboard without running the managed command line.
+  const impostor = f.start(['-e', server(`{ product: 'prumo', mode: 'global', readOnly: true, version: '2.0.0', pid: process.pid }`)])
+  assert.ok(await waitFor(async () => (await f.health())?.pid === impostor.pid))
+  const refused = await restartDashboard(f.options)
+  assert.equal(refused.ok, false)
+  assert.equal(refused.error, `Startup ownership verification failed: managed process not found; the dashboard on port 4949 (pid ${impostor.pid}) is not the Prumo process managed by this installation, so it was not stopped. Stop process ${impostor.pid}, then run prumo dashboard enable`)
+  assert.equal(pt('Dashboard restart failed: {0}', pt(refused.error)), `Falha ao reiniciar o dashboard: Não foi possível confirmar a posse do dashboard: o processo gerenciado não foi encontrado; o dashboard na porta 4949 (pid ${impostor.pid}) não é o processo do Prumo gerenciado por esta instalação, por isso não foi encerrado. Encerre o processo ${impostor.pid} e depois execute prumo dashboard enable`)
+  assert.deepEqual(f.killed, [])
+  assert.equal(alive(impostor.pid), true)
+  assert.deepEqual(f.preference(), recordedPreference, 'a refused restart keeps the recorded pid and command')
 })
