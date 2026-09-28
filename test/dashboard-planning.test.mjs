@@ -96,8 +96,15 @@ function dashboard(lang = 'en', width = 1000, session = new Map(), navigation = 
     node.dataset.i18n = key.replaceAll('&amp;', '&')
     return node
   })
+  const filterOptions = [...html.matchAll(/<button\b([^>]*data-filter-value="([^"]+)"[^>]*)>/g)].map(([, source, filterValue]) => {
+    const option = element()
+    option.dataset.filterValue = filterValue
+    option.setAttribute('aria-pressed', source.match(/aria-pressed="([^"]+)"/)?.[1] ?? 'false')
+    return option
+  })
   const querySelectorAll = (selector) => {
     if (selector === '[data-i18n]') return labels
+    if (selector === '#statusFilter [data-filter-value]') return filterOptions
     if (selector === '.node') return cards
     if (selector === '.node.lit, .node.lit-self') return cards.filter((node) => node.classList.contains('lit') || node.classList.contains('lit-self'))
     if (selector === '#edgePaths path') return paths
@@ -113,6 +120,8 @@ function dashboard(lang = 'en', width = 1000, session = new Map(), navigation = 
         if (cardId) return cards.find((node) => node.dataset.id === cardId) ?? null
         if (!nodes.has(selector)) {
           const node = element()
+          if (selector === '#filterPanel') node.hidden = true
+          if (selector === '#filterToggle') node.setAttribute('aria-expanded', 'false')
           if (selector === '#nodes' || selector === '#edgePaths') {
             const target = selector === '#nodes' ? cards : paths
             const tag = selector === '#nodes' ? 'div' : 'path'
@@ -163,7 +172,7 @@ function dashboard(lang = 'en', width = 1000, session = new Map(), navigation = 
   const renderOnly = script.replace(/\nconst ONBOARDING = createPrumoOnboarding\(\{[\s\S]*?\n\}\)\ntick\(\)\nloadIdentity\(\)\s*$/, '')
   runInContext(renderOnly, context)
   return {
-    nodes, labels, cards, paths,
+    nodes, labels, cards, paths, filterOptions,
     run(code, values = {}) { Object.assign(context, values); return runInContext(code, context) },
     dispatchDocument(type, event, inline = () => {}) {
       inline()
@@ -502,7 +511,7 @@ test('status filters use effective state and always show only direct dependency 
 })
 test('filter controls expose every state and localize labels', () => {
   assert.doesNotMatch(html, /id="depsBtn"|toggleDependencies/)
-  const options = [...html.matchAll(/<option value="([^"]+)"/g)].map(([, value]) => value)
+  const options = [...html.matchAll(/data-filter-value="([^"]+)"/g)].map(([, value]) => value)
   assert.deepEqual(options, ['all', 'done', 'incomplete', 'waiting', 'ready_for_discussion', 'discussing', 'ready_to_plan', 'planning', 'ready', 'running', 'reviewing', 'blocked', 'failed', 'skipped'])
   for (const [lang, labels] of [['en', ['all tasks', 'incomplete', 'ignored']], ['pt-BR', ['todas', 'incompletas', 'ignoradas']]]) {
     const ui = dashboard(lang)
@@ -1760,6 +1769,8 @@ test('the gain card opens the results tab and shows a human estimate only from m
 test('mobile header puts filters and counters behind a compact menu below 700px', () => {
   const small = dashboard('en', 330)
   assert.equal(small.nodes.get('#headerMenu').open, false)
+  small.run("$('#filterPanel')")
+  assert.equal(small.nodes.get('#filterPanel').hidden, true)
   const wide = dashboard('en', 1440)
   assert.equal(wide.nodes.get('#headerMenu').open, true)
   small.resize(400)
@@ -1769,15 +1780,22 @@ test('mobile header puts filters and counters behind a compact menu below 700px'
   const menuStart = html.indexOf('<details class="header-menu"')
   const menu = html.slice(menuStart, html.indexOf('</details>', menuStart) + 10)
   assert.ok(menu.includes('id="statusFilter"'))
+  assert.equal(small.filterOptions.length, 14)
+  assert.doesNotMatch(menu, /<select/)
+  assert.match(html, /\.filter-toggle \{ display: none; \}/)
   assert.ok(menu.includes('id="counts"'))
   assert.match(menu, /<div class="filter-menu" id="filterMenu">/)
   assert.doesNotMatch(menu, /<details[^>]+class="filter-menu"/)
-  small.run('toggleFilterMenu()')
+  small.nodes.get('#headerMenu').open = true
+  small.nodes.get('#headerMenu').dispatchEvent('toggle')
   assert.equal(small.nodes.get('#filterPanel').hidden, false)
   assert.equal(small.nodes.get('#filterToggle').getAttribute('aria-expanded'), 'true')
   small.run('setFilter("done")')
   assert.equal(small.nodes.get('#filterPanel').hidden, true)
   assert.equal(small.nodes.get('#filterToggle').getAttribute('aria-expanded'), 'false')
+  assert.equal(small.nodes.get('#headerMenu').open, false)
+  assert.equal(small.filterOptions.filter(option => option.getAttribute('aria-pressed') === 'true').length, 1)
+  assert.equal(small.filterOptions.find(option => option.dataset.filterValue === 'done').getAttribute('aria-pressed'), 'true')
   assert.match(html, /@media \(max-width: 700px\)/)
 })
 
