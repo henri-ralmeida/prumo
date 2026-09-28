@@ -2,6 +2,53 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.1.0 — 2026-09-28
+
+Versions 1.3.17 and 2.0.0 were never published to npm. Installations on npm 1.3.16 update directly to 2.1.0, and `prumo update` shows the 1.3.17, 2.0.0 and 2.1.0 notes together.
+
+### Changed — Results focused on the parallel gain
+
+- Show the measured parallel-gain card and, below it, a manual-coordination estimate of a fixed 3 minutes per execution, review and retry command, labeled as an estimate and kept out of the measured savings.
+- Remove the results timeline, reviewer gate, agent-time card and task detail blocks from the results view.
+
+### Improved — Run selector progress
+
+- Split the run selector into "in progress" and "in prumo" tabs with per-run task progress and activity; both filters can be active together.
+- Count a run as in prumo once every task is done or skipped by the user's decision, with at least one done, consistently in the selector, `/api/runs` and the gain summary; name skipped tasks next to the count.
+- Keep finished runs out of "in progress" when an older installed server omits completion data, and show "paused" only for runs with pending work and no activity.
+- Drop the illustrative demo run from the selector.
+
+### Improved — Dashboard interactions
+
+- Keep the orchestrator and role cards pinned while the graph scrolls, with a compact strip on narrow screens.
+- Open linked or available tasks directly, fill the selected task and highlight its card; "see detail" keeps a pinned popover open.
+- Hide the collapsed sidebar completely, never scroll the page sideways, and name where the dashboard is served from: repository and commit, global package or installed copy.
+- Describe freed dispatch slots in the event history.
+
+### Added — Engine identity and planning metadata
+
+- Identify the running engine in `prumo status`.
+- Accept manual estimates as task metadata.
+- Explain superseded discussion and planning rounds and summarize planned open questions.
+- Mark an open planning round stale once `sync-plan` requires a contract confirmation, and report metadata-only `sync-plan` updates.
+- Warn about unfinished steps when a blocked task resumes into review, and keep `start` working for runs without a recorded authorization scope.
+
+### Fixed — Shell-aware commands and translations
+
+- Print the progress line from `start` in POSIX syntax under Git Bash and other POSIX shells, and in PowerShell syntax otherwise.
+- Prefer the most specific translation template, translate contract drift details and add Brazilian Portuguese text for phase discussion and planning messages.
+
+### Fixed — Updating 1.2.x runs
+
+- Let a 1.2 run with a started per-task planning attempt continue review, validation and completion after the update instead of being frozen by the migration gate.
+- Name the phase workflow in `start` once a run adopts phase planning.
+- Verify updates from tagged releases since 1.0.2 and confirm that the updated dashboard reads their runs.
+
+### Changed — Skill organized by step
+
+- Turn SKILL.md into a compact router that names the reference to read in each state.
+- Move discussion, planning, dispatch, contract, review and recovery detail into step references, each with a complete Brazilian Portuguese pair, and add a contents index and command reference to the runtime reference.
+
 ## 2.0.0 — 2026-09-24
 
 ### Fixed — Content-addressed installations

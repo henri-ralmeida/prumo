@@ -1,4 +1,15 @@
 {
+  "2.1.0": {
+    "en": [
+      { "title": "Changed — Results focused on the parallel gain", "items": ["Show the measured parallel-gain card with a separate manual-coordination estimate of 3 minutes per execution, review and retry command", "Remove the results timeline, reviewer gate, agent-time card and task detail blocks"] },
+      { "title": "Improved — Run selector progress", "items": ["Split runs into \"in progress\" and \"in prumo\" tabs with per-run task progress", "Count runs whose tasks are all done or skipped by decision as in prumo everywhere", "Show \"paused\" only for runs with pending work and no activity"] },
+      { "title": "Improved — Dashboard interactions", "items": ["Keep the orchestrator and role cards pinned while the graph scrolls", "Open linked or available tasks directly and highlight the selected card", "Name where the dashboard is served from and never scroll the page sideways"] },
+      { "title": "Added — Engine identity and planning metadata", "items": ["Identify the running engine in prumo status", "Accept manual estimates as task metadata", "Explain superseded and stale planning rounds and summarize planned open questions"] },
+      { "title": "Fixed — Shell-aware commands and translations", "items": ["Print the start progress line in POSIX syntax under Git Bash and in PowerShell syntax otherwise", "Prefer the most specific translation and add missing Brazilian Portuguese phase messages"] },
+      { "title": "Fixed — Updating 1.2.x runs", "items": ["Let started 1.2 task-planned attempts continue review, validation and completion after the update", "Verify updates from tagged releases since 1.0.2, including dashboard reading of their runs"] },
+      { "title": "Changed — Skill organized by step", "items": ["Turn SKILL.md into a compact router over step references with complete Brazilian Portuguese pairs"] }
+    ]
+  },
   "2.0.0": {
     "en": [
       { "title": "Fixed — Content-addressed installations", "items": ["Identify each same-version installation by its distributed bytes and verify the complete package", "Compare registered installations in the same language, including DeepSeek Harness"] },
