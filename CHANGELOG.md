@@ -2,6 +2,15 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.1.1 — 2026-09-28
+
+### Fixed — Dashboard restart after update
+
+- Restart the automatic dashboard after `prumo update` even when the recorded process id is missing or stale, so the served version always matches the installation.
+- Prove dashboard ownership through a fast Windows process query, with PowerShell only as a fallback, and keep the recorded process until the old one is replaced.
+- Never stop a program that is not the managed Prumo dashboard; explain how to free the port instead.
+- Cover the restart in the upgrade matrix with the dashboard running before the update.
+
 ## 2.1.0 — 2026-09-28
 
 Versions 1.3.17 and 2.0.0 were never published to npm. Installations on npm 1.3.16 update directly to 2.1.0, and `prumo update` shows the 1.3.17, 2.0.0 and 2.1.0 notes together.

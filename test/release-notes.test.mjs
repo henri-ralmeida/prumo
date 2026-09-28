@@ -7,7 +7,8 @@ const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.u
 
 test('current release has concise English update highlights with descriptive subtitles', () => {
   const notes = releaseNotes(version)
-  assert.deepEqual(notes.map(section => section.title), [
+  assert.deepEqual(notes.map(section => section.title), ['Fixed — Dashboard restart after update'])
+  assert.deepEqual(releaseNotes('2.1.0').map(section => section.title), [
     'Changed — Results focused on the parallel gain',
     'Improved — Run selector progress',
     'Improved — Dashboard interactions',
@@ -16,7 +17,7 @@ test('current release has concise English update highlights with descriptive sub
     'Fixed — Updating 1.2.x runs',
     'Changed — Skill organized by step'
   ])
-  assert.ok(notes.flatMap(section => section.items).includes('Let started 1.2 task-planned attempts continue review, validation and completion after the update'))
+  assert.ok(releaseNotes('2.1.0').flatMap(section => section.items).includes('Let started 1.2 task-planned attempts continue review, validation and completion after the update'))
   assert.ok(releaseNotes('2.0.0').flatMap(section => section.items).includes('Count activity between nearby recorded milestones and mark longer gaps unmeasured'))
   assert.ok(releaseNotes('1.3.17').flatMap(section => section.items).includes('Show bounded field-level changes and exact dependency differences after sync-plan'))
   assert.ok(releaseNotes('1.3.11').flatMap(section => section.items).includes('Keep every task and phase visible while dimming cards outside the selected filter'))

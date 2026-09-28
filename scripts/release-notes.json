@@ -1,4 +1,9 @@
 {
+  "2.1.1": {
+    "en": [
+      { "title": "Fixed — Dashboard restart after update", "items": ["Restart the automatic dashboard after prumo update even when the recorded process id is missing or stale", "Prove dashboard ownership through a fast Windows process query and keep the record until the old process is replaced", "Never stop a program that is not the managed Prumo dashboard and explain how to free the port"] }
+    ]
+  },
   "2.1.0": {
     "en": [
       { "title": "Changed — Results focused on the parallel gain", "items": ["Show the measured parallel-gain card with a separate manual-coordination estimate of 3 minutes per execution, review and retry command", "Remove the results timeline, reviewer gate, agent-time card and task detail blocks"] },
