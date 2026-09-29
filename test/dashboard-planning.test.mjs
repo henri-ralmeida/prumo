@@ -1346,6 +1346,16 @@ test('the hub (orchestrator and roles) stays inside the viewport while the board
   assert.match(ui.nodes.get('#hubPaths').innerHTML, /class="s-frame"/)
   assert.doesNotMatch(ui.nodes.get('#structPaths').innerHTML, /class="s-frame"/)
   assert.match(ui.nodes.get('#structPaths').innerHTML, /class="s-base"/)
+  const struct = ui.nodes.get('#structPaths').innerHTML
+  const rail = struct.match(/<line class="s-rail" x1="([^"]+)" y1="([^"]+)" x2="([^"]+)" y2="([^"]+)"/)
+  assert.ok(rail, 'the phase guide is a dashed vertical rail')
+  assert.equal(rail[1], rail[3], 'the guide does not swing sideways')
+  assert.notEqual(rail[2], rail[4], 'the guide extends vertically through the phases')
+  assert.match(struct, /<circle class="s-live-dot"/)
+  assert.doesNotMatch(struct, /s-sway|s-bob/)
+  assert.match(html, /svg#edges \.s-rail \{ stroke-dasharray: 3 6; stroke-linecap: round; \}/)
+  assert.match(html, /svg#edges \.s-live-dot \{[^}]*animation: beat/)
+  assert.doesNotMatch(html, /@keyframes sway/)
   assert.match(html, /#hub \{ position: absolute; top: 0; left: 0; z-index: 4;/)
   assert.match(html, /#hub\.stuck \.hub-shade \{ display: block; background: var\(--bg\); border-bottom: 1px solid var\(--line\);/,
     'pinned: opaque ground and a hairline, no new colours')
@@ -1766,7 +1776,7 @@ test('the gain card opens the results tab and shows a human estimate only from m
   assert.match(card, /for 1 of 3 tasks/, 'invalid or missing estimates are ignored silently and the coverage is stated')
 })
 
-test('mobile header puts filters and counters behind a compact menu below 700px', () => {
+test('compact header keeps Live visible and opens filters and counts together below 1100px', () => {
   const small = dashboard('en', 330)
   assert.equal(small.nodes.get('#headerMenu').open, false)
   small.run("$('#filterPanel')")
@@ -1774,11 +1784,18 @@ test('mobile header puts filters and counters behind a compact menu below 700px'
   const wide = dashboard('en', 1440)
   assert.equal(wide.nodes.get('#headerMenu').open, true)
   small.resize(400)
+  assert.equal(small.nodes.get('#headerMenu').open, false)
+  small.resize(800)
   assert.equal(small.nodes.get('#headerMenu').open, true)
   small.resize(330)
   assert.equal(small.nodes.get('#headerMenu').open, false)
+  small.resize(400)
+  assert.equal(small.nodes.get('#headerMenu').open, false, 'the filter menu is still compact above 700px')
+  const header = html.slice(html.indexOf('<header>'), html.indexOf('</header>'))
   const menuStart = html.indexOf('<details class="header-menu"')
   const menu = html.slice(menuStart, html.indexOf('</details>', menuStart) + 10)
+  assert.ok(header.indexOf('id="orch"') < header.indexOf('<details class="header-menu"'), 'Live stays visible outside the filter menu')
+  assert.doesNotMatch(menu, /id="orch"/)
   assert.ok(menu.includes('id="statusFilter"'))
   assert.equal(small.filterOptions.length, 14)
   assert.doesNotMatch(menu, /<select/)
@@ -1793,23 +1810,25 @@ test('mobile header puts filters and counters behind a compact menu below 700px'
   small.run('setFilter("done")')
   assert.equal(small.nodes.get('#filterPanel').hidden, true)
   assert.equal(small.nodes.get('#filterToggle').getAttribute('aria-expanded'), 'false')
-  assert.equal(small.nodes.get('#headerMenu').open, false)
+  assert.equal(small.nodes.get('#headerMenu').open, false, 'selecting a filter closes the whole compact menu')
   assert.equal(small.filterOptions.filter(option => option.getAttribute('aria-pressed') === 'true').length, 1)
   assert.equal(small.filterOptions.find(option => option.dataset.filterValue === 'done').getAttribute('aria-pressed'), 'true')
-  assert.match(html, /@media \(max-width: 700px\)/)
+  assert.match(html, /@media \(max-width: 1100px\)/)
 })
 
 test('the guide is a separate right-most header control and stays at the top right on mobile', () => {
   const header = html.slice(html.indexOf('<header>'), html.indexOf('</header>'))
   const guide = header.indexOf('id="guideButton"'), menu = header.indexOf('<details class="header-menu"')
   const slot = header.indexOf('<div class="header-guide">')
-  assert.ok(menu > header.indexOf('id="resBtn"') && slot > menu && guide > slot, 'results · filters · separated guide')
+  assert.ok(menu > header.indexOf('id="orch"') && header.indexOf('id="orch"') > header.indexOf('id="resBtn"') && slot > menu && guide > slot,
+    'results · Live · filters · separated guide')
   assert.match(html, /\.header-guide \{[^}]*margin-left: auto;[^}]*padding-left: 16px;[^}]*border-left: 1px solid var\(--line\);/)
   assert.match(html, /header \.run-menu \{ grid-column: 2; grid-row: 1;/)
   assert.match(html, /header \.header-guide \{ grid-column: 3; grid-row: 1;[^}]*border: 0;/)
   assert.match(html, /header #resBtn \{ grid-column: 1; grid-row: 2;/)
-  assert.match(html, /header \.header-menu \{ grid-column: 2 \/ 4; grid-row: 2;/)
-  assert.match(html, /\.header-menu-content \{[^}]*right: 0;[^}]*width: min\(calc\(100vw - 20px\), 300px\)/)
+  assert.match(html, /header \.orch \{ grid-column: 2 \/ 4; grid-row: 2;/)
+  assert.match(html, /header \.header-menu \{ grid-column: 1 \/ 4; grid-row: 3;/)
+  assert.match(html, /\.header-menu-content \{[^}]*right: 0;[^}]*width: min\(calc\(100vw - 20px\), 340px\)/)
 })
 
 test('guide button is labeled with one word in English and Brazilian Portuguese', () => {
@@ -1847,20 +1866,28 @@ test('active agents lead with the per-agent list; the role counters are a quiet 
   assert.doesNotMatch(html, /#parTitle b \{ font: 700 15px/)
 })
 
-test('Pin lives in the popover header and reflects the pinned state', () => {
+test('Pin lives in the popover header and toggles the pinned state', () => {
   const ui = dashboard('pt-BR')
   ui.render({ run: 'x', plan: {}, tasks: { T: task('T'), U: task('U', 'pending', { deps: ['T'] }) }, derived: { T: { effective: 'ready' }, U: { effective: 'waiting' } } })
   const tools = html.slice(html.indexOf('<div class="ptools">'), html.indexOf('<div id="popBody">'))
   assert.ok(tools.indexOf('id="popExpand"') < tools.indexOf('id="popPin"') && tools.indexOf('id="popPin"') < tools.indexOf('onclick="closePop()"'),
     'expand · pin · close, as in the design')
+  assert.match(html, /id="popPin" onclick="toggleTaskPopoverPin\(\)"/)
   ui.run("POP_MODE = 'lean'; openPop('T', false)")
   assert.equal(ui.nodes.get('#popPin').getAttribute('aria-pressed'), 'false')
   assert.doesNotMatch(ui.nodes.get('#popBody').innerHTML, /pin-action/, 'the footer no longer carries a Pin button')
   assert.match(ui.nodes.get('#popBody').innerHTML, /class="pfoot"[\s\S]*Agent time[\s\S]*see detail →/)
-  ui.run('pinTaskPopover()')
+  ui.run('toggleTaskPopoverPin()')
   assert.equal(ui.run('POP.pinned'), true)
   assert.equal(ui.nodes.get('#popPin').getAttribute('aria-pressed'), 'true')
   assert.equal(ui.nodes.get('#popPin').getAttribute('aria-label'), 'Fixado')
+  ui.run('toggleTaskPopoverPin()')
+  assert.equal(ui.run('POP.pinned'), false, 'the same control releases a pinned popover')
+  assert.equal(ui.nodes.get('#pop').classList.contains('pinned'), false)
+  assert.equal(ui.nodes.get('#popPin').getAttribute('aria-pressed'), 'false')
+  assert.equal(ui.nodes.get('#popPin').getAttribute('aria-label'), 'Fixar')
+  ui.run('toggleTaskPopoverPin()')
+  assert.equal(ui.run('POP.pinned'), true, 'it can be pinned again')
 })
 
 test('clicks on popover controls that re-render the popover keep it pinned (see detail, dependency chips)', () => {
