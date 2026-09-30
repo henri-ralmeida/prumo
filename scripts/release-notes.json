@@ -3,7 +3,7 @@
     "en": [
       {"title":"Fixed — Completed task totals","items":["Count completed tasks over valid tasks only, excluding skipped tasks and keeping sidebar and board totals consistent when filters change"]},
       {"title":"Improved — Agent activity and estimated savings","items":["Display estimated savings alongside measured metrics and identify the fixed manual coordination assumption","Measure discussion, planning, execution and review with explicit activity start and stop intervals, excluding waits and preserving unknown legacy periods"]},
-      {"title":"Improved — Dashboard and interactive guide","items":["Use No Prumo for completed task labels and compare Sem prumo with No prumo in results","Keep task states, colors and synchronized activity indicators consistent in the dashboard and interactive guide","Navigate smoothly to tasks and phases without restarting the task card opening animation","Guide new users through roles, dashboard, results and approved planning before invoking Prumo","Install Prumo in its own skill directory and preserve the original graph-foreman skill"]}
+      {"title":"Improved — Dashboard and interactive guide","items":["Use No Prumo for completed task labels and compare Sem prumo with No prumo in results","Keep task states, colors and synchronized activity indicators consistent in the dashboard and interactive guide","Navigate smoothly to tasks and phases without restarting the task card opening animation","Guide new users through roles, dashboard, results and approved planning before invoking Prumo","Keep graph-foreman installations separate and copy older Prumo data without deleting the original directory"]}
     ]
   },
   "2.2.1": {

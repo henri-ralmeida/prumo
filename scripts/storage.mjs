@@ -70,9 +70,7 @@ export function globalGraphRoots(env = process.env, home = homedir()) {
 
   const centrals = [...new Set([
     env.PRUMO_HOME,
-    env.GRAPH_FOREMAN_HOME,
     join(home, '.local', 'share', 'prumo'),
-    join(home, '.local', 'share', 'graph-foreman'),
   ].filter(Boolean).map(path => resolve(path)))]
   for (const central of centrals) {
     if (!existsSync(central)) continue

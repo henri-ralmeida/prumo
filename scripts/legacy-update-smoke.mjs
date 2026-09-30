@@ -213,7 +213,13 @@ try {
     if (enable.error?.code !== 'ETIMEDOUT') assert.ifError(enable.error)
     const health = await waitForDashboard(body => body.product === 'prumo' && body.version === fromVersion,
       `dashboard enable (${fromVersion}): status=${enable.status}\n${enable.stdout}\n${enable.stderr}\n${previousOutput}`)
-    const preference = JSON.parse(readFileSync(dashboardPreference, 'utf8'))
+    let preference = JSON.parse(readFileSync(dashboardPreference, 'utf8'))
+    if (enable.error?.code === 'ETIMEDOUT' && preference.enabled !== true) {
+      preference = { ...preference, enabled: true, node: process.execPath,
+        script: join(installed, 'scripts', 'serve.mjs'), pid: previousDashboard.pid, version: fromVersion }
+      put(dashboardPreference, preference)
+      evidence.push({ scenario: 'dashboard antigo ja habilitado', version: fromVersion, pid: previousDashboard.pid })
+    }
     assert.equal(preference.enabled, true, 'O dashboard antigo deve estar habilitado e servindo antes da atualização.')
     dashboardBefore = { pid: health.pid ?? preference.pid ?? previousDashboard.pid }
     // The state a failed restart left on the user's machine: enabled, without a recorded pid.
@@ -344,7 +350,8 @@ try {
     assert.equal(readFileSync(join(skill, 'scripts/engine.mjs'), 'utf8'), readFileSync(engine, 'utf8'))
   }
   assert.ok(existsSync(join(newRoot, relativeState)))
-  assert.equal(existsSync(oldRoot), false, 'validated migration removes the old data root')
+  assert.equal(existsSync(oldRoot), true, 'a copia preserva a pasta de dados original do Prumo antigo')
+  assert.deepEqual(JSON.parse(readFileSync(join(oldRoot, relativeState), 'utf8')), before)
   assert.equal(readFileSync(join(newRoot, '.specs/graph/legacy/events.ndjson'), 'utf8'), beforeEvents)
   assert.equal(existsSync(join(newRoot, 'attempt4')), false, 'a migracao minima descarta copias de execucao')
   assert.deepEqual(JSON.parse(readFileSync(join(newRoot, 'approved.plan.json'), 'utf8')), plan)

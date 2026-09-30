@@ -12,7 +12,7 @@ import { installationBundle } from '../scripts/installation-bundle.mjs'
 import { ensureGlobalCliContent, globalCliContentCurrent, globalCliState, updateGlobalCliFromPackage, npmProcess } from '../lib/update.mjs'
 import { enableDashboard } from '../lib/autostart.mjs'
 import { runPostinstall } from '../scripts/postinstall.mjs'
-import { inside, findRoot, storageHome, graphRoots } from '../scripts/storage.mjs'
+import { inside, findRoot, storageHome, graphRoots, globalGraphRoots } from '../scripts/storage.mjs'
 
 const source = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const put = (path, value) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, typeof value === 'string' ? value : JSON.stringify(value, null, 2)) }
@@ -36,6 +36,13 @@ function fixture(t, harness = 'claude') {
   }
   const install = () => { const result = applyInstall(plan()); assert.ok(result.groups.every(group => group.status !== 'conflict'), JSON.stringify(result)); return result }
   return { home, cwd, options, config, skillRoot, plan, install }
+}
+
+function oldPrumoFixture(t) {
+  const f = fixture(t)
+  put(join(f.skillRoot, 'prumo', '.prumo-install.json'), { product: 'prumo', version: '1.3.16', harness: 'claude', lang: 'en' })
+  put(join(f.skillRoot, 'prumo', 'SKILL.md'), '---\nname: prumo\n---\nInstalação anterior do Prumo.')
+  return f
 }
 
 test('dashboard root names keep the selected legacy workspace unambiguous', t => {
@@ -424,8 +431,8 @@ test('automatic CLI installs only detected harnesses, preserves runs and backups
   assert.match(doctor.stdout, /dashboard: .*; .*; disabled/)
   assert.equal(existsSync(marker('codex')), false)
   assert.equal(existsSync(join(f.home, '.codex')), false)
-  assert.equal(read(migratedState), before)
-  assert.equal(existsSync(state), false)
+  assert.equal(existsSync(migratedState), false)
+  assert.equal(read(state), before)
   assert.equal(read(legacy), 'original legacy skill')
   const backups = join(f.home, '.local', 'share', 'prumo', 'backups')
   const count = readdirSync(backups).length
@@ -438,7 +445,8 @@ test('automatic CLI installs only detected harnesses, preserves runs and backups
   const explicit = cli(['install', '--codex'])
   assert.equal(explicit.status, 0, explicit.stdout + explicit.stderr)
   assert.ok(existsSync(marker('codex')))
-  assert.equal(read(migratedState), before)
+  assert.equal(existsSync(migratedState), false)
+  assert.equal(read(state), before)
 })
 
 test('explicit install refuses each absent harness before writing anything', async t => {
@@ -956,8 +964,8 @@ test('marcador danificado sem backup integro nao e adotado automaticamente', t =
   assert.deepEqual(readFileSync(marker), Buffer.alloc(90))
 })
 
-test('overlay migrates the legacy skill, preserves run data and supports complete restore', t => {
-  const f = fixture(t)
+test('atualizacao do Prumo antigo copia dados e preserva a skill graph-foreman durante a reversao', t => {
+  const f = oldPrumoFixture(t)
   const legacy = join(f.skillRoot, 'graph-foreman')
   const prumo = join(f.skillRoot, 'prumo')
   put(join(legacy, 'SKILL.md'), 'old skill instructions')
@@ -1011,7 +1019,7 @@ test('overlay migrates the legacy skill, preserves run data and supports complet
   const migratedEvents = join(migratedRoot, relative(root, eventsPath))
   const migratedPlan = join(migratedRoot, relative(root, planPath))
   assert.deepEqual([read(migratedState), read(migratedEvents), read(migratedPlan)], before)
-  assert.equal(existsSync(root), false)
+  assert.equal(existsSync(root), true)
   assert.equal(read(join(legacy, 'scripts', 'engine.mjs')), '// old engine')
   assert.equal(read(join(prumo, 'custom.bin')), 'custom bytes preserved')
   const verificationRoot = join(f.home, 'verification-workspace')
@@ -1028,12 +1036,12 @@ test('overlay migrates the legacy skill, preserves run data and supports complet
   restoreInstall(result.backup, { home: f.home, env: {} })
   assert.equal(read(join(legacy, 'scripts', 'engine.mjs')), '// old engine')
   assert.equal(read(join(legacy, 'custom.bin')), 'custom bytes preserved')
-  assert.equal(existsSync(join(prumo, 'SKILL.md')), false)
+  assert.match(read(join(prumo, 'SKILL.md')), /name: prumo/)
   assert.deepEqual([read(statePath), read(eventsPath), read(planPath)], before)
 })
 
-test('central graph-foreman workspaces move to Prumo and restore without changing run bytes', t => {
-  const f = fixture(t)
+test('Prumo antigo copia dados do namespace anterior sem alterar a origem nem reverter planos', t => {
+  const f = oldPrumoFixture(t)
   const legacy = join(f.home, '.local', 'share', 'graph-foreman', 'work')
   const migrated = join(f.home, '.local', 'share', 'prumo', 'work')
   const relativeState = join('.specs', 'graph', 'run-1', 'state.json')
@@ -1047,21 +1055,20 @@ test('central graph-foreman workspaces move to Prumo and restore without changin
 
   const result = f.install()
   assert.deepEqual([read(join(migrated, relativeState)), read(join(migrated, relativeEvents))], before)
-  assert.equal(existsSync(legacy), false)
+  assert.equal(existsSync(legacy), true)
   for (const rootKey of ['GRAPH_ROOT', 'PRUMO_ROOT']) {
-    assert.equal(findRoot({ [rootKey]: legacy, GRAPH_FOREMAN_HOME: dirname(legacy) }, f.cwd, f.home), migrated)
+    assert.equal(findRoot({ [rootKey]: legacy, GRAPH_FOREMAN_HOME: dirname(legacy) }, f.cwd, f.home), legacy)
   }
-  mkdirSync(legacy, { recursive: true })
-  assert.equal(findRoot({ GRAPH_ROOT: legacy }, f.cwd, f.home), migrated, 'an empty locked legacy directory must not hide migrated runs')
+  assert.equal(findRoot({ GRAPH_ROOT: legacy }, f.cwd, f.home), legacy, 'a origem preservada continua disponivel quando selecionada explicitamente')
   assert.throws(() => findRoot({ GRAPH_ROOT: join(dirname(legacy), 'missing') }, f.cwd, f.home), /does not exist/)
 
   restoreInstall(result.backup, { home: f.home, env: {} })
   assert.deepEqual([read(join(legacy, relativeState)), read(join(legacy, relativeEvents))], before)
-  assert.equal(existsSync(join(migrated, relativeState)), false)
+  assert.equal(existsSync(join(migrated, relativeState)), true)
 })
 
 test('large workspace relocation keeps file payloads out of memory and rejects a concurrent edit', t => {
-  const f = fixture(t)
+  const f = oldPrumoFixture(t)
   const legacy = join(f.home, '.local', 'share', 'graph-foreman', 'large')
   const destination = join(f.home, '.local', 'share', 'prumo', 'large')
   const payload = join(legacy, '.specs', 'graph', 'run', 'payload.bin')
@@ -1077,6 +1084,29 @@ test('large workspace relocation keeps file payloads out of memory and rejects a
   assert.equal(result.groups.find(group => group.name === 'workspace:large').status, 'conflict')
   assert.equal(existsSync(legacy), true)
   assert.equal(existsSync(destination), false)
+})
+
+for (const harness of ['claude', 'kiro', 'codex', 'dsh']) test(`${harness}: graph-foreman isolado nao importa planos nem remove dados`, t => {
+  const f = fixture(t, harness)
+  const legacy = join(f.home, '.local', 'share', 'graph-foreman', 'work')
+  const destination = join(f.home, '.local', 'share', 'prumo', 'work')
+  const state = join(legacy, '.specs', 'graph', 'old', 'state.json')
+  const artifact = join(legacy, 'attempt', 'delivery.txt')
+  put(state, '{plano independente do Prumo')
+  put(artifact, 'entrega original')
+  const before = [read(state), read(artifact)]
+  const plan = f.plan()
+  assert.equal(plan.groups.some(group => group.name.startsWith('workspace:')), false)
+  const result = applyInstall(plan)
+  assert.ok(result.groups.every(group => group.status !== 'conflict'))
+  assert.deepEqual([read(state), read(artifact)], before)
+  assert.equal(existsSync(destination), false)
+  assert.equal(globalGraphRoots({ GRAPH_FOREMAN_HOME: dirname(legacy) }, f.home).roots.some(root => root.path === legacy), false)
+  assert.equal(f.install().backup, null)
+  assert.deepEqual([read(state), read(artifact)], before)
+  assert.equal(existsSync(destination), false)
+  restoreInstall(result.backup, { home: f.home, env: {} })
+  assert.deepEqual([read(state), read(artifact)], before)
 })
 
 for (const harness of ['claude', 'kiro', 'codex', 'dsh']) test(`${harness}: instalar Prumo copia arquivos adicionais sem apagar a skill graph-foreman`, t => {
@@ -1110,8 +1140,8 @@ test('legacy migration blocks conflicting custom files without changing either s
   assert.equal(read(destination), 'Prumo value')
 })
 
-test('workspace migration keeps graph state, discards execution artifacts and can restore the state', t => {
-  const f = fixture(t)
+test('copia do Prumo antigo preserva estado e artefatos originais sem copiar artefatos gerados', t => {
+  const f = oldPrumoFixture(t)
   const legacy = join(f.home, '.local/share/graph-foreman/retro-pass-ultimate')
   const destination = join(f.home, '.local/share/prumo/retro-pass-ultimate')
   put(join(legacy, '.specs/graph/run/state.json'), '{"history":"keep"}')
@@ -1124,7 +1154,7 @@ test('workspace migration keeps graph state, discards execution artifacts and ca
   symlinkSync(external, join(legacy, nodeModules, 'external'), 'junction')
   symlinkSync(legacy, join(legacy, 'self'), 'junction')
   const result = f.install()
-  assert.equal(existsSync(legacy), false)
+  assert.equal(existsSync(legacy), true)
   assert.equal(read(join(destination, '.specs/graph/run/state.json')), '{"history":"keep"}')
   assert.equal(existsSync(join(destination, 'attempt4')), false)
   assert.equal(read(join(external, 'value.txt')), 'external')
@@ -1133,12 +1163,12 @@ test('workspace migration keeps graph state, discards execution artifacts and ca
   assert.equal(f.install().backup, null, 'repeated migration is inert')
   restoreInstall(result.backup, { home: f.home, env: {} })
   assert.equal(read(join(legacy, '.specs/graph/run/state.json')), '{"history":"keep"}')
-  assert.equal(existsSync(join(legacy, 'attempt4')), false, 'discarded execution artifacts are intentionally not restored')
+  assert.equal(existsSync(join(legacy, 'attempt4')), true, 'os artefatos originais permanecem na origem')
   assert.equal(read(join(external, 'value.txt')), 'external')
 })
 
 test('workspace state conflicts preserve both graph copies', t => {
-  const f = fixture(t)
+  const f = oldPrumoFixture(t)
   const legacy = join(f.home, '.local/share/graph-foreman/work')
   const destination = join(f.home, '.local/share/prumo/work')
   put(join(legacy, '.specs/graph/run/state.json'), 'run bytes')
@@ -1151,7 +1181,7 @@ test('workspace state conflicts preserve both graph copies', t => {
 })
 
 test('migração recusa edição do estado entre o carimbo e a relocação', t => {
-  const f = fixture(t)
+  const f = oldPrumoFixture(t)
   const legacy = join(f.home, '.local/share/graph-foreman/race')
   const destination = join(f.home, '.local/share/prumo/race')
   const state = join(legacy, '.specs/graph/run/state.json')
@@ -1164,7 +1194,7 @@ test('migração recusa edição do estado entre o carimbo e a relocação', t =
 })
 
 test('falha posterior desfaz a relocação do estado antes de reportar conflito', t => {
-  const f = fixture(t)
+  const f = oldPrumoFixture(t)
   const legacy = join(f.home, '.local/share/graph-foreman/partial')
   const destination = join(f.home, '.local/share/prumo/partial')
   put(join(legacy, '.specs/graph/run/state.json'), 'state')
@@ -1179,7 +1209,7 @@ test('falha posterior desfaz a relocação do estado antes de reportar conflito'
 })
 
 test('migração recusa arquivo raiz criado durante a instalação e preserva a origem', t => {
-  const f = fixture(t)
+  const f = oldPrumoFixture(t)
   const legacy = join(f.home, '.local/share/graph-foreman/late')
   const destination = join(f.home, '.local/share/prumo/late')
   put(join(legacy, '.specs/graph/run/state.json'), 'state')
@@ -1193,7 +1223,7 @@ test('migração recusa arquivo raiz criado durante a instalação e preserva a 
 })
 
 test('migração recusa link do estado que aponta para execução descartada', t => {
-  const f = fixture(t)
+  const f = oldPrumoFixture(t)
   const legacy = join(f.home, '.local/share/graph-foreman/linked-execution')
   const attempt = join(legacy, 'attempt4/source/packages/desktop')
   put(join(attempt, 'value.txt'), 'generated')
@@ -1207,7 +1237,7 @@ test('migração recusa link do estado que aponta para execução descartada', t
 })
 
 test('migração preserva link interno do estado que também é migrado', t => {
-  const f = fixture(t)
+  const f = oldPrumoFixture(t)
   const legacy = join(f.home, '.local/share/graph-foreman/linked-state')
   const target = join(legacy, '.specs/graph/run/target')
   const link = join(legacy, '.specs/graph/run/alias')
@@ -1222,7 +1252,7 @@ test('migração preserva link interno do estado que também é migrado', t => {
 })
 
 test('migração e restauração preservam link do estado para backup durável', t => {
-  const f = fixture(t)
+  const f = oldPrumoFixture(t)
   const legacy = join(f.home, '.local/share/graph-foreman/linked-backup')
   const durableBackup = join(legacy, 'backups/saved')
   const stateLink = join(legacy, '.specs/graph/run/archive')
@@ -1237,11 +1267,11 @@ test('migração e restauração preservam link do estado para backup durável',
   restoreInstall(result.backup, { home: f.home, env: {} })
   assert.equal(realpathSync(stateLink), realpathSync(durableBackup))
   assert.equal(read(join(stateLink, 'value.txt')), 'backup')
-  assert.equal(existsSync(join(destination, '.specs')), false)
+  assert.equal(existsSync(join(destination, '.specs')), true)
 })
 
 test('migração recusa link para diretório durável vazio antes de mover a origem', t => {
-  const f = fixture(t)
+  const f = oldPrumoFixture(t)
   const legacy = join(f.home, '.local/share/graph-foreman/empty-linked-backup')
   const destination = join(f.home, '.local/share/prumo/empty-linked-backup')
   const durableBackup = join(legacy, 'backups/saved')
@@ -1261,7 +1291,7 @@ test('migração recusa link para diretório durável vazio antes de mover a ori
 })
 
 test('merge recusa link para diretório durável vazio mesmo com alvo no destino', t => {
-  const f = fixture(t)
+  const f = oldPrumoFixture(t)
   const legacy = join(f.home, '.local/share/graph-foreman/empty-linked-merge')
   const destination = join(f.home, '.local/share/prumo/empty-linked-merge')
   const durableBackup = join(legacy, 'backups/saved')

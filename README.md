@@ -122,9 +122,9 @@ An update verifies the installed payload, not only its saved version. It reappli
 
 Running `install` again is safe. Complete same-version environments are reported as already installed and are not rewritten or backed up. Older, incomplete or changed installations follow the normal preview, backup and conflict checks.
 
-## Installing over graph-foreman
+## Installing alongside graph-foreman
 
-Use the same `install` command to replace an existing graph-foreman installation with Prumo. For all detected environments, preview and then apply:
+Use the same `install` command to install Prumo alongside an existing graph-foreman installation. For all detected environments, preview and then apply:
 
 ```sh
 bunx @henri-ralmeida/prumo@latest install --all --dry-run
@@ -133,11 +133,11 @@ bunx @henri-ralmeida/prumo@latest install --all
 
 Omit `--all` to choose with checkboxes, or use `--claude`, `--kiro`, `--codex` or `--dsh` to select one directly. For a project-local installation, run from that project or add `--project "<project-path>"`. This first switch uses `install`; `update` only refreshes environments already containing Prumo. After migration, use `/prumo` (or `$prumo` in Codex); the original `/graph-foreman` skill stays intact in its separate directory.
 
-No manual data migration is required. Finish sessions that are actively loading files from the graph-foreman skill before installing; the installer never kills processes. It checks standard locations, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, supplied projects and ancestors of the current directory.
+A graph-foreman-only installation keeps its skill and plans intact. Prumo uses its own storage and does not automatically import those plans. Compatibility copying applies only when a previous Prumo installation is identified by its Prumo product and version marker.
 
 - Installs Prumo under the same skills root, copies non-product legacy files when they do not conflict, verifies the installed files and preserves the original graph-foreman skill directory.
-- Moves only durable central data from `~/.local/share/graph-foreman` to `~/.local/share/prumo`: graph state, saved graph backups and top-level plan or handoff files. Project-local `.specs/graph` stays in place. Generated execution directories, dependency copies and build outputs are deleted only after the durable destination is verified. Contracts, states, attempts, evidence and history remain unchanged.
-- Keeps a recoverable original proportional to the durable plan data, detects concurrent workspace changes, and rolls back a relocation when a later installation step fails. Internal links between durable data follow the destination; external targets remain untouched. A link to an empty directory that cannot be recreated defers migration before changing the source.
+- For older Prumo installations, copies durable central data from the historical `~/.local/share/graph-foreman` namespace to `~/.local/share/prumo`, preserving the complete source directory. Generated execution files remain in the original directory. Project-local Prumo runs remain in place.
+- Verifies the copy and detects concurrent changes without deleting source files. Restoring the installation does not revert copied run data; old backups that recorded a relocation retain their original restore checks.
 - Applies independent groups separately. Conflicting custom files, invalid configuration, linked paths or busy files block only their affected group. The installer does not kill processes to release files.
 - Verifies written bytes and rolls back a failed group before reporting success. Concurrent changes are detected.
 
