@@ -17,7 +17,6 @@ export function createPrumoOnboarding({
   const previous = root.querySelector('#guidePrevious')
   const next = root.querySelector('#guideNext')
   const skip = root.querySelector('#guideSkip')
-  const presentation = root.querySelector('#guidePresentation')
   const gainsLabel = root.querySelector('#guideGainsLabel')
   const gainsSummary = root.querySelector('#guideGainsSummary')
   const openLegend = root.querySelector('#guideOpenLegend')
@@ -41,14 +40,14 @@ export function createPrumoOnboarding({
       { title: 'Filters and counts', description: 'Filter this run by status and read how many tasks are in each state.', anchors: ['filters'] },
       { title: 'Phases, tasks and dependencies', description: 'These lanes are phases, these cards are real tasks from the selected run, and the arrows show dependencies.', anchors: ['phases', 'tasks', 'board'] },
       { title: 'Available tasks', description: 'During a run, this panel lists tasks that can start now, including tasks waiting on your decision.', anchors: ['available'], needsSidebar: true },
-      { title: 'Selected task', description: 'Clicking a task during a run shows its details in this same space.', anchors: ['selected'], fallbackAnchors: ['available'], needsSidebar: true },
+      { title: 'Task card', description: 'Click a task to open its summary. Expand the card to read the full details.', anchors: ['selected'], fallbackAnchors: ['tasks'] },
       { title: 'Run results', description: 'Open Results to see the selected run\'s summary and measured data.', anchors: ['results'] },
       { title: 'Legend', description: 'The legend maps each task state to its color and explains dependency lines.', anchors: ['legend'], needsSidebar: true },
     ], exampleDemos: [
       { title: 'Filters and counts', description: 'Filter this dashboard by status and read how many tasks are in each state.', anchors: ['filters'] },
       { title: 'Example run: checkout-v2', description: 'This illustrative design example shows 10 tasks and their dependencies; it is not current run data.', anchors: ['example-graph'], exampleGraph: true },
       { title: 'Available tasks', description: 'During a run, this panel lists tasks that can start now, including tasks waiting on your decision.', anchors: ['available'], needsSidebar: true },
-      { title: 'Selected task', description: 'Clicking a task during a run shows its details in this same space.', anchors: ['selected'], fallbackAnchors: ['available'], needsSidebar: true },
+      { title: 'Task card', description: 'Click a task to open its summary. Expand the card to read the full details.', anchors: ['selected'], fallbackAnchors: ['tasks'] },
       { title: 'Run results', description: 'When a run is available, open Results to see its summary and measured data.', anchors: ['results'] },
       { title: 'Legend', description: 'The legend maps each task state to its color and explains dependency lines.', anchors: ['legend'], needsSidebar: true },
     ] },
@@ -242,7 +241,7 @@ export function createPrumoOnboarding({
           ${mockCard('T1', 'orders schema', 'done', 'in prumo: the reviewer approved it')}</div>`
     }
     if (kind === 'filters') {
-      const counts = snapshot ? copyOf(document.querySelector?.('[data-prumo-guide-anchor="filters"] .counts')) : ''
+      const counts = snapshot ? copyOf(document.querySelector?.('#counts')) : ''
       return counts ? tag(true, snapshot) + live(counts)
         : tag(false) + `<div class="gv-counts"><span>${text('running')} <b>2</b></span><span>${text('blocked')} <b>1</b></span><span>${text('in prumo')} <b>4</b></span><span>${text('waiting')} <b>3</b></span></div>`
     }
@@ -257,8 +256,10 @@ export function createPrumoOnboarding({
         : tag(false) + `<div class="gv-cards">${mockCard('T8', 'end-to-end tests', 'next', 'Next up')}${mockCard('T10', 'gradual rollout', 'blocked', 'blocked: waiting for your decision')}</div>`
     }
     if (kind === 'selected') {
-      const selectedBox = document.querySelector?.('#selectedTask')
-      const selected = snapshot && String(selectedBox?.textContent ?? '').trim().length > 40 ? copyOf(selectedBox) : ''
+      const card = document.querySelector?.('#pop')
+      const selectedBox = document.querySelector?.('#popBody')
+      const currentCard = card && !card.hidden && card.classList?.contains('open') && card.dataset?.run === snapshot?.run
+      const selected = snapshot && currentCard && String(selectedBox?.textContent ?? '').trim().length > 40 ? copyOf(selectedBox) : ''
       return selected ? tag(true, snapshot) + live(`<div class="gv-selected">${selected}</div>`)
         : tag(false) + `<div class="gv-cards">${mockCard('T7', 'gateway webhooks', 'failed', 'rejected: back to the executor with the review')}</div>
           <p class="gv-note">${text('The panel shows its summary, what it needs to pass, its dependencies and its attempts.')}</p>`
@@ -345,19 +346,28 @@ export function createPrumoOnboarding({
     renderStep(targetIndex, (demosFor(targetStep)?.length ?? 1) - 1)
   }
 
-  function setPresentation(active) {
-    root.classList.toggle('presenting', active)
-    presentation.setAttribute('aria-pressed', String(active))
-    presentation.textContent = translate(active ? 'Exit presentation' : 'Presentation / fullscreen')
+  let fullscreenPending = false
+  let fullscreenOwned = false
+
+  function leaveFullscreen() {
+    if (fullscreenOwned && document.fullscreenElement === root && document.exitFullscreen) {
+      try { Promise.resolve(document.exitFullscreen()).catch(() => {}) } catch { /* O guia já pode estar fora da tela cheia. */ }
+    }
+    fullscreenOwned = false
   }
 
-  async function togglePresentation() {
-    const entering = !root.classList.contains('presenting')
-    setPresentation(entering)
+  function enterPresentation() {
+    root.classList.add('presenting')
+    if (!root.requestFullscreen || document.fullscreenElement) return
+    fullscreenPending = true
     try {
-      if (entering && root.requestFullscreen) await root.requestFullscreen()
-      else if (!entering && document.fullscreenElement === root && document.exitFullscreen) await document.exitFullscreen()
-    } catch { /* O modo de apresentação continua disponível sem tela cheia do navegador. */ }
+      Promise.resolve(root.requestFullscreen()).then(() => {
+        fullscreenPending = false
+        if (document.fullscreenElement !== root) return
+        fullscreenOwned = true
+        if (root.hidden) leaveFullscreen()
+      }, () => { fullscreenPending = false })
+    } catch { fullscreenPending = false /* A apresentação na página independe da API de tela cheia. */ }
   }
 
   function open() {
@@ -367,19 +377,18 @@ export function createPrumoOnboarding({
     root.hidden = false
     launcher.setAttribute('aria-expanded', 'true')
     next.focus?.()
+    enterPresentation()
   }
 
   function close() {
     if (dismissed) return
     dismissed = true
     root.hidden = true
-    setPresentation(false)
+    root.classList.remove('presenting')
     clearHighlights()
     launcher.setAttribute('aria-expanded', 'false')
     rememberDismissal()
-    try {
-      if (document.fullscreenElement === root && document.exitFullscreen) document.exitFullscreen()
-    } catch { /* Fechar o guia não depende do suporte à tela cheia. */ }
+    leaveFullscreen()
     launcher.focus?.()
   }
 
@@ -395,13 +404,18 @@ export function createPrumoOnboarding({
   previous.addEventListener('click', previousStep)
   next.addEventListener('click', nextStep)
   skip.addEventListener('click', close)
-  presentation.addEventListener('click', togglePresentation)
   openLegend.addEventListener('click', () => {
     document.querySelector('#sidebarToggle')?.click()
     renderStep(stepIndex, demoIndex)
   })
   document.addEventListener('fullscreenchange', () => {
-    if (!document.fullscreenElement && root.classList.contains('presenting')) setPresentation(false)
+    if (fullscreenPending && document.fullscreenElement === root) {
+      fullscreenOwned = true
+      if (root.hidden) leaveFullscreen()
+    } else if (fullscreenOwned && document.fullscreenElement !== root) {
+      fullscreenOwned = false
+      if (!root.hidden) close()
+    }
   })
   document.addEventListener('keydown', (event) => {
     if (root.hidden) return
@@ -428,9 +442,7 @@ export function createPrumoOnboarding({
     root.hidden = true
     launcher.setAttribute('aria-expanded', 'false')
   } else {
-    root.hidden = false
-    launcher.setAttribute('aria-expanded', 'true')
-    next.focus?.()
+    open()
   }
 
   return { open, close, refreshGains, refreshRunAvailability }

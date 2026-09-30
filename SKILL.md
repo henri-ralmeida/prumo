@@ -50,6 +50,14 @@ is fixed under the central Prumo workspace.
 
 Apply [PO First](references/po-first.md), also configured globally by the installer, in every role. Respond in the user's language. A functional check means evidence of the requested effect, whether the work concerns data, automation, migration, software, or another domain. Use the host's native subagent tools; if dedicated planning, execution or independent review are unavailable, report that limitation rather than inventing agent dispatch. The engine records transitions; it does not create agents. In Codex invoke this skill as `$prumo`; Claude Code, Kiro and DeepSeek Harness (DSH) use `/prumo`. DSH integration (`prumo install --dsh`, `prumo doctor --dsh`, `DSH_HOME`) is described in [runtime.md](references/runtime.md#dsh-integration).
 
+**Identificadores estáveis.** No plano inicial, use `T1`, `T2`, ... sem lacunas ou letras.
+Ao ampliar o plano por `sync-plan`, preserve os números originais: uma correção vinculada a `T9`
+usa `T9a`, a próxima `T9b`, até `T9z`. Registre a ligação nas dependências: se a correção
+destrava `T9`, `T9` depende de `T9a`; se é um complemento posterior, `T9a` depende de `T9`.
+Nunca crie esse vínculo nos dois sentidos, pois isso gera um ciclo. Tarefas já concluídas mantêm
+seu contrato; uma ampliação posterior precisa depender delas. Execuções antigas preservam seus
+identificadores existentes. O motor recusa novas numerações incrementais durante a sincronização.
+
 **Role-written summaries.** The approved task may carry a business `label` (1–3 words, at most 24
 characters), a 1–2 sentence `summary` of the expected result and why it matters, and a one-sentence
 `validationSummary` describing acceptance. Write only text the approved scope supports. They are display

@@ -5,11 +5,28 @@ import net from 'node:net'
 
 const DASHBOARD_PORT = 4949
 const port = Number(process.env.PRUMO_TEST_DASHBOARD_PORT)
+const shutdownToken = process.env.PRUMO_TEST_DASHBOARD_SHUTDOWN_TOKEN
 if (Number.isInteger(port) && port > 0 && port !== DASHBOARD_PORT) {
   const listen = net.Server.prototype.listen
   net.Server.prototype.listen = function (...args) {
-    if (Number(args[0]) === DASHBOARD_PORT && typeof args[0] !== 'object') args[0] = port
-    else if (args[0] && typeof args[0] === 'object' && Number(args[0].port) === DASHBOARD_PORT) args[0] = { ...args[0], port }
+    const legacyPort = Number(args[0]) === DASHBOARD_PORT && typeof args[0] !== 'object'
+      || args[0] && typeof args[0] === 'object' && Number(args[0].port) === DASHBOARD_PORT
+    if (legacyPort && shutdownToken) {
+      const emit = this.emit
+      this.emit = function (event, ...values) {
+        if (event === 'request' && values[0]?.method === 'POST'
+          && values[0]?.url === `/__prumo_test_dashboard_shutdown/${shutdownToken}`
+          && ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(values[0]?.socket.remoteAddress)) {
+          values[1].writeHead(200)
+          values[1].end('stopping')
+          setTimeout(() => process.exit(0), 10).unref()
+          return true
+        }
+        return emit.call(this, event, ...values)
+      }
+    }
+    if (legacyPort && typeof args[0] !== 'object') args[0] = port
+    else if (legacyPort) args[0] = { ...args[0], port }
     return listen.apply(this, args)
   }
   const fetch = globalThis.fetch

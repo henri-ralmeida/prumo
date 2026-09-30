@@ -86,6 +86,8 @@ import {
 } from './sync-plan-audit.mjs'
 import { businessContract, contractDrift, GLOBAL_PLAN_FIELDS, TASK_CONTRACT_FIELDS } from './contract-drift.mjs'
 import { parseEngineArgs } from './engine-args.mjs'
+import { taskIdentifierProblem } from './task-identifiers.mjs'
+import { newCommandRecord, recordCommand } from './command-metrics.mjs'
 
 let ROOT
 try { ROOT = findRoot() } catch (error) { errorLog('[prumo] ERROR: ' + error.message); process.exit(1) }
@@ -101,6 +103,24 @@ const LOCK_STALE_MS = 30000       // a lock older than this belonged to a proces
 // ---------- tiny arg parser ----------
 const [, , cmd, ...rest] = process.argv
 let args
+let metricRunName
+let currentRunAtStart
+try { if (existsSync(CURRENT_FILE)) currentRunAtStart = readFileSync(CURRENT_FILE, 'utf8').trim() } catch { /* sem execução selecionada */ }
+let recognizedCommand = false
+try { parseEngineArgs(cmd, []); recognizedCommand = true } catch { /* comando desconhecido */ }
+if (recognizedCommand) {
+  const metric = newCommandRecord(cmd)
+  process.on('exit', code => {
+    try {
+      const runFlag = rest.lastIndexOf('--run')
+      if (runFlag >= 0 && rest[runFlag + 1] === undefined) return
+      const requestedRun = args?.run ?? (runFlag >= 0 ? rest[runFlag + 1] : undefined)
+      const name = requestedRun ?? (cmd === 'init' ? undefined : (metricRunName ?? currentRunAtStart))
+      if (typeof name !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) return
+      recordCommand(join(GRAPH_DIR, name), metric, code)
+    } catch { /* métricas não alteram o resultado do comando */ }
+  })
+}
 try { args = parseEngineArgs(cmd, rest) } catch (error) { die(error.message) }
 
 function die(msg) {
@@ -125,8 +145,8 @@ function planningArtifactError(filename, error) {
 }
 
 function runName() {
-  if (args.run) return args.run
-  if (existsSync(CURRENT_FILE)) return readFileSync(CURRENT_FILE, 'utf8').trim()
+  if (args.run) return (metricRunName = args.run)
+  if (existsSync(CURRENT_FILE)) return (metricRunName = readFileSync(CURRENT_FILE, 'utf8').trim())
   die('no run selected — pass --run <name> or init one')
 }
 
@@ -324,7 +344,8 @@ function emit(name, type, task, data = {}) {
 }
 
 function getTask(state, id) {
-  const t = state.tasks[id]
+  const aliases = state.taskIdAliases ?? {}
+  const t = state.tasks[Object.hasOwn(aliases, id) ? aliases[id] : id]
   if (!t) die(`unknown task "${id}"`)
   return t
 }
@@ -806,6 +827,10 @@ function readPlan(planPath, state) {
   const plan = JSON.parse(readFileSync(source, 'utf8'))
   const validationPlan = state ? { ...plan, planningMode: state.plan.planningMode ?? 'task' } : plan
   validatePlan(validationPlan, args['allow-overlap'] === true, historicalTasks(state))
+  const identifierTasks = state ? plan.tasks.map(task => ['done', 'skipped'].includes(state.tasks[task.id]?.state)
+    ? { ...task, deps: state.tasks[task.id].deps } : task) : plan.tasks
+  const identifierProblem = taskIdentifierProblem(identifierTasks, state ? Object.keys(state.tasks) : undefined)
+  if (identifierProblem) die(tr(identifierProblem.message, ...identifierProblem.values))
   return { plan, source }
 }
 
@@ -3396,6 +3421,9 @@ function assertMigrationCommandAllowed(state, command) {
 }
 if (!['init', 'runs', 'migrate'].includes(cmd)) {
   const name = runName()
+  const aliases = loadState(name).taskIdAliases ?? {}
+  if (!cmd.includes('phase') && args._[0] && Object.hasOwn(aliases, args._[0])) args._[0] = aliases[args._[0]]
+  if (args.scope?.startsWith('tasks:')) args.scope = 'tasks:' + args.scope.slice(6).split(',').map(id => Object.hasOwn(aliases, id) ? aliases[id] : id).join(',')
   if (migrationStatus(loadState(name)).needed) withLock(name, () => {
     const state = loadState(name)
     if (!migrationStatus(state).needed) return

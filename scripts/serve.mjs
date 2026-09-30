@@ -13,6 +13,7 @@ import { readFileSync, existsSync, readdirSync, statSync, fstatSync, openSync, r
 import { execFile, execFileSync } from 'node:child_process'
 import { join, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { readCommandMetrics } from './command-metrics.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ENGINE = join(HERE, 'engine.mjs')
@@ -231,14 +232,13 @@ function listRuns() {
 }
 
 function selectedGraph(url) {
-  const snapshot = catalog()
-  const requestedRoot = url.searchParams.get('root')
-  const root = requestedRoot === null
-    ? snapshot.roots.find(candidate => candidate.name === snapshot.currentRoot)
-    : snapshot.roots.find(candidate => candidate.name === requestedRoot)
-  if (!root) return null
   const requestedRun = url.searchParams.get('run')
   if (requestedRun !== null && !safeRun(requestedRun)) return null
+  const requestedRoot = url.searchParams.get('root')
+  // Consultar um plano escolhido não precisa reler os estados de todos os outros planos.
+  const snapshot = requestedRoot === null ? catalog() : graphRoots()
+  const root = snapshot.roots.find(candidate => candidate.name === (requestedRoot ?? snapshot.currentRoot))
+  if (!root) return null
   return { graphDir: root.graphDir, run: safeRun(requestedRun) ?? currentRun(root.path) }
 }
 
@@ -485,13 +485,15 @@ const server = createServer((req, res) => {
 
   if (url.pathname === '/api/state') {
     if (!run) {
-      if (GLOBAL && !url.searchParams.has('root') && !url.searchParams.has('run')) return json(res, 200, EMPTY_STATE)
+      if (GLOBAL && !url.searchParams.has('root') && !url.searchParams.has('run')) return json(res, 200, {
+        ...EMPTY_STATE, commandMetrics: { byCommand: {}, total: 0, startedAt: null, complete: false },
+      })
       return json(res, 404, { error: tr('no run') })
     }
     const p = join(selected.graphDir, run, 'state.json')
     if (!existsSync(p)) return json(res, 404, { error: tr(`run "${run}" not found`) })
     const state = JSON.parse(readFileSync(p, 'utf8'))
-    return json(res, 200, { ...state, derived: derive(state) })
+    return json(res, 200, { ...state, derived: derive(state), commandMetrics: readCommandMetrics(join(selected.graphDir, run)) })
   }
 
   if (url.pathname === '/api/events') {

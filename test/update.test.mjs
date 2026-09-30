@@ -39,7 +39,7 @@ test('update exits before npm only when Claude, Kiro, Codex and DSH are all alre
     launched++
     const child = new EventEmitter()
     child.stderr = new EventEmitter()
-    queueMicrotask(() => child.emit('exit', 0, null))
+    queueMicrotask(() => { child.emit('exit', 0, null); child.emit('close', 0, null) })
     return child
   }
   await launchUpdate({ ...request, globalVersion: '0.0.9' }, {
@@ -59,6 +59,24 @@ test('update exits before npm only when Claude, Kiro, Codex and DSH are all alre
     discover: () => installations, latestVersion: () => version, run: runUpdater, filesCurrent: () => true,
   })
   assert.equal(launched, 3, 'a pending checkpoint must prevent the current-version shortcut')
+})
+
+test('update aguarda o fechamento do npm antes de limpar o diretório temporário', async () => {
+  const child = new EventEmitter()
+  child.stderr = new EventEmitter()
+  let temporary
+  let finished = false
+  const update = launchUpdate({ cwd: source, projects: [], updateCli: true }, {
+    discover: () => [],
+    run: (_command, _args, options) => { temporary = options.cwd; return child },
+  }).then(result => { finished = true; return result })
+  child.emit('exit', 0, null)
+  await Promise.resolve()
+  assert.equal(finished, false)
+  assert.equal(existsSync(temporary), true)
+  child.emit('close', 0, null)
+  assert.equal(await update, 0)
+  assert.equal(existsSync(temporary), false)
 })
 
 test('update na versão atual recupera dashboard parado e respeita prévia e desativação', async t => {
@@ -127,7 +145,7 @@ test('update does not treat an empty discovery or an absent global CLI as curren
     launched++
     const child = new EventEmitter()
     child.stderr = new EventEmitter()
-    queueMicrotask(() => child.emit('exit', 0, null))
+    queueMicrotask(() => { child.emit('exit', 0, null); child.emit('close', 0, null) })
     return child
   }
   const request = { dryRun: false, cwd: home, projects: [], updateCli: true, sourceVersion: version }

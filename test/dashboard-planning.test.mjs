@@ -235,7 +235,7 @@ test('dashboard marks declared manual inspection as pending and displays plan wr
     state.derived.T001.manualInspectionPending = true
     ui.render(state)
     assert.ok(ui.nodes.get('#nodes').innerHTML.includes(pending))
-    ui.run("POP_MODE = 'detail'; fillPop('T001')")
+    ui.run("POP_EXPANDED = true; fillPop('T001')")
     const detail = ui.nodes.get('#popBody').innerHTML
     assert.ok(detail.includes(pending))
     assert.ok(detail.includes(requires))
@@ -245,6 +245,9 @@ test('dashboard marks declared manual inspection as pending and displays plan wr
 })
 
 test('dashboard footer shows only the package version, with an unavailable fallback', async () => {
+  assert.match(html, /<footer>[\s\S]*<div id="bar"[^>]*><div class="seg-done"><\/div><\/div>/)
+  assert.match(html, /footer \.n \{[^}]*font-size: 11\.5px/)
+  assert.match(html, /footer #identity \{[^}]*font-size: 11\.5px[^}]*border-left: 1px solid var\(--line\)/)
   for (const lang of ['en', 'pt-BR']) {
     const ui = dashboard(lang)
     const about = { version: '2.0.0', origin: 'global', contentId: 'a1b2c3d4e5f6', path: 'C:\\Prumo\\global\\package' }
@@ -253,7 +256,7 @@ test('dashboard footer shows only the package version, with an unavailable fallb
       return { ok: true, json: async () => about }
     } })
     const identity = ui.nodes.get('#identity')
-    const expected = ui.run("tr('Prumo v{0}', '2.0.0')")
+    const expected = 'prumo v2.0.0'
     assert.equal(identity.textContent, expected)
     assert.equal(identity.getAttribute('title'), expected)
     assert.equal(identity.getAttribute('aria-label'), expected)
@@ -272,9 +275,9 @@ test('dashboard footer uses an unknown version when the package version is missi
       json: async () => ({ version, origin: 'global', contentId: 'a1b2c3d4e5f6', path: 'C:\\Prumo\\global\\package' }),
     }) })
     const identity = ui.nodes.get('#identity')
-    assert.equal(identity.textContent, 'Prumo vunknown')
-    assert.equal(identity.getAttribute('title'), 'Prumo vunknown')
-    assert.equal(identity.getAttribute('aria-label'), 'Prumo vunknown')
+    assert.equal(identity.textContent, 'prumo vunknown')
+    assert.equal(identity.getAttribute('title'), 'prumo vunknown')
+    assert.equal(identity.getAttribute('aria-label'), 'prumo vunknown')
   }
 })
 
@@ -288,12 +291,14 @@ test('dashboard footer shows only the version for a source checkout', async () =
       const ui = dashboard(lang)
       await ui.run('loadIdentity()', { fetch: async () => ({ ok: true, json: async () => about }) })
       const text = ui.nodes.get('#identity').textContent
-      assert.equal(text, 'Prumo v2.0.0')
+      assert.equal(text, 'prumo v2.0.0')
     }
   }
 })
 
 test('dashboard renders separate planning queues, active planner hub and execution readiness in both languages', () => {
+  assert.match(html, /\.node \.tag\.queued \.tr \{[^}]*white-space: normal; overflow: visible; text-overflow: clip; text-transform: none/)
+  assert.doesNotMatch(html, /\.node \.id[^}]*text-transform: lowercase/)
   const tasks = {
     P: task('P', 'pending', { planningRequired: true }),
     A: task('A', 'planning', { planner: 'planner-1', planningAttempts: [{ startedAt: instant(10), agent: 'planner-1' }] }),
@@ -313,12 +318,12 @@ test('dashboard renders separate planning queues, active planner hub and executi
     for (const label of expected) {
       const legendLabel = label === 'planning' ? 'planning · planner' : label === 'em planejamento' ? 'planejamento · planejador' : label
       assert.ok(ui.labels.some((node) => node.textContent === legendLabel), `Legend: ${legendLabel}`)
-      assert.ok(ui.nodes.get('#counts').innerHTML.includes(`${label} <b>1</b>`), `Counter: ${label}`)
+      assert.ok(ui.nodes.get('#counts').innerHTML.includes(`${label === 'planning' ? 'Actively planning' : label === 'em planejamento' ? 'Planejando' : label.charAt(0).toLocaleUpperCase(lang) + label.slice(1)}</span> <b>1</b>`), `Counter: ${label}`)
     }
     for (const [id, status] of Object.entries(states)) {
       assert.match(ui.nodes.get('#nodes').innerHTML, new RegExp(`data-st="${status}"[^>]*data-id="${id}"`))
       ui.run('fillPop(id)', { id })
-      assert.ok(ui.nodes.get('#popBody').innerHTML.includes(ui.run('statusLabel(status)', { status })))
+      assert.ok(ui.nodes.get('#popStatus').textContent.includes(ui.run('statusLabel(status)', { status })))
     }
     const colors = ui.run("['ready_to_plan', 'planning', 'ready'].map(s => ST_COLOR[s])")
     assert.equal(new Set(colors).size, 3)
@@ -330,8 +335,8 @@ test('dashboard renders separate planning queues, active planner hub and executi
     assert.match(ui.nodes.get('#planSub').textContent, /1: A/)
     assert.equal(ui.nodes.get('#planNode').classList.contains('live'), true)
     assert.doesNotMatch(ui.nodes.get('#edgePaths').innerHTML, /data-from="__/, 'roles light up in the hub; only dependencies draw lines')
-    assert.equal(ui.nodes.get('#bar .seg-plan').style.width, `${100 / 9}%`)
-    assert.equal(ui.nodes.get('#bar .seg-review').style.width, `${100 / 9}%`)
+    assert.equal(ui.nodes.get('#bar .seg-done').style.width, `${100 / 9}%`)
+    assert.doesNotMatch(html, /class="seg-(?:plan|review)"/, 'o rodapé mostra só a parte concluída')
     assert.ok(Number.parseFloat(ui.nodes.get('#planNode').style.left) >= 0)
   }
 })
@@ -394,7 +399,7 @@ test('summary counts include discussion and legacy pending tasks', () => {
     const summary = ui.nodes.get('#counts').innerHTML
     assert.equal([...summary.matchAll(/<b>(\d+)<\/b>/g)].reduce((sum, match) => sum + Number(match[1]), 0), 4)
     for (const state of ['ready_for_discussion', 'discussing', 'pending']) {
-      assert.ok(summary.includes(ui.run('statusLabel(value)', { value: state })))
+      assert.ok(summary.includes(state === 'discussing' ? (lang === 'en' ? 'Actively discussing' : 'Discutindo') : ui.run('statusLabel(value)', { value: state }).replace(/^./, char => char.toLocaleUpperCase(lang))), state)
     }
     assert.doesNotMatch(summary, /color:undefined/)
   }
@@ -494,7 +499,7 @@ test('status filters use effective state and always show only direct dependency 
   ui.run("setFilter('running')")
   assert.equal(card('D').classList.contains('filtered-out'), true)
   assert.equal(JSON.stringify(state), originalState, 'filtering must not rewrite any task or dependency')
-  ui.run("FOCUS = 'B'; applyFocus()")
+  ui.run("openTask('B')")
   assert.deepEqual(ui.cards.filter((node) => node.classList.contains('lit')).map((node) => node.dataset.id).sort(), ['A', 'B'])
   assert.equal(card('B').classList.contains('lit-self'), true)
   assert.equal(edge('A', 'B').classList.contains('lit'), true)
@@ -511,7 +516,7 @@ test('status filters use effective state and always show only direct dependency 
 })
 test('filter controls expose every state and localize labels', () => {
   assert.doesNotMatch(html, /id="depsBtn"|toggleDependencies/)
-  const options = [...html.matchAll(/data-filter-value="([^"]+)"/g)].map(([, value]) => value)
+  const options = [...html.matchAll(/<button\b[^>]*data-filter-value="([^"]+)"/g)].map(([, value]) => value)
   assert.deepEqual(options, ['all', 'done', 'incomplete', 'waiting', 'ready_for_discussion', 'discussing', 'ready_to_plan', 'planning', 'ready', 'running', 'reviewing', 'blocked', 'failed', 'skipped'])
   for (const [lang, labels] of [['en', ['all tasks', 'incomplete', 'ignored']], ['pt-BR', ['todas', 'incompletas', 'ignoradas']]]) {
     const ui = dashboard(lang)
@@ -519,6 +524,54 @@ test('filter controls expose every state and localize labels', () => {
     for (const label of labels) assert.ok(ui.labels.some((node) => node.textContent === label), `${lang}: ${label}`)
     assert.equal(ui.nodes.get('#filterCount').textContent, lang === 'en' ? 'filter results 0/0' : 'resultado do filtro 0/0')
   }
+})
+
+test('filtros de estado usam os mesmos fundos dos cards e a seleção continua distinguível', () => {
+  const css = html.match(/<style>([\s\S]*?)<\/style>/)[1]
+  const rules = [...css.matchAll(/([^{}]+)\{([^{}]+)\}/g)]
+  for (const state of ['done', 'waiting', 'ready_for_discussion', 'discussing', 'ready_to_plan', 'planning', 'ready', 'running', 'reviewing', 'blocked', 'failed', 'skipped']) {
+    const card = rules.find(([, selector, body]) => selector.includes('.node') && selector.includes(`[data-st="${state}"]`) && /--ticket-bg:\s*#/.test(body))
+    const filter = rules.find(([, selector]) => selector.trim() === `.filter-option[data-filter-value="${state}"]`)
+    assert.ok(card && filter, `estado sem paleta: ${state}`)
+    assert.equal(filter[2].match(/--filter-bg:\s*(#[a-f\d]+)/i)[1], card[2].match(/--ticket-bg:\s*(#[a-f\d]+)/i)[1], `filtro e card de ${state} preservam a mesma cor`)
+  }
+  const selected = rules.find(([, selector]) => selector.trim() === '.filter-option[aria-pressed="true"]')[2]
+  assert.match(selected, /box-shadow:/, 'a seleção tem contorno adicional e não depende só da cor')
+  assert.match(selected, /font-weight:\s*600/, 'o filtro ativo também tem peso de texto diferente')
+})
+
+test('somente clique seleciona cards; hover e arraste não mudam a seleção', () => {
+  const ui = dashboard('pt-BR')
+  ui.render({ run: 'cliques', plan: { phases: [] }, tasks: {
+    A: task('A', 'pending'), B: task('B', 'pending', { deps: ['A'] }),
+  }, derived: { A: { effective: 'ready' }, B: { effective: 'waiting', blockedBy: ['A'] } } })
+  assert.equal(ui.run('typeof FOCUS'), 'undefined')
+  assert.equal(ui.run('typeof dwellTimer'), 'undefined')
+  assert.equal(ui.run('typeof closeTimer'), 'undefined')
+  ui.dispatchElement('#nodes', 'mouseover', { target: { closest: () => ui.cards[0] } })
+  ui.dispatchElement('#nodes', 'mouseout', { target: { closest: () => ui.cards[0] } })
+  assert.equal(ui.run('POP'), null)
+  assert.equal(ui.nodes.get('#canvas').classList.contains('focus'), false)
+
+  ui.run("openTask('A')")
+  assert.equal(ui.run('POP.id'), 'A')
+  assert.equal(ui.cards.find(node => node.dataset.id === 'A').classList.contains('lit-self'), true)
+  ui.dispatchElement('#nodes', 'mouseover', { target: { closest: () => ui.cards[1] } })
+  ui.dispatchElement('#pop', 'mouseleave', {})
+  assert.equal(ui.run('POP.id'), 'A', 'hover em outro card não altera a seleção')
+  assert.equal(ui.cards.find(node => node.dataset.id === 'A').classList.contains('lit-self'), true)
+  ui.run("openTask('A')")
+  assert.equal(ui.run('POP'), null, 'segundo clique no mesmo card fecha o resumo')
+  assert.equal(ui.nodes.get('#canvas').classList.contains('focus'), false)
+
+  ui.run("openTask('A'); openTask('B')")
+  assert.equal(ui.run('POP.id'), 'B', 'clique em outro card troca a seleção')
+  ui.dispatchElement('#viewport', 'pointerdown', { button: 0, clientX: 100, clientY: 100, pointerId: 1 })
+  ui.dispatchElement('#viewport', 'pointermove', { clientX: 112, clientY: 112, pointerId: 1 })
+  ui.dispatchElement('#viewport', 'pointerup', { pointerId: 1 })
+  assert.equal(ui.run('suppressClick'), true)
+  ui.run("openTask('A')")
+  assert.equal(ui.run('POP.id'), 'B', 'o clique residual do arraste não seleciona outro card')
 })
 
 test('a run-only URL selects that run in the current root', () => {
@@ -630,15 +683,14 @@ test('resize relayout preserves selected state and clamps manual pan at 100%', (
   const ui = dashboard('en', 1200)
   const state = graphState(48)
   ui.render(state)
-  ui.run("setFilter('running'); openTask('T013'); FOCUS = 'T013'; SELECTED_RUN = 'fixture-48'; VIEW_MANUAL = true; Object.assign(VIEW, { x: 91, y: -37 })")
+  ui.run("setFilter('running'); openTask('T013'); SELECTED_RUN = 'fixture-48'; VIEW_MANUAL = true; Object.assign(VIEW, { x: 91, y: -37 })")
   assert.equal(ui.run('FILTER'), 'all', 'opening a filtered-out task reveals its card and popover anchor')
-  const before = JSON.parse(ui.run("JSON.stringify({ filter: FILTER, pop: POP, focus: FOCUS, selected: SELECTED_RUN, fitted, manual: VIEW_MANUAL, view: VIEW, h: CANVAS_H, pos: LAST_POS })"))
+  const before = JSON.parse(ui.run("JSON.stringify({ filter: FILTER, pop: POP, selected: SELECTED_RUN, fitted, manual: VIEW_MANUAL, view: VIEW, h: CANVAS_H, pos: LAST_POS })"))
   const beforeAnchor = JSON.parse(ui.run("JSON.stringify(document.querySelector('.node[data-id=\\\"T013\\\"]')?.getBoundingClientRect())"))
   ui.resize(700)
-  const after = JSON.parse(ui.run("JSON.stringify({ filter: FILTER, pop: POP, focus: FOCUS, selected: SELECTED_RUN, fitted, manual: VIEW_MANUAL, view: VIEW, w: CANVAS_W, h: CANVAS_H, metrics: LAST_METRICS, pos: LAST_POS })"))
+  const after = JSON.parse(ui.run("JSON.stringify({ filter: FILTER, pop: POP, selected: SELECTED_RUN, fitted, manual: VIEW_MANUAL, view: VIEW, w: CANVAS_W, h: CANVAS_H, metrics: LAST_METRICS, pos: LAST_POS })"))
   assert.equal(after.filter, before.filter)
   assert.deepEqual(after.pop, before.pop)
-  assert.equal(after.focus, before.focus)
   assert.equal(after.selected, before.selected)
   assert.equal(after.fitted, before.fitted)
   assert.equal(after.manual, true)
@@ -765,9 +817,9 @@ test('legend follows the workflow and event history names actions with their col
       { type: 'task_start', task: 'OLD', at: instant(0) },
     ]
     ui.render({ run: 'events', plan: {}, tasks: { T4: taskValue }, derived: { T4: { effective: 'ready' } } }, events)
-    const title = ui.nodes.get('#parTitle').innerHTML
+    const title = ui.nodes.get('#counts').innerHTML
     for (const color of ['discussion', 'planning', 'running', 'review']) assert.ok(title.includes(`color:var(--${color})`))
-    assert.equal((title.match(/<b>/g) ?? []).length, 4)
+    assert.ok((title.match(/<b>/g) ?? []).length >= 7)
     assert.doesNotMatch(title, / · /)
     if (lang === 'pt-BR') assert.ok(ui.labels.some(node => node.textContent === 'discussão · orquestrador'))
     const log = ui.nodes.get('#events').innerHTML
@@ -775,14 +827,14 @@ test('legend follows the workflow and event history names actions with their col
     assert.match(visibleLog, /T4 \[1\/4\]/)
     assert.match(visibleLog, /T4 \[2\/4\]/)
     assert.doesNotMatch(visibleLog, /OLD \[/)
-    assert.ok(visibleLog.includes(lang === 'en' ? 'executor started task T4' : 'executor iniciou a tarefa T4'))
-    assert.ok(visibleLog.includes(lang === 'en' ? 'reviewer began the functional check for task T4' : 'revisor iniciou a verificação funcional da tarefa T4'))
-    assert.ok(visibleLog.includes(lang === 'en' ? 'orchestrator sent T4 to reviewer @reviewer-1' : 'orquestrador encaminhou T4 ao revisor @reviewer-1'))
-    assert.ok(visibleLog.includes(lang === 'en' ? 'reviewer approved T4' : 'revisor aprovou T4'))
-    assert.ok(visibleLog.includes(lang === 'en' ? 'reviewer rejected T4' : 'revisor reprovou T4'))
-    assert.ok(visibleLog.includes(lang === 'en' ? 'planner started planning for phase P2' : 'planejador iniciou o planejamento da fase P2'))
-    assert.ok(visibleLog.includes(lang === 'en' ? 'orchestrator freed an execution slot when task T4 went to review; next authorized: T5'
-      : 'orquestrador liberou uma vaga de execução quando a tarefa T4 foi para revisão; próxima autorizada: T5'), visibleLog)
+    assert.ok(visibleLog.includes(lang === 'en' ? 'Executor started task T4' : 'Executor iniciou a tarefa T4'))
+    assert.ok(visibleLog.includes(lang === 'en' ? 'Reviewer began the functional check for task T4' : 'Revisor iniciou a verificação funcional da tarefa T4'))
+    assert.ok(visibleLog.includes(lang === 'en' ? 'Orchestrator sent T4 to Reviewer @reviewer-1' : 'Orquestrador encaminhou T4 ao Revisor @reviewer-1'))
+    assert.ok(visibleLog.includes(lang === 'en' ? 'Reviewer approved T4' : 'Revisor aprovou T4'))
+    assert.ok(visibleLog.includes(lang === 'en' ? 'Reviewer rejected T4' : 'Revisor reprovou T4'))
+    assert.ok(visibleLog.includes(lang === 'en' ? 'Planner started planning for phase P2' : 'Planejador iniciou o planejamento da fase P2'))
+    assert.ok(visibleLog.includes(lang === 'en' ? 'Orchestrator freed an execution slot when task T4 went to review; next authorized: T5'
+      : 'Orquestrador liberou uma vaga de execução quando a tarefa T4 foi para revisão; próxima autorizada: T5'), visibleLog)
     assert.match(log, /class="ev-phase" style="color:var\(--planning\)">P2/)
     assert.match(log, /class="t-task_validate" data-ok="true"/)
     assert.match(log, /class="t-task_validate" data-ok="false"/)
@@ -834,7 +886,7 @@ test('visual polish keeps arrowless curves, full card labels and a controllable 
   assert.doesNotMatch(html, /marker-end|<marker/, 'dependency curves end on the card without arrowheads')
   assert.match(html, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\*, \*::before, \*::after[\s\S]*animation: none !important/)
   assert.match(html, /\.phase-task-state \{ display: inline;/)
-  const sectionOrder = ['id="parTitle"', 'data-i18n="Selected task"', 'data-i18n="Failures &amp; retries"', 'data-i18n="Event log"', 'data-i18n="Legend"']
+  const sectionOrder = ['id="counts"', 'data-i18n="Event log"', 'data-i18n="Failures &amp; retries"', 'data-i18n="Legend"']
   assert.deepEqual(sectionOrder.map((part) => html.indexOf(part)), [...sectionOrder.map((part) => html.indexOf(part))].sort((a, b) => a - b))
 
   for (const [count, density] of [[6, 'detailed'], [48, 'compact'], [101, 'dense']]) {
@@ -861,8 +913,8 @@ test('visual polish keeps arrowless curves, full card labels and a controllable 
   assert.equal(narrow.nodes.get('#sidebar').hidden, false, 'manual choice survives resize')
   assert.equal(narrow.nodes.get('#sidebarToggle').getAttribute('aria-expanded'), 'true')
   narrow.run("openTask('T001')")
-  assert.equal(narrow.nodes.get('#selectedTask').dataset.task, 'T001')
-  assert.match(narrow.nodes.get('#selectedTask').innerHTML, /T001 · Task T001[\s\S]*em execução · executor/)
+  assert.equal(narrow.run('POP.id'), 'T001')
+  assert.match(narrow.nodes.get('#popBody').innerHTML, /T001/)
 
   const session = new Map()
   const firstLoad = dashboard('en', 500, session)
@@ -995,7 +1047,7 @@ test('Gravidade cards and agent panels show measured activity in the compact das
   assert.match(ui.nodes.get('#orch').innerHTML, /Live[\s\S]*00:00:32/)
   assert.match(ui.nodes.get('#orch').innerHTML, /aria-label="Agent time: 00:00:32 · not measured"/)
   assert.equal(ui.nodes.get('#orch').classList.contains('live'), true, 'the current task state, not event age, controls the live pill')
-  assert.match(ui.nodes.get('#doneCount').innerHTML, /32s[\s\S]*Active time not measured/)
+  assert.equal(ui.nodes.get('#doneCount').innerHTML, '<b>33%</b> complete')
   assert.doesNotMatch(ui.nodes.get('#orch').innerHTML + ui.nodes.get('#doneCount').innerHTML, /115:00:00|115h/)
   assert.match(ui.nodes.get('#nodes').innerHTML, /class="tr">running<\/span>/)
   assert.doesNotMatch(ui.nodes.get('#nodes').innerHTML, /class="sub"/)
@@ -1003,19 +1055,22 @@ test('Gravidade cards and agent panels show measured activity in the compact das
   assert.match(ui.nodes.get('#failures').innerHTML, /2 of 3/)
   assert.match(ui.nodes.get('#failures').innerHTML, /timeout na segunda tentativa/)
 
-  ui.run("POP_MODE = 'lean'; fillPop('T1')")
+  ui.run("POP_EXPANDED = false; fillPop('T1')")
   const lean = ui.nodes.get('#popBody').innerHTML
-  for (const text of ['T1', '2 of 3', 'Linha um', 'Linha dois', 'Linha três', 'Depends on', 'T0', 'Unlocks', 'T2', 'changed from aaaa', 'Agent time', 'see detail'])
+  for (const text of ['T1', 'Linha um', 'Linha dois', 'Linha três', 'Depends on', 'T0', 'Unlocks', 'T2', 'changed from aaaa', 'Agent time'])
     assert.ok(lean.includes(text), text)
+  assert.equal(ui.nodes.get('#popTitle').textContent, 'T1')
+  assert.match(ui.nodes.get('#popStatus').textContent, /running/)
+  assert.doesNotMatch(ui.nodes.get('#popStatus').textContent, /of 3/)
   assert.ok(lean.includes('SUMMARY_SENTINEL'), 'an explicit summary remains complete in the concise view')
   assert.doesNotMatch(lean, /115:00:00|115h/)
   assert.match(lean, /<button type="button" class="dep"/)
 
-  ui.run("POP_MODE = 'detail'; fillPop('T1')")
+  ui.run("POP_EXPANDED = true; fillPop('T1')")
   const detail = ui.nodes.get('#popBody').innerHTML
   for (const text of ['Attempts and verdicts', 'Rejected', '@exec-b', '@review', 'prova insuficiente', 'changed from aaaa', 'Esc closes'])
     assert.ok(detail.includes(text), text)
-  ui.run("POP_MODE = 'lean'; fillPop('T0')")
+  ui.run("POP_EXPANDED = false; fillPop('T0')")
   assert.match(ui.nodes.get('#popBody').innerHTML, /Approved[\s\S]*in prumo/)
 })
 
@@ -1180,18 +1235,17 @@ test('available tasks say who moves each one next and give way to the selected t
     ui.render({ run: 'available', plan: { phases: [] }, tasks, derived })
     const list = ui.nodes.get('#available').innerHTML
     assert.equal(ui.nodes.get('#availableBox').hidden, false)
-    assert.equal(ui.nodes.get('#selectedBox').hidden, true)
     assert.deepEqual([...list.matchAll(/jumpTo\('(\w+)'\)/g)].map(m => m[1]), ['K', 'E', 'P'], 'needs-you first, then the next role in the flow')
     assert.match(list, /--role:var\(--blocked\)[\s\S]*pick &lt;the&gt; API version/)
     assert.match(list, lang === 'en' ? /Decision question: Which API version should ship\? · Options: v1 \/ v2/ :
       /Pergunta para decisão: Which API version should ship\? · Opções: v1 \/ v2/)
-    ui.run("POP_MODE = 'lean'; fillPop('K')")
+    ui.run("POP_EXPANDED = false; fillPop('K')")
     const blockedPopover = ui.nodes.get('#popBody').innerHTML
     assert.equal((blockedPopover.match(/pick &lt;the&gt; API version/g) ?? []).length, 1, 'the blocked reason appears once in the lean popover')
     assert.match(list, /--role:var\(--running\)[\s\S]*\$ bun test auth[\s\S]*12 tests pass/)
     assert.match(list, /--role:var\(--planning\)/)
     assert.match(list, lang === 'en' ? /needs you/ : /precisa de você/)
-    ui.run("POP_MODE = 'detail'; fillPop('K')")
+    ui.run("POP_EXPANDED = true; fillPop('K')")
     const blockedDetail = ui.nodes.get('#popBody').innerHTML
     assert.match(blockedDetail, lang === 'en' ? /Decision question/ : /Pergunta para decisão/)
     assert.match(blockedDetail, /v1 \/ v2/)
@@ -1200,10 +1254,9 @@ test('available tasks say who moves each one next and give way to the selected t
     const emptyTarget = { closest() { return null } }
     ui.run('SIDEBAR_COLLAPSED = true; applySidebar()')
     ui.dispatchDocument('click', { target: availableTarget }, () => ui.run("jumpTo('E')"))
-    assert.equal(ui.nodes.get('#sidebar').hidden, false, 'explicit task navigation reveals the selected sidebar on desktop')
-    assert.equal(ui.nodes.get('#availableBox').hidden, true)
-    assert.equal(ui.nodes.get('#selectedBox').hidden, false)
-    assert.match(ui.nodes.get('#selectedTask').innerHTML, /E · Task E/)
+    assert.equal(ui.nodes.get('#sidebar').hidden, true, 'abrir uma tarefa respeita a escolha de recolher a lateral')
+    assert.equal(ui.nodes.get('#availableBox').hidden, false)
+    assert.match(ui.nodes.get('#popBody').innerHTML, /Task E/)
     assert.equal(ui.run('POP.id'), 'E', 'the card inline handler opens before the bubbling document handler')
     ui.dispatchDocument('click', { target: emptyTarget })
     assert.equal(ui.run('POP'), null, 'clicking empty space still closes the pinned task')
@@ -1226,7 +1279,7 @@ test('discovery, planner identity and task plan render as escaped text, includin
     executionBoundary: { deferredToExecutor: ['T'], prematureTaskWork: [] } }
   const ui = dashboard('pt-BR')
   ui.render({ run: 'safe-plan', plan: {}, tasks: { T: task('T', 'pending', { discovery: hostileDiscovery, planner: hostile, taskPlan: recorded }) }, derived: { T: { effective: 'ready' } } })
-  ui.run("POP_MODE = 'detail'; fillPop('T')")
+  ui.run("POP_EXPANDED = true; fillPop('T')")
   const body = ui.nodes.get('#popBody').innerHTML
   assert.doesNotMatch(body, /<img|onerror="/)
   assert.match(body, /&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt;&amp;&#39;text/)
@@ -1247,7 +1300,7 @@ test('dashboard keeps a future open-question reference and its later decision vi
     }, questionResolutions: [{ questionRef: reference, byTask: 'U', answer: 'Use the existing client.' }],
       derived: { T: { effective: 'ready' } } }
     ui.render(state)
-    ui.run("POP_MODE = 'detail'; fillPop('T')")
+    ui.run("POP_EXPANDED = true; fillPop('T')")
     const detail = ui.nodes.get('#popBody').innerHTML
     assert.ok(detail.includes(reference))
     assert.ok(detail.includes('Which protocol should U use?'))
@@ -1267,7 +1320,7 @@ test('lean popover shows role-written summaries, escaped, and never the full pla
     attempts: [{ n: 1, agent: 'exec-1', startedAt: instant(1), endedAt: instant(5), result: 'passed' }],
     validations: [{ ok: false, at: instant(3), evidence: 'evidencia longa', summary: 'reprovado: HTTP 500' }],
   }) }, derived: { T: { effective: 'done' } } })
-  ui.run("POP_MODE = 'lean'; fillPop('T')")
+  ui.run("POP_EXPANDED = false; fillPop('T')")
   const lean = ui.nodes.get('#popBody').innerHTML
   assert.doesNotMatch(lean, /<img|onerror="/)
   assert.ok(lean.includes('Checkout avisado &lt;img'), 'task summary wins over the planner summary')
@@ -1276,7 +1329,7 @@ test('lean popover shows role-written summaries, escaped, and never the full pla
   assert.ok(!lean.includes('passo secreto do plano') && !lean.includes('doze testes passam'), 'lean hides the full text')
   assert.ok(!lean.includes('No summary recorded'))
 
-  ui.run("POP_MODE = 'detail'; fillPop('T')")
+  ui.run("POP_EXPANDED = true; fillPop('T')")
   const detail = ui.nodes.get('#popBody').innerHTML
   for (const text of ['passo secreto do plano', 'doze testes passam', 'caminho do planejador', 'evidencia longa', 'reprovado: HTTP 500']) assert.ok(detail.includes(text), text)
 })
@@ -1287,7 +1340,7 @@ test('lean popover without a summary shows the notice once and never repeats the
     T: task('T', 'pending', { summary: '   ', validation: 'contrato antigo em prosa' }),
     L: task('L', 'pending', { label: 'Webhooks do gateway', title: 'Linha original 1\nLinha original 2\nLinha original 3\nLinha original 4' }),
   }, derived: { T: { effective: 'ready' }, L: { effective: 'ready' } } })
-  ui.run("POP_MODE = 'lean'; fillPop('T')")
+  ui.run("POP_EXPANDED = false; fillPop('T')")
   let lean = ui.nodes.get('#popBody').innerHTML
   assert.equal((lean.match(/Task T/g) ?? []).length, 2, 'the title appears only in the header (text and tooltip)')
   assert.doesNotMatch(lean, /class="lead"/, 'no summary body repeats the header title')
@@ -1303,7 +1356,7 @@ test('lean popover without a summary shows the notice once and never repeats the
   assert.equal((lean.match(/class="nosum"/g) ?? []).length, 1)
 
   // expanded/detail follows the same rule, but keeps every line
-  ui.run("POP_MODE = 'detail'; fillPop('T')")
+  ui.run("POP_EXPANDED = true; fillPop('T')")
   let detail = ui.nodes.get('#popBody').innerHTML
   assert.equal((detail.match(/Task T/g) ?? []).length, 2, 'the detail header alone carries the title (text and tooltip)')
   assert.doesNotMatch(detail, /class="psec summary-block"/)
@@ -1347,14 +1400,15 @@ test('the hub (orchestrator and roles) stays inside the viewport while the board
   assert.doesNotMatch(ui.nodes.get('#structPaths').innerHTML, /class="s-frame"/)
   assert.match(ui.nodes.get('#structPaths').innerHTML, /class="s-base"/)
   const struct = ui.nodes.get('#structPaths').innerHTML
-  const rail = struct.match(/<line class="s-rail" x1="([^"]+)" y1="([^"]+)" x2="([^"]+)" y2="([^"]+)"/)
+  const rail = struct.match(/<line class="s-rail (?:done|live|next)" x1="([^"]+)" y1="([^"]+)" x2="([^"]+)" y2="([^"]+)"/)
   assert.ok(rail, 'the phase guide is a dashed vertical rail')
   assert.equal(rail[1], rail[3], 'the guide does not swing sideways')
   assert.notEqual(rail[2], rail[4], 'the guide extends vertically through the phases')
-  assert.match(struct, /<circle class="s-live-dot"/)
+  assert.match(struct, /<circle class="s-end-dot live"/)
   assert.doesNotMatch(struct, /s-sway|s-bob/)
-  assert.match(html, /svg#edges \.s-rail \{ stroke-dasharray: 3 6; stroke-linecap: round; \}/)
-  assert.match(html, /svg#edges \.s-live-dot \{[^}]*animation: beat/)
+  assert.match(html, /svg#edges \.s-rail \{ stroke-linecap: round; \}/)
+  assert.match(html, /svg#edges \.s-rail\.live \{ stroke-dasharray: 3 6; \}/)
+  assert.match(html, /svg#edges \.s-end-dot\.live \{[^}]*animation: endDotPulse/)
   assert.doesNotMatch(html, /@keyframes sway/)
   assert.match(html, /#hub \{ position: absolute; top: 0; left: 0; z-index: 4;/)
   assert.match(html, /#hub\.stuck \.hub-shade \{ display: block; background: var\(--bg\); border-bottom: 1px solid var\(--line\);/,
@@ -1438,12 +1492,12 @@ test('detail preserves every recorded line in summaries, plans and validations w
     ],
   }) }, derived: { T: { effective: 'done' } } })
 
-  ui.run("POP_MODE = 'lean'; fillPop('T')")
+  ui.run("POP_EXPANDED = false; fillPop('T')")
   const lean = ui.nodes.get('#popBody').innerHTML
   for (const line of ['Resumo 1', 'Resumo 2', 'Resumo 3', 'Resumo 4 &lt;img']) assert.ok(lean.includes(line), line)
   assert.doesNotMatch(lean, /Pesquisa 4|Evidência aprovada 4/)
 
-  ui.run("POP_MODE = 'detail'; fillPop('T')")
+  ui.run("POP_EXPANDED = true; fillPop('T')")
   const detail = ui.nodes.get('#popBody').innerHTML
   for (const text of ['Resumo 4 &lt;img', 'Abordagem 4', 'Pesquisa 4 &lt;script&gt;', 'Pergunta 4', 'Decisão 4',
     'Passo 4', 'Critério 4', 'Checagem 4', 'Parecer reprovado 4', 'Evidência reprovada 4',
@@ -1454,20 +1508,20 @@ test('detail preserves every recorded line in summaries, plans and validations w
   const fallback = 'Título original 1\nTítulo original 2\nTítulo original 3\nTítulo original 4 <em>completo</em>'
   const fallbackUi = dashboard('pt-BR')
   fallbackUi.render({ run: 'fallback', plan: {}, tasks: { F: task('F', 'pending', { label: 'Título curto', title: fallback, summary: '  ' }) }, derived: { F: { effective: 'ready' } } })
-  fallbackUi.run("POP_MODE = 'lean'; fillPop('F')")
+  fallbackUi.run("POP_EXPANDED = false; fillPop('F')")
   const fallbackLean = fallbackUi.nodes.get('#popBody').innerHTML
   const fallbackPreview = fallbackLean.match(/<div class="lead">([\s\S]*?)<\/div>/)?.[1] ?? ''
   for (const line of ['Título original 1', 'Título original 2', 'Título original 3']) assert.ok(fallbackPreview.includes(line), line)
   assert.doesNotMatch(fallbackPreview, /Título original 4/)
-  fallbackUi.run("POP_MODE = 'detail'; fillPop('F')")
+  fallbackUi.run("POP_EXPANDED = true; fillPop('F')")
   assert.ok(fallbackUi.nodes.get('#popBody').innerHTML.includes('Título original 4 &lt;em&gt;completo&lt;/em&gt;'))
 })
 
 test('expanding the popover pins it, switches to detail and closing resets it', () => {
   const ui = dashboard('pt-BR')
   ui.render({ run: 'x', plan: {}, tasks: { T: task('T') }, derived: { T: { effective: 'ready' } } })
-  ui.run("POP = { id: 'T', pinned: false }; POP_MODE = 'lean'; togglePopExpand(true)")
-  assert.equal(ui.run('POP.pinned && POP_MODE === "detail" && POP_EXPANDED'), true)
+  ui.run("POP = { id: 'T', pinned: false }; POP_EXPANDED = false; togglePopExpand(true)")
+  assert.equal(ui.run('POP.pinned && POP_EXPANDED'), true)
   assert.equal(ui.nodes.get('#pop').classList.contains('expanded'), true)
   assert.equal(ui.nodes.get('#popScrim').classList.contains('on'), true)
   ui.run('closePop()')
@@ -1476,7 +1530,7 @@ test('expanding the popover pins it, switches to detail and closing resets it', 
   assert.equal(ui.nodes.get('#popScrim').classList.contains('on'), false)
 })
 
-test('results tab holds only the gain card and the manual-coordination estimate', () => {
+test('resultados separam ganho, atividade por papel e estimativa de todos os comandos', () => {
   const state = graphState(3, 3)
   state.tasks.T001.summary = 'A <summary>'
   state.tasks.T001.attempts = [{ n: 1, agent: 'exec-a', startedAt: instant(1), reviewStartedAt: instant(2), endedAt: instant(3), result: 'passed' },
@@ -1484,17 +1538,17 @@ test('results tab holds only the gain card and the manual-coordination estimate'
   state.tasks.T001.validations = [{ by: 'review', ok: false, at: instant(3), evidence: 'check A failed' }]
   for (const lang of ['en', 'pt-BR']) {
     const ui = dashboard(lang)
-    ui.render(state)
-    ui.run("RESULTS_OPEN = true; $('#results').classList.add('open'); renderResults(STATE)")
+    ui.render(state, [{ type: 'task_start', at: instant(1), task: 'T001' }, { type: 'task_review', at: instant(2), task: 'T001' }, { type: 'task_retry', at: instant(4), task: 'T001' }])
+    ui.run("FULL_EVENTS = EVENTS; RESULTS_OPEN = true; $('#results').classList.add('open'); renderResults(STATE)")
     const results = ui.nodes.get('#results').innerHTML
-    assert.match(results, /^<div class="rstack" data-results-run="fixture-3">\s*<section class="gcard gain" id="gainPanel"[\s\S]*<\/section>\s*<section class="gcard manual" id="manualPanel"[\s\S]*<\/section><\/div>$/)
-    assert.equal((results.match(/<section /g) ?? []).length, 2, 'nothing else is rendered in the tab')
+    assert.match(results, /^<div class="rstack" data-results-run="fixture-3">\s*<section class="gcard gain" id="gainPanel"[\s\S]*<\/section>\s*<section class="gcard"[\s\S]*<\/section>\s*<section class="gcard manual" id="manualPanel"[\s\S]*<\/section><\/div>$/)
+    assert.equal((results.match(/<section /g) ?? []).length, 3, 'o painel mostra ganho, atividade por papel e estimativa manual')
     assert.doesNotMatch(results, /gantt|class="grow|result-task|gcard gate|gcard atime|class="rhead|class="insights|A &lt;summary&gt;/)
     assert.doesNotMatch(results, lang === 'en' ? /Reviewer gate|Timeline|Agent time|Task detail/ : /Portão do revisor|Linha do tempo|Tempo dos agentes|Detalhe da tarefa/)
-    // 2 execution + 1 review + 1 retry = 4 commands at 3 min each
+    // Start, review e retry são três comandos, sem duplicar a tentativa reiniciada.
     assert.match(results, lang === 'en'
-      ? /you would spend about <strong>12m00<\/strong> just coordinating the agents \(3 min per command × 4 commands\)/
-      : /gastaria cerca de <strong>12m00<\/strong> só coordenando os agentes \(3 min por comando × 4 comandos\)/)
+      ? /you would spend about <strong>9m00<\/strong> just coordinating the agents \(3 min per command × 3 commands\)/
+      : /gastaria cerca de <strong>9m00<\/strong> só coordenando os agentes \(3 min por comando × 3 comandos\)/)
     assert.match(results, lang === 'en' ? /ESTIMATE · not a measurement/ : /ESTIMATIVA · não é medição/)
     assert.doesNotMatch(results, /<input|<button|data-gain-minutes/, 'the 3-minute assumption is fixed, with no editable fields')
 
@@ -1506,6 +1560,19 @@ test('results tab holds only the gain card and the manual-coordination estimate'
     assert.equal(ui.run('RESULTS_OPEN'), false, 'task navigation still closes the results tab')
     assert.equal(ui.run('POP.id'), 'T001')
   }
+})
+
+test('discussão sem registros de progresso não transforma o tempo decorrido em horas de agente', () => {
+  const ui = dashboard('pt-BR')
+  const state = { run: 'discussion-time', createdAt: instant(0), plan: { phases: [] },
+    tasks: { A: task('A', 'done', { discussionAttempts: [{ startedAt: instant(-115 * 3600), endedAt: instant(0) }], attempts: [] }) }, derived: {} }
+  ui.run('EVENTS_COMPLETE = true; STATE = input; FULL_EVENTS = []; renderResults(input)', { input: state })
+  const analysis = ui.run('analyse(input, [], true)', { input: state })
+  assert.equal(analysis.discussionMeasured, false)
+  assert.equal(analysis.unmeasuredActivity, true)
+  assert.equal(analysis.agentTotal, 0)
+  assert.match(ui.nodes.get('#results').innerHTML, /Discussão<\/span><strong>Não aferido/)
+  assert.doesNotMatch(ui.nodes.get('#results').innerHTML, /115h/)
 })
 
 test('jumping from results pans a tall graph until the target task is visible', () => {
@@ -1547,6 +1614,61 @@ test('explicit results navigation survives the click suppression left by draggin
   assert.ok(view.taskX + view.x >= 0 && view.taskX + view.x + view.width <= view.viewportWidth)
   assert.ok(view.taskY + view.y >= 0 && view.taskY + view.y + view.height <= view.viewportHeight)
 })
+
+test('localizar uma tarefa distante mantém o filtro e a centraliza a partir do card expandido', () => {
+  const ui = dashboard('pt-BR', 500)
+  ui.render(graphState(48, 8))
+  assert.match(html, /id="popLocate"[^>]*onclick="locateSelectedTask\(\)"/)
+  ui.run("setFilter('incomplete'); openTask('T048'); togglePopExpand(true)")
+  assert.equal(ui.run('POP_EXPANDED'), true)
+  assert.equal(ui.run('FILTER'), 'incomplete')
+  ui.run('locateSelectedTask()')
+  assert.equal(ui.run('FILTER'), 'incomplete', 'o filtro compatível permanece ativo')
+  assert.equal(ui.run('POP.id'), 'T048')
+  assert.equal(ui.run('POP.pinned'), true)
+  assert.equal(ui.run('POP_EXPANDED'), false, 'o card volta ao resumo junto da tarefa')
+  assert.equal(ui.nodes.get('#popScrim').classList.contains('on'), false)
+  assert.equal(ui.run('VIEW_MANUAL'), true)
+  const view = JSON.parse(ui.run("JSON.stringify({ x: VIEW.x, y: VIEW.y, taskX: LAST_POS.T048.x, taskY: LAST_POS.T048.y, width: LAST_METRICS.nodeW, height: LAST_METRICS.nodeH, viewportWidth: $('#viewport').getBoundingClientRect().width, viewportHeight: $('#viewport').getBoundingClientRect().height })"))
+  assert.ok(view.taskX + view.x >= 0 && view.taskX + view.x + view.width <= view.viewportWidth)
+  assert.ok(view.taskY + view.y >= 0 && view.taskY + view.y + view.height <= view.viewportHeight)
+  ui.render(graphState(48, 8))
+  assert.equal(ui.run('VIEW_MANUAL'), true, 'a atualização não desfaz a navegação manual')
+})
+
+test('IDs F dos cabeçalhos e cards levam à fase real sem perder o alvo', () => {
+  const ui = dashboard('pt-BR', 500)
+  const state = graphState(48, 8)
+  state.plan.phases[7].id = 'f8B'
+  for (const value of Object.values(state.tasks)) if (value.phase === 'P8') value.phase = 'f8B'
+  ui.render(state)
+  const laneMarkup = ui.nodes.get('#lanes').innerHTML
+  assert.match(laneMarkup, /<button type="button" class="ln" onclick="jumpToPhase\('f8B'\)" aria-label="[^"]*: F8b">F8b<\/button>/)
+  assert.match(html, /\.lane-h \.ln:focus-visible, #pop \.phase-link:focus-visible \{ outline: 2px solid var\(--accent\)/)
+  ui.run("setFilter('done'); jumpToPhase('f8B')")
+  assert.equal(ui.run('FILTER'), 'all')
+  assert.equal(ui.run('VIEW_MANUAL'), true)
+  const horizontal = JSON.parse(ui.run("JSON.stringify({ x: VIEW.x, canvas: CANVAS_W, viewport: $('#viewport').getBoundingClientRect().width })"))
+  assert.ok(horizontal.canvas > horizontal.viewport, 'a contraprova usa um quadro mais largo que a janela')
+  assert.ok(40 + horizontal.x >= 0 && 40 + horizontal.x < horizontal.viewport,
+    'o ID F, posicionado à esquerda do quadro, continua visível após navegar')
+  const lane = ui.run("LAST_LANES.find(phase => phase.id === 'f8B')")
+  const viewY = ui.run('VIEW.y')
+  assert.ok(lane.y + viewY >= ui.run('BASE_Y') && lane.y + viewY < 700,
+    'a fase fica visível abaixo do cabeçalho fixo, respeitando o limite do quadro')
+  ui.run("openTask('T048')")
+  const lean = ui.nodes.get('#popBody').innerHTML
+  assert.match(lean, /class="chip phase-link"[^>]*onclick="jumpToPhase\('f8B'\)"[^>]*>F8b<\/button>/)
+  ui.run('togglePopExpand(true)')
+  assert.match(ui.nodes.get('#popBody').innerHTML, /class="chip phase-link"[^>]*onclick="jumpToPhase\('f8B'\)"[^>]*>F8b<\/button>/)
+  ui.run("jumpToPhase('f8B')")
+  assert.equal(ui.run('POP'), null, 'o card expandido fecha para mostrar o quadro')
+  assert.equal(ui.nodes.get('#popScrim').classList.contains('on'), false)
+  const before = ui.run('JSON.stringify({ x: VIEW.x, y: VIEW.y, filter: FILTER, open: RESULTS_OPEN })')
+  ui.run("jumpToPhase('fase-inexistente')")
+  assert.equal(ui.run('JSON.stringify({ x: VIEW.x, y: VIEW.y, filter: FILTER, open: RESULTS_OPEN })'), before)
+})
+
 test('task planning envelopes stay unmeasured and are subtracted from execution queue time', () => {
   const ui = dashboard()
   const completePlan = { ...plan, startedAt: instant(15), completedAt: instant(20) }
@@ -1633,7 +1755,7 @@ test('gain card omits a long phase-planning envelope without active telemetry', 
   assert.ok(cardStart >= 0)
   assert.match(measured, /até agora/)
   assert.match(measured, /Não aferido/)
-  assert.doesNotMatch(measured, /115h|0s/)
+  assert.doesNotMatch(measured, /115h/)
   assert.doesNotMatch(results, /115h|115:23/)
 })
 
@@ -1658,7 +1780,7 @@ test('o tour só resume o ganho real do #39 com run concluída e medição ínte
   const measured = JSON.parse(ui.run('JSON.stringify(getCompletedRunSummary())'))
   assert.equal(measured.completed, true)
   assert.equal(measured.measurementComplete, true)
-  assert.equal(measured.text, 'Um agente por vez: 20s · Com Prumo: 20s · Economia aferida: 0s · Fator de paralelismo: 1,00×')
+  assert.equal(measured.text, 'Um agente por vez: 20s · Com prumo: 20s · Economia aferida: 0s · Fator de paralelismo: 1,00×')
 
   ui.run("SELECTED_ROOT = 'root-b'; SELECTED_RUN = 'loading'; CURRENT_ROOT = 'root-b'; CURRENT_RUN = 'loading'")
   assert.equal(ui.run('selectedRunStateAvailable()'), false, 'A não fica disponível enquanto a seleção aponta para B')
@@ -1758,10 +1880,10 @@ test('the gain card opens the results tab and shows a human estimate only from m
   assert.ok(original.indexOf('id="gainPanel"') < original.indexOf('id="manualPanel"'), 'the estimate sits below the gain card')
   assert.doesNotMatch(original, /<input|data-gain-minutes|Human estimate/,
     'without manualEstimate there is no human estimate and no editable per-event minutes')
-  assert.match(original, /No execution, review or retry command recorded yet/)
+  assert.match(original, /No command recorded yet/)
 
-  ui.run('STATE = input', { input: next })
-  const fetch = async () => ({ json: async () => ({ events: [] }) })
+  ui.run('STATE = input; FULL_EVENTS = history', { input: next, history: [{ type: 'task_start', task: 'A', at: instant(0) }] })
+  const fetch = async () => ({ json: async () => ({ events: [{ type: 'task_start', task: 'A', at: instant(0) }] }) })
   await ui.run('loadResults()', { fetch })
   assert.notEqual(ui.nodes.get('#results').innerHTML, original)
   assert.match(ui.nodes.get('#results').innerHTML, /about <strong>3m00<\/strong>[^<]*\(3 min per command × 1 command\)/)
@@ -1776,7 +1898,92 @@ test('the gain card opens the results tab and shows a human estimate only from m
   assert.match(card, /for 1 of 3 tasks/, 'invalid or missing estimates are ignored silently and the coverage is stated')
 })
 
-test('compact header keeps Live visible and opens filters and counts together below 1100px', () => {
+test('o trilho mostra fases concluidas em verde continuo e apenas a fase atual em amarelo tracejado', () => {
+  const ui = dashboard('pt-BR')
+  const state = { run: 'fases', plan: { phases: [
+    { id: 'P1', title: 'Primeira' }, { id: 'P2', title: 'Segunda' }, { id: 'P3', title: 'Terceira' },
+  ] }, tasks: {
+    A: task('A', 'done', { phase: 'P1' }), B: task('B', 'running', { phase: 'P2' }), C: task('C', 'pending', { phase: 'P3' }),
+  }, derived: {} }
+  const rails = () => [...ui.nodes.get('#structPaths').innerHTML.matchAll(/<line class="s-rail (\w+)"[^>]*stroke="([^"]+)"/g)].map(match => [match[1], match[2]])
+  ui.render(state)
+  assert.deepEqual(rails(), [['done', 'var(--done)'], ['live', 'var(--accent)'], ['next', '#3a362f']])
+  const struct = ui.nodes.get('#structPaths').innerHTML
+  const marker = /<circle class="s-end-dot live" cx="([\d.]+)" cy="([\d.]+)"/.exec(struct)
+  const rail = /<line class="s-rail live" x1="([\d.]+)"[^>]*x2="([\d.]+)"/.exec(struct)
+  const lanes = ui.run('layout(STATE.tasks).lanes')
+  assert.ok(marker && rail)
+  assert.equal(Number(marker[1]), Number(rail[1]), 'o marcador fica no eixo do trilho')
+  assert.equal(Number(marker[2]), lanes[1].y + 12, 'o marcador aponta a fase atual')
+  assert.notEqual(Number(marker[2]), lanes[2].y + 12, 'não avança para a fase futura')
+  state.tasks.B.state = 'done'
+  state.tasks.C.state = 'skipped'
+  ui.render(state)
+  assert.deepEqual(rails(), Array.from({ length: 3 }, () => ['done', 'var(--done)']))
+  assert.match(ui.nodes.get('#structPaths').innerHTML, /class="s-end-dot done"/)
+  assert.doesNotMatch(ui.nodes.get('#structPaths').innerHTML, /s-rail live|s-end-dot live|s-ring/)
+  state.tasks.C.state = 'pending'
+  ui.render(state)
+  assert.deepEqual(rails(), [['done', 'var(--done)'], ['done', 'var(--done)'], ['live', 'var(--accent)']])
+  assert.match(ui.nodes.get('#structPaths').innerHTML, /class="s-end-dot live"/)
+})
+
+test('o ponto final considera todas as tarefas mesmo sem fases ou com tarefas fora delas', () => {
+  const ui = dashboard('pt-BR')
+  const state = { run: 'sem-fases', plan: { phases: [] }, tasks: { A: task('A', 'done'), B: task('B', 'skipped') }, derived: {} }
+  ui.render(state)
+  assert.match(ui.nodes.get('#structPaths').innerHTML, /class="s-rail done"/)
+  assert.match(ui.nodes.get('#structPaths').innerHTML, /class="s-end-dot done"/)
+  state.tasks.B.state = 'pending'
+  ui.render(state)
+  assert.match(ui.nodes.get('#structPaths').innerHTML, /class="s-rail live"/)
+  assert.match(ui.nodes.get('#structPaths').innerHTML, /class="s-end-dot live"/)
+  state.plan.phases = [{ id: 'P1', title: 'Primeira' }]
+  state.tasks.B.phase = 'fora-do-catalogo'
+  ui.render(state)
+  assert.match(ui.nodes.get('#structPaths').innerHTML, /class="s-rail done"/)
+  assert.match(ui.nodes.get('#structPaths').innerHTML, /class="s-end-dot live"/, 'uma tarefa pendente fora da fase ainda impede a conclusao do plano')
+  const markerY = Number(/class="s-end-dot live"[^>]*cy="([\d.]+)"/.exec(ui.nodes.get('#structPaths').innerHTML)?.[1])
+  assert.equal(markerY, ui.run('LAST_POS.B.y + LAST_METRICS.nodeH / 2'), 'o marcador permanece junto da tarefa pendente real')
+})
+
+test('a bolinha ativa cobre os trilhos durante o pulso, com e sem fases', () => {
+  assert.match(html, /svg#edges \.s-end-mask \{ fill: var\(--bg\); stroke: none; \}/)
+  assert.match(html, /@keyframes endDotPulse \{ 50% \{ opacity: \.5; \} \}/)
+  assert.doesNotMatch(html, /svg#edges \.s-end-dot\.live \{[^}]*(?:animation: beat|transform:|scale\()/)
+  for (const phases of [[], [{ id: 'P1', title: 'Primeira' }, { id: 'P2', title: 'Segunda' }]]) {
+    const ui = dashboard('pt-BR')
+    ui.render({ run: 'pulso', plan: { phases }, tasks: {
+      A: task('A', 'done', { phase: 'P1' }), B: task('B', 'running', { phase: 'P2' }),
+    }, derived: {} })
+    const struct = ui.nodes.get('#structPaths').innerHTML
+    const maskAndDot = /<circle class="s-end-mask" cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"\/><circle class="s-end-dot live" cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"\/>/.exec(struct)
+    assert.ok(maskAndDot, 'a mascara opaca fica imediatamente atras da bolinha ativa')
+    assert.equal(maskAndDot[1], maskAndDot[4], 'a mascara compartilha o eixo da bolinha')
+    assert.equal(maskAndDot[2], maskAndDot[5], 'a mascara compartilha o centro da bolinha')
+    assert.ok(Number(maskAndDot[3]) > Number(maskAndDot[6]), 'a mascara cobre ate a borda suavizada da bolinha')
+    assert.match(struct, /class="s-rail live"/, 'o trilho ativo continua presente')
+  }
+})
+
+test('o seletor de planos fecha ao clicar fora e preserva cliques dentro dos dois grupos', () => {
+  const ui = dashboard('pt-BR')
+  ui.run("$('#runMenu')")
+  const menu = ui.nodes.get('#runMenu')
+  for (const group of ['progress', 'complete']) {
+    ui.run('RUN_FILTER = group', { group })
+    menu.open = true
+    const detached = { target: { closest: () => null }, composedPath: () => [menu] }
+    ui.dispatchDocument('click', detached, () => ui.run('toggleRunFilter(group)', { group: group === 'progress' ? 'complete' : 'progress' }))
+    assert.equal(menu.open, true, 'trocar o grupo dentro do seletor mantem a lista aberta')
+    ui.dispatchDocument('click', { target: { closest: () => menu } })
+    assert.equal(menu.open, true)
+    ui.dispatchDocument('click', { target: { closest: () => null }, composedPath: () => [] })
+    assert.equal(menu.open, false, 'clicar fora fecha qualquer grupo selecionado')
+  }
+})
+
+test('o cabecalho compacto preserva ao vivo e abre todos os filtros sem os contadores', () => {
   const small = dashboard('en', 330)
   assert.equal(small.nodes.get('#headerMenu').open, false)
   small.run("$('#filterPanel')")
@@ -1794,13 +2001,14 @@ test('compact header keeps Live visible and opens filters and counts together be
   const header = html.slice(html.indexOf('<header>'), html.indexOf('</header>'))
   const menuStart = html.indexOf('<details class="header-menu"')
   const menu = html.slice(menuStart, html.indexOf('</details>', menuStart) + 10)
-  assert.ok(header.indexOf('id="orch"') < header.indexOf('<details class="header-menu"'), 'Live stays visible outside the filter menu')
+  assert.ok(header.indexOf('id="orch"') > header.indexOf('<details class="header-menu"'), 'o status fica depois dos filtros, fora do menu')
   assert.doesNotMatch(menu, /id="orch"/)
   assert.ok(menu.includes('id="statusFilter"'))
   assert.equal(small.filterOptions.length, 14)
   assert.doesNotMatch(menu, /<select/)
   assert.match(html, /\.filter-toggle \{ display: none; \}/)
-  assert.ok(menu.includes('id="counts"'))
+  assert.doesNotMatch(header, /id="counts"/)
+  assert.match(html, /<section id="statusBox">\s*<h3>[\s\S]*?<div class="counts" id="counts"><\/div>/)
   assert.match(menu, /<div class="filter-menu" id="filterMenu">/)
   assert.doesNotMatch(menu, /<details[^>]+class="filter-menu"/)
   small.nodes.get('#headerMenu').open = true
@@ -1816,19 +2024,42 @@ test('compact header keeps Live visible and opens filters and counts together be
   assert.match(html, /@media \(max-width: 1100px\)/)
 })
 
-test('the guide is a separate right-most header control and stays at the top right on mobile', () => {
+test('o cabecalho ordena plano e filtros antes do status e separa resultados do guia', () => {
   const header = html.slice(html.indexOf('<header>'), html.indexOf('</header>'))
   const guide = header.indexOf('id="guideButton"'), menu = header.indexOf('<details class="header-menu"')
   const slot = header.indexOf('<div class="header-guide">')
-  assert.ok(menu > header.indexOf('id="orch"') && header.indexOf('id="orch"') > header.indexOf('id="resBtn"') && slot > menu && guide > slot,
-    'results · Live · filters · separated guide')
-  assert.match(html, /\.header-guide \{[^}]*margin-left: auto;[^}]*padding-left: 16px;[^}]*border-left: 1px solid var\(--line\);/)
+  const results = header.indexOf('id="resBtn"'), status = header.indexOf('id="orch"')
+  assert.ok(header.indexOf('<h1>') < header.indexOf('id="runMenu"') && header.indexOf('id="runMenu"') < menu &&
+    menu < status && status < slot && slot < results && results < guide,
+    'logo, plano, filtros, status e acoes agrupadas na ordem de leitura')
+  const separator = header.indexOf('<div class="guide-slot">')
+  assert.ok(results < separator && separator < guide, 'o separador fica entre resultados e guia')
+  assert.match(html, /\.guide-slot \{[^}]*padding-left: 12px;[^}]*border-left: 1px solid var\(--line\);/)
   assert.match(html, /header \.run-menu \{ grid-column: 2; grid-row: 1;/)
-  assert.match(html, /header \.header-guide \{ grid-column: 3; grid-row: 1;[^}]*border: 0;/)
-  assert.match(html, /header #resBtn \{ grid-column: 1; grid-row: 2;/)
-  assert.match(html, /header \.orch \{ grid-column: 2 \/ 4; grid-row: 2;/)
-  assert.match(html, /header \.header-menu \{ grid-column: 1 \/ 4; grid-row: 3;/)
-  assert.match(html, /\.header-menu-content \{[^}]*right: 0;[^}]*width: min\(calc\(100vw - 20px\), 340px\)/)
+  assert.match(html, /header \.header-guide \{ grid-column: 3; grid-row: 2;/)
+  assert.match(html, /header \.header-guide \{ grid-column: 1 \/ 3; grid-row: 3;/)
+  assert.match(html, /header \.orch \{ grid-column: 2; grid-row: 2;/)
+  assert.match(html, /header \.header-menu \{ grid-column: 1; grid-row: 2;/)
+  assert.match(html, /\.header-menu-content \{[^}]*left: 0;[^}]*width: min\(calc\(100vw - 24px\), 280px\)/)
+})
+
+test('a conclusao fica verde e sem pulso, e nao permanece ao mudar para um plano ativo', () => {
+  const ui = dashboard('pt-BR')
+  const state = { run:'header-status', plan:{ phases:[] }, tasks:{ T1:task('T1','done'), T2:task('T2','skipped') } }
+  ui.render(state)
+  const status = ui.nodes.get('#orch')
+  assert.equal(status.classList.contains('complete'), true)
+  assert.equal(status.classList.contains('live'), false)
+  assert.match(status.innerHTML, /concluída/)
+  assert.match(status.innerHTML, /<time id="agentClock"/)
+  ui.run("showRunLoading('active')")
+  assert.equal(status.classList.contains('complete'), false)
+  ui.render({ ...state, tasks:{T1:task('T1','running')} })
+  assert.equal(status.classList.contains('complete'), false)
+  assert.equal(status.classList.contains('live'), true)
+  ui.render({ ...state, tasks:{T1:task('T1','skipped')} })
+  assert.equal(status.classList.contains('complete'), false, 'um plano totalmente pulado nao e concluido')
+  assert.match(html, /\.orch\.complete \.hb \{[^}]*background: var\(--done\);[^}]*animation: none;/)
 })
 
 test('guide button is labeled with one word in English and Brazilian Portuguese', () => {
@@ -1841,7 +2072,7 @@ test('guide button is labeled with one word in English and Brazilian Portuguese'
 test('results and back-to-graph are one CTA whose label alternates', async () => {
   const ui = dashboard('pt-BR')
   ui.run('loadResults = async () => {}')
-  assert.match(html, /#resBtn \{[^}]*min-width: 112px; height: 32px;[^}]*background: var\(--accent\)/)
+  assert.match(html, /#resBtn \{[^}]*min-width: 112px;[^}]*background: var\(--accent\)/)
   assert.doesNotMatch(html, /class="rback"/, 'no second, differently styled back button')
   await ui.run('toggleResults()')
   assert.equal(ui.nodes.get('#resBtn').textContent, 'grafo')
@@ -1858,39 +2089,226 @@ test('the legend summary aligns its label and a drawn chevron', () => {
   assert.match(html, /<details class="legend-box"[^>]*>\s*<summary><h3><span data-i18n="Legend">Legend<\/span><\/h3><\/summary>/)
 })
 
-test('active agents lead with the per-agent list; the role counters are a quiet footnote', () => {
-  const box = html.slice(html.indexOf('<section id="agentsBox">'), html.indexOf('</section>', html.indexOf('<section id="agentsBox">')))
-  assert.ok(box.indexOf('id="parallel"') < box.indexOf('id="parTitle"'), 'list first, counters after')
-  assert.match(html, /#parTitle \{ display: flex;[^}]*font-size: 10px; \}/)
-  assert.match(html, /#parTitle b \{ font: 700 10px\/1\.4 var\(--font-mono\)/)
-  assert.doesNotMatch(html, /#parTitle b \{ font: 700 15px/)
+test('falhas ficam recolhidas acima da legenda e as cores das funcoes permanecem visiveis', () => {
+  assert.match(html, /<details class="legend-box" id="failuresBox">\s*<summary><h3><span data-i18n="Failures &amp; retries"/)
+  const failure = html.indexOf('<details class="legend-box" id="failuresBox">')
+  const legend = html.indexOf('<details class="legend-box" data-prumo-guide-anchor="legend">')
+  assert.ok(failure > html.indexOf('id="eventsBox"') && failure < legend)
+  assert.doesNotMatch(html.slice(failure, legend), /\bopen(?:=|\s|>)/)
+  assert.match(html, /#statusBox \.count-label \{[^}]*color: inherit/)
 })
 
-test('Pin lives in the popover header and toggles the pinned state', () => {
+test('historico destaca nomes e referencias sem alterar os dados nem executar notas', () => {
   const ui = dashboard('pt-BR')
-  ui.render({ run: 'x', plan: {}, tasks: { T: task('T'), U: task('U', 'pending', { deps: ['T'] }) }, derived: { T: { effective: 'ready' }, U: { effective: 'waiting' } } })
-  const tools = html.slice(html.indexOf('<div class="ptools">'), html.indexOf('<div id="popBody">'))
-  assert.ok(tools.indexOf('id="popExpand"') < tools.indexOf('id="popPin"') && tools.indexOf('id="popPin"') < tools.indexOf('onclick="closePop()"'),
-    'expand · pin · close, as in the design')
-  assert.match(html, /id="popPin" onclick="toggleTaskPopoverPin\(\)"/)
-  ui.run("POP_MODE = 'lean'; openPop('T', false)")
-  assert.equal(ui.nodes.get('#popPin').getAttribute('aria-pressed'), 'false')
-  assert.doesNotMatch(ui.nodes.get('#popBody').innerHTML, /pin-action/, 'the footer no longer carries a Pin button')
-  assert.match(ui.nodes.get('#popBody').innerHTML, /class="pfoot"[\s\S]*Agent time[\s\S]*see detail →/)
-  ui.run('toggleTaskPopoverPin()')
-  assert.equal(ui.run('POP.pinned'), true)
-  assert.equal(ui.nodes.get('#popPin').getAttribute('aria-pressed'), 'true')
-  assert.equal(ui.nodes.get('#popPin').getAttribute('aria-label'), 'Fixado')
-  ui.run('toggleTaskPopoverPin()')
-  assert.equal(ui.run('POP.pinned'), false, 'the same control releases a pinned popover')
-  assert.equal(ui.nodes.get('#pop').classList.contains('pinned'), false)
-  assert.equal(ui.nodes.get('#popPin').getAttribute('aria-pressed'), 'false')
-  assert.equal(ui.nodes.get('#popPin').getAttribute('aria-label'), 'Fixar')
-  ui.run('toggleTaskPopoverPin()')
-  assert.equal(ui.run('POP.pinned'), true, 'it can be pinned again')
+  const events = [
+    { type: 'task_note', task: 't14', at: instant(1), text: 'conferir t12, f3 e T25 <img src=x onerror=alert(1)>' },
+    { type: 'phase_planning', phase: 'f3', at: instant(2) },
+    { type: 'task_start', task: 't12', at: instant(3) },
+    { type: 'task_validate', task: 't12', at: instant(4), by: 'review', ok: true },
+  ]
+  ui.render({ run: 'historico', plan: {}, tasks: {}, derived: {} }, events)
+  const log = ui.nodes.get('#events').innerHTML
+  for (const value of ['T14', 'T12', 'F3', 'T25', 'Orquestrador', 'Planejador', 'Executor', 'Revisor']) assert.ok(log.includes(value), value)
+  assert.doesNotMatch(log, /\bt14\b|\bt12\b|\bf3\b|<img/)
+  assert.ok(log.includes('&lt;img'))
+  assert.match(log, /aria-hidden="true">\|<\/span>/)
+  assert.equal(events[0].task, 't14')
+  assert.match(events[0].text, /t12, f3/)
 })
 
-test('clicks on popover controls that re-render the popover keep it pinned (see detail, dependency chips)', () => {
+test('atualizacao identica preserva os cards e mudancas reais repintam o plano', () => {
+  const ui = dashboard('pt-BR')
+  const state = { run: 'plano', plan: {}, tasks: { T1: task('T1') }, derived: { T1: { effective: 'ready' } } }
+  ui.render(state)
+  const first = ui.cards[0]
+  ui.render(state)
+  assert.equal(ui.cards[0], first)
+  state.tasks.T1.title = 'Titulo atualizado'
+  ui.render(state)
+  assert.notEqual(ui.cards[0], first)
+  assert.match(ui.nodes.get('#nodes').innerHTML, /Titulo atualizado/)
+  ui.run("showRunLoading('plano')")
+  ui.render(state)
+  assert.equal(ui.cards.length, 1)
+})
+
+test('o catalogo preserva a descricao carregada sem aproveitar outro diretorio', () => {
+  const ui = dashboard('pt-BR')
+  ui.run("SELECTED_ROOT = 'raiz'; SELECTED_RUN = 'plano'; STATE_RUN_KEY = 'raiz\\0plano'; STATE = { run: 'plano', plan: { name: 'Nome curto', description: 'Descricao completa' } }")
+  const catalog = { currentRoot: 'raiz', current: 'plano', runs: [{ root: 'raiz', run: 'plano', plan: 'Nome curto' }] }
+  ui.run('updateRunSelect(input)', { input: catalog })
+  assert.equal(ui.nodes.get('#runLabel').textContent, 'Descricao completa')
+  ui.run("SELECTED_ROOT = 'outra'; updateRunSelect(input)", { input: { ...catalog, runs: [{ root: 'outra', run: 'plano', plan: 'Outro nome' }] } })
+  assert.equal(ui.nodes.get('#runLabel').textContent, 'Outro nome')
+})
+
+test('indicadores ficam juntos acima dos agentes, capitalizados e nas cores dos estados', () => {
+  const ui = dashboard('pt-BR')
+  const states = { T1: 'running', T2: 'discussing', T3: 'planning', T4: 'reviewing', T5: 'skipped', T6: 'waiting', T7: 'done' }
+  const state = { run: 'indicadores', plan: { maxExecutors: 3 }, tasks: Object.fromEntries(Object.entries(states).map(([id, value]) => [id, task(id, value)])),
+    derived: Object.fromEntries(Object.entries(states).map(([id, effective]) => [id, { effective }])) }
+  ui.render(state)
+  const counts = ui.nodes.get('#counts').innerHTML
+  for (const [key, label, color] of [['discussing', 'Discutindo', 'discussion'], ['planning', 'Planejando', 'planning'], ['running', 'Executando', 'running'],
+    ['reviewing', 'Revisando', 'review'], ['skipped', 'Pulado', 'skipped'], ['waiting', 'Aguardando', 'waiting'], ['done', 'Concluído', 'done']]) {
+    const row = counts.match(new RegExp('<span data-state="' + key + '"[\\s\\S]*?</b></span>'))?.[0]
+    assert.ok(row?.includes(label), label)
+    assert.ok(row.includes('var(--' + color + ')'), label)
+  }
+  assert.match(counts, /Executando<\/span> <b>1\/3<\/b>/)
+  assert.ok(html.indexOf('id="counts"') < html.indexOf('id="agentsBox"'))
+  assert.doesNotMatch(html, /id="parTitle"/)
+  assert.doesNotMatch(counts, /em execução|aguardando|concluído|pulado/)
+  assert.equal((counts.match(/data-state="running"/g) ?? []).length, 1)
+  ui.run("setFilter('done')")
+  assert.equal(ui.nodes.get('#counts').innerHTML, counts, 'filtrar nao muda os totais do plano')
+  state.tasks.T8 = task('T8')
+  state.derived.T8 = { effective: 'ready_to_plan' }
+  ui.render(state)
+  assert.match(ui.nodes.get('#counts').innerHTML, /Pronto para planejamento<\/span> <b>1<\/b>/)
+  const expandedCounts = ui.nodes.get('#counts').innerHTML
+  assert.ok(expandedCounts.indexOf('data-state="done"') > expandedCounts.indexOf('data-state="ready_to_plan"'), 'Concluido encerra o resumo sem deslocar os separadores das outras linhas')
+  assert.match(html, /#statusBox \.count-label \{[^}]*min-width: 0;[^}]*white-space: normal;/)
+  assert.match(html, /#statusBox \.counts b \{[^}]*white-space: nowrap;/)
+})
+
+test('as conexoes ficam ocultas e o trilho das fases permanece visivel', () => {
+  assert.match(html, /#edgePaths, #hubPaths, #structPaths \.s-base \{ display: none; \}/)
+  assert.doesNotMatch(html, /#structPaths(?:,| \{)[^}]*display: none/)
+  const ui = dashboard('pt-BR')
+  ui.render({ run: 'dependencias', plan: { phases: [{ id: 'F1', title: 'Fase' }] }, tasks: { T1: task('T1'), T2: task('T2', 'pending', { deps: ['T1'] }) },
+    derived: { T1: { effective: 'ready' }, T2: { effective: 'waiting', blockedBy: ['T1'] } } })
+  assert.match(ui.nodes.get('#structPaths').innerHTML, /class="s-rail live"/)
+  assert.match(ui.nodes.get('#nodes').innerHTML, /← T1/)
+})
+
+test('Concluido ocupa uma linha central e plano e filtros compartilham a mesma seta', () => {
+  assert.match(html, /#statusBox \.counts > span\[data-state="done"\] \{ grid-column: 1 \/ -1; justify-content: center;/)
+  assert.match(html, /#statusBox \.counts > span\[data-state="done"\] \.count-label \{ flex: none;/)
+  const header = html.slice(html.indexOf('<header>'), html.indexOf('</header>'))
+  const chevrons = [...header.matchAll(/<svg class="control-chevron"[^>]*>[\s\S]*?<\/svg>/g)].map(match => match[0])
+  assert.equal(chevrons.length, 3)
+  assert.equal(new Set(chevrons).size, 1)
+  assert.doesNotMatch(header, /control-chevron[^>]*tabindex/)
+  assert.doesNotMatch(html, /(?:\.filter-toggle|\.header-menu summary)::after \{ content: '⌄'/)
+})
+
+test('o card abre resumido, expande para os detalhes e volta ao resumo sem controles de modos ou PIN', () => {
+  const ui = dashboard('pt-BR')
+  const tasks = { T: task('T', 'ready', { summary: 'Resumo curto', taskPlan: { ...plan, steps: ['PASSO_COMPLETO'] } }), U: task('U') }
+  ui.render({ run: 'card', plan: {}, tasks, derived: { T: { effective: 'ready' }, U: { effective: 'ready' } } })
+  ui.run("localStorage = { getItem: () => 'detail', setItem: () => { throw Error('Nao deve persistir modo') } }; openTask('T')")
+  assert.equal(ui.run('POP_EXPANDED'), false)
+  assert.match(ui.nodes.get('#popBody').innerHTML, /Resumo curto/)
+  assert.doesNotMatch(ui.nodes.get('#popBody').innerHTML, /PASSO_COMPLETO|see detail|setPopMode/)
+  assert.doesNotMatch(html, /id="popPin"|class="pmode"|id="selectedBox"|id="selectedTask"/)
+  ui.run('togglePopExpand()')
+  assert.equal(ui.nodes.get('#popExpand').getAttribute('aria-expanded'), 'true')
+  assert.match(ui.nodes.get('#popBody').innerHTML, /PASSO_COMPLETO/)
+  ui.run('fillPop(POP.id)')
+  assert.match(ui.nodes.get('#popBody').innerHTML, /PASSO_COMPLETO/, 'atualizar preserva a leitura expandida')
+  ui.run('togglePopExpand(false)')
+  assert.equal(ui.nodes.get('#popExpand').getAttribute('aria-expanded'), 'false')
+  assert.doesNotMatch(ui.nodes.get('#popBody').innerHTML, /PASSO_COMPLETO/)
+  ui.run("togglePopExpand(true); openTask('U')")
+  assert.equal(ui.run('POP_EXPANDED'), false)
+  assert.equal(ui.nodes.get('#popScrim').classList.contains('on'), false)
+  ui.run("togglePopExpand(true); closePop(); openTask('T')")
+  assert.equal(ui.run('POP_EXPANDED'), false)
+  assert.equal(ui.nodes.get('#availableBox').hidden, false)
+  ui.dispatchDocument('keydown', { key: 'Escape' })
+  assert.equal(ui.nodes.get('#popBody').innerHTML, '')
+  assert.equal(ui.nodes.get('#pop').hidden, true)
+  assert.equal(ui.nodes.get('#pop').dataset.run, undefined)
+})
+
+test('a paleta do card tem contraste legivel e preserva as cores sem alterar o painel inteiro', () => {
+  const cardTokens = Object.fromEntries([...html.match(/#pop \{ --ease:[\s\S]*?\n\s*\}/)[0].matchAll(/--([\w-]+): (#[a-f\d]{6})/gi)].map(match => [match[1], match[2]]))
+  const rootTokens = Object.fromEntries([...html.match(/:root \{[\s\S]*?\n\s*\}/)[0].matchAll(/--([\w-]+): (#[a-f\d]{6})/gi)].map(match => [match[1], match[2]]))
+  const luminance = hex => hex.slice(1).match(/../g).map(channel => parseInt(channel, 16) / 255)
+    .map(channel => channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4)
+    .reduce((sum, channel, index) => sum + channel * [.2126, .7152, .0722][index], 0)
+  const contrast = (a, b) => (Math.max(luminance(a), luminance(b)) + .05) / (Math.min(luminance(a), luminance(b)) + .05)
+  assert.notEqual(cardTokens.panel, rootTokens.panel)
+  for (const key of ['text', 'dim', 'faint', 'waiting', 'skipped', 'failed', 'running', 'discussion', 'planning', 'done', 'review', 'ready', 'ready-plan', 'ready-discussion', 'validated', 'blocked']) {
+    const foreground = cardTokens[key] ?? rootTokens[key]
+    for (const surface of ['panel', 'bg', 'card']) assert.ok(contrast(foreground, cardTokens[surface]) >= 4.5, key + ' sobre ' + surface)
+  }
+  const ui = dashboard('pt-BR')
+  ui.render({ run: 'cores', plan: {}, tasks: { T: task('T', 'done') }, derived: { T: { effective: 'done' } } })
+  ui.run("openTask('T')")
+  assert.equal(ui.nodes.get('#popTitle').textContent, 'T')
+  assert.equal(ui.nodes.get('#popStatus').textContent, 'concluído')
+  assert.doesNotMatch(ui.nodes.get('#popBody').innerHTML, /id="popTitle"|class="st"/)
+  assert.doesNotMatch(html.match(/:root \{[\s\S]*?\n\s*\}/)[0], /#123441/)
+})
+
+test('o cabecalho mostra tarefa e estado sem confundir tentativas com conclusao', () => {
+  const ui = dashboard('pt-BR')
+  const attempts = [
+    { n: 1, agent: 'executor', startedAt: instant(1), endedAt: instant(2), result: 'failed' },
+    { n: 2, agent: 'executor', startedAt: instant(3), endedAt: instant(4), result: 'passed' },
+  ]
+  ui.render({ run: 'concluido', plan: { maxAttempts: 3 }, tasks: { T24: task('T24', 'done', { attempts }) },
+    derived: { T24: { effective: 'done' } } })
+  for (const expanded of [false, true]) {
+    ui.run('POP_EXPANDED = expanded; fillPop("T24")', { expanded })
+    assert.equal(ui.nodes.get('#popTitle').textContent, 'T24')
+    assert.equal(ui.nodes.get('#popStatus').textContent, 'concluído')
+    assert.doesNotMatch(ui.nodes.get('#popBody').innerHTML, /2 de 3|tentativa 2 de 3|id="popTitle"/)
+  }
+})
+
+test('cada familia de estado tem fundo proprio no quadro, inclusive antes da discussao', () => {
+  const families = [
+    ['waiting', 'pending', '#27343c'], ['ready_for_discussion', 'discussing', '#443517'],
+    ['ready_to_plan', 'planning', '#302e4d'], ['ready', 'running', '#4a2b1f'],
+  ]
+  for (const [queued, active, color] of families) {
+    assert.ok(html.includes(`.node:is([data-st="${queued}"], [data-st="${active}"]) { --ticket-bg: ${color}; }`))
+  }
+  for (const [state, color] of [['reviewing', '#183b4a'], ['done', '#323c21'], ['blocked', '#472a36'],
+    ['failed', '#4b242b'], ['skipped', '#30332d']]) {
+    assert.ok(html.includes(`.node[data-st="${state}"] { --ticket-bg: ${color}; }`))
+  }
+  assert.match(html, /\.node \{[^}]*background: var\(--ticket-bg\)/)
+})
+
+test('o card aberto e suas superficies internas seguem o estado da tarefa', () => {
+  assert.match(html, /#pop\[data-st\]:not\(\[data-st="done"\]\) \{[^}]*--panel: var\(--ticket-bg\);[^}]*--bg: color-mix[^}]*--card: color-mix[^}]*--line: color-mix/)
+  const families = [
+    ['ready_for_discussion', '#443517'], ['ready_to_plan', '#302e4d'],
+    ['running', '#4a2b1f'], ['reviewing', '#183b4a'], ['blocked', '#472a36'],
+    ['failed', '#4b242b'], ['waiting', '#27343c'], ['skipped', '#30332d'],
+  ]
+  for (const [state, color] of families) {
+    assert.match(html, new RegExp(`#pop[^\\n{]*\\[data-st="${state}"\\][^\\n{]*\\{ --ticket-bg: ${color}; \\}`))
+    const ui = dashboard('pt-BR')
+    ui.render({ run: `estado-${state}`, plan: {}, tasks: { T9: task('T9', state) },
+      derived: { T9: { effective: state } } })
+    ui.run("fillPop('T9')")
+    assert.equal(ui.nodes.get('#pop').dataset.st, state)
+    assert.equal(ui.nodes.get('#popTitle').textContent, 'T9')
+  }
+  const ui = dashboard('pt-BR')
+  ui.render({ run: 'estado-done', plan: {}, tasks: { T9: task('T9', 'done') }, derived: { T9: { effective: 'done' } } })
+  ui.run("fillPop('T9')")
+  assert.equal(ui.nodes.get('#pop').dataset.st, 'done')
+  assert.match(html, /#pop \{ --ease:[^}]*--panel: #323c21/)
+})
+
+test('Aguardando no resumo usa a mesma cor legivel dos cards de espera', () => {
+  assert.match(html, /--waiting: #a2b6bd/)
+  const ui = dashboard('pt-BR')
+  ui.render({ run: 'espera', plan: { phases: [] }, tasks: {
+    T1: task('T1', 'pending', { deps: ['T2'] }),
+    T2: task('T2', 'blocked'),
+  }, derived: { T1: { effective: 'waiting' }, T2: { effective: 'blocked' } } })
+  assert.match(ui.nodes.get('#counts').innerHTML, /data-state="waiting" style="color:var\(--waiting\)"[^>]*>[\s\S]*?Aguardando[\s\S]*?<b>1<\/b>/)
+  assert.match(ui.nodes.get('#nodes').innerHTML, /data-st="waiting"[^>]*data-id="T1"/)
+})
+
+test('expandir e seguir dependencias mantem o card aberto sem duplicar a tarefa na lateral', () => {
   const ui = dashboard('pt-BR')
   ui.render({ run: 'x', plan: {}, tasks: { T: task('T'), U: task('U', 'pending', { deps: ['T'] }) },
     derived: { T: { effective: 'ready' }, U: { effective: 'waiting' } } })
@@ -1899,21 +2317,37 @@ test('clicks on popover controls that re-render the popover keep it pinned (see 
   // but the dispatch path captured before the re-render still contains #pop
   const detached = path => ({ target: { closest: () => null }, composedPath: () => [{ matches: () => false }, ...path] })
 
-  ui.run("POP_MODE = 'lean'; openPop('T', true)")
-  ui.dispatchDocument('click', detached([pop]), () => ui.run("setPopMode('detail')"))
+  ui.run("POP_EXPANDED = false; openPop('T', true)")
+  ui.dispatchDocument('click', detached([pop]), () => ui.run('togglePopExpand(true)'))
   assert.equal(ui.run('POP?.id'), 'T', '"see detail" keeps the pinned popover open')
-  assert.equal(ui.run('POP_MODE'), 'detail')
-  assert.equal(ui.nodes.get('#selectedBox').hidden, false)
+  assert.equal(ui.run('POP_EXPANDED'), true)
+  assert.equal(ui.nodes.get('#availableBox').hidden, false)
 
   ui.dispatchDocument('click', detached([pop]), () => ui.run("jumpTo('U')"))
   assert.equal(ui.run('POP?.id'), 'U', 'a dependency chip opens the linked task')
   assert.equal(ui.run('POP.pinned'), true)
-  assert.equal(ui.nodes.get('#selectedBox').hidden, false, 'and fills "Selected task"')
-  assert.match(ui.nodes.get('#selectedTask').innerHTML, /U · Task U/)
+  assert.equal(ui.nodes.get('#availableBox').hidden, false)
+  assert.match(ui.nodes.get('#popBody').innerHTML, /Task U/)
   assert.equal(ui.cards.find(card => card.dataset.id === 'U').classList.contains('lit-self'), true, 'the linked card is highlighted')
 
   ui.dispatchDocument('click', { target: { closest: () => null }, composedPath: () => [{ matches: () => false }] })
   assert.equal(ui.run('POP'), null, 'a click outside still closes it')
+})
+
+test('IDs exibidos em chips normalizam T/F sem alterar o alvo real da dependência', () => {
+  const ui = dashboard('pt-BR')
+  const state = { run: 'ids', plan: { phases: [{ id: 'f1A', title: 'Fase' }] }, tasks: {
+    t1A: task('t1A', 'done', { phase: 'f1A' }),
+    f2B: task('f2B', 'pending', { phase: 'f1A', deps: ['t1A'] }),
+  }, derived: { t1A: { effective: 'done' }, f2B: { effective: 'waiting', blockedBy: ['t1A'] } } }
+  ui.render(state)
+  ui.run("openTask('f2B')")
+  const pop = ui.nodes.get('#popBody').innerHTML
+  assert.match(pop, /onclick="jumpTo\('t1A'\)"[^>]*>[\s\S]*<b>T1a/)
+  assert.equal(ui.nodes.get('#popTitle').textContent, 'F2b')
+  assert.match(ui.nodes.get('#nodes').innerHTML, /data-id="t1A"[^>]*>[\s\S]*<span class="id">T1a/)
+  ui.run("jumpTo('t1A')")
+  assert.equal(ui.run('POP.id'), 't1A', 'o alvo mantém o ID real, com sua capitalização original')
 })
 
 test('115h23 phase envelope stays out of displayed time while measured work and critical path stay exact', () => {
@@ -1953,14 +2387,15 @@ test('115h23 phase envelope stays out of displayed time while measured work and 
     assert.equal(result.cpLen, 5000, 'the measured task alone remains available to internal calculations')
     assert.equal(result.criticalPathMeasured, false, 'unmeasured phase planning suppresses the displayed critical path')
     ui.render(state, events)
-    const graph = ['#doneCount', '#lanes', '#nodes', '#parallel', '#orch', '#planSub']
+    const graph = ['#lanes', '#nodes', '#parallel', '#orch', '#planSub']
       .map((selector) => ui.nodes.get(selector).innerHTML + ui.nodes.get(selector).textContent).join('\n')
-    assert.match(graph, /5s/)
-    assert.match(graph, /tempo ativo não aferido/)
+    assert.match(graph, /00:00:05/)
+    assert.match(graph, /não aferido/)
+    assert.doesNotMatch(ui.nodes.get('#doneCount').innerHTML, /5s|não aferido|00:00:05/)
     assert.doesNotMatch(graph, /115h|76h|192h|115:23|24h/)
     ui.run('FULL_EVENTS = inputEvents; renderResults(input)', { input: state, inputEvents: events })
     const results = ui.nodes.get('#results').innerHTML
-    assert.match(results, /Ganho com paralelismo/)
+    assert.match(results, /Ganho com prumo e paralelismo/)
     assert.doesNotMatch(results, /Caminho crítico/, 'an unmeasured critical path is not shown')
     assert.doesNotMatch(results, /115h|76h|192h|115h23|aberta por|decorrido/)
   }
@@ -1996,10 +2431,10 @@ test('blocked execution keeps only its two measured slices across graph, results
 
   ui.run('FULL_EVENTS = inputEvents; RESULTS_OPEN = true; renderResults(STATE)', { inputEvents: events })
   const results = ui.nodes.get('#results').innerHTML
-  assert.match(results, /Ganho com paralelismo/)
+  assert.match(results, /Ganho com prumo e paralelismo/)
   assert.doesNotMatch(results, /115h|76h|192h|115:23|24h|115 hours/)
 
-  ui.run("POP = { id: 'A', pinned: true }; POP_MODE = 'lean'; fillPop('A')")
+  ui.run("POP = { id: 'A', pinned: true }; POP_EXPANDED = false; fillPop('A')")
   const popover = ui.nodes.get('#popBody').innerHTML
   assert.match(popover, /10s/)
   assert.doesNotMatch(popover, /115h|76h|192h|115:23|24h/)
@@ -2034,7 +2469,7 @@ test('more than 120 events preserve long pauses and never display unmeasured env
   assert.equal(ui.nodes.get('#orch').classList.contains('live'), true)
   assert.match(visibleWhileIncomplete, /not measured/)
   assert.doesNotMatch(visibleWhileIncomplete, /115h|115:23|415390s/)
-  ui.run("POP = { id: 'A', pinned: true }; POP_MODE = 'lean'; fillPop('A')")
+  ui.run("POP = { id: 'A', pinned: true }; POP_EXPANDED = false; fillPop('A')")
   assert.match(ui.nodes.get('#popBody').innerHTML, /Agent time[\s\S]*· not measured/)
   ui.run('FULL_EVENTS = inputEvents; RESULTS_OPEN = true; renderResults(STATE)', { inputEvents: truncated })
   const incompleteResults = ui.nodes.get('#results').innerHTML
@@ -2345,13 +2780,14 @@ test('115h task planning envelopes stay unmeasured and cannot inflate the critic
   ui.render(state, events)
   const graph = ['#orch', '#doneCount', '#nodes', '#parallel'].map(selector => ui.nodes.get(selector).innerHTML).join('\n')
   assert.match(graph, /concluída[\s\S]*00:00:05/i)
-  assert.match(graph, /tempo ativo não aferido/)
+  assert.match(graph, /não aferido/)
+  assert.doesNotMatch(ui.nodes.get('#doneCount').innerHTML, /não aferido|00:00:05/)
   assert.doesNotMatch(graph, /115h|115:23|415390s/)
   ui.run('FULL_EVENTS = inputEvents; renderResults(input)', { input: state, inputEvents: events })
   const results = ui.nodes.get('#results').innerHTML
   assert.match(results, /períodos não aferidos ficam fora/)
   assert.doesNotMatch(results, /Caminho crítico|115h|115:23|415390s/, 'an unmeasured critical path is not shown')
-  ui.run("POP = { id: 'P', pinned: true }; POP_MODE = 'lean'; fillPop('P')")
+  ui.run("POP = { id: 'P', pinned: true }; POP_EXPANDED = false; fillPop('P')")
   assert.match(ui.nodes.get('#popBody').innerHTML, /Agent time[\s\S]*· 5s · não aferido/)
   assert.doesNotMatch(ui.nodes.get('#popBody').innerHTML, /115h|115:23|415390s/)
 })
@@ -2448,7 +2884,7 @@ test('large gaps between activity milestones are unknown and never counted as ag
     assert.equal(metrics.per[0].unmeasured, true, item.name)
     assert.equal(metrics.criticalPathMeasured, false, item.name)
     ui.render(state, item.events)
-    ui.run('FULL_EVENTS = inputEvents; renderResults(STATE); POP = { id: "E", pinned: true }; POP_MODE = "detail"; fillPop("E")',
+    ui.run('FULL_EVENTS = inputEvents; renderResults(STATE); POP = { id: "E", pinned: true }; POP_EXPANDED = true; fillPop("E")',
       { inputEvents: item.events })
     const visible = ['#orch', '#doneCount', '#parallel', '#nodes', '#results', '#popBody']
       .map((selector) => ui.nodes.get(selector).innerHTML + ui.nodes.get(selector).textContent).join('\n')
@@ -2506,7 +2942,7 @@ test('open execution without progress telemetry stays unmeasured in every visibl
   ui.run('FULL_EVENTS = inputEvents; renderResults(STATE)', { inputEvents: events })
   assert.match(ui.nodes.get('#results').innerHTML, /Não aferido/)
   assert.doesNotMatch(ui.nodes.get('#results').innerHTML, /115h|76h|192h|115:23|24h/)
-  ui.run("POP = { id: 'A', pinned: true }; POP_MODE = 'lean'; fillPop('A')")
+  ui.run("POP = { id: 'A', pinned: true }; POP_EXPANDED = false; fillPop('A')")
   assert.match(ui.nodes.get('#popBody').innerHTML, /não aferido/)
   assert.doesNotMatch(ui.nodes.get('#popBody').innerHTML, /115h|76h|192h|115:23|24h/)
 })
@@ -2578,7 +3014,7 @@ test('task labels, summaries and plan identities stay visible across concise and
   assert.ok(available.includes(value.validationSummary))
   assert.ok(available.includes(value.title), 'the available task tooltip retains the complete task title')
 
-  ui.run("POP = { id: 'T001', pinned: true }; POP_MODE = 'lean'; fillPop('T001')")
+  ui.run("POP = { id: 'T001', pinned: true }; POP_EXPANDED = false; fillPop('T001')")
   const lean = ui.nodes.get('#popBody').innerHTML
   assert.ok(lean.includes(value.title), 'the popover keeps the full task title')
   assert.ok(lean.includes(value.summary))
@@ -2586,7 +3022,7 @@ test('task labels, summaries and plan identities stay visible across concise and
   assert.ok(lean.includes('Plano bbbb'))
   assert.ok(lean.includes('mudou de aaaa'), 'the journey calls out a changed plan between attempts')
 
-  ui.run("POP_MODE = 'detail'; fillPop('T001')")
+  ui.run("POP_EXPANDED = true; fillPop('T001')")
   const history = ui.nodes.get('#popBody').innerHTML
   assert.ok(history.includes('A conta ainda mostra o status anterior.'), 'the detail view keeps the validation summary')
   assert.ok(history.includes('Complete observation two.'), 'the detail view retains the full evidence')

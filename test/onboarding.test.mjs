@@ -54,7 +54,8 @@ class FakeNode {
 }
 
 function createHarness({ lang = 'en', storage = new Map(), storageThrows = false, sidebarCollapsed = false,
-  storageGetterThrows = false, hasRun = true, summary = () => null, snapshot = () => null } = {}) {
+  storageGetterThrows = false, hasRun = true, summary = () => null, snapshot = () => null,
+  fullscreen = 'available' } = {}) {
   const elements = new Map()
   const sidePanel = new FakeNode({ hidden: sidebarCollapsed })
   const guide = new FakeNode({ hidden: true })
@@ -80,7 +81,7 @@ function createHarness({ lang = 'en', storage = new Map(), storageThrows = false
   }
   const childIds = [
     '#guideTitle', '#guideDescription', '#guideCount', '#guideAnnouncement', '#guidePrevious', '#guideNext',
-    '#guideSkip', '#guidePresentation', '#guideGainsLabel', '#guideGainsSummary', '#guideOpenLegend',
+    '#guideSkip', '#guideGainsLabel', '#guideGainsSummary', '#guideOpenLegend',
     '#guideGainPanel', '#guideCommandPanel', '#guideFlowPanel', '#guideRoleCard', '#guideRoleName', '#guideRoleIcon', '#guideExamplePanel', '#guideVisual',
   ]
   for (const id of childIds) create(id, {
@@ -92,6 +93,7 @@ function createHarness({ lang = 'en', storage = new Map(), storageThrows = false
   const listeners = new Map()
   const document = {
     fullscreenElement: null,
+    fullscreenExitCount: 0,
     querySelectorAll: (selector) => selector === '[data-prumo-guide-anchor]' ? anchors : [],
     querySelector(selector) {
       if (selector === '#sidebar') return sidePanel
@@ -104,7 +106,14 @@ function createHarness({ lang = 'en', storage = new Map(), storageThrows = false
       listeners.get(type).push(listener)
     },
     dispatch(type, event) { for (const listener of listeners.get(type) ?? []) listener(event) },
-    async exitFullscreen() { this.fullscreenElement = null; this.dispatch('fullscreenchange', {}) },
+    async exitFullscreen() { this.fullscreenExitCount += 1; this.fullscreenElement = null; this.dispatch('fullscreenchange', {}) },
+  }
+  guide.fullscreenRequestCount = 0
+  if (fullscreen !== 'unsupported') guide.requestFullscreen = async () => {
+    guide.fullscreenRequestCount += 1
+    if (fullscreen === 'denied') throw new Error('Fullscreen unavailable')
+    document.fullscreenElement = guide
+    document.dispatch('fullscreenchange', {})
   }
   const sidebarToggle = new FakeNode()
   sidebarToggle.addEventListener('click', () => { sidePanel.hidden = !sidePanel.hidden })
@@ -125,8 +134,6 @@ function createHarness({ lang = 'en', storage = new Map(), storageThrows = false
   const runStatus = { available: hasRun }
   const api = createPrumoOnboarding({ root: guide, launcher, document, window, translate,
     getCompletedRunSummary: summary, getRunAvailability: () => runStatus.available, getRunSnapshot: snapshot })
-  guide.requestFullscreen = async () => { document.fullscreenElement = guide; document.dispatch('fullscreenchange', {}) }
-
   return { api, anchors, document, elements, guide, launcher, runStatus, sidePanel, sidebarToggle, storage, translate }
 }
 
@@ -140,11 +147,12 @@ test('o guia tem seis passos, quatro papéis visuais, resultados de rejeição e
   assert.equal(ui.elements.get('#guideNext').focusCount, 1, 'o foco inicial fica no botão Avançar')
 
   for (const [role, name, color] of [
-    ['role-orchestrator', 'O orquestrador', 'var(--accent)'], ['role-planner', 'O planejador', 'var(--planning)'],
-    ['role-executor', 'O executor', 'var(--running)'], ['role-reviewer', 'O revisor', 'var(--review)'],
+    ['role-orchestrator', 'Orquestrador', 'var(--accent)'], ['role-planner', 'Planejador', 'var(--planning)'],
+    ['role-executor', 'Executor', 'var(--running)'], ['role-reviewer', 'Revisor', 'var(--review)'],
   ]) {
     await ui.elements.get('#guideNext').click()
     assert.equal(ui.elements.get('#guideTitle').textContent, name)
+    assert.equal(ui.elements.get('#guideRoleName').textContent, name, 'o título e o card usam o mesmo nome da entidade')
     assert.ok(ui.anchors.find((node) => node.dataset.prumoGuideAnchor === role).classList.contains('prumo-guide-target'))
     assert.equal(ui.elements.get('#guideRoleCard').hidden, false)
     assert.equal(ui.elements.get('#guideRoleIcon').children[0].copied, true, 'o ícone vem do nó real do dashboard')
@@ -170,9 +178,9 @@ test('o guia tem seis passos, quatro papéis visuais, resultados de rejeição e
   assert.equal(ui.sidePanel.hidden, false)
   assert.ok(ui.anchors.find((node) => node.dataset.prumoGuideAnchor === 'available').classList.contains('prumo-guide-target'))
   await ui.elements.get('#guideNext').click()
-  assert.ok(ui.anchors.find((node) => node.dataset.prumoGuideAnchor === 'available').classList.contains('prumo-guide-target'),
-    'se o painel de tarefa selecionada estiver oculto, a demonstração aponta para a lista que vira esse painel')
-  assert.match(ui.elements.get('#guideDescription').textContent, /Ao clicar/)
+  assert.ok(ui.anchors.find((node) => node.dataset.prumoGuideAnchor === 'tasks').classList.contains('prumo-guide-target'),
+    'se nenhum card estiver aberto, a demonstracao aponta para as tarefas que podem ser abertas')
+  assert.match(ui.elements.get('#guideDescription').textContent, /Expanda o card/)
   await ui.elements.get('#guideNext').click()
   assert.ok(ui.anchors.find((node) => node.dataset.prumoGuideAnchor === 'results').classList.contains('prumo-guide-target'))
   await ui.elements.get('#guideNext').click()
@@ -188,6 +196,33 @@ test('o guia tem seis passos, quatro papéis visuais, resultados de rejeição e
   await ui.elements.get('#guideNext').click()
   assert.equal(ui.guide.hidden, true)
   assert.equal(ui.storage.get('prumoOnboardingDismissed'), 'true', 'concluir o guia grava a preferência')
+})
+
+test('o guia mostra os contadores reais mesmo quando ficam fora do menu de filtros', async () => {
+  const ui = createHarness({ lang: 'pt-BR', snapshot: () => ({ run: 'plano-real', tasks: 7, phases: 2, done: 5 }) })
+  const originalQuery = ui.document.querySelector.bind(ui.document)
+  ui.document.querySelector = selector => selector === '#counts' ? {
+    cloneNode: () => ({ attributes: [], outerHTML: '<div class="counts">concluído <b>5</b> | em execução <b>2</b></div>' }),
+  } : originalQuery(selector)
+  const filters = (await walkVisuals(ui)).find(step => step.kind === 'filters')
+  assert.ok(filters)
+  assert.match(filters.html, /Da sua execução: plano-real/)
+  assert.match(filters.html, /concluído <b>5<\/b> \| em execução <b>2<\/b>/)
+  assert.doesNotMatch(filters.html, /gv-tag mock/)
+})
+
+test('o guia so usa o card aberto da execucao atual e descarta cards fechados ou de outro plano', async () => {
+  for (const [hidden, run, expectedReal] of [[false, 'atual', true], [true, 'atual', false], [false, 'anterior', false]]) {
+    const ui = createHarness({ lang: 'pt-BR', snapshot: () => ({ run: 'atual', tasks: 2, phases: 1, done: 0 }) })
+    const originalQuery = ui.document.querySelector.bind(ui.document)
+    const body = { textContent: 'Este e um resumo suficientemente longo de uma tarefa aberta no plano.',
+      cloneNode: () => ({ attributes: [], outerHTML: '<div>CARD_REAL_DA_TAREFA</div>' }) }
+    ui.document.querySelector = selector => selector === '#pop' ? { hidden, dataset: { run }, classList: { contains: () => true } }
+      : selector === '#popBody' ? body : originalQuery(selector)
+    const visual = (await walkVisuals(ui)).find(step => step.kind === 'selected')
+    assert.equal(visual.html.includes('CARD_REAL_DA_TAREFA'), expectedReal, `${hidden} ${run}`)
+    assert.equal(visual.html.includes('gv-tag real'), expectedReal)
+  }
 })
 
 test('métricas reais só aparecem quando a execução e as medições estão completas', () => {
@@ -224,8 +259,8 @@ test('sem execução carregada, a demonstração mostra checkout-v2, T1–T10 e 
   assert.match(style, /#onboarding\.presenting \.guide-example \{ width: min\(1080px, 100%\)/,
     'o quadro de exemplo ocupa espaço suficiente em tela cheia desktop')
   const desktopPresentation = style.match(/#onboarding\.presenting \{([^}]+)\}/)?.[1]
-  assert.match(desktopPresentation ?? '', /justify-content:\s*safe center/,
-    'desktop centraliza quando cabe e volta ao início se o conteúdo exceder a altura')
+  assert.match(desktopPresentation ?? '', /justify-content:\s*flex-start/,
+    'a apresentação começa no topo para manter os títulos estáveis entre passos')
   assert.match(desktopPresentation ?? '', /overflow:\s*auto/,
     'o modo de apresentação pode rolar quando o conteúdo excede a altura disponível')
   assert.match(style, /\.guide-example-node > span \{[^}]*font: 600 14px\/1\.3 var\(--font-display\)/,
@@ -259,14 +294,12 @@ test('sem execução carregada, a demonstração mostra checkout-v2, T1–T10 e 
   assert.ok(ui.anchors.find((node) => node.dataset.prumoGuideAnchor === 'phases').classList.contains('prumo-guide-target'))
 })
 
-test('o guia tolera armazenamento bloqueado, reabre, fecha com Esc e oferece setas e apresentação', async () => {
+test('o guia inicia em apresentação, tolera armazenamento bloqueado, reabre e oferece setas e Esc', async () => {
   const ui = createHarness({ storageThrows: true })
   assert.equal(ui.guide.hidden, false, 'falha de leitura de storage não impede primeira visita')
-  await ui.elements.get('#guidePresentation').click()
   assert.equal(ui.guide.classList.contains('presenting'), true)
-  assert.equal(ui.elements.get('#guidePresentation').getAttribute('aria-pressed'), 'true')
-  await ui.elements.get('#guidePresentation').click()
-  assert.equal(ui.guide.classList.contains('presenting'), false)
+  assert.equal(ui.guide.fullscreenRequestCount, 1)
+  assert.equal(ui.elements.has('#guidePresentation'), false, 'o guia não oferece alternância de modo')
 
   const outside = new FakeNode()
   outside.tagName = 'BUTTON'
@@ -295,17 +328,38 @@ test('o guia tolera armazenamento bloqueado, reabre, fecha com Esc e oferece set
   const escape = keyEvent('Escape')
   ui.document.dispatch('keydown', escape)
   assert.equal(ui.guide.hidden, true)
+  assert.equal(ui.guide.classList.contains('presenting'), false)
+  assert.equal(ui.document.fullscreenElement, null)
+  assert.equal(ui.document.fullscreenExitCount, 1)
   assert.equal(ui.launcher.focusCount, 1, 'fechar devolve o foco ao botão que reabre o guia')
   await ui.launcher.click()
   assert.equal(ui.guide.hidden, false)
+  assert.equal(ui.guide.classList.contains('presenting'), true)
+  assert.equal(ui.guide.fullscreenRequestCount, 2, 'cada abertura solicita tela cheia uma vez')
   assert.equal(ui.elements.get('#guideNext').focusCount, 2)
 
   const getterBlocked = createHarness({ storageGetterThrows: true })
   assert.equal(getterBlocked.guide.hidden, false, 'até o acesso à propriedade localStorage pode falhar sem bloquear o guia')
-  const fullscreenDenied = createHarness()
-  fullscreenDenied.guide.requestFullscreen = async () => { throw new Error('Fullscreen unavailable') }
-  await fullscreenDenied.elements.get('#guidePresentation').click()
+  const fullscreenDenied = createHarness({ fullscreen: 'denied' })
   assert.equal(fullscreenDenied.guide.classList.contains('presenting'), true, 'a apresentação na página funciona sem tela cheia')
+  assert.equal(fullscreenDenied.guide.fullscreenRequestCount, 1)
+  await fullscreenDenied.elements.get('#guideSkip').click()
+  assert.equal(fullscreenDenied.guide.hidden, true)
+  const fullscreenUnsupported = createHarness({ fullscreen: 'unsupported' })
+  assert.equal(fullscreenUnsupported.guide.classList.contains('presenting'), true)
+  await fullscreenUnsupported.elements.get('#guideSkip').click()
+  assert.equal(fullscreenUnsupported.guide.hidden, true)
+})
+
+test('sair da tela cheia pelo navegador fecha o guia e devolve o foco', async () => {
+  const ui = createHarness()
+  assert.equal(ui.document.fullscreenElement, ui.guide)
+  await ui.document.exitFullscreen()
+  assert.equal(ui.guide.hidden, true)
+  assert.equal(ui.guide.classList.contains('presenting'), false)
+  assert.equal(ui.launcher.getAttribute('aria-expanded'), 'false')
+  assert.equal(ui.launcher.focusCount, 1)
+  assert.equal(ui.document.fullscreenExitCount, 1, 'o fechamento não repete a saída já feita pelo navegador')
 })
 
 test('uma preferência gravada deixa o dashboard sem painel automático e a marcação mantém o tour não modal', () => {

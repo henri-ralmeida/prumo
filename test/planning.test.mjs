@@ -111,41 +111,41 @@ function fixture(t, tasks = [{ id: 'T1', title: 'Delivery estimate' }], options 
 }
 
 test('event progress counts executor plan steps and actual reviewer checks per attempt', t => {
-  const f = fixture(t, [{ id: 'T4', title: 'Four steps', validation: [check, check, check, check] }])
-  f.beginPlan('T4')
-  f.finish('T4', { ...f.artifact('T4'), steps: ['Inspect', 'Implement', 'Verify', 'Report'] })
-  const started = f.ok('start', 'T4', '--agent', 'executor')
-  assert.match(started.output, /progress 'T4' --step 1 --agent 'executor' --run 'planning'/)
+  const f = fixture(t, [{ id: 'T1', title: 'Four steps', validation: [check, check, check, check] }])
+  f.beginPlan('T1')
+  f.finish('T1', { ...f.artifact('T1'), steps: ['Inspect', 'Implement', 'Verify', 'Report'] })
+  const started = f.ok('start', 'T1', '--agent', 'executor')
+  assert.match(started.output, /progress 'T1' --step 1 --agent 'executor' --run 'planning'/)
   const log = () => f.events().trim().split('\n').map(JSON.parse)
   assert.equal(log().at(-1).current, 1)
   assert.equal(log().at(-1).total, 4)
   const baseline = f.state(), events = f.events()
-  f.rejected(/current executor/, 'progress', 'T4', '--step', '2', '--agent', 'someone-else')
-  f.rejected(/index/, 'progress', 'T4', '--step', '5', '--agent', 'executor')
+  f.rejected(/current executor/, 'progress', 'T1', '--step', '2', '--agent', 'someone-else')
+  f.rejected(/index/, 'progress', 'T1', '--step', '5', '--agent', 'executor')
   assert.deepEqual(f.state(), baseline)
   assert.equal(f.events(), events)
-  assert.match(f.ok('progress', 'T4', '--step', '2', '--agent', 'executor').output,
+  assert.match(f.ok('progress', 'T1', '--step', '2', '--agent', 'executor').output,
     /execution position recorded at 2\/4/)
-  for (const step of [3, 4]) f.ok('progress', 'T4', '--step', String(step), '--agent', 'executor')
+  for (const step of [3, 4]) f.ok('progress', 'T1', '--step', String(step), '--agent', 'executor')
   const atFour = f.events()
-  assert.match(f.ok('progress', 'T4', '--step', '4', '--agent', 'executor').output,
+  assert.match(f.ok('progress', 'T1', '--step', '4', '--agent', 'executor').output,
     /execution position already recorded at 4\/4/)
   assert.equal(f.events(), atFour)
-  f.rejected(/backwards/, 'progress', 'T4', '--step', '1', '--agent', 'executor')
+  f.rejected(/backwards/, 'progress', 'T1', '--step', '1', '--agent', 'executor')
   assert.deepEqual(log().filter(e => ['task_start', 'task_progress'].includes(e.type)).map(e => [e.current, e.total]),
     [[1, 4], [2, 4], [3, 4], [4, 4]])
-  f.ok('review', 'T4', '--agent', 'reviewer')
+  f.ok('review', 'T1', '--agent', 'reviewer')
   const reviewStarted = log().find(event => event.type === 'task_review')
   assert.deepEqual([reviewStarted.current, reviewStarted.total], [1, 4])
-  f.ok('validate', 'T4', '--ok', '--evidence', 'All four delivery checks match', '--cwd', f.project)
+  f.ok('validate', 'T1', '--ok', '--evidence', 'All four delivery checks match', '--cwd', f.project)
   const checks = log().filter(e => e.type === 'task_check')
   assert.deepEqual(checks.filter(e => e.status === 'started').map(e => [e.current, e.total]), [[1, 4], [2, 4], [3, 4], [4, 4]])
   assert.ok(checks.every(e => e.by === 'review' && e.attempt === 1 && e.token))
   assert.equal(checks.filter(e => e.status === 'passed').length, 4)
-  f.ok('fail', 'T4', '--reason', 'Exercise a fresh attempt')
-  f.ok('retry', 'T4')
-  f.planTask('T4')
-  f.ok('start', 'T4', '--agent', 'executor')
+  f.ok('fail', 'T1', '--reason', 'Exercise a fresh attempt')
+  f.ok('retry', 'T1')
+  f.planTask('T1')
+  f.ok('start', 'T1', '--agent', 'executor')
   assert.equal(log().at(-1).current, 1)
   assert.equal(log().at(-1).attempt, 2)
 })
@@ -153,14 +153,14 @@ test('event progress counts executor plan steps and actual reviewer checks per a
 // Roda `start` a partir de uma cópia do motor num caminho com metacaracteres e devolve a linha de
 // `progress` impressa, com o ambiente usado. `shellEnv` simula o shell que invocou o motor.
 function startWithQuotedPaths(t, shellEnv) {
-  const f = fixture(t, [{ id: 'T4', title: 'Command quoting' }])
-  f.beginPlan('T4')
-  f.finish('T4', { ...f.artifact('T4'), steps: ['Inspect', 'Report'] })
+  const f = fixture(t, [{ id: 'T1', title: 'Command quoting' }])
+  f.beginPlan('T1')
+  f.finish('T1', { ...f.artifact('T1'), steps: ['Inspect', 'Report'] })
 
   const copiedScripts = join(f.root, "engine path & 'quoted'")
   mkdirSync(copiedScripts)
   for (const file of ['engine.mjs', 'engine-args.mjs', 'atomic-state.mjs', 'validation.mjs', 'storage.mjs', 'i18n.mjs',
-    'messages.json', 'region.mjs', 'sync-plan-audit.mjs', 'contract-drift.mjs'])
+    'messages.json', 'region.mjs', 'sync-plan-audit.mjs', 'contract-drift.mjs', 'task-identifiers.mjs'])
     copyFileSync(join(dirname(engine), file), join(copiedScripts, file))
   const copiedEngine = join(copiedScripts, 'engine.mjs')
   const home = dirname(f.root)
@@ -170,7 +170,7 @@ function startWithQuotedPaths(t, shellEnv) {
   delete env.SHELL
   Object.assign(env, shellEnv)
   const agent = "executor & 'quoted'"
-  const started = spawnSync(process.execPath, [copiedEngine, 'start', 'T4', '--agent', agent, '--run', 'planning'],
+  const started = spawnSync(process.execPath, [copiedEngine, 'start', 'T1', '--agent', agent, '--run', 'planning'],
     { cwd: f.project, env, encoding: 'utf8', timeout: 20000, windowsHide: true })
   assert.ifError(started.error)
   const output = started.stdout + started.stderr
@@ -193,7 +193,7 @@ test('start prints a PowerShell-safe command for paths and shell metacharacters'
   assert.ifError(executed.error)
   assert.equal(executed.status, 0, executed.stdout + executed.stderr)
   assert.match(executed.stdout + executed.stderr, /execution position already recorded at 1\/2/)
-  assert.equal(f.state().tasks.T4.agent, agent)
+  assert.equal(f.state().tasks.T1.agent, agent)
 })
 
 test('start prints a POSIX command when invoked from Git Bash or another POSIX shell', t => {
@@ -214,46 +214,46 @@ test('start prints a POSIX command when invoked from Git Bash or another POSIX s
   assert.ifError(executed.error)
   assert.equal(executed.status, 0, executed.stdout + executed.stderr)
   assert.match(executed.stdout + executed.stderr, /execution position already recorded at 1\/2/)
-  assert.equal(f.state().tasks.T4.agent, agent)
+  assert.equal(f.state().tasks.T1.agent, agent)
 })
 
 test('review warns when executor progress remains at the first of several steps', t => {
-  const f = fixture(t, [{ id: 'T4', title: 'Four steps', validation: [check, check, check, check] }])
-  f.beginPlan('T4')
-  f.finish('T4', { ...f.artifact('T4'), steps: ['Inspect', 'Implement', 'Verify', 'Report'] })
-  const started = f.ok('start', 'T4', '--agent', 'executor')
+  const f = fixture(t, [{ id: 'T1', title: 'Four steps', validation: [check, check, check, check] }])
+  f.beginPlan('T1')
+  f.finish('T1', { ...f.artifact('T1'), steps: ['Inspect', 'Implement', 'Verify', 'Report'] })
+  const started = f.ok('start', 'T1', '--agent', 'executor')
   assert.match(started.output, /--run 'planning'/)
-  const review = f.ok('review', 'T4', '--agent', 'reviewer')
+  const review = f.ok('review', 'T1', '--agent', 'reviewer')
   assert.match(review.output, /WARNING: executor progress stayed at 1\/4/)
   const event = f.events().trim().split('\n').map(JSON.parse).findLast(item => item.type === 'task_review')
   assert.deepEqual([event.current, event.total], [1, 4])
-  assert.equal(f.state().tasks.T4.attempts.at(-1).executionStep, 1)
+  assert.equal(f.state().tasks.T1.attempts.at(-1).executionStep, 1)
 })
 
 test('review warns for any unfinished step position and stays quiet once the last step is reported', t => {
-  const f = fixture(t, [{ id: 'T4', title: 'Four steps', validation: [check] }, { id: 'T5', title: 'Two steps', validation: [check] }])
-  for (const id of ['T4', 'T5']) {
+  const f = fixture(t, [{ id: 'T1', title: 'Four steps', validation: [check] }, { id: 'T2', title: 'Two steps', validation: [check] }])
+  for (const id of ['T1', 'T2']) {
     f.beginPlan(id)
     f.finish(id, { ...f.artifact(id), steps: ['Inspect', 'Implement', 'Verify', 'Report'] })
   }
-  f.ok('start', 'T4', '--agent', 'executor-4')
-  f.ok('progress', 'T4', '--step', '3', '--agent', 'executor-4')
-  assert.match(f.ok('review', 'T4', '--agent', 'reviewer-4').output, /WARNING: executor progress stayed at 3\/4/)
-  f.ok('start', 'T5', '--agent', 'executor-5')
-  f.ok('progress', 'T5', '--step', '4', '--agent', 'executor-5')
-  assert.doesNotMatch(f.ok('review', 'T5', '--agent', 'reviewer-5').output, /executor progress stayed/)
+  f.ok('start', 'T1', '--agent', 'executor-4')
+  f.ok('progress', 'T1', '--step', '3', '--agent', 'executor-4')
+  assert.match(f.ok('review', 'T1', '--agent', 'reviewer-4').output, /WARNING: executor progress stayed at 3\/4/)
+  f.ok('start', 'T2', '--agent', 'executor-5')
+  f.ok('progress', 'T2', '--step', '4', '--agent', 'executor-5')
+  assert.doesNotMatch(f.ok('review', 'T2', '--agent', 'reviewer-5').output, /executor progress stayed/)
 })
 
 test('direct review after a block warns with the recorded unfinished step position', t => {
-  const f = fixture(t, [{ id: 'T4', title: 'Four steps', validation: [check] }])
-  f.beginPlan('T4')
-  f.finish('T4', { ...f.artifact('T4'), steps: ['Inspect', 'Implement', 'Verify', 'Report'] })
-  f.ok('start', 'T4', '--agent', 'executor-4')
-  f.ok('progress', 'T4', '--step', '3', '--agent', 'executor-4')
-  f.ok('block', 'T4', '--reason', 'Waiting for the reviewer handoff')
-  const resumed = f.ok('unblock', 'T4', '--reviewer', 'reviewer-4')
+  const f = fixture(t, [{ id: 'T1', title: 'Four steps', validation: [check] }])
+  f.beginPlan('T1')
+  f.finish('T1', { ...f.artifact('T1'), steps: ['Inspect', 'Implement', 'Verify', 'Report'] })
+  f.ok('start', 'T1', '--agent', 'executor-4')
+  f.ok('progress', 'T1', '--step', '3', '--agent', 'executor-4')
+  f.ok('block', 'T1', '--reason', 'Waiting for the reviewer handoff')
+  const resumed = f.ok('unblock', 'T1', '--reviewer', 'reviewer-4')
   assert.match(resumed.output, /WARNING: executor progress stayed at 3\/4/)
-  assert.equal(f.state().tasks.T4.state, 'reviewing')
+  assert.equal(f.state().tasks.T1.state, 'reviewing')
 })
 
 test('structured inspection criteria must be traversed in order before a passing validation', t => {
@@ -685,28 +685,28 @@ test('changed contracts while planning or paused have an explicit restart preser
 })
 
 test('delivered dependency changes invalidate planning; unrelated task progress and notes do not', t => {
-  const f = fixture(t, [{ id: 'T0', title: 'Prerequisite' }, { id: 'T1', title: 'Delivery', deps: ['T0'] }, { id: 'T2', title: 'Independent task' }])
-  f.ok('skip', 'T0', '--reason', 'Prerequisite waived explicitly')
-  f.planTask('T1')
-  const original = f.state().tasks.T1.taskPlan
+  const f = fixture(t, [{ id: 'T1', title: 'Prerequisite' }, { id: 'T2', title: 'Delivery', deps: ['T1'] }, { id: 'T3', title: 'Independent task' }])
+  f.ok('skip', 'T1', '--reason', 'Prerequisite waived explicitly')
+  f.planTask('T2')
+  const original = f.state().tasks.T2.taskPlan
   f.plan.tasks[2].title = 'Clarified independent work'
   f.writePlan()
   f.ok('sync-plan', '--plan', f.planPath)
-  f.ok('note', 'T0', '--text', 'Unrelated scheduling note')
-  f.beginPlan('T2', 'other-planner')
-  assert.equal(f.graph().derived.T1.effective, 'ready')
+  f.ok('note', 'T1', '--text', 'Unrelated scheduling note')
+  f.beginPlan('T3', 'other-planner')
+  assert.equal(f.graph().derived.T2.effective, 'ready')
   const changedWaiver = f.state()
-  changedWaiver.tasks.T0.skipReason = 'Recovered legacy waiver changed outside the current engine'
+  changedWaiver.tasks.T1.skipReason = 'Recovered legacy waiver changed outside the current engine'
   f.save(changedWaiver)
-  assert.equal(f.graph().derived.T1.effective, 'ready_for_discussion')
-  f.rejected(/completed current planning/, 'start', 'T1', '--agent', 'executor', '--force')
-  assert.deepEqual(f.state().tasks.T1.taskPlan, original)
-  f.planTask('T1')
+  assert.equal(f.graph().derived.T2.effective, 'ready_for_discussion')
+  f.rejected(/completed current planning/, 'start', 'T2', '--agent', 'executor', '--force')
+  assert.deepEqual(f.state().tasks.T2.taskPlan, original)
+  f.planTask('T2')
   const state = f.state()
-  state.tasks.T0.title = 'Recovered dependency contract changed'
+  state.tasks.T1.title = 'Recovered dependency contract changed'
   f.save(state)
-  assert.equal(f.graph().derived.T1.effective, 'ready_for_discussion')
-  f.rejected(/completed current planning/, 'start', 'T1', '--agent', 'executor')
+  assert.equal(f.graph().derived.T2.effective, 'ready_for_discussion')
+  f.rejected(/completed current planning/, 'start', 'T2', '--agent', 'executor')
 })
 
 test('real failure requires fresh research for the next attempt and preserves the previous plan and delivery history', t => {
@@ -752,8 +752,8 @@ test('active contract refresh preserves execution and review in the same attempt
 
 test('paused execution must replan changed scope before resume without replacing its attempt or block reason', t => {
   for (const phase of ['running', 'reviewing']) {
-    const f = fixture(t, [{ id: 'T1', title: 'Delivery estimate' }, { id: 'T0', title: 'Prerequisite' }])
-    f.ok('skip', 'T0', '--reason', 'Prerequisite explicitly waived')
+    const f = fixture(t, [{ id: 'T1', title: 'Delivery estimate' }, { id: 'T2', title: 'Prerequisite' }])
+    f.ok('skip', 'T2', '--reason', 'Prerequisite explicitly waived')
     f.planTask()
     f.ok('start', 'T1', '--agent', 'executor')
     if (phase === 'reviewing') f.ok('review', 'T1', '--agent', 'reviewer')
@@ -761,7 +761,7 @@ test('paused execution must replan changed scope before resume without replacing
     f.ok('note', 'T1', '--text', 'Preserve the delivered implementation')
     f.ok('block', 'T1', '--reason', 'Wait for the approved scope clarification')
     const original = f.state().tasks.T1
-    Object.assign(f.plan.tasks[0], { title: 'Clarified delivery scope', touches: ['delivery.cjs'], deps: ['T0'] })
+    Object.assign(f.plan.tasks[0], { title: 'Clarified delivery scope', touches: ['delivery.cjs'], deps: ['T2'] })
     f.writePlan()
     f.ok('sync-plan', '--plan', f.planPath)
     f.ok('authorize', '--scope', 'tasks:T1', '--confirmed-by-user')
@@ -842,14 +842,14 @@ test('legacy tasks retain their lifecycle and history while tasks added by sync-
   assert.equal(f.graph().derived.T1.effective, 'ready')
   f.ok('start', 'T1', '--agent', 'legacy-executor')
   const active = f.state().tasks.T1
-  f.plan.tasks.push({ id: 'T2', title: 'New task', validation: [check] })
+  f.plan.tasks.push({ id: 'T1a', title: 'New task', deps: ['T1'], validation: [check] })
   f.writePlan()
   f.ok('sync-plan', '--plan', f.planPath)
   assert.deepEqual(f.state().tasks.T1, active)
-  assert.equal(f.state().tasks.T2.discoveryRequired, true)
-  assert.equal(f.state().tasks.T2.planningRequired, true)
-  f.rejected(/completed current discussion/, 'plan-task', 'T2', '--agent', 'planner')
-  assert.equal(f.graph().derived.T2.effective, 'ready_for_discussion')
+  assert.equal(f.state().tasks.T1a.discoveryRequired, true)
+  assert.equal(f.state().tasks.T1a.planningRequired, true)
+  f.rejected(/completed current discussion/, 'plan-task', 'T1a', '--agent', 'planner')
+  assert.equal(f.graph().derived.T1a.effective, 'ready_for_discussion')
   f.ok('fail', 'T1', '--reason', 'Legacy real failure')
   f.ok('retry', 'T1')
   f.ok('start', 'T1', '--agent', 'legacy-executor-v2')

@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
+import { randomBytes } from 'node:crypto'
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync, cpSync, symlinkSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { spawnSync, spawn, fork } from 'node:child_process'
-import { createServer } from 'node:net'
+import { createConnection, createServer } from 'node:net'
 
 // Exercise an actual published updater against a local registry serving the candidate.
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -36,13 +37,13 @@ for (const key of ['PRUMO_ROOT', 'GRAPH_ROOT', 'GRAPH_FOREMAN_HOME', 'NODE_OPTIO
 // old release's autostart and the updater's restart run for real without touching the user's dashboard.
 let dashboardPort = await freePort()
 env.PRUMO_TEST_DASHBOARD_PORT = String(dashboardPort)
+const dashboardShutdownToken = randomBytes(16).toString('hex')
+env.PRUMO_TEST_DASHBOARD_SHUTDOWN_TOKEN = dashboardShutdownToken
 env.NODE_OPTIONS = `--import="${pathToFileURL(join(repo, 'test/fixtures/dashboard-port.mjs')).href}"`
 const dashboardPreference = join(home, '.local/share/prumo/dashboard.json')
-const dashboardPids = new Set()
 async function dashboardHealth() {
   try {
     const body = await (await fetch(`http://127.0.0.1:${dashboardPort}/api/health`, { signal: AbortSignal.timeout(2000) })).json()
-    if (body.pid) dashboardPids.add(body.pid)
     return body
   } catch { return null }
 }
@@ -84,6 +85,15 @@ async function freePort() {
   const { port } = probe.address()
   await new Promise(resolve => probe.close(resolve))
   return port
+}
+async function dashboardPortClosed() {
+  return new Promise((resolve, reject) => {
+    const socket = createConnection({ host: '127.0.0.1', port: dashboardPort })
+    socket.setTimeout(2000)
+    socket.once('connect', () => { socket.destroy(); resolve(false) })
+    socket.once('error', error => error.code === 'ECONNREFUSED' ? resolve(true) : reject(error))
+    socket.once('timeout', () => { socket.destroy(); reject(new Error('isolated dashboard port did not respond')) })
+  })
 }
 // The updated global dashboard must read untouched legacy state files without errors.
 async function checkDashboard(labels) {
@@ -160,7 +170,7 @@ function startDone(root, label) {
     resume('start', 'DONE', '--agent', 'executor')
   }
 }
-let registry, previousDashboardClosed
+let registry, previousDashboard, previousDashboardClosed, scenarioError
 try {
   mkdirSync(project)
   put(join(home, '.claude/settings.json'), {})
@@ -181,9 +191,8 @@ try {
     env.PRUMO_TEST_DASHBOARD_PORT = String(dashboardPort)
     put(dashboardPreference, { enabled: false, mechanism: process.platform === 'win32' ? 'windows-startup' : 'xdg' })
     // O cenário de atualização começa com o dashboard antigo em execução, inclusive quando seu lançador histórico falha.
-    const previousDashboard = spawn(process.execPath, [join(installed, 'scripts/serve.mjs'), '--global', '--port', '4949'],
+    previousDashboard = spawn(process.execPath, [join(installed, 'scripts/serve.mjs'), '--global', '--port', '4949'],
       { cwd: project, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
-    dashboardPids.add(previousDashboard.pid)
     previousDashboardClosed = new Promise(resolve => previousDashboard.once('close', resolve))
     let previousOutput = ''
     previousDashboard.on('error', error => { previousOutput += error.message })
@@ -199,7 +208,6 @@ try {
       `dashboard enable (${fromVersion}): status=${enable.status}\n${enable.stdout}\n${enable.stderr}\n${previousOutput}`)
     const preference = JSON.parse(readFileSync(dashboardPreference, 'utf8'))
     dashboardBefore = { pid: health.pid ?? preference.pid ?? previousDashboard.pid }
-    if (dashboardBefore.pid) dashboardPids.add(dashboardBefore.pid)
     // The state a failed restart left on the user's machine: enabled, without a recorded pid.
     delete preference.pid
     put(dashboardPreference, preference)
@@ -419,13 +427,34 @@ try {
   modern('migrate')
   assert.equal(readFileSync(join(newRoot, relativeState), 'utf8'), completedState, 'migration is idempotent')
   console.log(`Published ${fromVersion} updated to ${pkg.version}; notes, three legacy harnesses plus current DSH, junctions, merged tasks and ${[...flows.keys()].join('/')} continuation verified`)
+} catch (error) {
+  scenarioError = error
+  throw error
 } finally {
-  await dashboardHealth()
-  for (const pid of dashboardPids) try { process.kill(pid) } catch { /* already stopped */ }
+  let dashboardCleanupError
+  try {
+    const response = await fetch(`http://127.0.0.1:${dashboardPort}/__prumo_test_dashboard_shutdown/${dashboardShutdownToken}`,
+      { method: 'POST', signal: AbortSignal.timeout(2000) })
+    if (response.status !== 200) throw new Error(`isolated dashboard refused shutdown: HTTP ${response.status}`)
+    const deadline = Date.now() + 10000
+    while (!(await dashboardPortClosed())) {
+      if (Date.now() > deadline) throw new Error('isolated dashboard did not stop')
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
+  } catch (error) {
+    if (error.cause?.code !== 'ECONNREFUSED') dashboardCleanupError = error
+  }
+  if (previousDashboard && previousDashboard.exitCode === null && previousDashboard.signalCode === null) previousDashboard.kill()
   if (previousDashboardClosed) await previousDashboardClosed
   if (registry && registry.exitCode === null && registry.signalCode === null) { const closed = new Promise(resolve => registry.once('exit', resolve)); registry.kill(); await closed }
   put(join(repo, `.test-output/legacy-update-${fromVersion}.json`), evidence)
   assert.equal(dirname(home), realpathSync(tmpdir()))
   assert.ok(basename(home).startsWith('prumo-legacy-smoke-'))
-  rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  if (dashboardCleanupError) throw dashboardCleanupError
+  try {
+    rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  } catch (error) {
+    if (!scenarioError) throw error
+    console.error(`Diretório temporário preservado após falha na limpeza: ${home} (${error.code})`)
+  }
 }

@@ -2,6 +2,15 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.2.0 — 2026-09-30
+
+- Aplique a paleta dos estados aos cards e filtros, selecione tarefas por clique e navegue até as fases diretamente.
+- Simplifique os cards, alinhe os controles e apresente o guia em tela cheia com nomes consistentes dos agentes.
+- Separe o ganho aferido por paralelismo da estimativa fixa de três minutos por comando registrado, incluindo consultas e falhas; históricos incompletos continuam identificados.
+- Preserve os IDs iniciais e vincule correções sincronizadas por sufixos de letras, mantendo aliases e dependências históricas.
+- Verifique atualizações a partir de todas as versões publicadas com um pacote candidato novo e ambientes isolados.
+- Aguarde a saída completa do updater e encerre dashboards de teste por chave exclusiva do cenário, preservando processos alheios.
+
 ## 2.1.2 — 2026-09-28
 
 ### Corrigido — Histórico e verificação entre sistemas

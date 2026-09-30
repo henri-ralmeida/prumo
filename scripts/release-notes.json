@@ -1,4 +1,11 @@
 {
+  "2.2.0": {
+    "en": [
+      { "title": "Improved — Dashboard clarity and navigation", "items": ["Use the task-state palette in cards and filters, with click-only task selection and direct phase navigation", "Simplify task cards, align dashboard controls and present the guide in fullscreen with consistent role names"] },
+      { "title": "Added — Command accounting and task lineage", "items": ["Separate measured parallel savings from a fixed three-minute estimate for every recorded run command, including queries and failures", "Keep initial task IDs sequential and link synchronized corrective tasks to their original IDs with letter suffixes while preserving historical aliases"] },
+      { "title": "Fixed — Update verification and isolated cleanup", "items": ["Test every published npm version against a freshly packed candidate while preserving run history and resumable workflow states", "Finish update output before reporting success and shut down isolated test dashboards with a scenario token instead of unverified process IDs"] }
+    ]
+  },
   "2.1.2": {
     "en": [
       { "title": "Fixed — Command validation and concurrent writes", "items": ["Reject invalid, repeated and incompatible arguments before changing data or starting services", "Recover concurrent lock release and keep healthy runs visible when another run has invalid state", "Validate malformed contracts and update paths before execution"] },

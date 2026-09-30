@@ -318,6 +318,14 @@ iniciar ou retomar a execução. Uma validação nova é exigida antes de done.
 Tarefas done/skipped não podem ser atualizadas. O comando não dispara trabalho nem desbloqueia tarefas.
 Não use fail/retry somente para migrar contrato, não refaça uma correção entregue nem amplie uma janela de
 dados porque a skill mudou. O revisor pode verificar o trabalho entregue na mesma tentativa.
+No `init`, os identificadores `T*` são `T1`, `T2`, ... sem lacunas ou sufixos.
+No `sync-plan`, uma tarefa acrescentada usa a próxima letra da tarefa original: `T9a`, `T9b`, ... `T9z`.
+Os números e identificadores já registrados são preservados. A ampliação deve ter um caminho de
+dependência até sua tarefa original, em um único sentido. Para uma correção que destrava `T9`,
+adicione `T9a` às dependências de `T9`; a correção não pode depender de `T9` ao mesmo tempo.
+Se `T9` já está concluída, seu contrato permanece imutável e o complemento `T9a` depende de `T9`.
+Identificadores numéricos novos, letras fora de ordem e vínculos ausentes são recusados antes de gravar estado.
+
 `sync-plan` atualiza contratos ativos preservando seu ciclo de vida e mantém contratos concluídos como
 histórico imutável. Ele imprime mudanças de campos por tarefa com tamanho limitado, resume contratos de validação sem seu
 conteúdo e registra diagnósticos de dependência/motivo de bloqueio em eventos estruturados. Sua linha final é
