@@ -910,15 +910,15 @@ SOFTWARE. -->
   .prumo-guide-target { z-index: 1; outline: 2px solid var(--accent) !important; outline-offset: -2px; scroll-margin-block: 12px;
     box-shadow: inset 0 0 0 5px color-mix(in srgb, var(--accent) 20%, transparent) !important; }
   #onboarding.presenting { inset: 0; width: auto; max-height: none; height: 100dvh; overflow: auto; display: flex; flex-direction: column;
-    justify-content: flex-start; align-items: center; padding: clamp(20px, 3vw, 40px); border: 0; border-radius: 0; text-align: center; background: var(--bg); }
+    justify-content: flex-start; align-items: center; padding: clamp(20px, 3vw, 40px); padding-bottom: 88px; border: 0; border-radius: 0; text-align: center; background: var(--bg); }
   #onboarding.presenting .guide-head { width: min(1080px, 100%); margin-bottom: clamp(20px, 4vh, 36px); }
   #onboarding.presenting:fullscreen { height: 100dvh; background: var(--bg); }
   #onboarding.presenting h2 { max-width: 26ch; font-size: clamp(28px, 4vw, 46px); text-wrap: balance; }
   #onboarding.presenting > p { width: min(1080px, 100%); font: 400 clamp(14px, 1.5vw, 18px)/1.5 var(--font-display); text-wrap: wrap; }
   #onboarding.presenting .guide-gains, #onboarding.presenting .guide-command { width: min(660px, 100%); }
   #onboarding.presenting .guide-example { width: min(1080px, 100%); margin-top: clamp(20px, 4vh, 36px); padding: clamp(16px, 2.5vw, 28px); }
-  #onboarding.presenting .guide-controls { width: min(1080px, 100%); justify-content: flex-end; position: sticky; bottom: -1px;
-    margin-top: auto; padding: 20px 0 0; background: var(--bg); }
+  #onboarding.presenting .guide-controls { width: auto; justify-content: flex-end; position: fixed; right: clamp(20px, 3vw, 40px); bottom: max(20px, env(safe-area-inset-bottom));
+    z-index: 2; margin: 0; padding: 0; background: transparent; pointer-events: none; }
   #onboarding.presenting .guide-controls button, #onboarding.presenting .guide-head button { min-height: 42px; padding: 0 18px; font-size: 13px; }
   /* A primeira visita dirige o olhar ao Guia sem abrir a apresentação antes do clique. */
   html.guide-inviting body::after { content: ''; position: fixed; inset: 0; z-index: 68; background: rgba(0,0,0,.66); pointer-events: none; }
@@ -959,7 +959,7 @@ SOFTWARE. -->
   .guide-handoff { margin: 28px 0 !important; font: 500 20px/1.5 var(--font-display); }
   #onboarding [data-i18n], #guideInvitation [data-i18n] { text-transform: none; }
   #guideMockRoles .oh [data-i18n] { text-transform: capitalize; }
-  #onboarding.presenting .guide-controls { position: sticky; bottom: 0; z-index: 2; background: var(--bg); padding: 16px 0; }
+  #onboarding.presenting .guide-controls button { pointer-events: auto; box-shadow: 0 3px 12px #0004; }
   @media(max-width:700px) { .guide-entities { grid-template-columns: minmax(0,260px); gap: 20px; margin: 24px 0; } .guide-entities .role { justify-self: center; } .guide-purpose { grid-template-columns: 1fr; gap: 16px; } .guide-harness-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; } }
   html.guide-demo .node .tag { text-transform: none; }
   html.guide-demo .node .tag .tr { text-transform: none; }
