@@ -171,7 +171,7 @@ function dashboard(lang = 'en', width = 1000, session = new Map(), navigation = 
   })
   // Run the shipped script, excluding its network polling boot; render/localize stay real.
   const script = localizeDashboard(html, lang).match(/<script>([\s\S]*?)<\/script>/)[1].replaceAll('\r\n', '\n')
-  const renderOnly = script.replace(/\nfunction stopGuideDemos\(\)[\s\S]*$/, '')
+  const renderOnly = script.replace(/\nconst GUIDE_FRAMES[\s\S]*$/, '')
   runInContext(renderOnly, context)
   return {
     nodes, labels, cards, paths, filterOptions,
@@ -316,7 +316,7 @@ test('dashboard renders separate planning queues, active planner hub and executi
   for (const lang of ['en', 'pt-BR']) {
     const ui = dashboard(lang)
     ui.render(state)
-    const expected = lang === 'en' ? ['ready for planning', 'planning', 'ready for execution'] : ['pronto para planejamento', 'em planejamento', 'pronto para executar']
+    const expected = lang === 'en' ? ['ready for planning', 'planning', 'ready for execution'] : ['pronto para planejar', 'em planejamento', 'pronto para executar']
     for (const label of expected) {
       assert.ok(ui.nodes.get('#counts').innerHTML.includes(`${label === 'planning' ? 'Actively planning' : label === 'em planejamento' ? 'Planejando' : label.charAt(0).toLocaleUpperCase(lang) + label.slice(1)}</span> <b>1</b>`), `Counter: ${label}`)
     }
@@ -398,7 +398,7 @@ test('summary counts include discussion and legacy pending tasks', () => {
     ui.render({ run: 'summary', plan: { phases: [] }, tasks, derived })
     const summary = ui.nodes.get('#counts').innerHTML
     assert.equal([...summary.matchAll(/<b>(\d+)(?:\/\d+)?<\/b>/g)].reduce((sum, match) => sum + Number(match[1]), 0), 4)
-    for (const state of ['ready_for_discussion', 'discussing', 'pending']) {
+    for (const state of ['ready_for_discussion', 'discussing', 'waiting']) {
       assert.ok(summary.includes(state === 'discussing' ? (lang === 'en' ? 'Actively discussing' : 'Discutindo') : ui.run('statusLabel(value)', { value: state }).replace(/^./, char => char.toLocaleUpperCase(lang))), state)
     }
     assert.doesNotMatch(summary, /color:undefined/)
@@ -510,7 +510,7 @@ test('status filters use effective state and always show only direct dependency 
   const edge = (from, to) => ui.paths.find((path) => path.dataset.from === from && path.dataset.to === to)
   const hidden = (from, to) => !edge(from, to) || edge(from, to).classList.contains('filter-hidden')
   const expected = {
-    done: ['A'], incomplete: ['B', 'C', 'D', 'E', 'F', 'K', 'L', 'P', 'R', 'U'], waiting: ['C'],
+    done: ['A'], incomplete: ['B', 'C', 'D', 'E', 'F', 'K', 'L', 'P', 'R', 'U'], waiting: ['C', 'D'],
     ready_to_plan: ['P'], planning: ['L'], ready: ['E'], running: ['B'], reviewing: ['R'],
     blocked: ['K'], failed: ['F'], skipped: ['S'],
   }
@@ -572,7 +572,7 @@ test('filter controls expose every state and localize labels', () => {
   assert.doesNotMatch(html, /id="depsBtn"|toggleDependencies/)
   const panel = html.match(/<div[^>]+id="statusFilter"[^>]*>([\s\S]*?)<\/div>/)[1]
   const options = [...panel.matchAll(/<button\b[^>]*data-filter-value="([^"]+)"/g)].map(([, value]) => value)
-  assert.deepEqual(options, ['all', 'done', 'incomplete', 'waiting', 'ready_for_discussion', 'discussing', 'ready_to_plan', 'planning', 'ready', 'running', 'reviewing', 'blocked', 'failed', 'skipped'])
+  assert.deepEqual(options, ['all', 'done', 'incomplete', 'waiting', 'ready_for_discussion', 'discussing', 'ready_to_plan', 'planning', 'ready', 'running', 'ready_for_review', 'reviewing', 'blocked', 'failed', 'skipped'])
   for (const [lang, labels] of [['en', ['all tasks', 'incomplete', 'ignored']], ['pt-BR', ['todas', 'incompletas', 'ignoradas']]]) {
     const ui = dashboard(lang)
     ui.render({ run: 'empty-filter', plan: { phases: [] }, tasks: {}, derived: {} })
@@ -584,7 +584,7 @@ test('filter controls expose every state and localize labels', () => {
 test('filtros de estado usam os mesmos fundos dos cards e a seleção continua distinguível', () => {
   const css = html.match(/<style>([\s\S]*?)<\/style>/)[1]
   const rules = [...css.matchAll(/([^{}]+)\{([^{}]+)\}/g)]
-  for (const state of ['done', 'waiting', 'ready_for_discussion', 'discussing', 'ready_to_plan', 'planning', 'ready', 'running', 'reviewing', 'blocked', 'failed', 'skipped']) {
+  for (const state of ['done', 'waiting', 'ready_for_discussion', 'discussing', 'ready_to_plan', 'planning', 'ready', 'running', 'ready_for_review', 'reviewing', 'blocked', 'failed', 'skipped']) {
     const card = rules.find(([, selector, body]) => selector.includes('.node') && selector.includes(`[data-st="${state}"]`) && /--ticket-bg:\s*#/.test(body))
     const filter = rules.find(([, selector]) => selector.trim() === `.filter-option[data-filter-value="${state}"]`)
     assert.ok(card && filter, `estado sem paleta: ${state}`)
@@ -1974,7 +1974,7 @@ test('the gain card opens the results tab and shows a human estimate only from m
   assert.match(card, /for 1 of 3 tasks/, 'invalid or missing estimates are ignored silently and the coverage is stated')
 })
 
-test('o trilho mostra fases concluidas em verde continuo e apenas a fase atual em amarelo tracejado', () => {
+test('o trilho diferencia fases concluidas, ativas e aguardando', () => {
   const ui = dashboard('pt-BR')
   const state = { run: 'fases', plan: { phases: [
     { id: 'P1', title: 'Primeira' }, { id: 'P2', title: 'Segunda' }, { id: 'P3', title: 'Terceira' },
@@ -2000,8 +2000,8 @@ test('o trilho mostra fases concluidas em verde continuo e apenas a fase atual e
   assert.doesNotMatch(ui.nodes.get('#structPaths').innerHTML, /s-rail live|s-end-dot live|s-ring/)
   state.tasks.C.state = 'pending'
   ui.render(state)
-  assert.deepEqual(rails(), [['done', 'var(--done)'], ['done', 'var(--done)'], ['live', 'var(--accent)']])
-  assert.match(ui.nodes.get('#structPaths').innerHTML, /class="s-end-dot live"/)
+  assert.deepEqual(rails(), [['done', 'var(--done)'], ['done', 'var(--done)'], ['next', '#3a362f']])
+  assert.match(ui.nodes.get('#structPaths').innerHTML, /class="s-end-dot next"/)
 })
 
 test('o ponto final considera todas as tarefas mesmo sem fases ou com tarefas fora delas', () => {
@@ -2013,13 +2013,13 @@ test('o ponto final considera todas as tarefas mesmo sem fases ou com tarefas fo
   state.tasks.B.state = 'pending'
   ui.render(state)
   assert.match(ui.nodes.get('#structPaths').innerHTML, /class="s-rail live"/)
-  assert.match(ui.nodes.get('#structPaths').innerHTML, /class="s-end-dot live"/)
+  assert.match(ui.nodes.get('#structPaths').innerHTML, /class="s-end-dot next"/)
   state.plan.phases = [{ id: 'P1', title: 'Primeira' }]
   state.tasks.B.phase = 'fora-do-catalogo'
   ui.render(state)
   assert.match(ui.nodes.get('#structPaths').innerHTML, /class="s-rail done"/)
-  assert.match(ui.nodes.get('#structPaths').innerHTML, /class="s-end-dot live"/, 'uma tarefa pendente fora da fase ainda impede a conclusao do plano')
-  const markerY = Number(/class="s-end-dot live"[^>]*cy="([\d.]+)"/.exec(ui.nodes.get('#structPaths').innerHTML)?.[1])
+  assert.match(ui.nodes.get('#structPaths').innerHTML, /class="s-end-dot next"/, 'uma tarefa pendente fora da fase ainda impede a conclusao do plano')
+  const markerY = Number(/class="s-end-dot next"[^>]*cy="([\d.]+)"/.exec(ui.nodes.get('#structPaths').innerHTML)?.[1])
   assert.equal(markerY, ui.run('LAST_POS.B.y + LAST_METRICS.nodeH / 2'), 'o marcador permanece junto da tarefa pendente real')
 })
 
@@ -2035,6 +2035,48 @@ test('resultados do guia usam o calculo real com dados ficticios e os tres tipos
   assert.match(markup, /39 comandos/)
   assert.doesNotMatch(markup, /Histórico parcial de disparos|Não aferido/)
   assert.equal(ui.run('STATE.run'), 'checkout')
+})
+
+test('resumo sempre exibe a ordem completa mesmo sem tarefas', () => {
+  const ui=dashboard('pt-BR')
+  ui.render({run:'vazio',plan:{phases:[]},tasks:{},derived:{}})
+  const counts=ui.nodes.get('#counts').innerHTML
+  assert.deepEqual([...counts.matchAll(/data-state="([^"]+)"/g)].map(match=>match[1]), ['skipped','waiting','ready_for_discussion','discussing','ready_to_plan','planning','ready','running','ready_for_review','reviewing','blocked','failed','done'])
+  assert.match(counts,/Pronto para planejar/)
+  assert.match(counts,/Pronto para revisar/)
+  assert.equal((counts.match(/<b>0<\/b>/g)??[]).length,11)
+  assert.match(counts,/<b>0\/3<\/b>/)
+  assert.match(counts,/<b>0\/0<\/b>/)
+})
+
+test('espera por revisao nao aparece como trabalho de executor ou revisor', () => {
+  const ui=dashboard('pt-BR')
+  const work=task('T1','running',{attempts:[{n:1,activityTiming:'explicit',activityIntervals:[{role:'execution',startedAt:instant(0),endedAt:instant(10)}],startedAt:instant(0)}]})
+  const state={run:'revisao',plan:{phases:[]},tasks:{T1:work},derived:{}}
+  ui.render(state)
+  assert.equal(ui.run('eff("T1")'),'ready_for_review')
+  assert.match(ui.nodes.get('#counts').innerHTML,/Pronto para revisar<\/span> <b>1<\/b>/)
+  assert.match(ui.nodes.get('#counts').innerHTML,/Executando<\/span> <b>0\/3<\/b>/)
+  assert.equal(ui.nodes.get('#execNode').classList.contains('live'),false)
+  assert.equal(ui.nodes.get('#revNode').classList.contains('live'),false)
+  assert.equal(ui.run('analyse(STATE).execTotal'),10000)
+  assert.equal(ui.run('analyse(STATE).reviewTotal'),0)
+  work.state='reviewing';work.attempts[0].reviewStartedAt=instant(30)
+  ui.render(state)
+  assert.equal(ui.run('eff("T1")'),'reviewing')
+  assert.match(ui.nodes.get('#counts').innerHTML,/Pronto para revisar<\/span> <b>0<\/b>/)
+  assert.equal(ui.nodes.get('#revNode').classList.contains('live'),true)
+})
+
+test('fases paralelas mostram seus proprios papeis e cores sem reduzir a primeira fase', () => {
+  const ui=dashboard('pt-BR')
+  ui.render({run:'paralelo',plan:{phases:[{id:'F1',title:'Primeira'},{id:'F2',title:'Segunda'}]},tasks:{T1:task('T1','discussing',{phase:'F1'}),T2:task('T2','running',{phase:'F1'}),T3:task('T3','planning',{phase:'F2'}),T4:task('T4','reviewing',{phase:'F2'})},derived:{}})
+  const structure=ui.nodes.get('#structPaths').innerHTML
+  assert.equal((structure.match(/class="s-end-dot live"/g)??[]).length,2)
+  assert.match(structure,/values="#e8b04b;#f28c52;#e8b04b"/)
+  assert.match(structure,/values="#b69cff;#4fc3f7;#b69cff"/)
+  assert.match(structure,/class="s-spinner"[^>]*r="10"/)
+  assert.match(structure,/class="s-end-dot live"[^>]*r="6"/)
 })
 
 test('spinners novos compartilham o relogio sem reiniciar os existentes', () => {
@@ -2063,7 +2105,7 @@ test('o spinner ativo cobre os trilhos, com e sem fases', () => {
       A: task('A', 'done', { phase: 'P1' }), B: task('B', 'running', { phase: 'P2' }),
     }, derived: {} })
     const struct = ui.nodes.get('#structPaths').innerHTML
-    const maskAndDot = /<circle class="s-end-mask" cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"\/><circle class="s-end-dot live" cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"\/>/.exec(struct)
+    const maskAndDot = /<circle class="s-end-mask" cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"\/><circle class="s-end-dot live" cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"[^>]*>/.exec(struct)
     assert.ok(maskAndDot, 'a mascara opaca fica imediatamente atras da bolinha ativa')
     assert.equal(maskAndDot[1], maskAndDot[4], 'a mascara compartilha o eixo da bolinha')
     assert.equal(maskAndDot[2], maskAndDot[5], 'a mascara compartilha o centro da bolinha')
@@ -2110,7 +2152,7 @@ test('o cabecalho compacto preserva ao vivo e abre todos os filtros sem os conta
   assert.ok(header.indexOf('id="orch"') > header.indexOf('<details class="header-menu"'), 'o status fica depois dos filtros, fora do menu')
   assert.doesNotMatch(menu, /id="orch"/)
   assert.ok(menu.includes('id="statusFilter"'))
-  assert.equal(small.filterOptions.length, 14)
+  assert.equal(small.filterOptions.length, 15)
   assert.doesNotMatch(menu, /<select/)
   assert.match(html, /\.filter-toggle \{ display: none; \}/)
   assert.doesNotMatch(header, /id="counts"/)
@@ -2270,7 +2312,7 @@ test('indicadores ficam juntos acima dos agentes, capitalizados e nas cores dos 
   state.tasks.T8 = task('T8')
   state.derived.T8 = { effective: 'ready_to_plan' }
   ui.render(state)
-  assert.match(ui.nodes.get('#counts').innerHTML, /Pronto para planejamento<\/span> <b>1<\/b>/)
+  assert.match(ui.nodes.get('#counts').innerHTML, /Pronto para planejar<\/span> <b>1<\/b>/)
   const expandedCounts = ui.nodes.get('#counts').innerHTML
   assert.ok(expandedCounts.indexOf('data-state="done"') > expandedCounts.indexOf('data-state="ready_to_plan"'), 'Concluido encerra o resumo sem deslocar os separadores das outras linhas')
   assert.match(html, /#statusBox \.count-label \{[^}]*min-width: 0;[^}]*white-space: normal;/)
@@ -2283,7 +2325,7 @@ test('as conexoes ficam ocultas e o trilho das fases permanece visivel', () => {
   const ui = dashboard('pt-BR')
   ui.render({ run: 'dependencias', plan: { phases: [{ id: 'F1', title: 'Fase' }] }, tasks: { T1: task('T1'), T2: task('T2', 'pending', { deps: ['T1'] }) },
     derived: { T1: { effective: 'ready' }, T2: { effective: 'waiting', blockedBy: ['T1'] } } })
-  assert.match(ui.nodes.get('#structPaths').innerHTML, /class="s-rail live"/)
+  assert.match(ui.nodes.get('#structPaths').innerHTML, /class="s-rail next"/)
   assert.match(ui.nodes.get('#nodes').innerHTML, /← T1/)
 })
 
@@ -2367,12 +2409,12 @@ test('o cabecalho mostra tarefa e estado sem confundir tentativas com conclusao'
 test('cada familia de estado tem fundo proprio no quadro, inclusive antes da discussao', () => {
   const families = [
     ['waiting', 'pending', '#27343c'], ['ready_for_discussion', 'discussing', '#443517'],
-    ['ready_to_plan', 'planning', '#302e4d'], ['ready', 'running', '#4a2b1f'],
+    ['ready_to_plan', 'planning', '#302e4d'], ['ready', 'running', '#4a2b1f'], ['ready_for_review', 'reviewing', '#183b4a'],
   ]
   for (const [queued, active, color] of families) {
     assert.ok(html.includes(`.node:is([data-st="${queued}"], [data-st="${active}"]) { --ticket-bg: ${color}; }`))
   }
-  for (const [state, color] of [['reviewing', '#183b4a'], ['done', '#323c21'], ['blocked', '#472a36'],
+  for (const [state, color] of [['done', '#323c21'], ['blocked', '#472a36'],
     ['failed', '#4b242b'], ['skipped', '#30332d']]) {
     assert.ok(html.includes(`.node[data-st="${state}"] { --ticket-bg: ${color}; }`))
   }

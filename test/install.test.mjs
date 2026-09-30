@@ -891,6 +891,7 @@ for (const harness of ['claude', 'kiro', 'codex', 'dsh']) test(`${harness}: pers
   const installedPoFirst = harness === 'claude' ? read(join(f.config, 'output-styles', 'po-first.md')) :
     harness === 'kiro' ? read(join(f.config, 'steering', 'po-first.md')) : read(join(f.config, 'AGENTS.md'))
   assert.match(installedPoFirst, /workflow metadata/)
+  assert.match(installedPoFirst, /three or more distinct changes|três ou mais mudanças distintas/)
   assert.ok(restoreInstall(result.backup, { home: f.home, env: {} }) > 0)
   assert.equal(existsSync(join(skill, 'SKILL.md')), false)
 })

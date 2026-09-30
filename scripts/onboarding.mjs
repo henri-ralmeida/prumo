@@ -1,3 +1,57 @@
+export function createGuideDemoFrameController(frames, onState = () => {}) {
+  const cache = { board: false, results: false }
+  let active = null, target = null, generation = 0
+  function focus(mode) {
+    const frame = frames[mode]
+    if (active !== mode || !cache[mode]) return
+    if (typeof frame.contentWindow?.prumoGuideDemo?.focus !== 'function') {
+      cache[mode] = false
+      onState(mode, 'error')
+      return
+    }
+    try {
+      frame.contentWindow.prumoGuideDemo.focus(target)
+      onState(mode, 'ready')
+    } catch {
+      onState(mode, 'error')
+    }
+  }
+  function show(mode, nextTarget) {
+    if (!frames[mode]) return
+    if (active && active !== mode) onState(active, 'idle')
+    active = mode; target = nextTarget
+    if (cache[mode]) return focus(mode)
+    onState(mode, 'loading')
+    const frame = frames[mode]
+    if (frame.dataset.guideLoading === 'true') return
+    const started = generation
+    frame.dataset.guideLoading = 'true'
+    frame.onload = () => {
+      if (started !== generation) return
+      delete frame.dataset.guideLoading
+      cache[mode] = true
+      if (active === mode) focus(mode)
+      else onState(mode, 'idle')
+    }
+    frame.src = '?guide-demo=' + mode
+  }
+  function stop({ dispose = false } = {}) {
+    if (active) onState(active, 'idle')
+    active = null; target = null
+    if (!dispose) return
+    generation += 1
+    for (const mode of ['board', 'results']) {
+      const frame = frames[mode]
+      frame.onload = null
+      frame.removeAttribute('src')
+      delete frame.dataset.guideLoading
+      cache[mode] = false
+      onState(mode, 'idle')
+    }
+  }
+  return { show, stop }
+}
+
 export function createPrumoOnboarding({ root, launcher, document, window, translate = value => value,
   showDemo = () => {}, stopDemos = () => {}, syncMotion = () => {} }) {
   if (!root || !launcher || !document) return null
@@ -33,6 +87,34 @@ export function createPrumoOnboarding({ root, launcher, document, window, transl
   ]
   let stepIndex = 0, demoIndex = 0, dismissed = true
   let fullscreenOwned = false, fullscreenPending = false
+  let pendingDemo = null, pendingFrame = null, demoGeneration = 0
+  let shownMode = null, shownTarget = null
+  function cancelPendingDemo() {
+    demoGeneration += 1
+    if (pendingFrame !== null) window.cancelAnimationFrame?.(pendingFrame)
+    pendingFrame = null
+    pendingDemo = null
+  }
+  function scheduleDemo(mode, target) {
+    pendingDemo = { mode, target }
+    if (pendingFrame !== null) return
+    const generation = ++demoGeneration
+    pendingFrame = window.requestAnimationFrame(() => {
+      pendingFrame = null
+      const latest = pendingDemo
+      pendingDemo = null
+      if (generation !== demoGeneration || dismissed || !latest) return
+      if (shownMode === latest.mode && shownTarget === latest.target) return
+      shownMode = latest.mode; shownTarget = latest.target
+      showDemo(latest.mode, latest.target)
+    })
+  }
+  function stopDemo(dispose = false) {
+    const active = shownMode !== null || pendingDemo !== null
+    cancelPendingDemo()
+    shownMode = shownTarget = null
+    if (active || dispose) stopDemos({ dispose })
+  }
   const store = (value) => { try { window.localStorage.setItem('prumoOnboardingDismissed', value) } catch {} }
   const saved = () => { try { return window.localStorage.getItem('prumoOnboardingDismissed') === 'true' } catch { return false } }
   const forced = () => {
@@ -62,8 +144,8 @@ export function createPrumoOnboarding({ root, launcher, document, window, transl
       mark(role, roleStep && role.dataset.guideRole === content.target)
       role.setAttribute('aria-pressed', String(roleStep && role.dataset.guideRole === content.target))
     }
-    if (boardStep || resultsStep) showDemo(boardStep ? 'board' : 'results', content.target)
-    else stopDemos()
+    if (boardStep || resultsStep) scheduleDemo(boardStep ? 'board' : 'results', content.target)
+    else stopDemo()
     root.scrollTop = 0
     syncMotion()
 
@@ -131,7 +213,7 @@ export function createPrumoOnboarding({ root, launcher, document, window, transl
     if (dismissed) return
     dismissed = true
     root.hidden = true
-    stopDemos()
+    stopDemo(true)
     root.classList.remove('presenting')
     launcher.setAttribute('aria-expanded', 'false')
     store('true')

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { createPrumoOnboarding } from '../scripts/onboarding.mjs'
+import { createGuideDemoFrameController, createPrumoOnboarding } from '../scripts/onboarding.mjs'
 import { createGuideDemoData } from '../scripts/dashboard-guide-demo.mjs'
 
 class Node {
@@ -34,10 +34,14 @@ function harness({ saved = false, search = '', summary = () => null, launcherBot
     querySelector: key => el(key), addEventListener(type, fn) { this.listeners.set(type, fn) },
     exitFullscreen() { this.fullscreenElement = null; this.listeners.get('fullscreenchange')?.() } }
   root.requestFullscreen = () => { document.fullscreenElement = root; document.listeners.get('fullscreenchange')?.(); return Promise.resolve() }
-  const window = { listeners: new Map(), addEventListener(type, listener) { this.listeners.set(type, listener) }, location: { search }, localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) } }
+  const frames = new Map()
+  let frameId = 0
+  const window = { listeners: new Map(), addEventListener(type, listener) { this.listeners.set(type, listener) }, location: { search }, localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) },
+    requestAnimationFrame(callback) { const id = ++frameId; frames.set(id, callback); return id }, cancelAnimationFrame(id) { frames.delete(id) } }
+  const flushFrame = () => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(callback => callback()) }
   root.hidden = true; invite.hidden = true
-  const api = createPrumoOnboarding({ root, launcher, document, window, translate: (value,...args) => value.replace(/\{(\d+)\}/g, (_,index) => args[Number(index)] ?? ''), showDemo: (mode,target) => demos.push({mode,target}), stopDemos: () => stops.push(true) })
-  return { api, el, root, launcher, invite, roles, demos, stops, storage, document, window }
+  const api = createPrumoOnboarding({ root, launcher, document, window, translate: (value,...args) => value.replace(/\{(\d+)\}/g, (_,index) => args[Number(index)] ?? ''), showDemo: (mode,target) => demos.push({mode,target}), stopDemos: options => stops.push(options) })
+  return { api, el, root, launcher, invite, roles, demos, stops, storage, document, window, flushFrame }
 }
 
 test('primeira visita convida, clique abre em tela cheia e dispensa persiste sem abrir', async () => {
@@ -95,11 +99,13 @@ test('cinco frentes mostram apenas a superficie correspondente e controles minus
   ui.roles[2].click()
   assert.equal(ui.el('#guideTitle').textContent, 'The executor')
   ui.el('#guideNext').click(); ui.el('#guideNext').click()
+  ui.flushFrame()
   assert.match(ui.el('#guideCount').textContent, /Step 3 of 5/)
   assert.equal(ui.el('#guideMockRoles').hidden, true)
   assert.equal(ui.el('#guideExamplePanel').hidden, false)
   assert.deepEqual(ui.demos.at(-1), {mode:'board',target:'board'})
   for(let i=0;i<4;i++) ui.el('#guideNext').click()
+  ui.flushFrame()
   assert.match(ui.el('#guideCount').textContent, /Step 4 of 5/)
   assert.equal(ui.el('#guideExamplePanel').hidden, true)
   assert.equal(ui.el('#guideGainPanel').hidden, false)
@@ -110,10 +116,57 @@ test('cinco frentes mostram apenas a superficie correspondente e controles minus
   assert.equal(ui.el('#guideGainPanel').hidden, true)
   assert.equal(ui.el('#guideNext').textContent, 'finish guide')
   ui.el('#guidePrevious').click()
+  ui.flushFrame()
   assert.deepEqual(ui.demos.at(-1), {mode:'results',target:'commands'})
   ui.el('#guideSkip').click()
   assert.equal(ui.root.hidden,true)
   assert.ok(ui.stops.length)
+})
+
+test('navegacao rapida aplica apenas o ultimo destino e cancela ao fechar', () => {
+  const ui = harness()
+  ui.launcher.click()
+  for (let i = 0; i < 5; i++) ui.el('#guideNext').click()
+  assert.equal(ui.demos.length, 0)
+  ui.flushFrame()
+  assert.deepEqual(ui.demos, [{ mode: 'board', target: 'board' }])
+  ui.el('#guideNext').click()
+  ui.el('#guideNext').click()
+  ui.el('#guidePrevious').click()
+  ui.flushFrame()
+  assert.deepEqual(ui.demos.at(-1), { mode: 'board', target: 'filters' })
+  ui.el('#guideNext').click()
+  ui.el('#guideSkip').click()
+  ui.flushFrame()
+  assert.equal(ui.demos.length, 2)
+  assert.deepEqual(ui.stops.at(-1), { dispose: true })
+})
+
+test('quadros reutilizam a pagina carregada, focam o destino final e ignoram load apos fechar', () => {
+  const makeFrame = () => ({ dataset: {}, src: '', onload: null, removed: 0,
+    removeAttribute(name) { if (name === 'src') { this.src = ''; this.removed++ } },
+    contentWindow: { prumoGuideDemo: { focus(target) { this.calls.push(target) }, calls: [] } } })
+  const frames = { board: makeFrame(), results: makeFrame() }
+  const states = []
+  const controller = createGuideDemoFrameController(frames, (mode, state) => states.push([mode, state]))
+  controller.show('board', 'board')
+  controller.show('board', 'filters')
+  assert.equal(frames.board.src, '?guide-demo=board')
+  assert.deepEqual(states.at(-1), ['board', 'loading'])
+  frames.board.onload()
+  assert.deepEqual(frames.board.contentWindow.prumoGuideDemo.calls, ['filters'])
+  controller.show('results', 'gain')
+  controller.show('board', 'card')
+  assert.deepEqual(frames.board.contentWindow.prumoGuideDemo.calls, ['filters', 'card'])
+  assert.equal(frames.board.removed, 0)
+  assert.equal(frames.results.src, '?guide-demo=results')
+  const lateLoad = frames.results.onload
+  controller.stop({ dispose: true })
+  lateLoad()
+  assert.equal(frames.results.contentWindow.prumoGuideDemo.calls.length, 0)
+  assert.equal(frames.board.src, '')
+  assert.equal(frames.results.src, '')
+  assert.deepEqual(states.at(-1), ['results', 'idle'])
 })
 
 test('dados ficticios independem do plano real e nao compartilham estado entre aberturas', () => {

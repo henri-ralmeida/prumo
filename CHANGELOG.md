@@ -4,6 +4,11 @@ Historical tag and commit corrections are documented in [Release history recover
 
 ## 2.2.1 — 2026-09-30
 
+- Mantenha todos os estados visíveis no resumo, mesmo zerados, e apresente Pronto para revisar entre o STOP do Executor e o despacho do Revisor.
+- Uniformize o tamanho das bolinhas e mostre as cores dos agentes ativos em todas as fases simultâneas, com spinners sincronizados ao redor.
+- Evite recarregar as demonstrações a cada avanço do guia e preserve o destino mais recente durante navegação rápida, com transições suaves.
+- Confira o acesso ao modo de planejamento nas fontes oficiais dos quatro ambientes; no Kiro, selecione Plan no seletor de agente.
+- Aplique PO First aos quatro ambientes para confirmar o entendimento de novos pedidos com três ou mais mudanças, sem reconfirmar escopo aprovado.
 - Mostre somente concluídas sobre tarefas válidas no resumo lateral e no board: 13 concluídas e uma pulada mostram `13/13`.
 - Exclua tarefas puladas do denominador e mantenha os totais do plano quando um filtro estiver ativo, em todas as densidades do board.
 - Destaque a Economia estimada com seu tempo e a indicação de cálculo baseado na coordenação manual.

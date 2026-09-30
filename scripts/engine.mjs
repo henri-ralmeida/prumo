@@ -68,6 +68,7 @@ import {
   rmSync, statSync, copyFileSync,
 } from 'node:fs'
 import { randomUUID, createHash } from 'node:crypto'
+import { isReadyForReview } from './review-readiness.mjs'
 import { writeAtomicState } from './atomic-state.mjs'
 import { runValidation, assertValidation, validationContract, validationDirectories, assertDiscovery, assertDiscussionBoundary, discoveryDigest, assertTaskPlan,
   assertUnavailableResources,
@@ -1701,7 +1702,7 @@ export function derive(state) {
   const out = {}
   const migrationPending = !['phase', 'task'].includes(state.plan?.planningMode)
   for (const [id, t] of Object.entries(state.tasks)) {
-    let effective = t.state
+    let effective = isReadyForReview(t, state.plan) ? 'ready_for_review' : t.state
     let blockedBy = []
     let planningBlockedBy = []
     const phase = state.phaseWorkflows?.[t.phase]

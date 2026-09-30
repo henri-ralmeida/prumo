@@ -62,6 +62,22 @@ function fixture(t, dependent = false, { requireReview = true } = {}) {
     save: state => writeFileSync(statePath, JSON.stringify(state)) }
 }
 
+test('STOP de execucao mostra espera e review inicia apenas o despacho da revisao', t => {
+  const f=fixture(t)
+  f.ok('start','T1','--agent','executor')
+  f.ok('activity-start','T1','--role','execution','--agent','executor')
+  assert.equal(JSON.parse(f.ok('graph').stdout).derived.T1.effective,'running')
+  f.ok('activity-stop','T1','--role','execution','--agent','executor')
+  assert.equal(JSON.parse(f.ok('graph').stdout).derived.T1.effective,'ready_for_review')
+  assert.equal(f.state().tasks.T1.state,'running','a projecao preserva compatibilidade com os planos persistidos')
+  assert.equal(f.state().tasks.T1.attempts[0].reviewStartedAt,undefined)
+  f.ok('review','T1','--agent','reviewer')
+  const reviewing=JSON.parse(f.ok('graph').stdout)
+  assert.equal(reviewing.derived.T1.effective,'reviewing')
+  assert.ok(reviewing.tasks.T1.attempts[0].reviewStartedAt)
+  assert.equal(reviewing.tasks.T1.attempts[0].activityIntervals.filter(interval=>interval.role==='review').length,0,'despacho ainda exige START antes de medir trabalho')
+})
+
 test('bounded reviewer correction reuses the immutable approved plan and reason', t => {
   const f = fixture(t)
   const planned = structuredClone(f.state().tasks.T1.taskPlan)

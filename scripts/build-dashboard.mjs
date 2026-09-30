@@ -2,8 +2,9 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import { createTranslator, messages } from './i18n.mjs'
 import { taskManualEstimateMinutes, commandMetricsForRun, calculateGain, renderGainPanel, renderManualCoordination } from './dashboard-gains.mjs'
-import { createPrumoOnboarding } from './onboarding.mjs'
+import { createPrumoOnboarding, createGuideDemoFrameController } from './onboarding.mjs'
 import { createGuideDemoData } from './dashboard-guide-demo.mjs'
+import { isReadyForReview } from './review-readiness.mjs'
 
 export function dashboardWithCatalog(html) {
   // O guia compartilha a identidade das entidades; alterar o SVG real atualiza a demonstracao.
@@ -16,12 +17,12 @@ export function dashboardWithCatalog(html) {
       .replace(/<span class="os"[^>]*>[\s\S]*?<\/span><\/span>/, `<span class="os" data-i18n="${description}">${description}</span></span>`)
   }).join('')
   const block = '/*PRUMO_I18N_START*/\nconst PRUMO_MESSAGES = ' + JSON.stringify(messages) + '\n' + createTranslator.toString() + '\n/*PRUMO_I18N_END*/'
-  const guide = '/*PRUMO_GUIDE_START*/\n' + createGuideDemoData.toString() + '\n' + createPrumoOnboarding.toString() + '\n/*PRUMO_GUIDE_END*/'
+  const guide = '/*PRUMO_GUIDE_START*/\n' + createGuideDemoData.toString() + '\n' + createGuideDemoFrameController.toString() + '\n' + createPrumoOnboarding.toString() + '\n/*PRUMO_GUIDE_END*/'
   if (!html.includes('/*PRUMO_I18N_START*/')) throw new Error('Dashboard translation marker missing')
   if (!html.includes('/*PRUMO_GAIN_HELPERS_START*/')) throw new Error('Dashboard gain-helper marker missing')
   if (!html.includes('/*PRUMO_GUIDE_START*/')) throw new Error('Dashboard onboarding marker missing')
   const helpers = '/*PRUMO_GAIN_HELPERS_START*/\n' +
-    [taskManualEstimateMinutes, commandMetricsForRun, calculateGain, renderGainPanel, renderManualCoordination].map(fn => fn.toString()).join('\n\n') +
+    [isReadyForReview, taskManualEstimateMinutes, commandMetricsForRun, calculateGain, renderGainPanel, renderManualCoordination].map(fn => fn.toString()).join('\n\n') +
     '\n/*PRUMO_GAIN_HELPERS_END*/'
   return html
     .replace(/\/\*PRUMO_I18N_START\*\/[\s\S]*?\/\*PRUMO_I18N_END\*\//, () => block)
