@@ -1,7 +1,7 @@
 {
   "2.2.1": {
     "en": [
-      { "title": "Fixed — Completed task totals", "items": ["Show completed tasks over all tasks in the sidebar summary, including skipped tasks in the total and preserving the count when filters change"] },
+      { "title": "Fixed — Completed task totals", "items": ["Count completed tasks over valid tasks only, excluding skipped tasks and keeping sidebar and board totals consistent when filters change"] },
       { "title": "Improved — Agent activity and estimated savings", "items": ["Display estimated savings alongside measured metrics and identify the fixed manual coordination assumption", "Measure discussion, planning, execution and review with explicit activity start and stop intervals, excluding waits and preserving unknown legacy periods"] }
     ]
   },

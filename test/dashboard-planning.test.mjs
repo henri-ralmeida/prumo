@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { createContext, runInContext } from 'node:vm'
 import { localizeDashboard } from '../scripts/i18n.mjs'
 
-const html = readFileSync(new URL('../scripts/dashboard.html', import.meta.url), 'utf8')
+const html = readFileSync(new URL('../scripts/dashboard.html', import.meta.url), 'utf8').replaceAll('\r\n', '\n')
 const instant = (seconds) => new Date(Date.UTC(2026, 0, 1) + seconds * 1000).toISOString()
 const task = (id, state = 'pending', fields = {}) => ({
   id, title: `Task ${id}`, phase: 'P1', state, deps: [], attempts: [], validations: [], notes: [], ...fields,
@@ -96,7 +96,8 @@ function dashboard(lang = 'en', width = 1000, session = new Map(), navigation = 
     node.dataset.i18n = key.replaceAll('&amp;', '&')
     return node
   })
-  const filterOptions = [...html.matchAll(/<button\b([^>]*data-filter-value="([^"]+)"[^>]*)>/g)].map(([, source, filterValue]) => {
+  const filterMarkup = html.match(/<div[^>]+id="statusFilter"[^>]*>([\s\S]*?)<\/div>/)?.[1] ?? ''
+  const filterOptions = [...filterMarkup.matchAll(/<button\b([^>]*data-filter-value="([^"]+)"[^>]*)>/g)].map(([, source, filterValue]) => {
     const option = element()
     option.dataset.filterValue = filterValue
     option.setAttribute('aria-pressed', source.match(/aria-pressed="([^"]+)"/)?.[1] ?? 'false')
@@ -105,8 +106,8 @@ function dashboard(lang = 'en', width = 1000, session = new Map(), navigation = 
   const querySelectorAll = (selector) => {
     if (selector === '[data-i18n]') return labels
     if (selector === '#statusFilter [data-filter-value]') return filterOptions
-    if (selector === '.node') return cards
-    if (selector === '.node.lit, .node.lit-self') return cards.filter((node) => node.classList.contains('lit') || node.classList.contains('lit-self'))
+    if (selector === '.node' || selector === '#nodes .node') return cards
+    if (selector === '.node.lit, .node.lit-self' || selector === '#nodes .node.lit, #nodes .node.lit-self') return cards.filter((node) => node.classList.contains('lit') || node.classList.contains('lit-self'))
     if (selector === '#edgePaths path') return paths
     if (selector === '#edgePaths path.lit') return paths.filter((path) => path.classList.contains('lit'))
     return []
@@ -168,7 +169,7 @@ function dashboard(lang = 'en', width = 1000, session = new Map(), navigation = 
     Date: class extends Date { static now() { return Date.parse(instant(100)) } },
   })
   // Run the shipped script, excluding its network polling boot; render/localize stay real.
-  const script = localizeDashboard(html, lang).match(/<script>([\s\S]*?)<\/script>/)[1]
+  const script = localizeDashboard(html, lang).match(/<script>([\s\S]*?)<\/script>/)[1].replaceAll('\r\n', '\n')
   const renderOnly = script.replace(/\nconst ONBOARDING = createPrumoOnboarding\(\{[\s\S]*?\n\}\)\ntick\(\)\nloadIdentity\(\)\s*$/, '')
   runInContext(renderOnly, context)
   return {
@@ -316,8 +317,6 @@ test('dashboard renders separate planning queues, active planner hub and executi
     ui.render(state)
     const expected = lang === 'en' ? ['ready for planning', 'planning', 'ready for execution'] : ['pronto para planejamento', 'em planejamento', 'pronto para executar']
     for (const label of expected) {
-      const legendLabel = label === 'planning' ? 'planning · planner' : label === 'em planejamento' ? 'planejamento · planejador' : label
-      assert.ok(ui.labels.some((node) => node.textContent === legendLabel), `Legend: ${legendLabel}`)
       assert.ok(ui.nodes.get('#counts').innerHTML.includes(`${label === 'planning' ? 'Actively planning' : label === 'em planejamento' ? 'Planejando' : label.charAt(0).toLocaleUpperCase(lang) + label.slice(1)}</span> <b>1</b>`), `Counter: ${label}`)
     }
     for (const [id, status] of Object.entries(states)) {
@@ -405,7 +404,7 @@ test('summary counts include discussion and legacy pending tasks', () => {
   }
 })
 
-test('concluidas mostram a quantidade sobre todas as tarefas do plano, incluindo puladas', () => {
+test('concluidas excluem puladas do total de tarefas validas', () => {
   const ui = dashboard('pt-BR')
   const tasks = Object.fromEntries(Array.from({ length: 29 }, (_, index) => {
     const id = `T${index + 1}`
@@ -414,11 +413,49 @@ test('concluidas mostram a quantidade sobre todas as tarefas do plano, incluindo
   const state = { run: 'concluidas-total', plan: { phases: [] }, tasks,
     derived: Object.fromEntries(Object.entries(tasks).map(([id, task]) => [id, { effective: task.state }])) }
   ui.render(state)
-  assert.match(ui.nodes.get('#counts').innerHTML, /Concluído<\/span> <b>23\/29<\/b>/)
+  assert.match(ui.nodes.get('#counts').innerHTML, /Concluído<\/span> <b>23\/28<\/b>/)
   ui.run("setFilter('done')")
-  assert.match(ui.nodes.get('#counts').innerHTML, /Concluído<\/span> <b>23\/29<\/b>/, 'o filtro não reduz o total do plano')
+  assert.match(ui.nodes.get('#counts').innerHTML, /Concluído<\/span> <b>23\/28<\/b>/, 'o filtro não reduz o total do plano')
   ui.render({ run: 'vazio', plan: { phases: [] }, tasks: {}, derived: {} })
   assert.match(ui.nodes.get('#counts').innerHTML, /Concluído<\/span> <b>0\/0<\/b>/)
+})
+
+test('13 concluidas e uma pulada mostram 13 de 13 e o resumo existe em planos grandes', () => {
+  for (const size of [14, 30, 110]) {
+    const ui = dashboard('pt-BR')
+    const tasks = Object.fromEntries(Array.from({ length: size }, (_, index) => [`T${index + 1}`, task(`T${index + 1}`, index < 13 ? 'done' : 'skipped')]))
+    const state = { run: 'totais-validos', plan: { phases: [] }, tasks, derived: {} }
+    ui.render(state)
+    assert.match(ui.nodes.get('#counts').innerHTML, /Concluído<\/span> <b>13\/13<\/b>/)
+    assert.match(ui.nodes.get('#lanes').innerHTML, /13 de 13 no prumo/)
+    ui.run("setFilter('skipped')")
+    assert.match(ui.nodes.get('#counts').innerHTML, /<b>13\/13<\/b>/)
+    const last = Object.values(state.tasks).at(-1)
+    last.state = 'pending'
+    ui.render(state)
+    assert.match(ui.nodes.get('#counts').innerHTML, /<b>13\/14<\/b>/)
+    assert.match(ui.nodes.get('#lanes').innerHTML, /13 de 14 no prumo/)
+  }
+})
+
+test('comandos registrados permanecem abertos no tick e resetam ao trocar de plano', () => {
+  const ui = dashboard('pt-BR')
+  const state = { run: 'aberto', plan: {}, tasks: {}, derived: {} }
+  ui.run('STATE = input; EVENTS_COMPLETE = true; renderResults(input)', { input: state })
+  ui.run("$('#results .manual-commands').open = true; $('#results').scrollTop = 180; renderResults(STATE)")
+  assert.equal(ui.run("$('#results .manual-commands').open"), true)
+  assert.equal(ui.run("$('#results').scrollTop"), 180)
+  ui.run('renderResults(input)', { input: { ...state, run: 'outro' } })
+  assert.equal(ui.run("$('#results').scrollTop"), 0)
+})
+
+test('papeis ativos sem intervalos registrados mostram nao aferido em vez de zero', () => {
+  const ui = dashboard('pt-BR')
+  const state = { run: 'sem-registros', plan: {}, tasks: { A: task('A', 'running'), B: task('B', 'reviewing'), C: task('C', 'planning'), D: task('D', 'discussing') }, derived: {} }
+  ui.run('STATE = input; EVENTS_COMPLETE = true; renderResults(input)', { input: state })
+  const activity = ui.nodes.get('#results').innerHTML.split('class="gcard agent-activity"')[1].split('</section>')[0]
+  assert.equal((activity.match(/<strong>Não aferido<\/strong>/g) ?? []).length, 4)
+  assert.doesNotMatch(activity, /<strong>0s<\/strong>/)
 })
 
 test('height-only resize keeps the untouched board at 100% anchored at the top', () => {
@@ -532,7 +569,8 @@ test('status filters use effective state and always show only direct dependency 
 })
 test('filter controls expose every state and localize labels', () => {
   assert.doesNotMatch(html, /id="depsBtn"|toggleDependencies/)
-  const options = [...html.matchAll(/<button\b[^>]*data-filter-value="([^"]+)"/g)].map(([, value]) => value)
+  const panel = html.match(/<div[^>]+id="statusFilter"[^>]*>([\s\S]*?)<\/div>/)[1]
+  const options = [...panel.matchAll(/<button\b[^>]*data-filter-value="([^"]+)"/g)].map(([, value]) => value)
   assert.deepEqual(options, ['all', 'done', 'incomplete', 'waiting', 'ready_for_discussion', 'discussing', 'ready_to_plan', 'planning', 'ready', 'running', 'reviewing', 'blocked', 'failed', 'skipped'])
   for (const [lang, labels] of [['en', ['all tasks', 'incomplete', 'ignored']], ['pt-BR', ['todas', 'incompletas', 'ignoradas']]]) {
     const ui = dashboard(lang)
@@ -807,13 +845,8 @@ test('phase boards expand for their cards and open with the complete graph visib
   assert.ok(wideView.metrics.nodeW * wideView.view.k >= 72, 'cards at 100% stay legible')
 })
 
-test('legend follows the workflow and event history names actions with their colored roles', () => {
-  const legend = html.match(/<div class="legend">([\s\S]*?)<\/div>/)[1]
-  const order = [...legend.matchAll(/data-i18n="([^"]+)"/g)].map(m => m[1])
-  assert.deepEqual(order.slice(0, 11), ['waiting for dependencies', 'ready for discussion', 'discussion · orchestrator', 'ready for planning', 'planning · planner',
-    'ready for execution', 'execution · executor', 'review · reviewer', '✓ = validated, awaiting done', 'done', 'failed'])
-  assert.equal((legend.match(/class="role-dot"/g) ?? []).length, 4)
-  assert.ok(order.includes('skipped'))
+test('historico continua mostrando acoes com suas cores sem legenda separada', () => {
+  assert.doesNotMatch(html, /<div class="legend">/)
   for (const lang of ['en', 'pt-BR']) {
     const ui = dashboard(lang)
     const taskValue = task('T4', 'reviewing', { validations: [
@@ -837,7 +870,6 @@ test('legend follows the workflow and event history names actions with their col
     for (const color of ['discussion', 'planning', 'running', 'review']) assert.ok(title.includes(`color:var(--${color})`))
     assert.ok((title.match(/<b>/g) ?? []).length >= 7)
     assert.doesNotMatch(title, / · /)
-    if (lang === 'pt-BR') assert.ok(ui.labels.some(node => node.textContent === 'discussão · orquestrador'))
     const log = ui.nodes.get('#events').innerHTML
     const visibleLog = log.replace(/<[^>]*>/g, '')
     assert.match(visibleLog, /T4 \[1\/4\]/)
@@ -902,7 +934,7 @@ test('visual polish keeps arrowless curves, full card labels and a controllable 
   assert.doesNotMatch(html, /marker-end|<marker/, 'dependency curves end on the card without arrowheads')
   assert.match(html, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\*, \*::before, \*::after[\s\S]*animation: none !important/)
   assert.match(html, /\.phase-task-state \{ display: inline;/)
-  const sectionOrder = ['id="counts"', 'data-i18n="Event log"', 'data-i18n="Failures &amp; retries"', 'data-i18n="Legend"']
+  const sectionOrder = ['id="counts"', 'data-i18n="Event log"', 'data-i18n="Failures &amp; retries"']
   assert.deepEqual(sectionOrder.map((part) => html.indexOf(part)), [...sectionOrder.map((part) => html.indexOf(part))].sort((a, b) => a - b))
 
   for (const [count, density] of [[6, 'detailed'], [48, 'compact'], [101, 'dense']]) {
@@ -1004,7 +1036,7 @@ test('Gravidade cards and agent panels show measured activity in the compact das
   assert.match(html, /<details class="run-menu" id="runMenu"/)
   assert.match(html, /<summary class="run-trigger"/)
   assert.doesNotMatch(html, /<select[^>]+id="runSelect"/)
-  assert.match(html, /<details class="legend-box" data-prumo-guide-anchor="legend">/)
+  assert.doesNotMatch(html, /<details class="legend-box" data-prumo-guide-anchor="legend">/)
   assert.match(html, /#eventsBox \{ display: flex; flex: 1 1 0;[^}]*min-height: 64px; \}/, 'the event log gives way when the legend opens')
   assert.match(html, /#events \{ flex: 1 1 0; min-height: 40px; overflow-y: auto; \}/, 'and scrolls inside itself')
   assert.match(html, /#pop \{[^}]*width: min\(472px, calc\(100vw - 24px\)\)/, '472px as designed, never wider than a phone')
@@ -1823,7 +1855,7 @@ test('o tour só resume o ganho real do #39 com run concluída e medição ínte
   const measured = JSON.parse(ui.run('JSON.stringify(getCompletedRunSummary())'))
   assert.equal(measured.completed, true)
   assert.equal(measured.measurementComplete, true)
-  assert.equal(measured.text, 'Sem coordenação do prumo: 20s · Com prumo: 20s · Economia aferida: 0s · Fator de paralelismo: 1,00×')
+  assert.equal(measured.text, 'Sem prumo: 9m20 · Fator de paralelismo: 1,00× · Com prumo: 20s · Economia aferida: 0s · Economia estimada: 9m00')
 
   ui.run("SELECTED_ROOT = 'root-b'; SELECTED_RUN = 'loading'; CURRENT_ROOT = 'root-b'; CURRENT_RUN = 'loading'")
   assert.equal(ui.run('selectedRunStateAvailable()'), false, 'A não fica disponível enquanto a seleção aponta para B')
@@ -2129,15 +2161,14 @@ test('the legend summary aligns its label and a drawn chevron', () => {
   assert.match(html, /\.legend-box summary h3 \{ margin: 0; line-height: 1; \}/)
   assert.match(html, /\.legend-box summary::after \{ content: ''; flex: none; width: 6px; height: 6px;/)
   assert.doesNotMatch(html, /\.legend-box summary::after \{ content: '⌄'/)
-  assert.match(html, /<details class="legend-box"[^>]*>\s*<summary><h3><span data-i18n="Legend">Legend<\/span><\/h3><\/summary>/)
+  assert.match(html, /<details class="legend-box" id="failuresBox">/)
 })
 
-test('falhas ficam recolhidas acima da legenda e as cores das funcoes permanecem visiveis', () => {
+test('falhas ficam recolhidas e as cores das funcoes permanecem visiveis sem legenda', () => {
   assert.match(html, /<details class="legend-box" id="failuresBox">\s*<summary><h3><span data-i18n="Failures &amp; retries"/)
   const failure = html.indexOf('<details class="legend-box" id="failuresBox">')
-  const legend = html.indexOf('<details class="legend-box" data-prumo-guide-anchor="legend">')
-  assert.ok(failure > html.indexOf('id="eventsBox"') && failure < legend)
-  assert.doesNotMatch(html.slice(failure, legend), /\bopen(?:=|\s|>)/)
+  assert.ok(failure > html.indexOf('id="eventsBox"'))
+  assert.doesNotMatch(html.slice(failure, html.indexOf('</details>', failure)), /\bopen(?:=|\s|>)/)
   assert.match(html, /#statusBox \.count-label \{[^}]*color: inherit/)
 })
 

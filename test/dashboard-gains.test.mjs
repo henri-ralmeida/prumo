@@ -25,10 +25,13 @@ test('START e STOP incluem discussão e planejamento de fase uma vez e a barra b
   assert.equal(gain.savingsMs, 10000)
   assert.equal(gain.combinedEstimateMs, 190000)
   const rendered = renderGainPanel(gain, localizer('pt-BR'), fmtMs, esc, 'pt-BR')
-  const base = rendered.match(/class="seq" style="width:([\d.]+)%"><\/i><i class="est" style="width:([\d.]+)%"/)
-  assert.ok(base)
-  assert.equal(Number(base[1]) + Number(base[2]), 100)
-  assert.match(rendered, /Sem coordenação do prumo/)
+  assert.match(rendered, /class="seq" style="width:100%"/)
+  const lower = rendered.match(/class="par" style="width:([\d.]+)%"><\/i><i class="save" style="width:([\d.]+)%"><\/i><i class="est" style="width:([\d.]+)%"/)
+  assert.ok(lower)
+  assert.equal(lower.slice(1).reduce((sum, width) => sum + Number(width), 0), 100)
+  assert.match(rendered, /Sem prumo<\/span><strong>3m40<\/strong>/)
+  const labels = ['Sem prumo', 'Fator de paralelismo', 'Com prumo', 'Economia aferida', 'Economia estimada']
+  assert.deepEqual(labels.map(label => rendered.indexOf(`<span>${label}</span>`)).every((index, position, positions) => index >= 0 && (position === 0 || index > positions[position - 1])), true)
 })
 
 test('ganho medido soma o trabalho por tarefa e une intervalos paralelos, sem contar bloqueios', () => {
@@ -170,7 +173,7 @@ test('sem manualEstimate não há estimativa humana nem minutos editáveis por e
     const html = renderGainPanel(gain, localizer(lang), fmtMs, esc, lang)
     assert.doesNotMatch(html, /<input|<button|data-gain-minutes|gain-human|Human estimate|Estimativa humana/)
     assert.match(html, /Estimated savings|Economia estimada/)
-    assert.match(html, /sum of recorded agent intervals|soma dos intervalos registrados dos agentes/)
+    assert.match(html, /measured sequential work plus estimated manual coordination|trabalho sequencial aferido.*coordenação manual estimada/)
     assert.match(html, /union of recorded activity intervals|união dos intervalos de atividade registrados/)
   }
 })
@@ -214,7 +217,8 @@ test('fase gera um comando de planejamento e ganho combinado nunca é apresentad
   assert.match(html, /Premissa fixa de 3 minutos por comando/)
   assert.match(html, /Com prumo/)
   const widths = [...html.matchAll(/width:([\d.]+)%/g)].map(match => Number(match[1]))
-  assert.ok(Math.abs(widths.slice(2, 5).reduce((sum, width) => sum + width, 0) - 100) < 0.02, 'as parcelas usam a mesma escala sem exceder a barra')
+  assert.equal(widths[0], 100, 'Sem prumo ocupa toda a base')
+  assert.ok(Math.abs(widths.slice(1, 4).reduce((sum, width) => sum + width, 0) - 100) < 0.02, 'as parcelas usam a mesma escala sem exceder a barra')
 })
 
 test('manualEstimate por tarefa soma minutos válidos, ignora o resto em silêncio e sai rotulado como estimativa', () => {

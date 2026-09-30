@@ -4,11 +4,16 @@ Historical tag and commit corrections are documented in [Release history recover
 
 ## 2.2.1 — 2026-09-30
 
-- Mostre a contagem de concluídas sobre o total de tarefas no resumo lateral, por exemplo `Concluído 23/29`.
-- Inclua tarefas puladas no denominador e mantenha os totais do plano quando um filtro estiver ativo.
+- Mostre somente concluídas sobre tarefas válidas no resumo lateral e no board: 13 concluídas e uma pulada mostram `13/13`.
+- Exclua tarefas puladas do denominador e mantenha os totais do plano quando um filtro estiver ativo, em todas as densidades do board.
 - Destaque a Economia estimada com seu tempo e a indicação de cálculo baseado na coordenação manual.
 - Exiba Discussão, Planejamento, Execução e Revisão nessa ordem, com as cores dos estados.
 - Separe despacho de atividade: somente START/STOP explícitos medem novas rodadas; registros antigos insuficientes continuam não aferidos.
+- Compare Sem prumo e Com prumo na mesma escala, distinguindo a parcela estimada pelo tracejado sem duplicar a economia aferida.
+- Preserve a lista de comandos expandida durante atualizações e substitua a legenda separada pelas cores dos contadores.
+- Apresente um guia interativo com o visual do board e ensine a criar e aprovar o plano no harness antes de chamar a skill Prumo.
+- Oriente a primeira abertura destacando o Guia e permita simular essa experiência por `?onboarding=first-run`, preservando os planos existentes.
+- Alinhe as colunas de comandos sem divisória na primeira coluna de cada linha.
 
 ## 2.2.0 — 2026-09-30
 

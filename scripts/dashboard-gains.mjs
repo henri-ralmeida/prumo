@@ -156,20 +156,30 @@ export function renderGainPanel(gain, tr, fmtMs, esc, locale = 'en') {
   const human = gain.humanEstimateMs == null ? ''
     : `<div class="gain-human" data-kind="estimate"><span class="gain-badge">${esc(tr('estimate · not measured'))}</span>
       <p><b>${esc(tr('Human estimate'))}: ${esc(fmtMs(gain.humanEstimateMs))}</b> ${esc(tr('Sum of the manual estimates recorded in the plan for {0} of {1} tasks. It is not a measurement.', gain.humanEstimateTasks, gain.countedTasks))}</p>${humanBars}</div>`
-  // A escala compara trabalho sequencial mais coordenação manual estimada; o tracejado distingue a premissa.
-  const pct = ratio((gain.oneAtATimeMs ?? 0) + (gain.manualCoordinationMs ?? 0))
+  // A base sem Prumo soma trabalho sequencial aferido e coordenação manual estimada.
+  // O ganho estimado já inclui o aferido; a barra inferior decompõe a base sem duplicá-lo.
+  const baselineMs = gain.oneAtATimeMs == null ? null : gain.oneAtATimeMs + (gain.manualCoordinationMs ?? 0)
+  const pct = ratio(baselineMs ?? 0)
+  const parallelPct = Number(pct(gain.withPrumoMs))
+  const measuredPct = Number(pct(gain.savingsMs))
+  const estimatedPct = Math.max(0, 100 - parallelPct - measuredPct).toFixed(2)
   const bars = gain.oneAtATimeMs == null || !(gain.oneAtATimeMs > 0) ? '' : `<div class="gain-bars" aria-hidden="true">
-      <div class="gbar"><span>${esc(tr('One agent at a time'))}</span><span class="gbar-track"><i class="seq" style="width:${pct(gain.oneAtATimeMs)}%"></i><i class="est" style="width:${gain.manualCoordinationMs > 0 ? (100 - Number(pct(gain.oneAtATimeMs))).toFixed(2) : '0'}%"></i></span></div>
-      <div class="gbar"><span>${esc(tr('With Prumo'))}</span><span class="gbar-track"><i class="par" style="width:${pct(gain.withPrumoMs)}%"></i><i class="save" style="width:${pct(gain.savingsMs)}%"></i><i class="est" style="width:${pct(gain.manualCoordinationMs)}%"></i></span></div>
+      <div class="gbar"><span>${esc(tr('Without Prumo'))}</span><span class="gbar-track"><i class="seq" style="width:100%"></i></span></div>
+      <div class="gbar"><span>${esc(tr('With Prumo'))}</span><span class="gbar-track"><i class="par" style="width:${parallelPct.toFixed(2)}%"></i><i class="save" style="width:${measuredPct.toFixed(2)}%"></i><i class="est" style="width:${estimatedPct}%"></i></span></div>
+    </div><div class="gain-legend">
+      <span><i class="seq"></i>${esc(tr('Without Prumo'))}</span>
+      <span><i class="par"></i>${esc(tr('With Prumo'))}</span>
+      <span><i class="save"></i>${esc(tr('Measured savings'))}</span>
+      <span><i class="est"></i>${esc(tr('Estimated calculation based on manual coordination'))}</span>
     </div>`
   return `<section class="gcard gain" id="gainPanel" aria-labelledby="gainTitle">
     <div class="gh"><b id="gainTitle">${esc(tr('Parallel gain'))}</b><span class="gain-status${gain.runActive ? ' live' : ''}">${esc(status)}</span></div>
     <div class="gain-grid">
-      <div><span>${esc(tr('One agent at a time'))}</span><strong>${shown(gain.oneAtATimeMs)}</strong><small>${esc(tr('sum of recorded agent intervals'))}</small></div>
+      <div><span>${esc(tr('Without Prumo'))}</span><strong>${shown(baselineMs)}</strong><small>${esc(tr('measured sequential work plus estimated manual coordination'))}</small></div>
+      <div><span>${esc(tr('Parallel factor'))}</span><strong>${esc(factor)}</strong><small>${esc(tr('measured activity only'))}</small></div>
       <div><span>${esc(tr('With Prumo'))}</span><strong>${shown(gain.withPrumoMs)}</strong><small>${esc(tr('union of recorded activity intervals; overlaps count once'))}</small></div>
       <div class="gain-save"><span>${esc(tr('Measured savings'))}</span><strong>${shown(gain.savingsMs)}</strong></div>
-      <div><span>${esc(tr('Parallel factor'))}</span><strong>${esc(factor)}</strong></div>
-      <div class="gain-save"><span>${esc(tr('Estimated savings'))}</span><strong>${shown(gain.combinedEstimateMs)}</strong><small>${esc(tr('Estimated calculation based on manual coordination'))}</small></div>
+      <div class="gain-save gain-estimate"><span>${esc(tr('Estimated savings'))}</span><strong>${shown(gain.combinedEstimateMs)}</strong><small>${esc(tr('Estimated calculation based on manual coordination'))}</small></div>
     </div>
     ${bars}
     <p class="gline"><strong>${esc(tr('Fixed assumption of 3 minutes per command'))}</strong> · ${esc(fmtMs(gain.manualCoordinationMs ?? 0))} · ${esc(tr('{0} commands', gain.commandTotal ?? 0))}</p>
