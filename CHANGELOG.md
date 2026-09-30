@@ -4,6 +4,7 @@ Historical tag and commit corrections are documented in [Release history recover
 
 ## 2.3.0 — 2026-09-30
 
+- Inicie o dashboard diretamente pelo comando no Windows para registrar seu PID e confirmar a identidade do processo; preserve o registro de inicialização no próximo login.
 - Instale Prumo separado do graph-foreman, sem importar automaticamente seus planos. Copie dados de versões antigas comprovadas do Prumo sem apagar a pasta original; a reversão da instalação preserva as runs copiadas.
 - Mostre No Prumo nos estados concluídos e No prumo em amarelo nos indicadores, barras e legenda dos resultados.
 - Preserve os totais de tarefas válidas, excluindo as puladas, e conte somente comandos de Planejamento, Execução e Revisão na estimativa de coordenação manual.

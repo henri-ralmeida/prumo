@@ -1142,5 +1142,6 @@
   "Keep task states, colors and synchronized activity indicators consistent in the dashboard and interactive guide": "Mantenha estados, cores e indicadores de atividade sincronizados no dashboard e no guia interativo",
   "Navigate smoothly to tasks and phases without restarting the task card opening animation": "Navegue suavemente até tarefas e fases sem reiniciar a animação de abertura do card",
   "Guide new users through roles, dashboard, results and approved planning before invoking Prumo": "Oriente novos usuários pelas entidades, dashboard, resultados e aprovação do plano antes de invocar Prumo",
-  "Keep graph-foreman installations separate and copy older Prumo data without deleting the original directory": "Mantenha graph-foreman separado e copie dados de versões antigas do Prumo sem apagar a pasta original"
+  "Keep graph-foreman installations separate and copy older Prumo data without deleting the original directory": "Mantenha graph-foreman separado e copie dados de versões antigas do Prumo sem apagar a pasta original",
+  "Start the dashboard directly on Windows to record its process identity while preserving startup at login": "Inicie o dashboard diretamente no Windows para registrar a identidade do processo e preserve a inicialização no login"
 }
