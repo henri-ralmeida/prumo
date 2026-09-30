@@ -1456,7 +1456,7 @@ test('the hub (orchestrator and roles) stays inside the viewport while the board
   assert.doesNotMatch(struct, /s-sway|s-bob/)
   assert.match(html, /svg#edges \.s-rail \{ stroke-linecap: round; \}/)
   assert.match(html, /svg#edges \.s-rail\.live \{ stroke-dasharray: 3 6; \}/)
-  assert.match(html, /svg#edges \.s-end-dot\.live \{[^}]*animation: endDotPulse/)
+  assert.match(html, /svg#edges \.s-end-dot\.live \{[^}]*animation: activity-spin/)
   assert.doesNotMatch(html, /@keyframes sway/)
   assert.match(html, /#hub \{ position: absolute; top: 0; left: 0; z-index: 4;/)
   assert.match(html, /#hub\.stuck \.hub-shade \{ display: block; background: var\(--bg\); border-bottom: 1px solid var\(--line\);/,
@@ -1578,7 +1578,7 @@ test('expanding the popover pins it, switches to detail and closing resets it', 
   assert.equal(ui.nodes.get('#popScrim').classList.contains('on'), false)
 })
 
-test('resultados separam ganho, atividade por papel e estimativa de todos os comandos', () => {
+test('resultados separam ganho, atividade por papel e estimativa dos tres papeis', () => {
   const state = graphState(3, 3)
   state.tasks.T001.summary = 'A <summary>'
   state.tasks.T001.attempts = [{ n: 1, agent: 'exec-a', startedAt: instant(1), reviewStartedAt: instant(2), endedAt: instant(3), result: 'passed' },
@@ -1593,11 +1593,11 @@ test('resultados separam ganho, atividade por papel e estimativa de todos os com
     assert.equal((results.match(/<section /g) ?? []).length, 3, 'o painel mostra ganho, atividade por papel e estimativa manual')
     assert.doesNotMatch(results, /gantt|class="grow|result-task|gcard gate|gcard atime|class="rhead|class="insights|A &lt;summary&gt;/)
     assert.doesNotMatch(results, lang === 'en' ? /Reviewer gate|Timeline|Agent time|Task detail/ : /Portão do revisor|Linha do tempo|Tempo dos agentes|Detalhe da tarefa/)
-    // Start, review e retry são três comandos, sem duplicar a tentativa reiniciada.
+    // Apenas start e review entram na premissa; a coordenação de retry fica fora.
     assert.match(results, lang === 'en'
-      ? /you would spend about <strong>9m00<\/strong> just coordinating the agents \(3 min per command × 3 commands\)/
-      : /gastaria cerca de <strong>9m00<\/strong> só coordenando os agentes \(3 min por comando × 3 comandos\)/)
-    assert.match(results, lang === 'en' ? /ESTIMATE · not a measurement/ : /ESTIMATIVA · não é medição/)
+      ? /you would spend about <strong>6m00<\/strong> just coordinating the agents \(3 min per command × 2 commands\)/
+      : /gastaria cerca de <strong>6m00<\/strong> só coordenando os agentes \(3 min por comando × 2 comandos\)/)
+    assert.doesNotMatch(results, /gain-status|gain-badge/)
     assert.doesNotMatch(results, /<input|<button|data-gain-minutes/, 'the 3-minute assumption is fixed, with no editable fields')
 
     const key = (value) => ui.dispatchDocument('keydown', { key: value, target: { tagName: 'BODY' }, preventDefault() {} })
@@ -1781,7 +1781,7 @@ test('task planning envelopes stay unmeasured and are subtracted from execution 
   assert.equal(result.per.find((t) => t.id === 'P').queue, null)
   assert.equal(result.per.find((t) => t.id === 'L').queue, 10000)
   ui.run('FULL_EVENTS = inputEvents; renderResults(input)', { input: state, inputEvents: events })
-  assert.match(ui.nodes.get('#results').innerHTML, /so far/, 'a live run is labelled as partial in the gain card')
+  assert.doesNotMatch(ui.nodes.get('#results').innerHTML, /gain-status|so far/)
 })
 
 test('results count shared phase planning once and keep pending runs live', () => {
@@ -1828,7 +1828,7 @@ test('gain card omits a long phase-planning envelope without active telemetry', 
   const cardEnd = results.indexOf('</section>', cardStart)
   const measured = results.slice(cardStart, cardEnd)
   assert.ok(cardStart >= 0)
-  assert.match(measured, /até agora/)
+  assert.doesNotMatch(measured, /gain-status|até agora/)
   assert.match(measured, /Não aferido/)
   assert.doesNotMatch(measured, /115h/)
   assert.doesNotMatch(results, /115h|115:23/)
@@ -1855,7 +1855,7 @@ test('o tour só resume o ganho real do #39 com run concluída e medição ínte
   const measured = JSON.parse(ui.run('JSON.stringify(getCompletedRunSummary())'))
   assert.equal(measured.completed, true)
   assert.equal(measured.measurementComplete, true)
-  assert.equal(measured.text, 'Sem prumo: 9m20 · Fator de paralelismo: 1,00× · Com prumo: 20s · Economia aferida: 0s · Economia estimada: 9m00')
+  assert.equal(measured.text, 'Sem prumo: 3m20 · Fator de paralelismo: 1,00× · Com prumo: 20s · Economia aferida: 0s · Economia estimada: 3m00')
 
   ui.run("SELECTED_ROOT = 'root-b'; SELECTED_RUN = 'loading'; CURRENT_ROOT = 'root-b'; CURRENT_RUN = 'loading'")
   assert.equal(ui.run('selectedRunStateAvailable()'), false, 'A não fica disponível enquanto a seleção aponta para B')
@@ -2022,9 +2022,25 @@ test('o ponto final considera todas as tarefas mesmo sem fases ou com tarefas fo
   assert.equal(markerY, ui.run('LAST_POS.B.y + LAST_METRICS.nodeH / 2'), 'o marcador permanece junto da tarefa pendente real')
 })
 
-test('a bolinha ativa cobre os trilhos durante o pulso, com e sem fases', () => {
+test('spinners novos compartilham o relogio sem reiniciar os existentes', () => {
+  const ui = dashboard('pt-BR')
+  const first = { animationName: 'activity-spin', startTime: 75 }
+  const other = { animationName: 'slide', startTime: 100 }
+  const animations = [first, other]
+  ui.run('document.getAnimations = () => inputAnimations; syncActivitySpinners()', { inputAnimations: animations })
+  assert.equal(first.startTime, 0)
+  assert.equal(other.startTime, 100)
+  first.startTime = 20
+  const added = { animationName: 'activity-spin', startTime: 500 }
+  animations.push(added)
+  ui.run('syncActivitySpinners()')
+  assert.equal(first.startTime, 20, 'o indicador existente nao e reiniciado')
+  assert.equal(added.startTime, 0, 'o novo indicador usa a mesma origem temporal')
+})
+
+test('o spinner ativo cobre os trilhos, com e sem fases', () => {
   assert.match(html, /svg#edges \.s-end-mask \{ fill: var\(--bg\); stroke: none; \}/)
-  assert.match(html, /@keyframes endDotPulse \{ 50% \{ opacity: \.5; \} \}/)
+  assert.match(html, /@keyframes activity-spin \{ to \{ transform: rotate\(360deg\); \} \}/)
   assert.doesNotMatch(html, /svg#edges \.s-end-dot\.live \{[^}]*(?:animation: beat|transform:|scale\()/)
   for (const phases of [[], [{ id: 'P1', title: 'Primeira' }, { id: 'P2', title: 'Segunda' }]]) {
     const ui = dashboard('pt-BR')

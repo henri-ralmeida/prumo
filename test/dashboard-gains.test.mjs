@@ -17,6 +17,29 @@ const fmtMs = (value) => {
 const localizer = (lang) => createTranslator(messages, lang)
 const spans = (...values) => values.map(([kind, from, to]) => [kind, from, to])
 
+test('67 disparos elegiveis estimam 3h21 e comandos excluidos nao alteram barras nem economia', () => {
+  const analysis = { per: [{ spans: spans(['exec', 0, 60000]) }, { spans: spans(['review', 0, 60000]) }] }
+  const byCommand = { start: 33, review: 27, 'plan-task': 4, 'plan-phase': 3, 'begin-discussion': 8, retry: 8, status: 162 }
+  const options = { commandMetrics: { complete: true, byCommand } }
+  const before = JSON.stringify(options)
+  const gain = calculateGain(analysis, {}, true, options)
+  assert.equal(commandMetricsForRun({}, options).total, 245, 'a auditoria original continua preservada')
+  assert.equal(gain.commandTotal, 67)
+  assert.deepEqual(gain.commandCounts, { planning: 7, execution: 33, review: 27 })
+  assert.equal(gain.manualCoordinationMs, 201 * 60000)
+  assert.equal(gain.savingsMs, 60000)
+  assert.equal(gain.combinedEstimateMs, 202 * 60000)
+  assert.equal(JSON.stringify(options), before)
+  const moreExcluded = calculateGain(analysis, {}, true, { commandMetrics: { complete: true, byCommand: { ...byCommand, retry: 9999, status: 9999, note: 9999, 'begin-discussion': 9999 } } })
+  assert.equal(renderGainPanel(gain, localizer('pt-BR'), fmtMs, esc), renderGainPanel(moreExcluded, localizer('pt-BR'), fmtMs, esc), 'comandos excluídos não afetam nenhum valor ou segmento')
+  const manual = renderManualCoordination(gain, localizer('pt-BR'), fmtMs, esc)
+  assert.match(manual, /<strong>3h21<\/strong>/)
+  assert.match(manual, /Comandos de planejamento[^]*Comandos de execução[^]*Comandos de revisão/)
+  assert.equal((manual.match(/<div><span>/g) ?? []).length, 3)
+  assert.doesNotMatch(manual, /gain-badge|retry|status|begin-discussion|novas tentativas|Demais comandos|Comandos de discussão/)
+  for (const anyLive of [false, true]) assert.doesNotMatch(renderGainPanel({ ...gain, runActive: anyLive }, localizer('pt-BR'), fmtMs, esc), /gain-status|até agora|execução concluída/)
+})
+
 test('START e STOP incluem discussão e planejamento de fase uma vez e a barra base soma 100%', () => {
   const gain = calculateGain({ per: [{ id: 'A', spans: spans(['discussion', 0, 10000], ['exec', 20000, 30000]) }, { id: 'B', spans: spans(['review', 20000, 30000]) }],
     sharedSpans: spans(['planning', 10000, 20000]) }, {}, true, { commandMetrics: { byCommand: { start: 1 }, complete: true } })
@@ -89,7 +112,7 @@ test('envelope de fase de 115h e total legado não entram; caminho crítico cont
   const html = renderGainPanel(gain, localizer('en'), fmtMs, esc, 'en')
   assert.doesNotMatch(html, /115h/)
   assert.match(html, /20s/)
-  assert.match(html, /so far/)
+  assert.doesNotMatch(html, /gain-status|so far|Run completed/)
   assert.match(html, /unmeasured periods are omitted/)
 })
 
@@ -125,10 +148,10 @@ test('revisão aferida em 20s continua em 20s mesmo se done veio horas depois', 
   assert.equal(gain.criticalPathMs, 20_000)
   const html = renderGainPanel(gain, localizer('en'), fmtMs, esc, 'en')
   assert.match(html, /20s/)
-  assert.match(html, /completed/)
+  assert.doesNotMatch(html, /gain-status|Run completed/)
   assert.doesNotMatch(html, /4h/)
   const htmlPt = renderGainPanel(gain, localizer('pt-BR'), fmtMs, esc, 'pt-BR')
-  assert.match(htmlPt, /<span class="gain-status">execução concluída<\/span>/)
+  assert.doesNotMatch(htmlPt, /gain-status|execução concluída/)
   assert.doesNotMatch(htmlPt, />concluídas<\/span>/)
 })
 
@@ -145,7 +168,7 @@ test('lacuna de atividade torna caminho crítico não aferido mesmo com históri
   const html = renderGainPanel(gain, localizer('pt-BR'), fmtMs, esc, 'pt-BR')
   assert.doesNotMatch(html, /115h|caminho crítico/i)
 })
-test('sem atividade suficiente mostra não aferido e não fabrica economia, mantendo até agora na run ativa', () => {
+test('sem atividade suficiente mostra não aferido e não fabrica economia, sem selo na run ativa', () => {
   const gain = calculateGain({
     per: [{ id: 'T', agentTime: 0, unmeasured: true, spans: [] }],
     phasePlanning: [{ elapsed: 115 * 60 * 60_000, duration: 0 }],
@@ -158,7 +181,7 @@ test('sem atividade suficiente mostra não aferido e não fabrica economia, mant
   assert.equal(gain.factor, null)
   assert.equal(gain.humanEstimateMs, null)
   const html = renderGainPanel(gain, localizer('pt-BR'), fmtMs, esc, 'pt-BR')
-  assert.match(html, /até agora/)
+  assert.doesNotMatch(html, /gain-status|até agora/)
   assert.match(html, /Não aferido/)
   assert.match(html, /não há atividade de agente registrada suficiente/i)
   assert.doesNotMatch(html, /115h|0s/)
@@ -178,7 +201,7 @@ test('sem manualEstimate não há estimativa humana nem minutos editáveis por e
   }
 })
 
-test('todos os comandos registrados contam uma vez e consultas usam os mesmos três minutos', () => {
+test('apenas disparos de planejamento execução e revisão entram na estimativa', () => {
   const options = { events: [
     { type: 'task_start', at: '2026-01-01T00:00:00Z' },
     { type: 'task_validation_started', at: '2026-01-01T00:01:00Z' },
@@ -188,13 +211,13 @@ test('todos os comandos registrados contam uma vez e consultas usam os mesmos tr
     { type: 'task_note', at: '2026-01-01T00:03:01Z' },
   ], commandMetrics: { startedAt: '2026-01-01T00:03:00Z', complete: false, byCommand: { note: 1, status: 2, 'plan-phase': 1, 'begin-discussion': 1, validate: 1 } } }
   const gain = calculateGain({ per: [{ spans: [['exec', 0, 60_000]] }] }, {}, true, options)
-  assert.equal(gain.commandTotal, 9)
-  assert.deepEqual(gain.commandCounts, { execution: 1, review: 0, planning: 1, discussion: 1, retry: 1, technical: 5 })
-  assert.equal(gain.commandsByName.note, 1, 'o evento moderno não duplica o comando auditado')
-  assert.equal(gain.commandsByName.validate, 2, 'o evento acompanhante não conta como outro comando')
-  assert.equal(gain.manualCoordinationMs, 27 * 60_000)
+  assert.equal(gain.commandTotal, 2)
+  assert.deepEqual(gain.commandCounts, { planning: 1, execution: 1, review: 0 })
+  assert.equal(gain.commandsByName.note, undefined, 'notas não contribuem para a estimativa')
+  assert.equal(gain.commandsByName.validate, undefined, 'comandos técnicos ficam fora da estimativa')
+  assert.equal(gain.manualCoordinationMs, 6 * 60_000)
   assert.equal(gain.savingsMs, 0)
-  assert.equal(gain.combinedEstimateMs, 27 * 60_000)
+  assert.equal(gain.combinedEstimateMs, 6 * 60_000)
   assert.equal(gain.commandsComplete, false)
 })
 
@@ -208,12 +231,12 @@ test('registro completo mantém comandos com falha e não duplica tentativas sem
 
 test('fase gera um comando de planejamento e ganho combinado nunca é apresentado como medição', () => {
   const gain = calculateGain({ per: [{ spans: [['exec', 0, 60_000]] }, { spans: [['exec', 0, 60_000]] }] }, {}, true, { events: [{ type: 'phase_planning', at: '2026-01-01T00:00:00Z' }, { type: 'task_note', at: '2026-01-01T00:01:00Z' }] })
-  assert.equal(gain.commandTotal, 2)
+  assert.equal(gain.commandTotal, 1)
   assert.equal(gain.commandCounts.planning, 1)
   assert.equal(gain.savingsMs, 60_000)
-  assert.equal(gain.combinedEstimateMs, 420_000)
+  assert.equal(gain.combinedEstimateMs, 240_000)
   const html = renderGainPanel(gain, localizer('pt-BR'), fmtMs, esc, 'pt-BR')
-  assert.match(html, /Economia estimada<\/span><strong>7m00<\/strong>/)
+  assert.match(html, /Economia estimada<\/span><strong>4m00<\/strong>/)
   assert.match(html, /Premissa fixa de 3 minutos por comando/)
   assert.match(html, /Com prumo/)
   const widths = [...html.matchAll(/width:([\d.]+)%/g)].map(match => Number(match[1]))
@@ -266,7 +289,7 @@ test('ganho com bloqueio e tarefas paralelas: bloqueio fora das contas, paralelo
   assert.equal(gain.criticalPathMs, 20_000)
   assert.equal(gain.runActive, false)
   const html = renderGainPanel(gain, localizer('en'), fmtMs, esc, 'en')
-  assert.match(html, /Run completed/)
+  assert.doesNotMatch(html, /gain-status|Run completed/)
   assert.match(html, /class="gain-bars"/)
   assert.match(html, /<i class="par" style="width:87\.50%"><\/i><i class="save" style="width:12\.50%"><\/i>/, 'bars share one scale')
 })
@@ -313,28 +336,27 @@ test('coordenação manual estima 3 min fixos por comando, separada da economia 
     B: { state: 'done', attempts: [{}], validations: [{ by: 'review' }, { by: 'executor' }] },
   }
   const gain = calculateGain(analysis, tasks, true)
-  assert.deepEqual(gain.commandCounts, { execution: 2, review: 3, planning: 0, discussion: 0, retry: 2, technical: 0 }, 'retry é um único comando; a tentativa reiniciada não duplica o disparo')
-  assert.equal(gain.commandTotal, 7)
+  assert.deepEqual(gain.commandCounts, { planning: 0, execution: 2, review: 3 }, 'a coordenação de retentativas não entra na estimativa')
+  assert.equal(gain.commandTotal, 5)
   assert.equal(gain.minutesPerCommand, 3)
-  assert.equal(gain.manualCoordinationMs, 21 * 60_000)
-  assert.equal(gain.retryScenarioMs, 2 * 9 * 60_000)
+  assert.equal(gain.manualCoordinationMs, 15 * 60_000)
+  assert.equal(gain.retryScenarioMs, undefined)
   assert.equal(gain.savingsMs, 60_000, 'the estimate never changes the measured savings')
-  for (const [lang, lead, badge, note] of [
-    ['en', /If you had to dispatch and re-dispatch every command by hand, you would spend about <strong>21m00<\/strong> just coordinating the agents \(3 min per command × 7 commands\)\./,
-      /ESTIMATE · not a measurement/, /<strong>Fixed assumption of 3 minutes per command<\/strong>/],
-    ['pt-BR', /Se você tivesse que disparar e redisparar cada comando manualmente, gastaria cerca de <strong>21m00<\/strong> só coordenando os agentes \(3 min por comando × 7 comandos\)\./,
-      /ESTIMATIVA · não é medição/, /<strong>Premissa fixa de 3 minutos por comando<\/strong>/],
+  for (const [lang, lead, note] of [
+    ['en', /If you had to dispatch and re-dispatch every command by hand, you would spend about <strong>15m00<\/strong> just coordinating the agents \(3 min per command × 5 commands\)\./,
+      /<strong>Fixed assumption of 3 minutes per command<\/strong>/],
+    ['pt-BR', /Se você tivesse que disparar e redisparar cada comando manualmente, gastaria cerca de <strong>15m00<\/strong> só coordenando os agentes \(3 min por comando × 5 comandos\)\./,
+      /<strong>Premissa fixa de 3 minutos por comando<\/strong>/],
   ]) {
     const html = renderManualCoordination(gain, localizer(lang), fmtMs, esc)
     assert.match(html, lead)
-    assert.match(html, badge)
+    assert.doesNotMatch(html, /class="gain-badge"/)
     assert.match(html, note)
-    assert.match(html, /class="gline manual-scenario">[^<]*18m00/)
-    assert.match(html, lang === 'en' ? /<b>2 commands<\/b>[\s\S]*Retry coordination<\/span><b>2 commands<\/b>/
-      : /<b>2 comandos<\/b>[\s\S]*Coordenação de novas tentativas<\/span><b>2 comandos<\/b>/)
-    assert.match(html, /<td>retry<\/td>/, 'o detalhamento conserva o nome do comando de terminal')
+    assert.doesNotMatch(html, /manual-scenario/)
+    assert.doesNotMatch(html, /Retry coordination|Coordenação de novas tentativas|Discussion command|Comandos de discussão|Other commands|Demais comandos/)
+    assert.doesNotMatch(html, /<td>retry<\/td>/)
     assert.doesNotMatch(html, /<input|<button|data-gain-minutes/, 'no editable assumptions and no +/- buttons')
-    assert.match(renderGainPanel(gain, localizer(lang), fmtMs, esc, lang), /21m00/, 'a barra principal inclui a estimativa identificada')
+    assert.match(renderGainPanel(gain, localizer(lang), fmtMs, esc, lang), /15m00/, 'a barra principal inclui a estimativa identificada')
   }
 
   const single = calculateGain({ per: [] }, { A: { attempts: [{}] } }, true)
@@ -345,7 +367,7 @@ test('coordenação manual estima 3 min fixos por comando, separada da economia 
   assert.match(empty, /No command recorded yet; there is nothing to estimate\./)
   assert.match(renderManualCoordination(calculateGain({ per: [] }, {}, true), localizer('pt-BR'), fmtMs, esc),
     /Nenhum comando registrado ainda/)
-  assert.doesNotMatch(empty, /manual-counts/)
+  assert.equal((empty.match(/<div><span>/g) ?? []).length, 3, 'os três papéis aparecem também quando não há comandos')
 
   const hostile = (key, ...values) => key === 'Manual coordination estimate' ? '<script>bad()</script>' : localizer('en')(key, ...values)
   assert.doesNotMatch(renderManualCoordination(gain, hostile, fmtMs, esc), /<script>bad/)

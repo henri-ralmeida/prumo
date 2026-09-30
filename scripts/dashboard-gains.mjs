@@ -99,15 +99,13 @@ export function calculateGain(analysis, tasks = {}, eventsComplete = false, opti
   const humanComparedMs = measured && estimatedIds.size > 0 && sameTaskTimes.length === estimatedIds.size
     ? sameTaskTimes.reduce((total, [, ms]) => total + ms, 0) : null
 
-  // Coordenação manual: todos os comandos registrados usam os mesmos três minutos.
+  // A premissa manual considera somente disparos de planejamento, execução e revisão.
   // Nunca entra na economia aferida; é um cenário, não uma medição.
   const minutesPerCommand = 3
-  // Cada nova tentativa evitada poupa três comandos: a reexecução, a revisão dela e a própria coordenação do retry.
-  const commandsPerRetry = 3
   const commands = commandMetricsForRun(tasks, options)
-  const commandCounts = commands.counts
-  const commandTotal = commands.total
-  const retryCount = commandCounts.retry
+  const commandCounts = { planning: commands.counts.planning, execution: commands.counts.execution, review: commands.counts.review }
+  const commandTotal = commandCounts.planning + commandCounts.execution + commandCounts.review
+  const commandsByName = Object.fromEntries(Object.entries(commands.byCommand).filter(([name]) => ['plan-task', 'plan-phase', 'start', 'review'].includes(name)))
 
   return {
     oneAtATimeMs: measured ? oneAtATimeMs : null,
@@ -125,11 +123,10 @@ export function calculateGain(analysis, tasks = {}, eventsComplete = false, opti
     minutesPerCommand,
     commandCounts,
     commandTotal,
-    commandsByName: commands.byCommand,
+    commandsByName,
     commandsComplete: historyComplete && commands.complete,
     combinedEstimateMs: measured ? Math.max(0, oneAtATimeMs - withPrumoMs) + commandTotal * minutesPerCommand * 60_000 : null,
     manualCoordinationMs: commandTotal * minutesPerCommand * 60_000,
-    retryScenarioMs: retryCount > 0 ? retryCount * commandsPerRetry * minutesPerCommand * 60_000 : null,
   }
 }
 
@@ -137,7 +134,6 @@ export function calculateGain(analysis, tasks = {}, eventsComplete = false, opti
 export function renderGainPanel(gain, tr, fmtMs, esc, locale = 'en') {
   const shown = (value) => esc(value == null ? tr('Not measured') : fmtMs(value))
   const factor = gain.factor == null ? tr('Not measured') : `${gain.factor.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}×`
-  const status = gain.runActive ? tr('so far') : tr('Run completed')
   const stateNote = !gain.historyComplete
     ? tr('Event history is incomplete; technical gain is not measured.')
     : gain.oneAtATimeMs == null
@@ -173,7 +169,7 @@ export function renderGainPanel(gain, tr, fmtMs, esc, locale = 'en') {
       <span><i class="est"></i>${esc(tr('Estimated calculation based on manual coordination'))}</span>
     </div>`
   return `<section class="gcard gain" id="gainPanel" aria-labelledby="gainTitle">
-    <div class="gh"><b id="gainTitle">${esc(tr('Parallel gain'))}</b><span class="gain-status${gain.runActive ? ' live' : ''}">${esc(status)}</span></div>
+    <div class="gh"><b id="gainTitle">${esc(tr('Parallel gain'))}</b></div>
     <div class="gain-grid">
       <div><span>${esc(tr('Without Prumo'))}</span><strong>${shown(baselineMs)}</strong><small>${esc(tr('measured sequential work plus estimated manual coordination'))}</small></div>
       <div><span>${esc(tr('Parallel factor'))}</span><strong>${esc(factor)}</strong><small>${esc(tr('measured activity only'))}</small></div>
@@ -191,7 +187,7 @@ export function renderGainPanel(gain, tr, fmtMs, esc, locale = 'en') {
 
 /** Renderiza a estimativa de coordenação manual (3 min fixos por comando), separada do ganho aferido. */
 export function renderManualCoordination(gain, tr, fmtMs, esc) {
-  const counts = gain.commandCounts ?? { execution: 0, review: 0, retry: 0 }
+  const counts = gain.commandCounts ?? { planning: 0, execution: 0, review: 0 }
   const total = gain.commandTotal ?? 0
   const minutes = gain.minutesPerCommand ?? 3
   const mark = '\u0001'
@@ -202,18 +198,16 @@ export function renderManualCoordination(gain, tr, fmtMs, esc) {
       mark, minutes, total)).replace(mark, `<strong>${esc(fmtMs(gain.manualCoordinationMs))}</strong>`)
     : esc(tr('No command recorded yet; there is nothing to estimate.'))
   const commands = (count) => count === 1 ? tr('1 command') : tr('{0} commands', count)
-  const breakdown = total > 0 ? `<div class="manual-counts">${[
-    ['execution', 'Execution command'], ['review', 'Review command'], ['planning', 'Planning command'], ['discussion', 'Discussion command'], ['retry', 'Retry coordination'], ['technical', 'Other commands'],
-  ].map(([kind, label]) => `<div><span>${esc(tr(label))}</span><b>${esc(commands(counts[kind] ?? 0))}</b><small>${esc(fmtMs((counts[kind] ?? 0) * minutes * 60_000))}</small></div>`).join('')}</div>` : ''
-  const scenario = gain.retryScenarioMs == null ? ''
-    : `<p class="gline manual-scenario">${esc(tr('Scenario only: if planning avoided all recorded retries, estimated manual coordination avoided would be {0}.', fmtMs(gain.retryScenarioMs)))} ${esc(tr('This is hypothetical and is excluded from measured savings.'))}</p>`
+  const breakdown = `<div class="manual-counts">${[
+    ['planning', 'Planning command'], ['execution', 'Execution commands'], ['review', 'Review commands'],
+  ].map(([kind, label]) => `<div><span>${esc(tr(label))}</span><b>${esc(commands(counts[kind] ?? 0))}</b><small>${esc(fmtMs((counts[kind] ?? 0) * minutes * 60_000))}</small></div>`).join('')}</div>`
   return `<section class="gcard manual" id="manualPanel" aria-labelledby="manualTitle">
-    <div class="gh"><b id="manualTitle">${esc(tr('Manual coordination estimate'))}</b><span class="gain-badge">${esc(tr('ESTIMATE · not a measurement'))}</span></div>
+    <div class="gh"><b id="manualTitle">${esc(tr('Manual coordination estimate'))}</b></div>
     <p class="manual-lead">${headline}</p>
     ${breakdown}
-    <details class="manual-commands"><summary>${esc(tr('All recorded commands'))}</summary><table><thead><tr><th>${esc(tr('Command'))}</th><th>${esc(tr('Count'))}</th><th>${esc(tr('Estimate'))}</th></tr></thead><tbody>${Object.entries(gain.commandsByName ?? {}).sort(([a], [b]) => a.localeCompare(b)).map(([name, count]) => `<tr><td>${esc(name)}</td><td>${esc(count)}</td><td>${esc(fmtMs(count * minutes * 60_000))}</td></tr>`).join('')}</tbody></table></details>
-    ${scenario}
+    <details class="manual-commands"><summary>${esc(tr('Commands included in the estimate'))}</summary><table><thead><tr><th>${esc(tr('Command'))}</th><th>${esc(tr('Count'))}</th><th>${esc(tr('Estimate'))}</th></tr></thead><tbody>${Object.entries(gain.commandsByName ?? {}).sort(([a], [b]) => a.localeCompare(b)).map(([name, count]) => `<tr><td>${esc(name)}</td><td>${esc(count)}</td><td>${esc(fmtMs(count * minutes * 60_000))}</td></tr>`).join('')}</tbody></table></details>
     <p class="gline gain-note"><strong>${esc(tr('Fixed assumption of 3 minutes per command'))}</strong>. ${esc(tr('It is an estimate, separate from measured parallel savings.'))}</p>
-    ${gain.commandsComplete ? '' : `<p class="gline gain-note">${esc(tr('Partial command history: older queries and failed commands cannot be reconstructed. The estimate uses only recorded commands.'))}</p>`}
+    <p class="gline gain-note">${esc(tr('Only planning, execution and review dispatches count toward this estimate.'))}</p>
+    ${gain.commandsComplete ? '' : `<p class="gline gain-note">${esc(tr('Partial dispatch history: unrecorded dispatches are excluded from the estimate.'))}</p>`}
   </section>`
 }

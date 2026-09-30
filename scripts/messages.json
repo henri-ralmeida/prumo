@@ -1066,5 +1066,10 @@
   "The summary matches the order.": "O resumo corresponde ao pedido.",
   "The switch is tested.": "O controle de liberação é testado.",
   "Then run the command to convert the approved plan into a task graph.": "Depois, execute o comando para converter o plano aprovado em um grafo de tarefas.",
-  "awaiting your decision": "aguardando sua decisão"
+  "awaiting your decision": "aguardando sua decisão",
+  "Execution commands": "Comandos de execução",
+  "Review commands": "Comandos de revisão",
+  "Commands included in the estimate": "Comandos considerados na estimativa",
+  "Only planning, execution and review dispatches count toward this estimate.": "Somente disparos de planejamento, execução e revisão entram nesta estimativa.",
+  "Partial dispatch history: unrecorded dispatches are excluded from the estimate.": "Histórico parcial de disparos: os disparos sem registro ficam fora da estimativa."
 }

@@ -14,6 +14,9 @@ Historical tag and commit corrections are documented in [Release history recover
 - Apresente um guia interativo com o visual do board e ensine a criar e aprovar o plano no harness antes de chamar a skill Prumo.
 - Oriente a primeira abertura destacando o Guia e permita simular essa experiência por `?onboarding=first-run`, preservando os planos existentes.
 - Alinhe as colunas de comandos sem divisória na primeira coluna de cada linha.
+- Conte somente disparos de Planejamento, Execução e Revisão na coordenação manual e apresente os três em uma única linha; discussão, retentativas e comandos técnicos ficam fora da estimativa.
+- Simplifique a parcela estimada com um tracejado horizontal e remova os selos de estado dos ganhos e de estimativa da coordenação manual.
+- Mantenha os identificadores T* brancos no guia e no board e substitua as bolinhas pulsantes de atividade por spinners circulares sincronizados.
 
 ## 2.2.0 — 2026-09-30
 
