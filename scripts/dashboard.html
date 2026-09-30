@@ -539,6 +539,7 @@ SOFTWARE. -->
            background: color-mix(in srgb, var(--role) 9%, var(--bg)); border: 1px solid color-mix(in srgb, var(--role) 38%, var(--line));
            transition: border-color .24s var(--ease), transform .24s var(--ease); }
   .avail:hover, .avail:focus-within { border-color: var(--role); }
+  .avail { user-select: none; -webkit-user-select: none; }
   .avail-open { all: unset; display: flex; flex-direction: column; gap: 6px; width: 100%; cursor: pointer; }
   .avail-open:focus-visible { outline: 1px solid var(--role); outline-offset: 4px; border-radius: 4px; }
   .avail .task-ref { font: 600 11px/1.45 var(--font-mono); }
@@ -561,6 +562,10 @@ SOFTWARE. -->
   #parallel { max-height: 150px; overflow-y: auto; }
   .ev { padding: 6px 8px; margin: 2px 0; border-left: 2px solid transparent; border-radius: 4px; font-size: 11px; line-height: 1.5; color: #bdb5a8; transition: background-color .15s var(--ease), border-color .15s var(--ease); }
   .ev:has(.ev-open):hover, .ev:focus-within { background: color-mix(in srgb, var(--accent) 5%, var(--bg)); border-left-color: var(--accent); }
+  .ev:has(.ev-open) { cursor: pointer; user-select: none; -webkit-user-select: none; }
+  .ev-count { color: var(--dim); font-weight: 600; white-space: nowrap; }
+  .ev-count.done { color: var(--done); }
+  .ev-count.bad { color: var(--failed); }
   .ev-open { all: unset; cursor: pointer; }
   .ev-open:focus-visible, .task-ref:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
   .task-ref { font-weight: 600; text-decoration: none; }
@@ -1123,7 +1128,7 @@ function createGuideDemoData(mode = 'board') {
   if (mode === 'board') tasks.T14 = { id: 'T14', title: 'Review handoff', state: 'running', phase: 'F3', deps: ['T2'], agent: 'executor-1', summary: 'Execution is complete; the independent Reviewer is next.', validation: 'echo validation', notes: [], validations: [], planningAttempts: [], attempts: [{ n: 1, agent: 'executor-1', startedAt: at(120), activityTiming: 'explicit', activityIntervals: [{ role: 'execution', agent: 'executor-1', startedAt: at(120), endedAt: at(130) }] }] }
   const derived = Object.fromEntries(Object.values(tasks).map(task => [task.id, { effective: task.state }]))
   return { run: 'checkout', createdAt: at(0), plan: { name: 'Checkout', description: 'An approved checkout plan.', maxParallel: 3, phases: [{ id: 'F1', title: 'Scope and contracts' }, { id: 'F2', title: 'Implementation and review' }, { id: 'F3', title: 'Validation and release' }] }, tasks, derived,
-    events: mode === 'board' ? [{type:'task_review',task:'T1',at:at(15)}, {type:'task_note',task:'T14',at:at(130),text:'T1 → T14'}] : [],
+    events: mode === 'board' ? [{type:'task_review',task:'T1',at:at(15),current:4,total:6}, {type:'task_note',task:'T14',at:at(130),text:'T1 → T14'}] : [],
     commandMetrics: { total: 39, complete: true, byCommand: { 'plan-task': 13, start: 13, review: 13 } },
   }
 }
@@ -3190,14 +3195,18 @@ function render(s, events = []) {
   paintStable('#parallel', parallelHtml)
   renderAvailable()
   const eventsHtml = events.slice().reverse().map((e) => {
+    const taskId = Object.hasOwn(s.tasks, e.task) ? e.task : eventIds(e.task)
+    const clickable = Object.hasOwn(s.tasks, taskId)
+    const state = clickable ? eff(taskId) : null
+    const bad = ['task_fail', 'task_block'].includes(e.type) || e.type === 'task_validate' && e.ok === false || ['failed', 'blocked'].includes(state)
+    const complete = e.type === 'task_done' || state === 'done'
     const fraction = Number.isSafeInteger(e.current) && Number.isSafeInteger(e.total) && e.current > 0 && e.current <= e.total
-      ? ' [' + e.current + '/' + e.total + ']' : ''
+      ? `<span class="ev-count${bad ? ' bad' : complete ? ' done' : ''}"> [${e.current}/${e.total}]</span>` : ''
     const detail = eventDetail(e, events)
     const outcome = e.type === 'task_validate' ? ' data-ok="' + Boolean(e.ok) + '"' : ''
-    const taskId = s.tasks[e.task] ? e.task : eventIds(e.task)
-    const clickable = Object.hasOwn(s.tasks, taskId)
-    const opening = clickable ? `<button class="ev-open" type="button" onclick="jumpTo('${jsq(taskId)}')">` : ''
-    return '<div class="ev">' + opening + '<span class="t-' + esc(e.type) + '"' + outcome + '><time>' + fmtTime(e.at) +
+    const action = clickable ? ` onclick="jumpTo('${jsq(taskId)}')"` : ''
+    const opening = clickable ? '<button class="ev-open" type="button">' : ''
+    return '<div class="ev"' + action + '>' + opening + '<span class="t-' + esc(e.type) + '"' + outcome + '><time>' + fmtTime(e.at) +
       '</time><span class="pipe" aria-hidden="true">|</span> <span class="ev-text">' + eventSentence(e) + fraction + '</span>' +
       '</span>' + (clickable ? '</button>' : '') + (detail ? ' <span class="ev-detail">' + taskText(eventIds(detail)) + '</span>' : '') + '</div>'
   }).join('')

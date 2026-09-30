@@ -925,7 +925,7 @@ test('review rejection history prefers its validation summary and truncates evid
   assert.doesNotMatch(log, /Raw evidence replaced by summary\./)
   assert.ok(log.includes('A'.repeat(80)))
   assert.doesNotMatch(log, /UNTRUNCATED_SENTINEL/)
-  const repeatLines = log.match(/<div class="ev">[\s\S]*?<\/div>/g).filter(line => line.includes('REPEAT'))
+  const repeatLines = log.match(/<div class="ev"[^>]*>[\s\S]*?<\/div>/g).filter(line => line.includes('REPEAT'))
   assert.equal(repeatLines.length, 2)
   assert.ok(repeatLines[0].includes(secondSummary), 'the latest rejection keeps its full summary')
   assert.ok(repeatLines[1].includes(firstSummary), 'the earlier rejection keeps its own full summary')
@@ -2245,7 +2245,7 @@ test('historico abre a tarefa atual por alias e nao oferece acao para tarefa ine
     {type:'task_note',task:'T99',text:'Nota antiga',at:instant(2)},
   ])
   const log = ui.nodes.get('#events').innerHTML
-  assert.match(log, /<button class="ev-open" type="button" onclick="jumpTo\('T11a'\)"/)
+  assert.match(log, /<div class="ev" onclick="jumpTo\('T11a'\)"><button class="ev-open" type="button">/)
   assert.doesNotMatch(log, /onclick="jumpTo\('T99'\)"/)
   assert.match(log, /data-ok="false"/)
   const eventTarget = { closest(selector) { return selector === '.ev' ? this : null } }
@@ -2274,6 +2274,20 @@ test('referencias usam o estado atual e localizam tarefas concluidas ocultas pel
   assert.equal(ui.run('POP.id'), 'T1')
   assert.equal(ui.nodes.get('#pop').dataset.st, 'done')
   assert.equal(ui.cards.find(card=>card.dataset.id==='T1').classList.contains('filtered-out'), false)
+})
+
+test('contador do historico fica vermelho em reprovação mesmo com a tarefa concluida', () => {
+  const ui = dashboard('pt-BR')
+  ui.render({run:'contadores',plan:{},tasks:{T1:task('T1','done'),T2:task('T2','blocked')},derived:{}},[
+    {type:'task_note',task:'T1',at:instant(1),current:4,total:6},
+    {type:'task_validate',task:'T1',at:instant(2),ok:false,current:4,total:6},
+    {type:'task_note',task:'T2',at:instant(3),current:2,total:6},
+  ])
+  const log = ui.nodes.get('#events').innerHTML
+  assert.match(log, /class="ev-count done"> \[4\/6\]/)
+  assert.match(log, /class="ev-count bad"> \[4\/6\]/)
+  assert.match(log, /class="ev-count bad"> \[2\/6\]/)
+  assert.match(html, /\.ev:has\(\.ev-open\) \{[^}]*cursor: pointer; user-select: none/)
 })
 
 test('reprovacao historica permanece vermelha mesmo depois da conclusao aprovada', () => {

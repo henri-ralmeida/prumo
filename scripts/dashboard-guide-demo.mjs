@@ -25,7 +25,7 @@ export function createGuideDemoData(mode = 'board') {
   if (mode === 'board') tasks.T14 = { id: 'T14', title: 'Review handoff', state: 'running', phase: 'F3', deps: ['T2'], agent: 'executor-1', summary: 'Execution is complete; the independent Reviewer is next.', validation: 'echo validation', notes: [], validations: [], planningAttempts: [], attempts: [{ n: 1, agent: 'executor-1', startedAt: at(120), activityTiming: 'explicit', activityIntervals: [{ role: 'execution', agent: 'executor-1', startedAt: at(120), endedAt: at(130) }] }] }
   const derived = Object.fromEntries(Object.values(tasks).map(task => [task.id, { effective: task.state }]))
   return { run: 'checkout', createdAt: at(0), plan: { name: 'Checkout', description: 'An approved checkout plan.', maxParallel: 3, phases: [{ id: 'F1', title: 'Scope and contracts' }, { id: 'F2', title: 'Implementation and review' }, { id: 'F3', title: 'Validation and release' }] }, tasks, derived,
-    events: mode === 'board' ? [{type:'task_review',task:'T1',at:at(15)}, {type:'task_note',task:'T14',at:at(130),text:'T1 → T14'}] : [],
+    events: mode === 'board' ? [{type:'task_review',task:'T1',at:at(15),current:4,total:6}, {type:'task_note',task:'T14',at:at(130),text:'T1 → T14'}] : [],
     commandMetrics: { total: 39, complete: true, byCommand: { 'plan-task': 13, start: 13, review: 13 } },
   }
 }
