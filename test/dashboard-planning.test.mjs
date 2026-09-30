@@ -414,11 +414,11 @@ test('concluidas excluem puladas do total de tarefas validas', () => {
   const state = { run: 'concluidas-total', plan: { phases: [] }, tasks,
     derived: Object.fromEntries(Object.entries(tasks).map(([id, task]) => [id, { effective: task.state }])) }
   ui.render(state)
-  assert.match(ui.nodes.get('#counts').innerHTML, /Concluído<\/span> <b>23\/28<\/b>/)
+  assert.match(ui.nodes.get('#counts').innerHTML, /No Prumo<\/span> <b>23\/28<\/b>/)
   ui.run("setFilter('done')")
-  assert.match(ui.nodes.get('#counts').innerHTML, /Concluído<\/span> <b>23\/28<\/b>/, 'o filtro não reduz o total do plano')
+  assert.match(ui.nodes.get('#counts').innerHTML, /No Prumo<\/span> <b>23\/28<\/b>/, 'o filtro não reduz o total do plano')
   ui.render({ run: 'vazio', plan: { phases: [] }, tasks: {}, derived: {} })
-  assert.match(ui.nodes.get('#counts').innerHTML, /Concluído<\/span> <b>0\/0<\/b>/)
+  assert.match(ui.nodes.get('#counts').innerHTML, /No Prumo<\/span> <b>0\/0<\/b>/)
 })
 
 test('13 concluidas e uma pulada mostram 13 de 13 e o resumo existe em planos grandes', () => {
@@ -427,7 +427,7 @@ test('13 concluidas e uma pulada mostram 13 de 13 e o resumo existe em planos gr
     const tasks = Object.fromEntries(Array.from({ length: size }, (_, index) => [`T${index + 1}`, task(`T${index + 1}`, index < 13 ? 'done' : 'skipped')]))
     const state = { run: 'totais-validos', plan: { phases: [] }, tasks, derived: {} }
     ui.render(state)
-    assert.match(ui.nodes.get('#counts').innerHTML, /Concluído<\/span> <b>13\/13<\/b>/)
+    assert.match(ui.nodes.get('#counts').innerHTML, /No Prumo<\/span> <b>13\/13<\/b>/)
     assert.match(ui.nodes.get('#lanes').innerHTML, /13 de 13 no prumo/)
     ui.run("setFilter('skipped')")
     assert.match(ui.nodes.get('#counts').innerHTML, /<b>13\/13<\/b>/)
@@ -2338,7 +2338,7 @@ test('reprovacao historica permanece vermelha mesmo depois da conclusao aprovada
 
 test('todos os selos usam os nomes do resumo em minusculas e sem metadados', () => {
   const ui=dashboard('pt-BR')
-  const labels={skipped:'pulado',waiting:'aguardando',ready_for_discussion:'pronto para discutir',discussing:'discutindo',ready_to_plan:'pronto para planejar',planning:'planejando',ready:'pronto para executar',running:'executando',ready_for_review:'pronto para revisar',reviewing:'revisando',blocked:'bloqueado',failed:'falhou',done:'concluído'}
+  const labels={skipped:'pulado',waiting:'aguardando',ready_for_discussion:'pronto para discutir',discussing:'discutindo',ready_to_plan:'pronto para planejar',planning:'planejando',ready:'pronto para executar',running:'executando',ready_for_review:'pronto para revisar',reviewing:'revisando',blocked:'bloqueado',failed:'falhou',done:'no prumo'}
   for(const [state,label] of Object.entries(labels)) {
     ui.render({run:'estados',plan:{},tasks:{T1:task('T1',state)},derived:{T1:{effective:state}}})
     ui.run('fillPop("T1")')
@@ -2402,7 +2402,7 @@ test('indicadores ficam juntos acima dos agentes, capitalizados e nas cores dos 
   ui.render(state)
   const counts = ui.nodes.get('#counts').innerHTML
   for (const [key, label, color] of [['discussing', 'Discutindo', 'discussion'], ['planning', 'Planejando', 'planning'], ['running', 'Executando', 'running'],
-    ['reviewing', 'Revisando', 'review'], ['skipped', 'Pulado', 'skipped'], ['waiting', 'Aguardando', 'waiting'], ['done', 'Concluído', 'done']]) {
+    ['reviewing', 'Revisando', 'review'], ['skipped', 'Pulado', 'skipped'], ['waiting', 'Aguardando', 'waiting'], ['done', 'No Prumo', 'done']]) {
     const row = counts.match(new RegExp('<span data-state="' + key + '"[\\s\\S]*?</b></span>'))?.[0]
     assert.ok(row?.includes(label), label)
     assert.ok(row.includes('var(--' + color + ')'), label)
@@ -2490,7 +2490,7 @@ test('a paleta do card tem contraste legivel e preserva as cores sem alterar o p
   ui.render({ run: 'cores', plan: {}, tasks: { T: task('T', 'done') }, derived: { T: { effective: 'done' } } })
   ui.run("openTask('T')")
   assert.equal(ui.nodes.get('#popTitle').textContent, 'T')
-  assert.equal(ui.nodes.get('#popStatus').textContent, 'concluído')
+  assert.equal(ui.nodes.get('#popStatus').textContent, 'no prumo')
   assert.doesNotMatch(ui.nodes.get('#popBody').innerHTML, /id="popTitle"|class="st"/)
   assert.doesNotMatch(html.match(/:root \{[\s\S]*?\n\s*\}/)[0], /#123441/)
 })
@@ -2506,7 +2506,7 @@ test('o cabecalho mostra tarefa e estado sem confundir tentativas com conclusao'
   for (const expanded of [false, true]) {
     ui.run('POP_EXPANDED = expanded; fillPop("T24")', { expanded })
     assert.equal(ui.nodes.get('#popTitle').textContent, 'T24')
-    assert.equal(ui.nodes.get('#popStatus').textContent, 'concluído')
+    assert.equal(ui.nodes.get('#popStatus').textContent, 'no prumo')
     assert.doesNotMatch(ui.nodes.get('#popBody').innerHTML, /2 de 3|tentativa 2 de 3|id="popTitle"/)
   }
 })
