@@ -213,6 +213,15 @@ SOFTWARE. -->
               background-size: 24px 24px; }
   #viewport.panning { cursor: grabbing; }
   #canvas { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
+  #viewport.navigating #canvas, #viewport.navigating #hub { transition: transform .48s cubic-bezier(.22, 1, .36, 1); }
+  body:has(#viewport.navigating) #pop.open { animation: navigation-reveal .48s ease both; }
+  .navigation-arrival { animation: navigation-arrival .7s ease-out; }
+  @keyframes navigation-reveal { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes navigation-arrival { from { filter: brightness(1.3); } to { filter: brightness(1); } }
+  @media (prefers-reduced-motion: reduce) {
+    #viewport.navigating #canvas, #viewport.navigating #hub { transition: none; }
+    body:has(#viewport.navigating) #pop.open, .navigation-arrival { animation: none; }
+  }
   #runLoading { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; color: var(--dim);
                 background: var(--bg); font: 12px/1.4 var(--font-mono); }
   #runLoading[hidden] { display: none; }
@@ -3372,6 +3381,7 @@ addEventListener('resize', () => {
 const vp = $('#viewport')
 vp.addEventListener('wheel', (e) => {
   e.preventDefault()
+  cancelNavigation()
   const dx = e.shiftKey ? (e.deltaX || e.deltaY) : e.deltaX
   const dy = e.shiftKey ? 0 : e.deltaY
   VIEW.x -= dx
@@ -3389,6 +3399,7 @@ vp.addEventListener('pointermove', (e) => {
   if (!drag) return
   const dx = e.clientX - drag.sx, dy = e.clientY - drag.sy
   if (!drag.moved && Math.hypot(dx, dy) < 4) return
+  cancelNavigation()
   if (!drag.moved) {
     // capture only once a real pan starts — capturing on pointerdown would retarget the
     // click event to the viewport, and a plain click on a card would never reach it
@@ -3749,6 +3760,31 @@ function renderResults(s) {
   localize()
 }
 
+let navigationTimer = null
+let navigationTarget = null
+function cancelNavigation() {
+  clearTimeout(navigationTimer)
+  navigationTarget?.classList.remove('navigation-arrival')
+  navigationTarget = null
+  $('#viewport').classList.remove('navigating')
+}
+function animateNavigation(target = null) {
+  clearTimeout(navigationTimer)
+  navigationTarget?.classList.remove('navigation-arrival')
+  navigationTarget = target
+  if (globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches) { cancelNavigation(); return }
+  $('#viewport').classList.add('navigating')
+  navigationTimer = setTimeout(() => {
+    $('#viewport').classList.remove('navigating')
+    positionPop()
+    navigationTarget?.classList.add('navigation-arrival')
+    navigationTimer = setTimeout(() => {
+      navigationTarget?.classList.remove('navigation-arrival')
+      navigationTarget = null
+    }, 700)
+  }, 480)
+}
+
 function jumpTo(id) {
   id = Object.hasOwn(STATE?.tasks ?? {}, id) ? id : eventIds(id)
   if (!Object.hasOwn(STATE?.tasks ?? {}, id)) return
@@ -3776,6 +3812,7 @@ function jumpToPhase(id) {
   VIEW.x = Math.max(0, (r.width - CANVAS_W) / 2)
   VIEW.y = Math.min(BASE_Y + 24, r.height * .4) - lane.y * VIEW.k
   VIEW_MANUAL = true
+  animateNavigation()
   applyView()
 }
 
@@ -3813,6 +3850,7 @@ function focusTask(id) {
   VIEW.x = r.width / 2 - (p.x + LAST_METRICS.nodeW / 2) * VIEW.k
   VIEW.y = r.height / 2 - (p.y + LAST_METRICS.nodeH / 2) * VIEW.k
   VIEW_MANUAL = true
+  animateNavigation(document.querySelector(`.node[data-id="${CSS.escape(id)}"]`))
   applyView()
 }
 function closePop() {

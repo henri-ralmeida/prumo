@@ -1689,6 +1689,19 @@ test('explicit results navigation survives the click suppression left by draggin
   assert.ok(view.taskY + view.y >= 0 && view.taskY + view.y + view.height <= view.viewportHeight)
 })
 
+test('navegacao anima o ultimo destino e respeita arraste e movimento reduzido', () => {
+  const ui = dashboard('pt-BR', 500)
+  ui.render(graphState(48, 8))
+  ui.run("jumpTo('T048'); jumpTo('T001')")
+  assert.equal(ui.run('POP.id'), 'T001')
+  assert.equal(ui.nodes.get('#viewport').classList.contains('navigating'), true)
+  ui.dispatchElement('#viewport', 'wheel', { preventDefault() {}, deltaX: 0, deltaY: 20 })
+  assert.equal(ui.nodes.get('#viewport').classList.contains('navigating'), false)
+  ui.run("matchMedia = () => ({matches:true}); jumpTo('T048')")
+  assert.equal(ui.run('POP.id'), 'T048')
+  assert.equal(ui.nodes.get('#viewport').classList.contains('navigating'), false)
+})
+
 test('localizar uma tarefa distante mantém o filtro e a centraliza a partir do card expandido', () => {
   const ui = dashboard('pt-BR', 500)
   ui.render(graphState(48, 8))
