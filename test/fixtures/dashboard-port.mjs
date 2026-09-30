@@ -2,6 +2,18 @@
 // (old CLI, npm exec updater and the dashboard it launches) uses an isolated port in place of the
 // fixed dashboard port, so the user's real dashboard on 4949 is never contacted.
 import net from 'node:net'
+import { appendFileSync } from 'node:fs'
+
+// Registre o encerramento do servidor isolado para distinguir falha de lançamento de falha de prontidão.
+const diagnostics = process.env.PRUMO_TEST_DASHBOARD_DIAGNOSTICS
+let recordDashboard = () => {}
+if (diagnostics && process.argv[1]?.replaceAll('\\', '/').endsWith('/scripts/serve.mjs')) {
+  const record = detail => { try { appendFileSync(diagnostics, `${JSON.stringify({ pid: process.pid, time: Date.now(), ...detail })}\n`) } catch {} }
+  record({ event: 'inicio', port: process.env.PRUMO_TEST_DASHBOARD_PORT, script: process.argv[1] })
+  process.on('uncaughtExceptionMonitor', error => record({ event: 'erro', error: error.stack }))
+  process.on('exit', code => record({ event: 'saida', code }))
+  recordDashboard = record
+}
 
 const DASHBOARD_PORT = 4949
 const port = Number(process.env.PRUMO_TEST_DASHBOARD_PORT)
@@ -11,6 +23,7 @@ if (Number.isInteger(port) && port > 0 && port !== DASHBOARD_PORT) {
   net.Server.prototype.listen = function (...args) {
     const legacyPort = Number(args[0]) === DASHBOARD_PORT && typeof args[0] !== 'object'
       || args[0] && typeof args[0] === 'object' && Number(args[0].port) === DASHBOARD_PORT
+    if (legacyPort) this.once('listening', () => recordDashboard({ event: 'ouvindo', address: this.address() }))
     if (legacyPort && shutdownToken) {
       const emit = this.emit
       this.emit = function (event, ...values) {

@@ -41,6 +41,7 @@ const dashboardShutdownToken = randomBytes(16).toString('hex')
 env.PRUMO_TEST_DASHBOARD_SHUTDOWN_TOKEN = dashboardShutdownToken
 env.NODE_OPTIONS = `--import="${pathToFileURL(join(repo, 'test/fixtures/dashboard-port.mjs')).href}"`
 const dashboardPreference = join(home, '.local/share/prumo/dashboard.json')
+env.PRUMO_TEST_DASHBOARD_DIAGNOSTICS = join(home, 'dashboard-process.ndjson')
 async function dashboardHealth() {
   try {
     const body = await (await fetch(`http://127.0.0.1:${dashboardPort}/api/health`, { signal: AbortSignal.timeout(2000) })).json()
@@ -76,7 +77,12 @@ function run(file, args, extra = {}, expected = 0) {
   const result = spawnSync(...command, { cwd: project, env: { ...env, ...extra }, encoding: 'utf8', windowsHide: true, timeout: 120000 })
   evidence.push({ args, status: result.status, stdout: result.stdout, stderr: result.stderr })
   assert.ifError(result.error)
-  assert.equal(result.status, expected, result.stdout + result.stderr)
+  let diagnostics = ''
+  if (result.status !== expected) {
+    try { diagnostics = readFileSync(env.PRUMO_TEST_DASHBOARD_DIAGNOSTICS, 'utf8') } catch {}
+    evidence.push({ dashboardProcesses: diagnostics })
+  }
+  assert.equal(result.status, expected, result.stdout + result.stderr + diagnostics)
   return result.stdout
 }
 async function freePort() {
@@ -447,6 +453,7 @@ try {
   console.log(`Published ${fromVersion} updated to ${pkg.version}; notes, three legacy harnesses plus current DSH, junctions, merged tasks and ${[...flows.keys()].join('/')} continuation verified`)
 } catch (error) {
   scenarioError = error
+  try { console.error(`Processos do dashboard isolado:\n${readFileSync(env.PRUMO_TEST_DASHBOARD_DIAGNOSTICS, 'utf8').trim().split('\n').slice(-12).join('\n')}`) } catch {}
   throw error
 } finally {
   let dashboardCleanupError

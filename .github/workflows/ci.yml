@@ -22,7 +22,8 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - uses: oven-sh/setup-bun@v2
-      - run: node --test --test-concurrency=4 scripts/*.test.mjs test/*.test.mjs
+      # As integrações instalam e reiniciam processos; no Windows, evite disputar recursos durante a prontidão.
+      - run: node --test --test-concurrency=${{ runner.os == 'Windows' && 1 || 4 }} scripts/*.test.mjs test/*.test.mjs
       - run: npm run check
       - run: npm pack
       - run: node scripts/package-smoke.mjs

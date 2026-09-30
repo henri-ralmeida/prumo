@@ -142,11 +142,12 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
   assert.equal(existsSync(join(autoHome, '.dsh', '.credentials.yaml')), false)
   assert.equal(JSON.parse(readFileSync(join(autoHome, '.local', 'share', 'prumo', 'dashboard.json'), 'utf8')).enabled, true)
   const startupCalls = readFileSync(autoEvents, 'utf8')
-  assert.ok(process.platform === 'win32' ? startupCalls.includes('"wscript"') :
+  assert.ok(process.platform === 'win32' ? startupCalls.includes('"spawn"') :
     process.platform === 'darwin' ? startupCalls.includes('kickstart') : startupCalls.includes('enable","--now'))
   if (process.platform === 'win32') {
-    const launcher = startupCalls.trim().split('\n').map(line => JSON.parse(line)).find(call => call[0] === 'wscript')
-    assert.equal(launcher?.[2], join(autoHome, '.local', 'share', 'prumo'), 'dashboard launcher uses stable user data cwd')
+    const launcher = startupCalls.trim().split('\n').map(line => JSON.parse(line)).find(call => call[0] === 'spawn')
+    assert.equal(launcher?.[3], join(autoHome, '.local', 'share', 'prumo'), 'dashboard launcher uses stable user data cwd')
+    assert.deepEqual(launcher?.[2], [join(autoPackage, 'scripts', 'serve.mjs'), '--global', '--port', '4949', '--lang', 'en'], 'O processo usa o runtime instalado, o dashboard global e o idioma da instalação.')
   }
   assert.equal(JSON.parse(readFileSync(join(autoPackage, 'package.json'), 'utf8')).version, version)
   mkdirSync(join(home, '.local', 'share', 'prumo'), { recursive: true })
