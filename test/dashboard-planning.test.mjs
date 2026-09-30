@@ -323,7 +323,7 @@ test('dashboard renders separate planning queues, active planner hub and executi
     for (const [id, status] of Object.entries(states)) {
       assert.match(ui.nodes.get('#nodes').innerHTML, new RegExp(`data-st="${status}"[^>]*data-id="${id}"`))
       ui.run('fillPop(id)', { id })
-      assert.ok(ui.nodes.get('#popStatus').textContent.includes(ui.run('statusLabel(status)', { status })))
+      assert.equal(ui.nodes.get('#popStatus').textContent, ui.run('cardStateLabel(status)', { status }))
     }
     const colors = ui.run("['ready_to_plan', 'planning', 'ready'].map(s => ST_COLOR[s])")
     assert.equal(new Set(colors).size, 3)
@@ -1098,7 +1098,7 @@ test('Gravidade cards and agent panels show measured activity in the compact das
   assert.equal(ui.nodes.get('#orch').classList.contains('live'), true, 'the current task state, not event age, controls the live pill')
   assert.equal(ui.nodes.get('#doneCount').innerHTML, '<b>33%</b> complete')
   assert.doesNotMatch(ui.nodes.get('#orch').innerHTML + ui.nodes.get('#doneCount').innerHTML, /115:00:00|115h/)
-  assert.match(ui.nodes.get('#nodes').innerHTML, /class="tr">running<\/span>/)
+  assert.match(ui.nodes.get('#nodes').innerHTML, /class="tr">WORKING<\/span>/)
   assert.doesNotMatch(ui.nodes.get('#nodes').innerHTML, /class="sub"/)
   assert.match(ui.nodes.get('#parallel').innerHTML, /T1[\s\S]*executor[\s\S]*not measured[\s\S]*rbar/)
 
@@ -1107,7 +1107,7 @@ test('Gravidade cards and agent panels show measured activity in the compact das
   for (const text of ['T1', 'Linha um', 'Linha dois', 'Linha três', 'Depends on', 'T0', 'Unlocks', 'T2', 'changed from aaaa', 'Agent time'])
     assert.ok(lean.includes(text), text)
   assert.equal(ui.nodes.get('#popTitle').textContent, 'T1')
-  assert.match(ui.nodes.get('#popStatus').textContent, /running/)
+  assert.equal(ui.nodes.get('#popStatus').textContent, 'working')
   assert.doesNotMatch(ui.nodes.get('#popStatus').textContent, /of 3/)
   assert.ok(lean.includes('SUMMARY_SENTINEL'), 'an explicit summary remains complete in the concise view')
   assert.doesNotMatch(lean, /115:00:00|115h/)
@@ -1131,7 +1131,7 @@ test('discussion uses the orchestrator brass and lights the active orchestrator 
   assert.match(ui.nodes.get('#nodes').innerHTML, /data-st="discussing"[^>]*data-id="T1"/)
   assert.match(ui.nodes.get('#orchSub').textContent, /discutindo 1: T1/)
   ui.render({ run: 'discussion', plan: { maxParallel: 4 }, tasks: { T1: task('T1', 'discussing', { discussionAttempts: [{ startedAt: instant(28) }] }) }, derived: { T1: { effective: 'discussing' } } })
-  assert.match(ui.nodes.get('#nodes').innerHTML, /data-st="discussing"[^>]*[\s\S]*class="elapsed">não aferido</,'the card does not infer active time from an open discussion envelope')
+  assert.doesNotMatch(ui.nodes.get('#nodes').innerHTML, /class="elapsed"/,'the card does not infer active time from an open discussion envelope')
 })
 
 test('the dashboard ships its own licensed fonts and the page policy allows only inline data fonts', () => {
@@ -2334,6 +2334,20 @@ test('reprovacao historica permanece vermelha mesmo depois da conclusao aprovada
   assert.match(ui.nodes.get('#popBody').innerHTML, /Aprovado[\s\S]*Correção conferida/)
   assert.match(html, /\.vitem\.bad \{[^}]*background: #472329/)
   assert.equal(ui.run('statusLabel("ready_for_discussion")'), 'pronto para discutir')
+})
+
+test('todos os selos usam os nomes do resumo em minusculas e sem metadados', () => {
+  const ui=dashboard('pt-BR')
+  const labels={skipped:'pulado',waiting:'aguardando',ready_for_discussion:'pronto para discutir',discussing:'discutindo',ready_to_plan:'pronto para planejar',planning:'planejando',ready:'pronto para executar',running:'executando',ready_for_review:'pronto para revisar',reviewing:'revisando',blocked:'bloqueado',failed:'falhou',done:'concluído'}
+  for(const [state,label] of Object.entries(labels)) {
+    ui.render({run:'estados',plan:{},tasks:{T1:task('T1',state)},derived:{T1:{effective:state}}})
+    ui.run('fillPop("T1")')
+    assert.equal(ui.nodes.get('#popStatus').textContent,label,state)
+    const boardLabel=({ready_for_discussion:'DISCUTIR',ready_to_plan:'PLANEJAR',ready:'EXECUTAR',ready_for_review:'REVISAR'})[state]??label.toLocaleUpperCase('pt-BR')
+    assert.match(ui.nodes.get('#nodes').innerHTML,new RegExp('class="tr">'+boardLabel+'<\\/span>'))
+    assert.doesNotMatch(ui.nodes.get('#nodes').innerHTML,/class="elapsed"/)
+    if(['discussing','planning','running','reviewing'].includes(state)) assert.match(ui.nodes.get('#nodes').innerHTML,/class="tr">[^<]+<\/span><span class="status-separator"[^>]*>·<\/span><span class="beat"/)
+  }
 })
 
 test('historico destaca nomes e referencias sem alterar os dados nem executar notas', () => {

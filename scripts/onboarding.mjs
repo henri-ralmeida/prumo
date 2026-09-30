@@ -57,7 +57,7 @@ export function createPrumoOnboarding({ root, launcher, document, window, transl
   if (!root || !launcher || !document) return null
   const find = id => root.querySelector(id)
   const title = find('#guideTitle'), description = find('#guideDescription')
-  const count = find('#guideCount'), announcement = find('#guideAnnouncement')
+  const count = find('#guideCount'), stepTitle = find('#guideStepTitle'), announcement = find('#guideAnnouncement')
   const previous = find('#guidePrevious'), next = find('#guideNext'), skip = find('#guideSkip')
   const invitation = document.querySelector('#guideInvitation')
   const invitationOpen = document.querySelector('#guideInvitationOpen')
@@ -65,25 +65,25 @@ export function createPrumoOnboarding({ root, launcher, document, window, transl
   const intro = find('#guideIntroPanel'), roles = find('#guideMockRoles')
   const graph = find('#guideExamplePanel'), gain = find('#guideGainPanel'), command = find('#guideCommandPanel')
   const steps = [
-    { title: 'Why use Prumo?', description: 'An approved plan becomes visible work: clear dependencies, coordinated agents and independent review before completion.', target: 'intro' },
-    { title: 'People and roles', demos: [
+    { title: 'Why use Prumo?', heading: 'Overview', description: 'An approved plan becomes visible work: clear dependencies, coordinated agents and independent review before completion.', target: 'intro' },
+    { title: 'People and roles', heading: 'Entities', demos: [
       { title: 'The orchestrator', description: 'The Orchestrator discusses scope and coordinates the work.', target: 'orchestrator' },
       { title: 'The planner', description: 'The Planner records the approved plan as tasks.', target: 'planner' },
       { title: 'The executor', description: 'The Executor works on authorized tasks and records evidence.', target: 'executor' },
       { title: 'The reviewer', description: 'The Reviewer independently checks the result.', target: 'reviewer' },
     ] },
-    { title: 'Explore this dashboard', demos: [
+    { title: 'Explore this dashboard', heading: 'Dashboard', demos: [
       { title: 'Phases and tasks', description: 'Phases organize the plan. Task IDs identify the work; their colors show the current state. Click a phase or a task.', target: 'board' },
       { title: 'Filters and counts', description: 'Try the filters. They change the visible cards; completed totals exclude skipped tasks and preserve the full plan.', target: 'filters' },
       { title: 'Task card', description: 'Click a task to read its summary, validation and dependencies. The expansion arrow opens the full details.', target: 'card' },
       { title: 'Progress and activity', description: 'The progress bar counts completed tasks. Active agents and their recorded START/STOP intervals show who is working.', target: 'activity' },
     ] },
-    { title: 'Run results', demos: [
+    { title: 'Run results', heading: 'Results', demos: [
       { title: 'Gain with Prumo', description: 'Compare the full baseline with measured parallel activity and the separate manual coordination estimate.', target: 'gain' },
       { title: 'Recorded agent activity', description: 'Discussion, Planning, Execution and Review count only evidenced activity. Waiting time is excluded.', target: 'times' },
       { title: 'Manual coordination estimate', description: 'Planning, execution and review dispatches use a fixed assumption of 3 minutes per command. Expand the list to inspect the count.', target: 'commands' },
     ] },
-    { title: 'Start here', description: 'First create and approve a plan in your coding environment’s planning mode. Then start Prumo to turn that approved plan into a task graph.', target: 'command' },
+    { title: 'Start here', heading: 'How to use', description: 'First create and approve a plan in your coding environment’s planning mode. Then start Prumo to turn that approved plan into a task graph.', target: 'command' },
   ]
   let stepIndex = 0, demoIndex = 0, dismissed = true
   let fullscreenOwned = false, fullscreenPending = false
@@ -127,6 +127,7 @@ export function createPrumoOnboarding({ root, launcher, document, window, transl
     const content = demo(), demos = steps[stepIndex].demos
     title.textContent = translate(content.title)
     description.textContent = translate(content.description)
+    stepTitle.textContent = translate(steps[stepIndex].heading)
     count.textContent = demos
       ? translate('Step {0} of {1} — demo {2} of {3}', stepIndex + 1, steps.length, demoIndex + 1, demos.length)
       : translate('Step {0} of {1}', stepIndex + 1, steps.length)
