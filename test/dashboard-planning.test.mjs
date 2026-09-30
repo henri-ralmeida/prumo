@@ -2075,8 +2075,8 @@ test('fases paralelas mostram seus proprios papeis e cores sem reduzir a primeir
   assert.equal((structure.match(/class="s-end-dot live"/g)??[]).length,2)
   assert.match(structure,/values="#e8b04b;#f28c52;#e8b04b"/)
   assert.match(structure,/values="#b69cff;#4fc3f7;#b69cff"/)
-  assert.match(structure,/class="s-spinner"[^>]*r="10"/)
-  assert.match(structure,/class="s-end-dot live"[^>]*r="6"/)
+  assert.match(structure,/class="s-spinner"[^>]*r="6.375"/)
+  assert.match(structure,/class="s-end-dot live"[^>]*r="4"/)
 })
 
 test('spinners novos compartilham o relogio sem reiniciar os existentes', () => {
