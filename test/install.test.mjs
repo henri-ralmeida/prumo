@@ -426,7 +426,7 @@ test('automatic CLI installs only detected harnesses, preserves runs and backups
   assert.equal(existsSync(join(f.home, '.codex')), false)
   assert.equal(read(migratedState), before)
   assert.equal(existsSync(state), false)
-  assert.equal(existsSync(legacy), false)
+  assert.equal(read(legacy), 'original legacy skill')
   const backups = join(f.home, '.local', 'share', 'prumo', 'backups')
   const count = readdirSync(backups).length
   assert.equal(count, 3)
@@ -908,7 +908,7 @@ test('restore supports an explicitly selected project outside the user home', t 
   for (const item of plan.groups.flatMap(group => group.changes)) assert.ok(inside(f.home, item.file) || inside(project, item.file))
   const installed = applyInstall(plan)
   assert.ok(installed.groups.every(group => group.status !== 'conflict'))
-  assert.equal(existsSync(legacy), false)
+  assert.equal(read(legacy), 'existing project skill')
   restoreInstall(installed.backup, { home: f.home, env: {} })
   assert.equal(read(legacy), 'existing project skill')
   assert.equal(existsSync(join(project, '.claude', 'skills', 'prumo', 'SKILL.md')), false)
@@ -1012,9 +1012,11 @@ test('overlay migrates the legacy skill, preserves run data and supports complet
   const migratedPlan = join(migratedRoot, relative(root, planPath))
   assert.deepEqual([read(migratedState), read(migratedEvents), read(migratedPlan)], before)
   assert.equal(existsSync(root), false)
-  assert.equal(existsSync(legacy), false)
+  assert.equal(read(join(legacy, 'scripts', 'engine.mjs')), '// old engine')
   assert.equal(read(join(prumo, 'custom.bin')), 'custom bytes preserved')
-  const migratedEnv = { ...env, PRUMO_HOME: dirname(migratedRoot), PRUMO_ROOT: migratedRoot }
+  const verificationRoot = join(f.home, 'verification-workspace')
+  cpSync(migratedRoot, verificationRoot, { recursive: true })
+  const migratedEnv = { ...env, PRUMO_HOME: dirname(migratedRoot), PRUMO_ROOT: verificationRoot }
   const prumoCall = spawnSync(process.execPath, [join(prumo, 'scripts', 'engine.mjs'), 'graph'], { env: migratedEnv, encoding: 'utf8' })
   assert.equal(prumoCall.status, 0, prumoCall.stderr)
   const task = JSON.parse(prumoCall.stdout).tasks.T1
@@ -1075,6 +1077,22 @@ test('large workspace relocation keeps file payloads out of memory and rejects a
   assert.equal(result.groups.find(group => group.name === 'workspace:large').status, 'conflict')
   assert.equal(existsSync(legacy), true)
   assert.equal(existsSync(destination), false)
+})
+
+for (const harness of ['claude', 'kiro', 'codex', 'dsh']) test(`${harness}: instalar Prumo copia arquivos adicionais sem apagar a skill graph-foreman`, t => {
+  const f = fixture(t, harness)
+  const legacy = join(f.skillRoot, 'graph-foreman')
+  put(join(legacy, 'SKILL.md'), 'skill graph-foreman original')
+  put(join(legacy, 'custom.txt'), 'arquivo adicional preservado')
+  const result = f.install()
+  assert.equal(read(join(legacy, 'SKILL.md')), 'skill graph-foreman original')
+  assert.equal(read(join(legacy, 'custom.txt')), 'arquivo adicional preservado')
+  assert.equal(read(join(f.skillRoot, 'prumo', 'custom.txt')), 'arquivo adicional preservado')
+  assert.match(read(join(f.skillRoot, 'prumo', 'SKILL.md')), /name: prumo/)
+  assert.equal(f.install().backup, null)
+  restoreInstall(result.backup, { home: f.home, env: {} })
+  assert.equal(read(join(legacy, 'SKILL.md')), 'skill graph-foreman original')
+  assert.equal(read(join(legacy, 'custom.txt')), 'arquivo adicional preservado')
 })
 
 test('legacy migration blocks conflicting custom files without changing either skill', t => {

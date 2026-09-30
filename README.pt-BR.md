@@ -131,11 +131,11 @@ bunx @henri-ralmeida/prumo@latest install --all --dry-run
 bunx @henri-ralmeida/prumo@latest install --all
 ```
 
-Omita `--all` para escolher pelas caixas de seleção, ou use `--claude`, `--kiro`, `--codex` ou `--dsh` para selecionar um diretamente. Se a instalação estiver dentro de um projeto, execute na pasta dele ou acrescente `--project "<caminho-do-projeto>"`. Essa primeira troca usa `install`; `update` só atualiza ambientes que já contêm Prumo. Depois da migração, use `/prumo` (ou `$prumo` no Codex); a skill legada `/graph-foreman` é removida.
+Omita `--all` para escolher pelas caixas de seleção, ou use `--claude`, `--kiro`, `--codex` ou `--dsh` para selecionar um diretamente. Se a instalação estiver dentro de um projeto, execute na pasta dele ou acrescente `--project "<caminho-do-projeto>"`. Essa primeira troca usa `install`; `update` só atualiza ambientes que já contêm Prumo. Depois da migração, use `/prumo` (ou `$prumo` no Codex); a skill original `/graph-foreman` permanece intacta em sua pasta separada.
 
 Não é necessário migrar os dados manualmente. Encerre sessões que estejam carregando arquivos da skill graph-foreman antes de instalar; o instalador nunca encerra processos. Ele detecta os locais padrão, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, projetos informados e ancestrais do diretório atual.
 
-- Instala Prumo na mesma raiz de skills, copia arquivos adicionais da instalação legada quando não há conflito, confere a instalação e depois remove a pasta da skill graph-foreman.
+- Instala Prumo na mesma raiz de skills, copia arquivos adicionais da instalação legada quando não há conflito, confere a instalação e preserva a pasta original da skill graph-foreman.
 - Move somente dados centrais duráveis de `~/.local/share/graph-foreman` para `~/.local/share/prumo`: estado do grafo, backups salvos do grafo e arquivos de plano ou handoff no topo. `.specs/graph` dentro de projetos permanece no lugar. Diretórios gerados de execução, cópias de dependências e saídas de build só são apagados depois de conferir o destino durável. Contratos, estados, tentativas, evidências e histórico não mudam.
 - Mantém um original recuperável proporcional aos dados duráveis do plano, detecta alterações concorrentes e desfaz uma realocação se uma etapa posterior da instalação falhar. Links internos entre dados duráveis acompanham o destino; alvos externos não mudam. Um link para pasta vazia que não pode ser recriada adia a migração antes de alterar a origem.
 - Aplica cada conjunto separadamente. Arquivos personalizados conflitantes, configuração inválida, caminho vinculado ou arquivo ocupado impedem somente aquele conjunto. O instalador não encerra processos.

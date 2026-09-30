@@ -4,6 +4,7 @@ Historical tag and commit corrections are documented in [Release history recover
 
 ## 2.3.0 — 2026-09-30
 
+- Instale a skill Prumo em sua própria pasta e preserve a skill original graph-foreman; arquivos adicionais são copiados sem apagar a origem.
 - Mostre No Prumo nos estados concluídos e No prumo em amarelo nos indicadores, barras e legenda dos resultados.
 - Preserve os totais de tarefas válidas, excluindo as puladas, e conte somente comandos de Planejamento, Execução e Revisão na estimativa de coordenação manual.
 - Uniformize os estados, as cores e os spinners sincronizados no dashboard e nas demonstrações interativas do guia.

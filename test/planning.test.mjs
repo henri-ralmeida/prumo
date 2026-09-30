@@ -160,7 +160,7 @@ function startWithQuotedPaths(t, shellEnv) {
   const copiedScripts = join(f.root, "engine path & 'quoted'")
   mkdirSync(copiedScripts)
   for (const file of ['engine.mjs', 'engine-args.mjs', 'atomic-state.mjs', 'validation.mjs', 'storage.mjs', 'i18n.mjs',
-    'messages.json', 'region.mjs', 'sync-plan-audit.mjs', 'contract-drift.mjs', 'task-identifiers.mjs'])
+    'messages.json', 'region.mjs', 'sync-plan-audit.mjs', 'contract-drift.mjs', 'task-identifiers.mjs', 'review-readiness.mjs', 'command-metrics.mjs'])
     copyFileSync(join(dirname(engine), file), join(copiedScripts, file))
   const copiedEngine = join(copiedScripts, 'engine.mjs')
   const home = dirname(f.root)
@@ -849,7 +849,7 @@ test('legacy tasks retain their lifecycle and history while tasks added by sync-
   assert.equal(f.state().tasks.T1a.discoveryRequired, true)
   assert.equal(f.state().tasks.T1a.planningRequired, true)
   f.rejected(/completed current discussion/, 'plan-task', 'T1a', '--agent', 'planner')
-  assert.equal(f.graph().derived.T1a.effective, 'ready_for_discussion')
+  assert.equal(f.graph().derived.T1a.effective, 'waiting', 'a tarefa filha aguarda a dependencia ativa antes da discussao')
   f.ok('fail', 'T1', '--reason', 'Legacy real failure')
   f.ok('retry', 'T1')
   f.ok('start', 'T1', '--agent', 'legacy-executor-v2')

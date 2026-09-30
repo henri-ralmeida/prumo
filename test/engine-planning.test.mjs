@@ -17,8 +17,8 @@ function fixture(t, dependent = false, { requireReview = true } = {}) {
   writeFileSync(join(project, 'check.cjs'), "require('node:assert/strict').equal(1, 1)\n")
   const planPath = join(root, 'plan.json')
   writeFileSync(planPath, JSON.stringify({ name: 'Corrective retry', requireReview, tasks: [
-    ...(dependent ? [{ id: 'T0', title: 'Dependency', validation }] : []),
-    { id: 'T1', title: 'Delivery', deps: dependent ? ['T0'] : [], validation },
+    ...(dependent ? [{ id: 'T2', title: 'Dependency', validation }] : []),
+    { id: 'T1', title: 'Delivery', deps: dependent ? ['T2'] : [], validation },
   ] }))
   const discovery = {
     research: [{ source: 'delivery', findings: 'Current behavior inspected.' }],
@@ -47,7 +47,7 @@ function fixture(t, dependent = false, { requireReview = true } = {}) {
   }
   const rejects = (pattern, ...args) => { const result = cli(...args); assert.notEqual(result.status, 0); assert.match(result.stdout + result.stderr, pattern) }
   ok('init', '--plan', planPath, '--run', 'retry')
-  if (dependent) ok('skip', 'T0', '--reason', 'Dependency explicitly waived')
+  if (dependent) ok('skip', 'T2', '--reason', 'Dependency explicitly waived')
   ok('begin-discussion', 'T1')
   const round = JSON.parse(readFileSync(join(root, '.specs/graph/retry/state.json'), 'utf8')).tasks.T1.discussionAttempts.at(-1)
   discovery.roundId = round.roundId
@@ -216,7 +216,7 @@ test('material discovery, task scope and dependency changes invalidate a retry b
   for (const [dependent, mutate] of [
     [false, state => state.tasks.T1.discovery.decisions.push({ question: 'New scope?', answer: 'Yes.' })],
     [false, state => { state.tasks.T1.title = 'Materially changed delivery' }],
-    [true, state => { state.tasks.T0.skipReason = 'Changed dependency outcome' }],
+    [true, state => { state.tasks.T2.skipReason = 'Changed dependency outcome' }],
   ]) {
     const f = fixture(t, dependent)
     f.ok('start', 'T1', '--agent', 'executor')
@@ -747,31 +747,31 @@ test('an unstarted legacy human block enters the current workflow during migrati
 
 test('partial migration keeps a blocked legacy attempt resumable while independent new tasks plan', t => {
   const f = phaseFixture(t, [
-    { id: 'T11', phase: 'F1', title: 'Completed prerequisite' },
-    { id: 'T12', phase: 'F1', title: 'Legacy blocked work' },
-    { id: 'T25', phase: 'F1', title: 'New independent work', deps: ['T11'] },
-    { id: 'T26', phase: 'F1', title: 'Another independent work', deps: ['T11'] },
+    { id: 'T1', phase: 'F1', title: 'Completed prerequisite' },
+    { id: 'T2', phase: 'F1', title: 'Legacy blocked work' },
+    { id: 'T3', phase: 'F1', title: 'New independent work', deps: ['T1'] },
+    { id: 'T4', phase: 'F1', title: 'Another independent work', deps: ['T1'] },
   ])
   const legacy = f.state()
-  legacy.tasks.T11.state = 'done'
-  legacy.tasks.T11.validations = [{
+  legacy.tasks.T1.state = 'done'
+  legacy.tasks.T1.validations = [{
     ok: true, by: 'review', agent: 'seed-reviewer', evidence: 'Seed prerequisite',
     attempt: 0, token: 'seed-receipt',
   }]
-  legacy.tasks.T12.state = 'blocked'
-  legacy.tasks.T12.stateBeforeBlock = 'running'
-  legacy.tasks.T12.blockReason = 'Waiting for an external decision'
-  legacy.tasks.T12.agent = 'legacy-executor'
-  legacy.tasks.T12.attempts = [{ n: 1, agent: 'legacy-executor', startedAt: '2026-09-21T12:00:00.000Z' }]
-  legacy.tasks.T12.validations = [{
+  legacy.tasks.T2.state = 'blocked'
+  legacy.tasks.T2.stateBeforeBlock = 'running'
+  legacy.tasks.T2.blockReason = 'Waiting for an external decision'
+  legacy.tasks.T2.agent = 'legacy-executor'
+  legacy.tasks.T2.attempts = [{ n: 1, agent: 'legacy-executor', startedAt: '2026-09-21T2:00:00.000Z' }]
+  legacy.tasks.T2.validations = [{
     ok: false, by: 'executor', agent: 'legacy-executor', evidence: 'Prior failed evidence',
     attempt: 1, token: 'prior-evidence',
   }]
   for (const field of ['discussionRequired', 'discoveryRequired', 'planningRequired', 'discussionAttempts', 'planningAttempts', 'planningHistory'])
-    delete legacy.tasks.T12[field]
-  const completedBefore = structuredClone(legacy.tasks.T11)
-  const attemptBefore = structuredClone(legacy.tasks.T12.attempts[0])
-  const evidenceBefore = structuredClone(legacy.tasks.T12.validations)
+    delete legacy.tasks.T2[field]
+  const completedBefore = structuredClone(legacy.tasks.T1)
+  const attemptBefore = structuredClone(legacy.tasks.T2.attempts[0])
+  const evidenceBefore = structuredClone(legacy.tasks.T2.validations)
   delete legacy.schemaVersion
   delete legacy.plan.planningMode
   delete legacy.phaseWorkflows
@@ -779,19 +779,19 @@ test('partial migration keeps a blocked legacy attempt resumable while independe
 
   const migrated = JSON.parse(f.ok('graph').stdout)
   assert.equal(migrated.plan.planningMode, 'phase')
-  assert.deepEqual(migrated.tasks.T11, completedBefore)
-  assert.equal(migrated.tasks.T12.state, 'blocked')
-  assert.equal(migrated.tasks.T12.planningRequired, false)
-  assert.deepEqual(migrated.tasks.T12.attempts, [attemptBefore])
-  assert.deepEqual(migrated.tasks.T12.validations, evidenceBefore)
-  assert.equal(migrated.derived.T25.effective, 'ready_for_discussion')
-  assert.equal(migrated.derived.T26.effective, 'ready_for_discussion')
+  assert.deepEqual(migrated.tasks.T1, completedBefore)
+  assert.equal(migrated.tasks.T2.state, 'blocked')
+  assert.equal(migrated.tasks.T2.planningRequired, false)
+  assert.deepEqual(migrated.tasks.T2.attempts, [attemptBefore])
+  assert.deepEqual(migrated.tasks.T2.validations, evidenceBefore)
+  assert.equal(migrated.derived.T3.effective, 'ready_for_discussion')
+  assert.equal(migrated.derived.T4.effective, 'ready_for_discussion')
 
-  f.ok('unblock', 'T12')
-  f.ok('review', 'T12', '--agent', 'independent-reviewer')
-  f.ok('validate', 'T12', '--ok', '--evidence', 'Legacy attempt reviewed', '--cwd', f.project)
-  f.ok('done', 'T12')
-  const completedLegacy = f.state().tasks.T12
+  f.ok('unblock', 'T2')
+  f.ok('review', 'T2', '--agent', 'independent-reviewer')
+  f.ok('validate', 'T2', '--ok', '--evidence', 'Legacy attempt reviewed', '--cwd', f.project)
+  f.ok('done', 'T2')
+  const completedLegacy = f.state().tasks.T2
   assert.equal(completedLegacy.attempts.length, 1)
   assert.equal(completedLegacy.attempts[0].agent, attemptBefore.agent)
   assert.equal(completedLegacy.attempts[0].startedAt, attemptBefore.startedAt)
@@ -804,14 +804,14 @@ test('partial migration keeps a blocked legacy attempt resumable while independe
   f.writeArtifacts('F1')
   f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
   const planned = f.state()
-  for (const id of ['T25', 'T26']) {
+  for (const id of ['T3', 'T4']) {
     assert.equal(planned.tasks[id].planningRequired, true)
     assert.equal(planned.tasks[id].taskPlan.phaseId, 'F1')
   }
-  f.ok('start', 'T25', '--agent', 'new-worker-25')
-  f.ok('start', 'T26', '--agent', 'new-worker-26')
-  assert.equal(f.state().tasks.T25.state, 'running')
-  assert.equal(f.state().tasks.T26.state, 'running')
+  f.ok('start', 'T3', '--agent', 'new-worker-25')
+  f.ok('start', 'T4', '--agent', 'new-worker-26')
+  assert.equal(f.state().tasks.T3.state, 'running')
+  assert.equal(f.state().tasks.T4.state, 'running')
 })
 
 test('material sync invalidates a completed phase discussion before planner dispatch', t => {

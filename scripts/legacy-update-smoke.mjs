@@ -180,6 +180,13 @@ try {
   put(join(home, '.local/share/prumo/dashboard.json'), { enabled: false })
   run('npm', ['install', '--global', '--ignore-scripts', '--no-audit', '--no-fund', archive])
   assert.equal(run(process.execPath, [cli, '-v']).trim(), fromVersion)
+  // Tags antigas sem publicação usam o próprio pacote local ao preparar a instalação.
+  registry = fork(join(repo, 'test/fixtures/update-registry.mjs'), [], { silent: true, env: { ...env,
+    PRUMO_TEST_PACKAGE: join(installed, 'package.json'), PRUMO_TEST_ARCHIVE: archive,
+    PRUMO_TEST_REQUESTS: join(home, 'old-requests'), PRUMO_TEST_FAILURE: join(home, 'old-failure') } })
+  const oldAddress = await new Promise((resolve, reject) => { registry.once('message', resolve); registry.once('error', reject) })
+  env.npm_config_registry = oldAddress.url
+  env.npm_config_fetch_retries = '0'
   for (const harness of ['claude', 'kiro', 'codex']) run(process.execPath, [cli, 'install', `--${harness}`, '--lang', 'en'])
   // A release with autostart keeps its dashboard running through the update, as a user has it. The
   // per-user Startup entry (Windows) or XDG entry (Linux) lives in this temporary home.
@@ -200,13 +207,14 @@ try {
     previousDashboard.stderr.on('data', value => { previousOutput += value })
     await waitForDashboard(body => body.product === 'prumo' && body.version === fromVersion,
       () => `dashboard (${fromVersion}): exit=${previousDashboard.exitCode}\n${previousOutput}`)
-    const enable = spawnSync(process.execPath, [cli, 'dashboard', 'enable'], { cwd: project, env, encoding: 'utf8', windowsHide: true, timeout: 180000 })
+    const enable = spawnSync(process.execPath, [cli, 'dashboard', 'enable'], { cwd: project, env, encoding: 'utf8', windowsHide: true, timeout: 60000 })
     // The old release may not confirm the pid it started (seen on Windows); the dashboard must still serve.
     evidence.push({ args: ['dashboard', 'enable'], status: enable.status, stdout: enable.stdout, stderr: enable.stderr })
-    assert.ifError(enable.error)
+    if (enable.error?.code !== 'ETIMEDOUT') assert.ifError(enable.error)
     const health = await waitForDashboard(body => body.product === 'prumo' && body.version === fromVersion,
       `dashboard enable (${fromVersion}): status=${enable.status}\n${enable.stdout}\n${enable.stderr}\n${previousOutput}`)
     const preference = JSON.parse(readFileSync(dashboardPreference, 'utf8'))
+    assert.equal(preference.enabled, true, 'O dashboard antigo deve estar habilitado e servindo antes da atualização.')
     dashboardBefore = { pid: health.pid ?? preference.pid ?? previousDashboard.pid }
     // The state a failed restart left on the user's machine: enabled, without a recorded pid.
     delete preference.pid
@@ -293,6 +301,9 @@ try {
   put(join(oldRoot, 'attempt4/source/packages/desktop/value.txt'), 'preserved dependency')
   mkdirSync(dirname(join(oldRoot, dependency)), { recursive: true })
   symlinkSync(join(oldRoot, 'attempt4/source/packages/desktop'), join(oldRoot, dependency), 'junction')
+  const oldRegistryClosed = new Promise(resolve => registry.once('exit', resolve))
+  registry.kill()
+  await oldRegistryClosed
   registry = fork(join(repo, 'test/fixtures/update-registry.mjs'), [], { silent: true, env: { ...env,
     PRUMO_TEST_PACKAGE: join(repo, 'package.json'), PRUMO_TEST_ARCHIVE: candidate,
     PRUMO_TEST_REQUESTS: join(home, 'requests'), PRUMO_TEST_FAILURE: join(home, 'failure') } })

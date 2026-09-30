@@ -386,7 +386,7 @@ test('global dashboard discovers only known roots, stays read-only, and refreshe
   const get = path => fetch(`http://127.0.0.1:${port}${path}`, { signal: AbortSignal.timeout(10000) })
 
   assert.deepEqual(await (await get('/api/runs')).json(), { currentRoot: null, current: null, runs: [], warnings: [] })
-  assert.deepEqual(await (await get('/api/state')).json(), { plan: { name: '', phases: [] }, tasks: {}, derived: {}, empty: true })
+  assert.deepEqual(await (await get('/api/state')).json(), { plan: { name: '', phases: [] }, tasks: {}, derived: {}, empty: true, commandMetrics: { byCommand: {}, total: 0, startedAt: null, complete: false } })
   assert.deepEqual(await (await get('/api/events')).json(), { events: [] })
   const health = await (await get('/api/health')).json()
   assert.deepEqual({ product: health.product, mode: health.mode, readOnly: health.readOnly, host: health.host, port: health.port },

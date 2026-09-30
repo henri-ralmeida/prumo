@@ -131,11 +131,11 @@ bunx @henri-ralmeida/prumo@latest install --all --dry-run
 bunx @henri-ralmeida/prumo@latest install --all
 ```
 
-Omit `--all` to choose with checkboxes, or use `--claude`, `--kiro`, `--codex` or `--dsh` to select one directly. For a project-local installation, run from that project or add `--project "<project-path>"`. This first switch uses `install`; `update` only refreshes environments already containing Prumo. After migration, use `/prumo` (or `$prumo` in Codex); the legacy `/graph-foreman` skill is removed.
+Omit `--all` to choose with checkboxes, or use `--claude`, `--kiro`, `--codex` or `--dsh` to select one directly. For a project-local installation, run from that project or add `--project "<project-path>"`. This first switch uses `install`; `update` only refreshes environments already containing Prumo. After migration, use `/prumo` (or `$prumo` in Codex); the original `/graph-foreman` skill stays intact in its separate directory.
 
 No manual data migration is required. Finish sessions that are actively loading files from the graph-foreman skill before installing; the installer never kills processes. It checks standard locations, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, supplied projects and ancestors of the current directory.
 
-- Installs Prumo under the same skills root, copies non-product legacy files when they do not conflict, verifies the installed files and then removes the graph-foreman skill directory.
+- Installs Prumo under the same skills root, copies non-product legacy files when they do not conflict, verifies the installed files and preserves the original graph-foreman skill directory.
 - Moves only durable central data from `~/.local/share/graph-foreman` to `~/.local/share/prumo`: graph state, saved graph backups and top-level plan or handoff files. Project-local `.specs/graph` stays in place. Generated execution directories, dependency copies and build outputs are deleted only after the durable destination is verified. Contracts, states, attempts, evidence and history remain unchanged.
 - Keeps a recoverable original proportional to the durable plan data, detects concurrent workspace changes, and rolls back a relocation when a later installation step fails. Internal links between durable data follow the destination; external targets remain untouched. A link to an empty directory that cannot be recreated defers migration before changing the source.
 - Applies independent groups separately. Conflicting custom files, invalid configuration, linked paths or busy files block only their affected group. The installer does not kill processes to release files.
