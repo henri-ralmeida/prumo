@@ -178,8 +178,28 @@ function loadState(name) {
 
 function saveState(name, state) {
   state.updatedAt = new Date().toISOString()
+  closeInactiveActivity(state, state.updatedAt)
   const dir = runDir(name)
   writeAtomicState(join(dir, 'state.json'), JSON.stringify(state, null, 2))
+}
+
+function stopOpenActivity(owner, at) {
+  const open = owner?.activityIntervals?.findLast(interval => !interval.endedAt)
+  if (open) open.endedAt = at
+}
+
+function closeInactiveActivity(state, at) {
+  for (const phase of Object.values(state.phaseWorkflows ?? {})) {
+    if (phase.state !== 'discussing' || phase.discussionAttempts?.at(-1)?.endedAt) stopOpenActivity(phase.discussionAttempts?.at(-1), at)
+    if (phase.state !== 'planning' || phase.planningAttempts?.at(-1)?.endedAt) stopOpenActivity(phase.planningAttempts?.at(-1), at)
+  }
+  for (const task of Object.values(state.tasks ?? {})) {
+    if (task.state !== 'discussing' || task.discussionAttempts?.at(-1)?.endedAt) stopOpenActivity(task.discussionAttempts?.at(-1), at)
+    if (task.state !== 'planning' || task.planningAttempts?.at(-1)?.endedAt) stopOpenActivity(task.planningAttempts?.at(-1), at)
+    const attempt = task.attempts?.at(-1)
+    const open = attempt?.activityIntervals?.findLast(interval => !interval.endedAt)
+    if (open && (task.state !== (open.role === 'execution' ? 'running' : 'reviewing') || attempt.endedAt)) open.endedAt = at
+  }
 }
 
 function migrationStatus(state) {
@@ -884,7 +904,8 @@ function beginPlanning(state, task, agent, context = planningContext(state, task
   task.planningAttempts ??= []
   task.planningHistory ??= []
   task.planningAttempts.push({ n: task.planningAttempts.length + 1, agent,
-    startedAt: new Date().toISOString(), context, attempt: task.attempts.length + (task.planningReturn ? 0 : 1),
+    startedAt: new Date().toISOString(), activityTiming: 'explicit', activityIntervals: [],
+    context, attempt: task.attempts.length + (task.planningReturn ? 0 : 1),
     contextSnapshot: taskContextSnapshot(state, task),
     ...(digest ? { discoveryDigest: digest } : {}) })
   task.state = 'planning'
@@ -2286,6 +2307,7 @@ const commands = {
     if (!targets.length) die(`${phaseId} has no nonterminal tasks to discuss`)
     const requiresContractConfirmation = Boolean(phase.contractConfirmationRequired)
     const round = { roundId: randomUUID(), nonce: randomUUID(), startedAt: new Date().toISOString(),
+      activityTiming: 'explicit', activityIntervals: [],
       targets: targets.map(task => task.id), context: phaseContext(state, phaseId, targets),
       contextSnapshot: phaseContextSnapshot(state, targets),
       ...(targetsFallback ? { targetsFallback: true } : {}),
@@ -2419,6 +2441,7 @@ const commands = {
     const planDir = args['plan-dir'] === undefined ? undefined :
       typeof args['plan-dir'] === 'string' && args['plan-dir'].trim() ? resolve(args['plan-dir']) : die('plan-phase --plan-dir must name a directory')
     const round = { n: phase.planningAttempts.length + 1, agent, startedAt: new Date().toISOString(), context,
+      activityTiming: 'explicit', activityIntervals: [],
       ...(planDir ? { planDir } : {}),
       contextSnapshot: phaseContextSnapshot(state, discussion.targets.map(id => getTask(state, id))),
       discussionDecision: discussion.kind, discussionDigest: discussion.digest, discussionRoundId: discussion.id,
@@ -2587,6 +2610,7 @@ const commands = {
     const requiresContractConfirmation = Boolean(t.contractConfirmationRequired)
     const round = {
       roundId: randomUUID(), nonce: randomUUID(), startedAt: new Date().toISOString(),
+      activityTiming: 'explicit', activityIntervals: [],
       context: planningContext(state, t), attempt: t.attempts.length + (t.planningReturn ? 0 : 1),
       contextSnapshot: taskContextSnapshot(state, t),
       ...(requiresContractConfirmation ? { requiresContractConfirmation: true,
@@ -2869,6 +2893,7 @@ const commands = {
     t.state = 'running'
     t.agent = agent
     t.attempts.push({ n: t.attempts.length + 1, agent, startedAt: new Date().toISOString(),
+      activityTiming: 'explicit', activityIntervals: [],
       ...(t.retryPlan?.attempt === t.attempts.length + 1 ? {
         planSourceAttempt: t.retryPlan.planSourceAttempt,
         correctionOf: t.retryPlan.failedAttempt, correctionReason: t.retryPlan.reason,
@@ -3123,6 +3148,7 @@ const commands = {
         assertCurrentExecutionInputs(state, t)
       }
       Object.assign(last, result, { ok: requestedOk && !error, error, at: new Date().toISOString() })
+      if (last.by === 'review') stopOpenActivity(t.attempts.at(-1), last.at)
       saveState(name, state)
       emit(name, 'task_validate', id, { ok: last.ok, by: last.by, evidence: last.evidence,
         ...(last.summary === undefined ? {} : { summary: last.summary }), error })
@@ -3389,6 +3415,60 @@ const commands = {
     const characters = Array.from(text).length
     log(`[prumo] ${id} note recorded (${characters} ${characters === 1 ? 'character' : 'characters'})`)
   },
+
+  'activity-start'() {
+    const name = runName()
+    const id = args._[0] ?? die(tr('activity-start <id> --scope task|phase --role discussion|planning|execution|review --agent <name>'))
+    const scope = args.scope ?? 'task'
+    const role = args.role
+    const agent = args.agent
+    if (!['task', 'phase'].includes(scope) || !['discussion', 'planning', 'execution', 'review'].includes(role) ||
+        typeof agent !== 'string' || !agent.trim()) die(tr('activity-start needs a valid scope, role and nonempty agent'))
+    if (scope === 'phase' && !['discussion', 'planning'].includes(role)) die(tr('phase activity supports discussion or planning only'))
+    const state = loadState(name)
+    const target = scope === 'phase' ? getPhase(state, id) : getTask(state, id)
+    const expectedState = { discussion: 'discussing', planning: 'planning', execution: 'running', review: 'reviewing' }[role]
+    if (target.state !== expectedState) die(tr('{0} must be {1} to start {2} activity', id, expectedState, role))
+    const owner = role === 'discussion' ? target.discussionAttempts?.at(-1) : role === 'planning' ?
+      target.planningAttempts?.at(-1) : target.attempts?.at(-1)
+    if (!owner || owner.endedAt) die(tr('{0} has no current {1} activity round', id, role))
+    const expectedAgent = role === 'planning' ? target.planner : role === 'execution' ? target.agent :
+      role === 'review' ? target.reviewer : owner.activityAgent
+    if (expectedAgent && expectedAgent !== agent) die(tr('{0} {1} activity belongs to {2}', id, role, expectedAgent))
+    if (owner.activityIntervals?.some(interval => !interval.endedAt)) die(tr('{0} already has active work', id))
+    if (owner.activityTiming !== 'explicit') {
+      owner.activityTiming = 'explicit'
+      owner.activityLegacy = true
+      owner.activityIntervals = []
+    }
+    if (role === 'discussion') owner.activityAgent ??= agent
+    owner.activityIntervals ??= []
+    owner.activityIntervals.push({ role, agent, startedAt: new Date().toISOString() })
+    saveState(name, state)
+    emit(name, 'activity_start', id, { scope, role, agent })
+    log('[prumo] ' + tr('{0} {1} activity started by {2}', id, role, agent))
+  },
+
+  'activity-stop'() {
+    const name = runName()
+    const id = args._[0] ?? die(tr('activity-stop <id> --scope task|phase --role discussion|planning|execution|review --agent <name>'))
+    const scope = args.scope ?? 'task'
+    const role = args.role
+    const agent = args.agent
+    if (!['task', 'phase'].includes(scope) || !['discussion', 'planning', 'execution', 'review'].includes(role) ||
+        typeof agent !== 'string' || !agent.trim()) die(tr('activity-stop needs a valid scope, role and nonempty agent'))
+    if (scope === 'phase' && !['discussion', 'planning'].includes(role)) die(tr('phase activity supports discussion or planning only'))
+    const state = loadState(name)
+    const target = scope === 'phase' ? getPhase(state, id) : getTask(state, id)
+    const owner = role === 'discussion' ? target.discussionAttempts?.at(-1) : role === 'planning' ?
+      target.planningAttempts?.at(-1) : target.attempts?.at(-1)
+    const open = owner?.activityIntervals?.findLast(interval => !interval.endedAt)
+    if (!open || open.role !== role || open.agent !== agent) die(tr('{0} has no active {1} work by {2}', id, role, agent))
+    open.endedAt = new Date().toISOString()
+    saveState(name, state)
+    emit(name, 'activity_stop', id, { scope, role, agent })
+    log('[prumo] ' + tr('{0} {1} activity stopped by {2}', id, role, agent))
+  },
 }
 
 if (!cmd || !Object.hasOwn(commands, cmd)) {
@@ -3403,6 +3483,7 @@ if (!cmd || !Object.hasOwn(commands, cmd)) {
 const READ_ONLY = new Set(['runs', 'status', 'ready', 'graph', 'show-contract', 'show-check'])
 const LEGACY_MIGRATION_CONTINUATIONS = new Set([
   'start', 'progress', 'review', 'review-progress', 'validate', 'done', 'fail', 'retry', 'block', 'unblock', 'skip', 'refresh-contract',
+  'activity-start', 'activity-stop',
 ])
 function assertMigrationCommandAllowed(state, command) {
   if (READ_ONLY.has(command) || command === 'sync-plan' || command === 'note') return
@@ -3410,6 +3491,15 @@ function assertMigrationCommandAllowed(state, command) {
   if (command === 'finish-discussion' && task?.discussionAttempts?.some(round => !round.endedAt)) return
   if (command === 'finish-planning' && task?.planningAttempts?.some(round => !round.endedAt)) return
   const phase = state.phaseWorkflows?.[args._[0]]
+  if (command === 'activity-start' || command === 'activity-stop') {
+    if (args.scope === 'phase' && phase && (
+      phase.state === 'discussing' && phase.discussionAttempts?.some(round => !round.endedAt) ||
+      phase.state === 'planning' && phase.planningAttempts?.some(round => !round.endedAt))) return
+    if (args.scope !== 'phase' && task && (
+      task.state === 'discussing' && task.discussionAttempts?.some(round => !round.endedAt) ||
+      task.state === 'planning' && task.planningAttempts?.some(round => !round.endedAt) ||
+      ['running', 'reviewing'].includes(task.state) && task.attempts?.some(attempt => !attempt.endedAt))) return
+  }
   if (command === 'finish-phase-discussion' && phase?.discussionAttempts?.some(round => !round.endedAt)) return
   if (command === 'finish-phase-planning' && phase?.planningAttempts?.some(round => !round.endedAt)) return
   // A 1.2 task-mode attempt carries planningRequired, but its task plan closed before execution:

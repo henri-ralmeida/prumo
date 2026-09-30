@@ -17,6 +17,20 @@ const fmtMs = (value) => {
 const localizer = (lang) => createTranslator(messages, lang)
 const spans = (...values) => values.map(([kind, from, to]) => [kind, from, to])
 
+test('START e STOP incluem discussão e planejamento de fase uma vez e a barra base soma 100%', () => {
+  const gain = calculateGain({ per: [{ id: 'A', spans: spans(['discussion', 0, 10000], ['exec', 20000, 30000]) }, { id: 'B', spans: spans(['review', 20000, 30000]) }],
+    sharedSpans: spans(['planning', 10000, 20000]) }, {}, true, { commandMetrics: { byCommand: { start: 1 }, complete: true } })
+  assert.equal(gain.oneAtATimeMs, 40000)
+  assert.equal(gain.withPrumoMs, 30000)
+  assert.equal(gain.savingsMs, 10000)
+  assert.equal(gain.combinedEstimateMs, 190000)
+  const rendered = renderGainPanel(gain, localizer('pt-BR'), fmtMs, esc, 'pt-BR')
+  const base = rendered.match(/class="seq" style="width:([\d.]+)%"><\/i><i class="est" style="width:([\d.]+)%"/)
+  assert.ok(base)
+  assert.equal(Number(base[1]) + Number(base[2]), 100)
+  assert.match(rendered, /Sem coordenação do prumo/)
+})
+
 test('ganho medido soma o trabalho por tarefa e une intervalos paralelos, sem contar bloqueios', () => {
   const analysis = {
     per: [
@@ -155,7 +169,7 @@ test('sem manualEstimate não há estimativa humana nem minutos editáveis por e
   for (const lang of ['en', 'pt-BR']) {
     const html = renderGainPanel(gain, localizer(lang), fmtMs, esc, lang)
     assert.doesNotMatch(html, /<input|<button|data-gain-minutes|gain-human|Human estimate|Estimativa humana/)
-    assert.match(html, /Estimated combined gain|Ganho combinado estimado/)
+    assert.match(html, /Estimated savings|Economia estimada/)
     assert.match(html, /sum of recorded agent intervals|soma dos intervalos registrados dos agentes/)
     assert.match(html, /union of recorded activity intervals|união dos intervalos de atividade registrados/)
   }
@@ -196,7 +210,7 @@ test('fase gera um comando de planejamento e ganho combinado nunca é apresentad
   assert.equal(gain.savingsMs, 60_000)
   assert.equal(gain.combinedEstimateMs, 420_000)
   const html = renderGainPanel(gain, localizer('pt-BR'), fmtMs, esc, 'pt-BR')
-  assert.match(html, /Ganho combinado estimado: 7m00/)
+  assert.match(html, /Economia estimada<\/span><strong>7m00<\/strong>/)
   assert.match(html, /Premissa fixa de 3 minutos por comando/)
   assert.match(html, /Com prumo/)
   const widths = [...html.matchAll(/width:([\d.]+)%/g)].map(match => Number(match[1]))
@@ -276,7 +290,7 @@ test('a estimativa humana só ganha barra contra o tempo aferido das mesmas tare
   assert.equal(gain.humanComparedMs, 1_200_000, 'only the estimated tasks enter the comparison')
   const html = renderGainPanel(gain, localizer('pt-BR'), fmtMs, esc, 'pt-BR')
   const [measuredBars, humanBlock] = html.split('class="gain-human"')
-  assert.match(measuredBars, /Ganho combinado estimado/, 'a estimativa global é identificada separadamente')
+  assert.match(measuredBars, /Economia estimada/, 'a estimativa global é identificada separadamente')
   assert.match(humanBlock, /estimativa · não é medição/)
   assert.match(humanBlock, /class="est" style="width:100\.00%"[\s\S]*Agentes nas mesmas tarefas[\s\S]*class="seq" style="width:33\.33%"/)
 

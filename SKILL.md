@@ -256,6 +256,17 @@ node $ENGINE validate T4 --ok --evidence "..." --cwd <absolute-project>  # the R
 node $ENGINE done T4
 ```
 
+Para medir trabalho real, marque o começo quando a pessoa ou agente efetivamente iniciar cada papel e
+marque a parada antes de aguardar resposta, pausar ou encerrar a atividade. Use
+`activity-start <id> --scope task|phase --role discussion|planning|execution|review --agent <name>` e
+`activity-stop` com os mesmos argumentos. Discussão e planejamento de fase usam `--scope phase`;
+execução e revisão usam `--scope task`. Os comandos de despacho e de abertura de rodada não iniciam
+atividade automaticamente, pois pode haver espera até o trabalho começar. Ao retomar, abra outro
+intervalo. O motor fecha um intervalo ainda aberto quando a rodada ou tentativa muda de estado;
+isso impede que uma pausa conte como trabalho após o bloqueio. Uma rodada antiga ainda aberta
+pode começar a medir no primeiro `activity-start`; recebe `activityLegacy: true` para indicar
+que o trabalho anterior ao primeiro START não foi medido nem presumido.
+
 ### State machine
 
 | State (from `ready`/`status`) | Next move | Command | Read |

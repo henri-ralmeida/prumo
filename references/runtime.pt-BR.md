@@ -803,6 +803,8 @@ Resolva `scripts/engine.mjs` a partir da skill instalada. Acrescente `--run <nam
 | `skip-planning <task> --reason <text> --confirmed-by-user` | Registra a escolha explícita de pular o planejamento da tarefa |
 | `finish-planning <task> --plan <artifact.json>` | Confere e registra o plano da tarefa; libera a execução se não houver pausa preservada |
 | `start <task> --agent <name>` | Registra o executor e abre uma tentativa (`--executor` é um alias) |
+| `activity-start <id> --scope task\|phase --role discussion\|planning\|execution\|review --agent <name>` | Inicia um intervalo de trabalho real na rodada ativa, depois que a pessoa ou agente começou a trabalhar; exige o agente responsável pelo papel |
+| `activity-stop <id> --scope task\|phase --role discussion\|planning\|execution\|review --agent <name>` | Encerra o intervalo antes de aguardar, pausar ou terminar o trabalho; ao retomar, use outro `activity-start` |
 | `progress <task> --step <index> --agent <executor>` | Registra o passo atual do plano durante a execução, começando em 1 |
 | `review <task> --agent <name>` | Encaminha o trabalho para revisão |
 | `review-progress <task> --step <index> --agent <reviewer>` | Registra os critérios percorridos na revisão, em ordem |
@@ -911,9 +913,20 @@ Para servir uma execução diferente de `CURRENT`: `node .claude/skills/prumo/sc
 
 ### Resultados
 
-O botão **results** do cabeçalho (ou `r`) troca o grafo pelo custo da execução. Tudo nele
-é DERIVADO dos horários das tentativas e dos eventos que o motor já registra — sem coleta
-extra, sem envolver o motor, e nada que não possa ser derivado é estimado:
+O botão **results** do cabeçalho (ou `r`) troca o grafo pelo custo da execução. Nas rodadas
+novas, `activityTiming: "explicit"` distingue a medição de trabalho dos registros anteriores.
+Cada `discussionAttempts[]`, `planningAttempts[]` e `attempts[]` novo contém
+`activityIntervals: [{ role, agent, startedAt, endedAt? }]`. Para execução e revisão, os dois
+papéis compartilham a tentativa; para discussão e planejamento de fase, a rodada é contada
+uma vez, sem multiplicar pelo número de tarefas. Um intervalo aberto representa trabalho em
+andamento e pode ser exibido até o horário atual enquanto o papel continua ativo. Intervalos
+fechados determinam a duração; `startedAt` e `endedAt` da rodada ou tentativa continuam a
+representar seu ciclo de vida, inclusive esperas, e não substituem intervalos explícitos.
+Rodadas antigas sem `activityTiming` mantêm a interpretação legada. Se ainda estiverem abertas,
+o primeiro START cria os intervalos vazios com `activityTiming: "explicit"` e `activityLegacy: true`:
+o prefixo anterior tem duração desconhecida e não é somado retroativamente. O motor não inicia trabalho ao despachar; `activity-start` marca o início
+efetivo, `activity-stop` retira a espera da conta, e a transição de estado fecha qualquer
+intervalo ainda aberto.
 
 - **Tempo de relógio vs tempo de agente**, e o ganho de paralelismo entre eles (tempo de agente ÷ tempo de relógio).
 - **Planejar vs construir vs verificar** — tempo de agente dividido entre planejadores, executores e revisores;

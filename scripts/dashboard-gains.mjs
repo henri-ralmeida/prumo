@@ -19,6 +19,7 @@ export function commandMetricsForRun(tasks = {}, options = {}) {
     task_discussion: 'begin-discussion', task_discussion_skipped: 'skip-discussion', task_discussed: 'finish-discussion',
     task_planning: 'plan-task', task_planning_skipped: 'skip-planning', task_planned: 'finish-planning',
     task_start: 'start', task_progress: 'progress', task_review: 'review', task_review_progress: 'review-progress',
+    activity_start: 'activity-start', activity_stop: 'activity-stop',
     task_contract_refreshed: 'refresh-contract', task_validate: 'validate', task_done: 'done', task_fail: 'fail',
     task_retry: 'retry', task_block: 'block', task_block_updated: 'block', task_unblock: 'unblock', task_skip: 'skip', task_note: 'note',
   }
@@ -54,8 +55,8 @@ export function commandMetricsForRun(tasks = {}, options = {}) {
 
 /** Calcula o paralelismo aferido sem transformar a premissa manual em trabalho dos agentes. */
 export function calculateGain(analysis, tasks = {}, eventsComplete = false, options = {}) {
-  // Os intervalos atuais de planejamento têm apenas início e fim, sem telemetria de trabalho ativo.
-  const activeKinds = new Set(['exec', 'review'])
+  // Envelopes legados de planejamento não medem atividade; START/STOP explícitos entram nas quatro funções.
+  const activeKinds = new Set(['exec', 'review', 'planning', 'discussion'])
   const mergeDuration = (intervals) => {
     const ordered = intervals
       .filter(([from, to]) => Number.isFinite(from) && Number.isFinite(to) && to > from)
@@ -72,8 +73,9 @@ export function calculateGain(analysis, tasks = {}, eventsComplete = false, opti
   const taskIntervals = per.map((item) => (item.spans ?? [])
     .filter(([kind, from, to]) => activeKinds.has(kind) && Number.isFinite(from) && Number.isFinite(to) && to > from)
     .map(([, from, to]) => [from, to]))
-  const oneAtATimeMs = taskIntervals.reduce((total, intervals) => total + mergeDuration(intervals), 0)
-  const withPrumoMs = mergeDuration(taskIntervals.flat())
+  const sharedIntervals = (analysis?.sharedSpans ?? []).filter(([kind, from, to]) => activeKinds.has(kind) && Number.isFinite(from) && Number.isFinite(to) && to > from).map(([, from, to]) => [from, to])
+  const oneAtATimeMs = taskIntervals.reduce((total, intervals) => total + mergeDuration(intervals), 0) + sharedIntervals.reduce((total, [from, to]) => total + to - from, 0)
+  const withPrumoMs = mergeDuration([...taskIntervals.flat(), ...sharedIntervals])
   const historyComplete = eventsComplete === true
   const measured = historyComplete && oneAtATimeMs > 0 && withPrumoMs > 0
   const rawCriticalPathMs = Number.isFinite(analysis?.cpLen) && analysis.cpLen > 0 ? analysis.cpLen : null
@@ -113,7 +115,7 @@ export function calculateGain(analysis, tasks = {}, eventsComplete = false, opti
     savingsMs: measured ? Math.max(0, oneAtATimeMs - withPrumoMs) : null,
     factor: measured ? oneAtATimeMs / withPrumoMs : null,
     criticalPathMs,
-    partial: Boolean(!historyComplete || analysis?.unmeasuredActivity || per.some((item) => item.unmeasured || (item.spans ?? []).some(([kind]) => kind === 'plan')) || analysis?.phasePlanning?.length),
+    partial: Boolean(!historyComplete || analysis?.unmeasuredActivity || per.some((item) => item.unmeasured || (item.spans ?? []).some(([kind]) => kind === 'plan')) || analysis?.phasePlanning?.some(attempt => attempt.activityTiming !== 'explicit')),
     runActive: Boolean(analysis?.anyLive),
     historyComplete,
     humanEstimateMs,
@@ -157,7 +159,7 @@ export function renderGainPanel(gain, tr, fmtMs, esc, locale = 'en') {
   // A escala compara trabalho sequencial mais coordenação manual estimada; o tracejado distingue a premissa.
   const pct = ratio((gain.oneAtATimeMs ?? 0) + (gain.manualCoordinationMs ?? 0))
   const bars = gain.oneAtATimeMs == null || !(gain.oneAtATimeMs > 0) ? '' : `<div class="gain-bars" aria-hidden="true">
-      <div class="gbar"><span>${esc(tr('One agent at a time'))}</span><span class="gbar-track"><i class="seq" style="width:${pct(gain.oneAtATimeMs)}%"></i><i class="est" style="width:${pct(gain.manualCoordinationMs)}%"></i></span></div>
+      <div class="gbar"><span>${esc(tr('One agent at a time'))}</span><span class="gbar-track"><i class="seq" style="width:${pct(gain.oneAtATimeMs)}%"></i><i class="est" style="width:${gain.manualCoordinationMs > 0 ? (100 - Number(pct(gain.oneAtATimeMs))).toFixed(2) : '0'}%"></i></span></div>
       <div class="gbar"><span>${esc(tr('With Prumo'))}</span><span class="gbar-track"><i class="par" style="width:${pct(gain.withPrumoMs)}%"></i><i class="save" style="width:${pct(gain.savingsMs)}%"></i><i class="est" style="width:${pct(gain.manualCoordinationMs)}%"></i></span></div>
     </div>`
   return `<section class="gcard gain" id="gainPanel" aria-labelledby="gainTitle">
@@ -167,9 +169,9 @@ export function renderGainPanel(gain, tr, fmtMs, esc, locale = 'en') {
       <div><span>${esc(tr('With Prumo'))}</span><strong>${shown(gain.withPrumoMs)}</strong><small>${esc(tr('union of recorded activity intervals; overlaps count once'))}</small></div>
       <div class="gain-save"><span>${esc(tr('Measured savings'))}</span><strong>${shown(gain.savingsMs)}</strong></div>
       <div><span>${esc(tr('Parallel factor'))}</span><strong>${esc(factor)}</strong></div>
+      <div class="gain-save"><span>${esc(tr('Estimated savings'))}</span><strong>${shown(gain.combinedEstimateMs)}</strong><small>${esc(tr('Estimated calculation based on manual coordination'))}</small></div>
     </div>
     ${bars}
-    <p class="gline"><b>${esc(tr('Estimated combined gain'))}: ${shown(gain.combinedEstimateMs)}</b> · ${esc(tr('Measured parallel savings plus estimated manual coordination. Dashed segments represent the estimate, not agent work.'))}</p>
     <p class="gline"><strong>${esc(tr('Fixed assumption of 3 minutes per command'))}</strong> · ${esc(fmtMs(gain.manualCoordinationMs ?? 0))} · ${esc(tr('{0} commands', gain.commandTotal ?? 0))}</p>
     ${critical}
     ${human}

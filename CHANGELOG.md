@@ -2,6 +2,14 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.2.1 — 2026-09-30
+
+- Mostre a contagem de concluídas sobre o total de tarefas no resumo lateral, por exemplo `Concluído 23/29`.
+- Inclua tarefas puladas no denominador e mantenha os totais do plano quando um filtro estiver ativo.
+- Destaque a Economia estimada com seu tempo e a indicação de cálculo baseado na coordenação manual.
+- Exiba Discussão, Planejamento, Execução e Revisão nessa ordem, com as cores dos estados.
+- Separe despacho de atividade: somente START/STOP explícitos medem novas rodadas; registros antigos insuficientes continuam não aferidos.
+
 ## 2.2.0 — 2026-09-30
 
 - Aplique a paleta dos estados aos cards e filtros, selecione tarefas por clique e navegue até as fases diretamente.

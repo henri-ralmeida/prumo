@@ -397,12 +397,28 @@ test('summary counts include discussion and legacy pending tasks', () => {
     const ui = dashboard(lang)
     ui.render({ run: 'summary', plan: { phases: [] }, tasks, derived })
     const summary = ui.nodes.get('#counts').innerHTML
-    assert.equal([...summary.matchAll(/<b>(\d+)<\/b>/g)].reduce((sum, match) => sum + Number(match[1]), 0), 4)
+    assert.equal([...summary.matchAll(/<b>(\d+)(?:\/\d+)?<\/b>/g)].reduce((sum, match) => sum + Number(match[1]), 0), 4)
     for (const state of ['ready_for_discussion', 'discussing', 'pending']) {
       assert.ok(summary.includes(state === 'discussing' ? (lang === 'en' ? 'Actively discussing' : 'Discutindo') : ui.run('statusLabel(value)', { value: state }).replace(/^./, char => char.toLocaleUpperCase(lang))), state)
     }
     assert.doesNotMatch(summary, /color:undefined/)
   }
+})
+
+test('concluidas mostram a quantidade sobre todas as tarefas do plano, incluindo puladas', () => {
+  const ui = dashboard('pt-BR')
+  const tasks = Object.fromEntries(Array.from({ length: 29 }, (_, index) => {
+    const id = `T${index + 1}`
+    return [id, task(id, index < 23 ? 'done' : index === 28 ? 'skipped' : 'pending')]
+  }))
+  const state = { run: 'concluidas-total', plan: { phases: [] }, tasks,
+    derived: Object.fromEntries(Object.entries(tasks).map(([id, task]) => [id, { effective: task.state }])) }
+  ui.render(state)
+  assert.match(ui.nodes.get('#counts').innerHTML, /Concluído<\/span> <b>23\/29<\/b>/)
+  ui.run("setFilter('done')")
+  assert.match(ui.nodes.get('#counts').innerHTML, /Concluído<\/span> <b>23\/29<\/b>/, 'o filtro não reduz o total do plano')
+  ui.render({ run: 'vazio', plan: { phases: [] }, tasks: {}, derived: {} })
+  assert.match(ui.nodes.get('#counts').innerHTML, /Concluído<\/span> <b>0\/0<\/b>/)
 })
 
 test('height-only resize keeps the untouched board at 100% anchored at the top', () => {
@@ -1541,7 +1557,7 @@ test('resultados separam ganho, atividade por papel e estimativa de todos os com
     ui.render(state, [{ type: 'task_start', at: instant(1), task: 'T001' }, { type: 'task_review', at: instant(2), task: 'T001' }, { type: 'task_retry', at: instant(4), task: 'T001' }])
     ui.run("FULL_EVENTS = EVENTS; RESULTS_OPEN = true; $('#results').classList.add('open'); renderResults(STATE)")
     const results = ui.nodes.get('#results').innerHTML
-    assert.match(results, /^<div class="rstack" data-results-run="fixture-3">\s*<section class="gcard gain" id="gainPanel"[\s\S]*<\/section>\s*<section class="gcard"[\s\S]*<\/section>\s*<section class="gcard manual" id="manualPanel"[\s\S]*<\/section><\/div>$/)
+    assert.match(results, /^<div class="rstack" data-results-run="fixture-3">\s*<section class="gcard gain" id="gainPanel"[\s\S]*<\/section>\s*<section class="gcard agent-activity"[\s\S]*<\/section>\s*<section class="gcard manual" id="manualPanel"[\s\S]*<\/section><\/div>$/)
     assert.equal((results.match(/<section /g) ?? []).length, 3, 'o painel mostra ganho, atividade por papel e estimativa manual')
     assert.doesNotMatch(results, /gantt|class="grow|result-task|gcard gate|gcard atime|class="rhead|class="insights|A &lt;summary&gt;/)
     assert.doesNotMatch(results, lang === 'en' ? /Reviewer gate|Timeline|Agent time|Task detail/ : /Portão do revisor|Linha do tempo|Tempo dos agentes|Detalhe da tarefa/)
@@ -1573,6 +1589,33 @@ test('discussão sem registros de progresso não transforma o tempo decorrido em
   assert.equal(analysis.agentTotal, 0)
   assert.match(ui.nodes.get('#results').innerHTML, /Discussão<\/span><strong>Não aferido/)
   assert.doesNotMatch(ui.nodes.get('#results').innerHTML, /115h/)
+})
+
+test('START e STOP medem os quatro papeis sem contar espera e fases compartilhadas duas vezes', () => {
+  const interval = (role, start, end) => ({ role, startedAt: instant(start), endedAt: instant(end), agent: role })
+  const round = (role, start, end) => ({ activityTiming: 'explicit', startedAt: instant(-1000), endedAt: instant(90), activityIntervals: [interval(role, start, end)] })
+  const state = { run: 'explicit-time', createdAt: instant(-1000), plan: { phases: [] }, derived: {},
+    tasks: { A: task('A', 'done', {
+      discussionAttempts: [round('discussion', 0, 10)], planningAttempts: [round('planning', 10, 20)],
+      attempts: [{ ...round('execution', 20, 30), n: 1, activityIntervals: [interval('execution', 20, 30), interval('execution', 50, 60), interval('review', 60, 70)] }],
+    }), B: task('B', 'done') },
+    phaseWorkflows: { F1: { id: 'F1', state: 'planned', planningAttempts: [round('planning', 0, 10)] } } }
+  const ui = dashboard('pt-BR')
+  const a = ui.run('analyse(input, [], true)', { input: state })
+  assert.equal(a.discussionTotal, 10000)
+  assert.equal(a.planningTotal, 20000)
+  assert.equal(a.execTotal, 20000)
+  assert.equal(a.reviewTotal, 10000)
+  assert.equal(a.agentTotal, 60000)
+  assert.equal(a.activeElapsed, 50000, 'o intervalo de espera entre 30 e 50 fica fora; a fase conta uma vez')
+  assert.equal(a.criticalPathMeasured, false, 'o caminho por tarefa não pode omitir o trabalho compartilhado e se apresentar como aferido')
+  ui.run('EVENTS_COMPLETE = true; STATE = input; FULL_EVENTS = []; renderResults(input)', { input: state })
+  const result = ui.nodes.get('#results').innerHTML
+  assert.match(result, /Economia estimada<\/span><strong>/)
+  assert.match(result, /Cálculo estimado baseado na coordenação manual/)
+  assert.doesNotMatch(result, /Ganho combinado estimado/)
+  const activity = result.split('class="gcard agent-activity"')[1].split('</section>')[0]
+  assert.match(activity, /--discussion[^]*Discussão<\/span><strong>10s[^]*--planning[^]*Planejamento<\/span><strong>20s[^]*--running[^]*Execução<\/span><strong>20s[^]*--review[^]*Revisão<\/span><strong>10s/)
 })
 
 test('jumping from results pans a tall graph until the target task is visible', () => {
@@ -1780,7 +1823,7 @@ test('o tour só resume o ganho real do #39 com run concluída e medição ínte
   const measured = JSON.parse(ui.run('JSON.stringify(getCompletedRunSummary())'))
   assert.equal(measured.completed, true)
   assert.equal(measured.measurementComplete, true)
-  assert.equal(measured.text, 'Um agente por vez: 20s · Com prumo: 20s · Economia aferida: 0s · Fator de paralelismo: 1,00×')
+  assert.equal(measured.text, 'Sem coordenação do prumo: 20s · Com prumo: 20s · Economia aferida: 0s · Fator de paralelismo: 1,00×')
 
   ui.run("SELECTED_ROOT = 'root-b'; SELECTED_RUN = 'loading'; CURRENT_ROOT = 'root-b'; CURRENT_RUN = 'loading'")
   assert.equal(ui.run('selectedRunStateAvailable()'), false, 'A não fica disponível enquanto a seleção aponta para B')

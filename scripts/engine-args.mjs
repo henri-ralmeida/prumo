@@ -27,6 +27,7 @@ const definitions = {
   block: [1, 'reason question option'],
   unblock: [1, 'answer reviewer channel', 'confirmed-by-user'],
   skip: [1, 'reason'], note: [1, 'text'],
+  'activity-start': [1, 'scope role agent'], 'activity-stop': [1, 'scope role agent'],
 }
 
 // Argumentos inválidos são recusados antes de qualquer gravação, para que erros de
