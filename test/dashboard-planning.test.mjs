@@ -925,7 +925,7 @@ test('review rejection history prefers its validation summary and truncates evid
   assert.doesNotMatch(log, /Raw evidence replaced by summary\./)
   assert.ok(log.includes('A'.repeat(80)))
   assert.doesNotMatch(log, /UNTRUNCATED_SENTINEL/)
-  const repeatLines = log.match(/<div class="ev">[\s\S]*?<\/div>/g).filter(line => line.includes('REPEAT'))
+  const repeatLines = log.match(/<(?:div|button) class="ev"[^>]*>[\s\S]*?<\/(?:div|button)>/g).filter(line => line.includes('REPEAT'))
   assert.equal(repeatLines.length, 2)
   assert.ok(repeatLines[0].includes(secondSummary), 'the latest rejection keeps its full summary')
   assert.ok(repeatLines[1].includes(firstSummary), 'the earlier rejection keeps its own full summary')
@@ -935,7 +935,7 @@ test('visual polish keeps arrowless curves, full card labels and a controllable 
   assert.doesNotMatch(html, /marker-end|<marker/, 'dependency curves end on the card without arrowheads')
   assert.match(html, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\*, \*::before, \*::after[\s\S]*animation: none !important/)
   assert.match(html, /\.phase-task-state \{ display: inline;/)
-  const sectionOrder = ['id="counts"', 'data-i18n="Event log"', 'data-i18n="Failures &amp; retries"']
+  const sectionOrder = ['id="counts"', 'data-i18n="Event log"']
   assert.deepEqual(sectionOrder.map((part) => html.indexOf(part)), [...sectionOrder.map((part) => html.indexOf(part))].sort((a, b) => a - b))
 
   for (const [count, density] of [[6, 'detailed'], [48, 'compact'], [101, 'dense']]) {
@@ -1101,8 +1101,6 @@ test('Gravidade cards and agent panels show measured activity in the compact das
   assert.match(ui.nodes.get('#nodes').innerHTML, /class="tr">running<\/span>/)
   assert.doesNotMatch(ui.nodes.get('#nodes').innerHTML, /class="sub"/)
   assert.match(ui.nodes.get('#parallel').innerHTML, /T1[\s\S]*executor[\s\S]*not measured[\s\S]*rbar/)
-  assert.match(ui.nodes.get('#failures').innerHTML, /2 of 3/)
-  assert.match(ui.nodes.get('#failures').innerHTML, /timeout na segunda tentativa/)
 
   ui.run("POP_EXPANDED = false; fillPop('T1')")
   const lean = ui.nodes.get('#popBody').innerHTML
@@ -2230,19 +2228,42 @@ test('results and back-to-graph are one CTA whose label alternates', async () =>
   assert.equal(ui.nodes.get('#resBtn').getAttribute('aria-pressed'), 'false')
 })
 
-test('the legend summary aligns its label and a drawn chevron', () => {
-  assert.match(html, /\.legend-box summary h3 \{ margin: 0; line-height: 1; \}/)
-  assert.match(html, /\.legend-box summary::after \{ content: ''; flex: none; width: 6px; height: 6px;/)
-  assert.doesNotMatch(html, /\.legend-box summary::after \{ content: '⌄'/)
-  assert.match(html, /<details class="legend-box" id="failuresBox">/)
+test('historico clicavel oferece foco visivel para navegacao por teclado', () => {
+  assert.match(html, /button\.ev:focus-visible \{ outline: 1px solid var\(--accent\)/)
 })
 
-test('falhas ficam recolhidas e as cores das funcoes permanecem visiveis sem legenda', () => {
-  assert.match(html, /<details class="legend-box" id="failuresBox">\s*<summary><h3><span data-i18n="Failures &amp; retries"/)
-  const failure = html.indexOf('<details class="legend-box" id="failuresBox">')
-  assert.ok(failure > html.indexOf('id="eventsBox"'))
-  assert.doesNotMatch(html.slice(failure, html.indexOf('</details>', failure)), /\bopen(?:=|\s|>)/)
+test('lateral preserva o historico sem a secao de falhas e retentativas', () => {
+  assert.doesNotMatch(html, /id="failures(?:Box)?"/)
+  assert.match(html, /id="eventsBox"/)
   assert.match(html, /#statusBox \.count-label \{[^}]*color: inherit/)
+})
+
+test('historico abre a tarefa atual por alias e nao oferece acao para tarefa inexistente', () => {
+  const ui = dashboard('pt-BR')
+  ui.render({run:'historico',plan:{},taskIdAliases:{T17:'T11a'},tasks:{T11a:task('T11a','done')},derived:{}}, [
+    {type:'task_validate',task:'T17',ok:false,by:'review',at:instant(1)},
+    {type:'task_note',task:'T99',text:'Nota antiga',at:instant(2)},
+  ])
+  const log = ui.nodes.get('#events').innerHTML
+  assert.match(log, /<button class="ev" type="button" onclick="openTask\('T11a'\)"/)
+  assert.doesNotMatch(log, /onclick="openTask\('T99'\)"/)
+  assert.match(log, /data-ok="false"/)
+  assert.equal(ui.run('openTask("T11a"); POP.id'), 'T11a')
+  assert.equal(ui.run('POP_EXPANDED'), false)
+})
+
+test('reprovacao historica permanece vermelha mesmo depois da conclusao aprovada', () => {
+  const ui = dashboard('pt-BR')
+  ui.render({run:'revisao',plan:{},tasks:{T1:task('T1','done',{validations:[
+    {ok:false,by:'review',at:instant(1),evidence:'Correção necessária'},
+    {ok:true,by:'review',at:instant(2),evidence:'Correção conferida'},
+  ]})},derived:{}})
+  ui.run('POP_EXPANDED = true; fillPop("T1")')
+  assert.equal(ui.nodes.get('#pop').dataset.st, 'done')
+  assert.match(ui.nodes.get('#popBody').innerHTML, /class="vitem bad"[\s\S]*Reprovado[\s\S]*Correção necessária/)
+  assert.match(ui.nodes.get('#popBody').innerHTML, /Aprovado[\s\S]*Correção conferida/)
+  assert.match(html, /\.vitem\.bad \{[^}]*background: #472329/)
+  assert.equal(ui.run('statusLabel("ready_for_discussion")'), 'pronto para discutir')
 })
 
 test('historico destaca nomes e referencias sem alterar os dados nem executar notas', () => {
