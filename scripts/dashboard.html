@@ -292,9 +292,11 @@ SOFTWARE. -->
   svg#edges .s-rail { stroke-linecap: round; }
   svg#edges .s-rail.live { stroke-dasharray: 3 6; }
   svg#edges .s-end-mask { fill: var(--bg); stroke: none; }
-  svg#edges .s-end-dot { fill: var(--done); stroke: none; }
-  svg#edges .s-end-dot.live { transition: fill .3s var(--ease); }
-  svg#edges .s-spinner { fill: none; stroke: var(--phase-color, var(--accent)); stroke-width: 1.5; stroke-dasharray: 37 20;
+  svg#edges .s-end-dot { fill: var(--bg); stroke: none; }
+  svg#edges .s-end-dot.done { fill: var(--done); }
+  svg#edges .s-end-dot.next { stroke: #5e584f; stroke-width: 1.5; }
+  svg#edges .s-end-dot.live { fill: var(--phase-color, var(--accent)); transition: fill .3s var(--ease); }
+  svg#edges .s-spinner { fill: none; stroke: var(--phase-color, var(--accent)); stroke-width: 1.25; stroke-linecap: round; stroke-dasharray: 36 27;
     transform-box: fill-box; transform-origin: center; animation: activity-spin 1.2s linear infinite; }
 
   /* ---- frozen hub: orchestrator + roles stay pinned to the top of the board while the phases
@@ -3072,8 +3074,8 @@ function render(s, events = []) {
   const activeDot = (y, roles) => {
     const colors = roles.map(role => phaseColors[role])
     const cycle = colors.length > 1 && !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-      ? `<animate attributeName="fill" values="${[...colors, colors[0]].join(';')}" dur="${(colors.length * 1.2).toFixed(1)}s" repeatCount="indefinite"/>` : ''
-    return `<circle class="s-end-mask" cx="${spineX}" cy="${y}" r="12"/><circle class="s-end-dot live" cx="${spineX}" cy="${y}" r="6" fill="${colors[0]}" style="--phase-color:${colors[0]}">${cycle}</circle><circle class="s-spinner" cx="${spineX}" cy="${y}" r="10" style="--phase-color:${colors[0]}">${cycle.replace('attributeName="fill"','attributeName="stroke"')}</circle>`
+      ? `<animate attributeName="color" attributeType="CSS" values="${[...colors, colors[0]].join(';')}" dur="${(colors.length * 1.2).toFixed(1)}s" repeatCount="indefinite"/>` : ''
+    return `<g style="color:${colors[0]};--phase-color:currentColor">${cycle}<circle class="s-end-mask" cx="${spineX}" cy="${y}" r="12"/><circle class="s-end-dot live" cx="${spineX}" cy="${y}" r="6"></circle><circle class="s-spinner" cx="${spineX}" cy="${y}" r="10"/></g>`
   }
   const idleDot = (y, done) => `<circle class="s-end-dot ${done ? 'done' : 'next'}" cx="${spineX}" cy="${y}" r="6" ${done ? '' : 'fill="var(--bg)" stroke="#5e584f" stroke-width="1.5"'}/>`
   const phaseDot = (lane, i) => {
@@ -3104,7 +3106,6 @@ function render(s, events = []) {
   if (shade) { shade.style.top = `${HUB_TOP}px`; shade.style.height = `${BASE_Y + 4 - HUB_TOP}px` }
   const structHtml = [
     `<path class="s-base" d="M ${spineX} ${BASE_Y} H ${w - spineX}"/>`,
-    ...Object.keys(live).map((key) => `<circle cx="${roleCx(key)}" cy="${BASE_Y}" r="6" fill="${live[key] ? colour[key] : '#3a362f'}"/>${live[key] ? `<circle class="s-spinner" cx="${roleCx(key)}" cy="${BASE_Y}" r="10" style="--phase-color:${colour[key]}"/>` : ''}`),
     ...phaseRails,
     ...(!lanes.length || (!planDone && liveLane < 0) ? [endDot(progressY)] : []),
     ...lanes.map(phaseDot),
