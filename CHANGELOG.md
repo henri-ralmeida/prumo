@@ -17,6 +17,8 @@ Historical tag and commit corrections are documented in [Release history recover
 - Conte somente disparos de Planejamento, Execução e Revisão na coordenação manual e apresente os três em uma única linha; discussão, retentativas e comandos técnicos ficam fora da estimativa.
 - Simplifique a parcela estimada com um tracejado horizontal e remova os selos de estado dos ganhos e de estimativa da coordenação manual.
 - Mantenha os identificadores T* brancos no guia e no board e substitua as bolinhas pulsantes de atividade por spinners circulares sincronizados.
+- Alinhe os marcadores ao centro dos títulos das fases e preserve a bolinha de tamanho constante com o spinner ao redor.
+- Organize o guia em cinco frentes: motivo, entidades, dashboard, resultados e uso. Reutilize as interfaces reais com dados fictícios isolados, os quatro ícones dos ambientes e controles em minúsculas.
 
 ## 2.2.0 — 2026-09-30
 

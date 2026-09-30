@@ -32,6 +32,29 @@ async function startDashboard(t, script, args, env) {
   return path => fetch(`http://127.0.0.1:${port}${path}`, { signal: AbortSignal.timeout(10000) })
 }
 
+test('guia carrega apenas quadros locais e preserva dados existentes', async t => {
+  const home = mkdtempSync(join(realpathSync(tmpdir()), 'prumo-guia-'))
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
+  const graph = join(home, 'project', '.specs', 'graph')
+  mkdirSync(join(graph, 'real'), { recursive: true })
+  const statePath = join(graph, 'real', 'state.json')
+  const original = JSON.stringify({ run: 'real', plan: { name: 'Plano existente' }, tasks: {} })
+  writeFileSync(statePath, original)
+  writeFileSync(join(graph, 'CURRENT'), 'real')
+  const request = await startDashboard(t, join(packageRoot, 'scripts', 'serve.mjs'), [], { ...process.env, PRUMO_ROOT: join(home, 'project'), PRUMO_HOME: join(home, 'central') })
+  for (const mode of ['board', 'results']) {
+    const response = await request('/?guide-demo=' + mode)
+    assert.equal(response.status, 200)
+    const csp = response.headers.get('content-security-policy')
+    assert.match(csp, /frame-src 'self'/)
+    assert.match(csp, /default-src 'none'/)
+    assert.doesNotMatch(csp, /frame-src \*/)
+    assert.match(await response.text(), /createGuideDemoData/)
+  }
+  assert.equal(readFileSync(statePath, 'utf8'), original)
+  assert.equal(readFileSync(join(graph, 'CURRENT'), 'utf8'), 'real')
+})
+
 test('/api/about reports where the package lives, not the --global serving mode', async t => {
   const home = mkdtempSync(join(realpathSync(tmpdir()), 'prumo-origin-'))
   t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))

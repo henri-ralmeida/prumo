@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { createContext, runInContext } from 'node:vm'
 import { localizeDashboard } from '../scripts/i18n.mjs'
+import { createGuideDemoData } from '../scripts/dashboard-guide-demo.mjs'
 
 const html = readFileSync(new URL('../scripts/dashboard.html', import.meta.url), 'utf8').replaceAll('\r\n', '\n')
 const instant = (seconds) => new Date(Date.UTC(2026, 0, 1) + seconds * 1000).toISOString()
@@ -170,7 +171,7 @@ function dashboard(lang = 'en', width = 1000, session = new Map(), navigation = 
   })
   // Run the shipped script, excluding its network polling boot; render/localize stay real.
   const script = localizeDashboard(html, lang).match(/<script>([\s\S]*?)<\/script>/)[1].replaceAll('\r\n', '\n')
-  const renderOnly = script.replace(/\nconst ONBOARDING = createPrumoOnboarding\(\{[\s\S]*?\n\}\)\ntick\(\)\nloadIdentity\(\)\s*$/, '')
+  const renderOnly = script.replace(/\nfunction stopGuideDemos\(\)[\s\S]*$/, '')
   runInContext(renderOnly, context)
   return {
     nodes, labels, cards, paths, filterOptions,
@@ -1456,7 +1457,7 @@ test('the hub (orchestrator and roles) stays inside the viewport while the board
   assert.doesNotMatch(struct, /s-sway|s-bob/)
   assert.match(html, /svg#edges \.s-rail \{ stroke-linecap: round; \}/)
   assert.match(html, /svg#edges \.s-rail\.live \{ stroke-dasharray: 3 6; \}/)
-  assert.match(html, /svg#edges \.s-end-dot\.live \{[^}]*animation: activity-spin/)
+  assert.match(html, /svg#edges \.s-spinner \{[^}]*animation: activity-spin/)
   assert.doesNotMatch(html, /@keyframes sway/)
   assert.match(html, /#hub \{ position: absolute; top: 0; left: 0; z-index: 4;/)
   assert.match(html, /#hub\.stuck \.hub-shade \{ display: block; background: var\(--bg\); border-bottom: 1px solid var\(--line\);/,
@@ -2020,6 +2021,20 @@ test('o ponto final considera todas as tarefas mesmo sem fases ou com tarefas fo
   assert.match(ui.nodes.get('#structPaths').innerHTML, /class="s-end-dot live"/, 'uma tarefa pendente fora da fase ainda impede a conclusao do plano')
   const markerY = Number(/class="s-end-dot live"[^>]*cy="([\d.]+)"/.exec(ui.nodes.get('#structPaths').innerHTML)?.[1])
   assert.equal(markerY, ui.run('LAST_POS.B.y + LAST_METRICS.nodeH / 2'), 'o marcador permanece junto da tarefa pendente real')
+})
+
+test('resultados do guia usam o calculo real com dados ficticios e os tres tipos de comando', () => {
+  const ui = dashboard('pt-BR')
+  ui.render(createGuideDemoData('results'))
+  ui.run('FULL_EVENTS = []; EVENTS_COMPLETE = true; renderResults(STATE)')
+  const markup = ui.nodes.get('#results').innerHTML
+  assert.match(markup, /6h22/)
+  assert.match(markup, /1h45/)
+  assert.match(markup, /2h40/)
+  assert.match(markup, /4h37/)
+  assert.match(markup, /39 comandos/)
+  assert.doesNotMatch(markup, /Histórico parcial de disparos|Não aferido/)
+  assert.equal(ui.run('STATE.run'), 'checkout')
 })
 
 test('spinners novos compartilham o relogio sem reiniciar os existentes', () => {

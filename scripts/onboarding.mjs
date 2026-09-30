@@ -1,5 +1,5 @@
 export function createPrumoOnboarding({ root, launcher, document, window, translate = value => value,
-  getCompletedRunSummary = () => null }) {
+  showDemo = () => {}, stopDemos = () => {}, syncMotion = () => {} }) {
   if (!root || !launcher || !document) return null
   const find = id => root.querySelector(id)
   const title = find('#guideTitle'), description = find('#guideDescription')
@@ -8,34 +8,30 @@ export function createPrumoOnboarding({ root, launcher, document, window, transl
   const invitation = document.querySelector('#guideInvitation')
   const invitationOpen = document.querySelector('#guideInvitationOpen')
   const invitationDismiss = document.querySelector('#guideInvitationDismiss')
-  const graph = find('#guideExamplePanel'), filters = find('#guideMockFilters')
-  const roles = find('#guideMockRoles')
-  const shown = find('#guideMockShown'), total = find('#guideMockTotal')
-  const detail = find('#guideMockDetail'), gain = find('#guideGainPanel')
-  const detailExpand = find('#guideMockDetailExpand'), detailMore = find('#guideMockDetailMore')
-  const gainLabel = find('#guideGainsLabel'), gainSummary = find('#guideGainsSummary')
-  const command = find('#guideCommandPanel')
-  const cards = [...(graph?.querySelectorAll('[data-guide-task]') ?? [])]
-  const filterButtons = [...(filters?.querySelectorAll('[data-guide-filter]') ?? [])]
+  const intro = find('#guideIntroPanel'), roles = find('#guideMockRoles')
+  const graph = find('#guideExamplePanel'), gain = find('#guideGainPanel'), command = find('#guideCommandPanel')
   const steps = [
-    { title: 'What is Prumo?', description: 'Prumo turns an approved plan into a task graph, execution and independent review.', target: 'graph' },
+    { title: 'Why use Prumo?', description: 'An approved plan becomes visible work: clear dependencies, coordinated agents and independent review before completion.', target: 'intro' },
     { title: 'People and roles', demos: [
       { title: 'The orchestrator', description: 'The Orchestrator discusses scope and coordinates the work.', target: 'orchestrator' },
       { title: 'The planner', description: 'The Planner records the approved plan as tasks.', target: 'planner' },
       { title: 'The executor', description: 'The Executor works on authorized tasks and records evidence.', target: 'executor' },
       { title: 'The reviewer', description: 'The Reviewer independently checks the result.', target: 'reviewer' },
     ] },
-    { title: 'From discussion to done', description: 'After approval, work moves through planning, execution and review. A rejected task returns for correction; a blocked task awaits your decision.', target: 'blocked' },
     { title: 'Explore this dashboard', demos: [
-      { title: 'Filters and counts', description: 'Choose a status to filter this example and see how many cards remain.', target: 'filters' },
-      { title: 'Phases and tasks', description: 'Each lane groups tasks in one phase. The cards keep the same status colors and shapes as the dashboard.', target: 'graph' },
-      { title: 'Task card', description: 'Select a card to read its summary and details. Select it again to close.', target: 'card' },
-      { title: 'Run results', description: 'Results show the measured execution after work is complete.', target: 'gain' },
+      { title: 'Phases and tasks', description: 'Phases organize the plan. Task IDs identify the work; their colors show the current state. Click a phase or a task.', target: 'board' },
+      { title: 'Filters and counts', description: 'Try the filters. They change the visible cards; completed totals exclude skipped tasks and preserve the full plan.', target: 'filters' },
+      { title: 'Task card', description: 'Click a task to read its summary, validation and dependencies. The expansion arrow opens the full details.', target: 'card' },
+      { title: 'Progress and activity', description: 'The progress bar counts completed tasks. Active agents and their recorded START/STOP intervals show who is working.', target: 'activity' },
     ] },
-    { title: 'See the measured gain', description: 'A real gain appears only when the run and its measurements are complete.', target: 'gain' },
+    { title: 'Run results', demos: [
+      { title: 'Gain with Prumo', description: 'Compare the full baseline with measured parallel activity and the separate manual coordination estimate.', target: 'gain' },
+      { title: 'Recorded agent activity', description: 'Discussion, Planning, Execution and Review count only evidenced activity. Waiting time is excluded.', target: 'times' },
+      { title: 'Manual coordination estimate', description: 'Planning, execution and review dispatches use a fixed assumption of 3 minutes per command. Expand the list to inspect the count.', target: 'commands' },
+    ] },
     { title: 'Start here', description: 'First create and approve a plan in your coding environment’s planning mode. Then start Prumo to turn that approved plan into a task graph.', target: 'command' },
   ]
-  let stepIndex = 0, demoIndex = 0, dismissed = true, selected = null, activeFilter = 'all'
+  let stepIndex = 0, demoIndex = 0, dismissed = true
   let fullscreenOwned = false, fullscreenPending = false
   const store = (value) => { try { window.localStorage.setItem('prumoOnboardingDismissed', value) } catch {} }
   const saved = () => { try { return window.localStorage.getItem('prumoOnboardingDismissed') === 'true' } catch { return false } }
@@ -45,61 +41,6 @@ export function createPrumoOnboarding({ root, launcher, document, window, transl
   }
   const demo = () => steps[stepIndex].demos?.[demoIndex] ?? steps[stepIndex]
   const mark = (node, on) => node?.classList?.toggle('prumo-guide-target', Boolean(on))
-  const matches = (card, filter) => filter === 'all' || card.dataset.guideStatus === filter
-
-  function updateFilter(filter) {
-    activeFilter = filter
-    let visible = 0
-    for (const card of cards) {
-      card.hidden = !matches(card, filter)
-      if (!card.hidden) visible += 1
-    }
-    if (selected?.hidden) showDetail(null)
-    if (shown) shown.textContent = String(visible)
-    if (total) total.textContent = String(cards.length)
-    for (const button of filterButtons) {
-      const active = button.dataset.guideFilter === filter
-      button.setAttribute('aria-pressed', String(active))
-      const amount = cards.filter(card => matches(card, button.dataset.guideFilter)).length
-      const number = button.querySelector('[data-guide-count]')
-      if (number) number.textContent = String(amount)
-    }
-  }
-
-  function showDetail(card) {
-    selected = selected === card ? null : card
-    for (const item of cards) item.setAttribute('aria-expanded', String(item === selected))
-    if (!detail) return
-    detail.hidden = !selected
-    if (detailMore) detailMore.hidden = true
-    detailExpand?.setAttribute('aria-expanded', 'false')
-    if (detailExpand) detailExpand.textContent = translate('Expand details')
-    if (!selected) return
-    detail.dataset.st = selected.dataset.guideStatus
-    const taskName = selected.querySelector('.nt')?.textContent ?? ''
-    const id = selected.querySelector('.id')?.textContent ?? ''
-    const state = selected.querySelector('.tr')?.textContent ?? ''
-    detail.querySelector('[data-guide-detail-title]').textContent = `${id} — ${taskName}`
-    detail.querySelector('[data-guide-detail-state]').textContent = state
-    detail.querySelector('[data-guide-detail-summary]').textContent = translate(selected.dataset.guideSummary)
-    detail.querySelector('[data-guide-detail-check]').textContent = translate(selected.dataset.guideCheck)
-    detail.querySelector('[data-guide-detail-needs]').textContent = translate(selected.dataset.guideNeeds)
-  }
-
-  function refreshGains() {
-    if (!gainLabel || !gainSummary) return
-    let result
-    try { result = getCompletedRunSummary() } catch {}
-    if (result?.completed === true && result?.measurementComplete === true && typeof result.text === 'string' && result.text.trim()) {
-      gainLabel.hidden = false
-      gainLabel.textContent = translate('Measured from a completed run')
-      gainSummary.textContent = result.text.trim().slice(0, 320)
-    } else {
-      gainLabel.hidden = true
-      gainSummary.textContent = translate('Results for this practice board are not measured. Open a completed run to see its measured gain.')
-    }
-  }
-
   function render() {
     const content = demo(), demos = steps[stepIndex].demos
     title.textContent = translate(content.title)
@@ -109,17 +50,23 @@ export function createPrumoOnboarding({ root, launcher, document, window, transl
       : translate('Step {0} of {1}', stepIndex + 1, steps.length)
     announcement.textContent = `${count.textContent}: ${title.textContent}. ${description.textContent}`
     previous.disabled = stepIndex === 0 && demoIndex === 0
-    next.textContent = translate(stepIndex === steps.length - 1 ? 'Finish guide' : 'Next')
-    for (const [target, node] of [['graph', graph], ['filters', filters], ['gain', gain], ['command', command]])
-      mark(node, content.target === target)
-    for (const role of roles?.querySelectorAll('[data-guide-role]') ?? []) mark(role, role.dataset.guideRole === content.target)
-    for (const card of cards) mark(card, content.target === 'card' ||
-      (content.target === 'executor' && card.dataset.guideStatus === 'running') ||
-      (content.target === 'reviewer' && card.dataset.guideStatus === 'reviewing') ||
-      card.dataset.guideStatus === content.target)
-    gain.hidden = !['gain'].includes(content.target)
-    command.hidden = content.target !== 'command'
-    if (!gain.hidden) refreshGains()
+    previous.textContent = translate('back')
+    next.textContent = translate(stepIndex === steps.length - 1 ? 'finish guide' : 'next')
+    const roleStep = stepIndex === 1, boardStep = stepIndex === 2, resultsStep = stepIndex === 3
+    intro.hidden = stepIndex !== 0
+    roles.hidden = !roleStep
+    graph.hidden = !boardStep
+    gain.hidden = !resultsStep
+    command.hidden = stepIndex !== 4
+    for (const role of roles?.querySelectorAll('[data-guide-role]') ?? []) {
+      mark(role, roleStep && role.dataset.guideRole === content.target)
+      role.setAttribute('aria-pressed', String(roleStep && role.dataset.guideRole === content.target))
+    }
+    if (boardStep || resultsStep) showDemo(boardStep ? 'board' : 'results', content.target)
+    else stopDemos()
+    root.scrollTop = 0
+    syncMotion()
+
   }
 
   function nextStep() {
@@ -172,9 +119,10 @@ export function createPrumoOnboarding({ root, launcher, document, window, transl
     hideInvitation(true)
     dismissed = false
     stepIndex = 0; demoIndex = 0
-    updateFilter('all'); showDetail(null); render()
+    render()
     root.hidden = false
     root.classList.add('presenting')
+    syncMotion()
     launcher.setAttribute('aria-expanded', 'true')
     next.focus?.()
     enterFullscreen()
@@ -183,6 +131,7 @@ export function createPrumoOnboarding({ root, launcher, document, window, transl
     if (dismissed) return
     dismissed = true
     root.hidden = true
+    stopDemos()
     root.classList.remove('presenting')
     launcher.setAttribute('aria-expanded', 'false')
     store('true')
@@ -196,13 +145,10 @@ export function createPrumoOnboarding({ root, launcher, document, window, transl
   previous.addEventListener('click', previousStep)
   next.addEventListener('click', nextStep)
   skip.addEventListener('click', close)
-  for (const button of filterButtons) button.addEventListener('click', () => updateFilter(button.dataset.guideFilter))
-  for (const card of cards) card.addEventListener('click', () => showDetail(card))
-  find('#guideMockDetailClose')?.addEventListener('click', () => showDetail(null))
-  detailExpand?.addEventListener('click', () => {
-    detailMore.hidden = !detailMore.hidden
-    detailExpand.setAttribute('aria-expanded', String(!detailMore.hidden))
-    detailExpand.textContent = translate(detailMore.hidden ? 'Expand details' : 'Collapse details')
+  for (const role of roles?.querySelectorAll('[data-guide-role]') ?? []) role.addEventListener('click', () => {
+    stepIndex = 1
+    demoIndex = steps[1].demos.findIndex(item => item.target === role.dataset.guideRole)
+    render()
   })
   document.addEventListener('fullscreenchange', () => {
     if (fullscreenPending && document.fullscreenElement === root) fullscreenOwned = true
@@ -220,9 +166,8 @@ export function createPrumoOnboarding({ root, launcher, document, window, transl
     if (event.key === 'ArrowLeft') { event.preventDefault?.(); previousStep() }
     if (event.key === 'ArrowRight') { event.preventDefault?.(); nextStep() }
   })
-  updateFilter('all')
   render()
   launcher.setAttribute('aria-expanded', 'false')
   if (forced() || !saved()) invite()
-  return { open, close, refreshGains, refreshRunAvailability: () => {}, updateFilter }
+  return { open, close, refreshGains: () => {}, refreshRunAvailability: () => {} }
 }
