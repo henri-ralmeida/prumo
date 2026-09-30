@@ -1690,6 +1690,8 @@ test('explicit results navigation survives the click suppression left by draggin
 })
 
 test('navegacao anima o ultimo destino e respeita arraste e movimento reduzido', () => {
+  assert.doesNotMatch(html, /navigation-reveal|body:has\(#viewport\.navigating\) #pop/,
+    'o fim do deslocamento nao reinicia a animacao de abertura do card')
   const ui = dashboard('pt-BR', 500)
   ui.render(graphState(48, 8))
   ui.run("jumpTo('T048'); jumpTo('T001')")

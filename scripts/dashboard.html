@@ -214,13 +214,11 @@ SOFTWARE. -->
   #viewport.panning { cursor: grabbing; }
   #canvas { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
   #viewport.navigating #canvas, #viewport.navigating #hub { transition: transform .48s cubic-bezier(.22, 1, .36, 1); }
-  body:has(#viewport.navigating) #pop.open { animation: navigation-reveal .48s ease both; }
   .navigation-arrival { animation: navigation-arrival .7s ease-out; }
-  @keyframes navigation-reveal { from { opacity: 0; } to { opacity: 1; } }
   @keyframes navigation-arrival { from { filter: brightness(1.3); } to { filter: brightness(1); } }
   @media (prefers-reduced-motion: reduce) {
     #viewport.navigating #canvas, #viewport.navigating #hub { transition: none; }
-    body:has(#viewport.navigating) #pop.open, .navigation-arrival { animation: none; }
+    .navigation-arrival { animation: none; }
   }
   #runLoading { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; color: var(--dim);
                 background: var(--bg); font: 12px/1.4 var(--font-mono); }
