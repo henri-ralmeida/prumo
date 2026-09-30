@@ -2,6 +2,15 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.3.0 — 2026-09-30
+
+- Mostre No Prumo nos estados concluídos e No prumo em amarelo nos indicadores, barras e legenda dos resultados.
+- Preserve os totais de tarefas válidas, excluindo as puladas, e conte somente comandos de Planejamento, Execução e Revisão na estimativa de coordenação manual.
+- Uniformize os estados, as cores e os spinners sincronizados no dashboard e nas demonstrações interativas do guia.
+- Suavize a navegação até tarefas e fases sem a piscada dupla ao abrir o card.
+- Organize o guia em Visão geral, Entidades, Dashboard, Resultados e Como usar, com destaques completos e controles flutuantes alinhados.
+- Oriente a criação e aprovação do plano no ambiente de programação antes de invocar a skill Prumo.
+
 ## 2.2.1 — 2026-09-30
 
 - Mantenha todos os estados visíveis no resumo, mesmo zerados, e apresente Pronto para revisar entre o STOP do Executor e o despacho do Revisor.

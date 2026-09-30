@@ -1136,5 +1136,10 @@
   "Unable to show this step. Go back and try again.": "Não foi possível mostrar esta etapa. Volte e tente novamente.",
   "Select Plan in the workflow or agent picker.": "Selecione Plan nas opções de modo ou no seletor de agente.",
   "Review handoff": "Entrega para revisão",
-  "Execution is complete; the independent Reviewer is next.": "A execução terminou; o próximo passo é a revisão independente."
+  "Execution is complete; the independent Reviewer is next.": "A execução terminou; o próximo passo é a revisão independente.",
+  "Improved — Dashboard and interactive guide": "Melhorado — Dashboard e guia interativo",
+  "Use No Prumo for completed task labels and compare Sem prumo with No prumo in results": "Use No Prumo nas tarefas concluídas e compare Sem prumo com No prumo nos resultados",
+  "Keep task states, colors and synchronized activity indicators consistent in the dashboard and interactive guide": "Mantenha estados, cores e indicadores de atividade sincronizados no dashboard e no guia interativo",
+  "Navigate smoothly to tasks and phases without restarting the task card opening animation": "Navegue suavemente até tarefas e fases sem reiniciar a animação de abertura do card",
+  "Guide new users through roles, dashboard, results and approved planning before invoking Prumo": "Oriente novos usuários pelas entidades, dashboard, resultados e aprovação do plano antes de invocar Prumo"
 }

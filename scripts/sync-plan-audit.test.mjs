@@ -172,7 +172,7 @@ test('sync-plan warns but still applies functional checks added before phase dis
     name: 'discussion-warning',
     phases: [{ id: 'F1', title: 'Discovery' }],
     tasks: [{
-      id: 'T26', phase: 'F1', title: 'Define behavior', deps: [],
+      id: 'T1', phase: 'F1', title: 'Define behavior', deps: [],
       validationMode: 'inspection', inspectionReason: 'Initial contract is documentation-only.',
       validation: 'Inspect the approved document.',
     }],
@@ -197,16 +197,16 @@ test('sync-plan warns but still applies functional checks added before phase dis
   const synced = run('sync-plan', '--plan', planPath)
   assert.equal(synced.status, 0, synced.stdout + synced.stderr)
   assert.match(synced.stdout + synced.stderr,
-    /T26 is ready_for_discussion, but validation now has 2 functional checks \(new indices 1, 2\); is this planning\?/)
+    /T1 is ready_for_discussion, but validation now has 2 functional checks \(new indices 1, 2\); is this planning\?/)
 
   const statePath = join(root, '.specs', 'graph', 'warning', 'state.json')
   const state = JSON.parse(readFileSync(statePath, 'utf8'))
-  assert.equal(state.tasks.T26.validation.length, 2, 'warning must not block synchronization')
+  assert.equal(state.tasks.T1.validation.length, 2, 'warning must not block synchronization')
   const events = readFileSync(join(root, '.specs', 'graph', 'warning', 'events.ndjson'), 'utf8')
     .trim().split('\n').map(JSON.parse)
   const event = events.find(item => item.type === 'plan_sync')
   assert.deepEqual(event.diagnostics.preDiscussionFunctionalContracts, [{
-    task: 'T26', effective: 'ready_for_discussion', count: 2, added: 2,
+    task: 'T1', effective: 'ready_for_discussion', count: 2, added: 2,
     indices: [1, 2], severity: 'warning',
   }])
 })
@@ -220,10 +220,10 @@ test('sync-plan records per-task changes and diagnostics in plan_sync', (t) => {
   const initialPlan = {
     name: 'sync-audit',
     tasks: [
-      { id: 'T11', title: 'Prerequisite', deps: [], validation: [check] },
-      { id: 'T12', title: 'Blocked task', deps: ['T11'], validation: [check] },
-      { id: 'T25', title: 'First leaf', deps: ['T12'], validation: [check] },
-      { id: 'T26', title: 'Second leaf', deps: ['T12'], validation: [check] },
+      { id: 'T1', title: 'Prerequisite', deps: [], validation: [check] },
+      { id: 'T2', title: 'Blocked task', deps: ['T1'], validation: [check] },
+      { id: 'T3', title: 'First leaf', deps: ['T2'], validation: [check] },
+      { id: 'T4', title: 'Second leaf', deps: ['T2'], validation: [check] },
     ],
   }
   writeFileSync(planPath, JSON.stringify(initialPlan))
@@ -233,7 +233,7 @@ test('sync-plan records per-task changes and diagnostics in plan_sync', (t) => {
   })
   const init = run('init', '--plan', planPath, '--run', 'audit')
   assert.equal(init.status, 0, init.stdout + init.stderr)
-  const authorization = run('authorize', '--scope', 'tasks:T12', '--confirmed-by-user')
+  const authorization = run('authorize', '--scope', 'tasks:T2', '--confirmed-by-user')
   assert.equal(authorization.status, 0, authorization.stdout + authorization.stderr)
   const statePath = join(root, '.specs', 'graph', 'audit', 'state.json')
   const state = JSON.parse(readFileSync(statePath, 'utf8'))
@@ -245,28 +245,28 @@ test('sync-plan records per-task changes and diagnostics in plan_sync', (t) => {
     delete task.planningHistory
   }
   writeFileSync(statePath, JSON.stringify(state))
-  const skipped = run('skip', 'T11', '--reason', 'Prerequisite represented by the legacy fixture')
+  const skipped = run('skip', 'T1', '--reason', 'Prerequisite represented by the legacy fixture')
   assert.equal(skipped.status, 0, skipped.stdout + skipped.stderr)
-  const started = run('start', 'T12', '--agent', 'executor')
+  const started = run('start', 'T2', '--agent', 'executor')
   assert.equal(started.status, 0, started.stdout + started.stderr)
-  const blocked = run('block', 'T12', '--reason', 'Reabre quando T25 e T26 fecharem')
+  const blocked = run('block', 'T2', '--reason', 'Reabre quando T3 e T4 fecharem')
   assert.equal(blocked.status, 0, blocked.stdout + blocked.stderr)
 
   const correctedPlan = structuredClone(initialPlan)
   const largeMarker = 'contract-marker-' + 'z'.repeat(6000)
-  correctedPlan.tasks.find(task => task.id === 'T12').title = largeMarker
-  correctedPlan.tasks.find(task => task.id === 'T12').deps = ['T11', 'T25', 'T26']
-  correctedPlan.tasks.find(task => task.id === 'T12').validation = [
+  correctedPlan.tasks.find(task => task.id === 'T2').title = largeMarker
+  correctedPlan.tasks.find(task => task.id === 'T2').deps = ['T1', 'T3', 'T4']
+  correctedPlan.tasks.find(task => task.id === 'T2').validation = [
     { ...check, expect: 'corrected behavior verified' },
   ]
-  correctedPlan.tasks.find(task => task.id === 'T25').deps = ['T11']
-  correctedPlan.tasks.find(task => task.id === 'T26').deps = ['T11']
+  correctedPlan.tasks.find(task => task.id === 'T3').deps = ['T1']
+  correctedPlan.tasks.find(task => task.id === 'T4').deps = ['T1']
   writeFileSync(planPath, JSON.stringify(correctedPlan))
   const synced = run('sync-plan', '--plan', planPath)
   assert.equal(synced.status, 0, synced.stdout + synced.stderr)
-  assert.match(synced.stdout + synced.stderr, /T12 changed: .*deps \["T11"\] -> \["T11","T25","T26"\]/)
+  assert.match(synced.stdout + synced.stderr, /T2 changed: .*deps \["T1"\] -> \["T1","T3","T4"\]/)
   assert.match(synced.stdout + synced.stderr, /validation content changed in 1 check \(indices 1\)/)
-  assert.match(synced.stdout + synced.stderr, /strong warning: T12 blockReason cites T25, T26/)
+  assert.match(synced.stdout + synced.stderr, /strong warning: T2 blockReason cites T3, T4/)
   assert.doesNotMatch(synced.stdout + synced.stderr, new RegExp(largeMarker))
 
   const events = readFileSync(join(root, '.specs', 'graph', 'audit', 'events.ndjson'), 'utf8')
@@ -274,30 +274,30 @@ test('sync-plan records per-task changes and diagnostics in plan_sync', (t) => {
   const event = events.find(item => item.type === 'plan_sync')
   assert.ok(event)
   assert.doesNotMatch(JSON.stringify(event), new RegExp(largeMarker))
-  const t12 = event.changes.find(change => change.task === 'T12')
+  const t12 = event.changes.find(change => change.task === 'T2')
   assert.deepEqual(t12.fields.find(field => field.field === 'deps'), {
-    field: 'deps', before: ['T11'], after: ['T11', 'T25', 'T26'],
+    field: 'deps', before: ['T1'], after: ['T1', 'T3', 'T4'],
   })
   assert.deepEqual(t12.fields.find(field => field.field === 'validation').changedSteps, {
     count: 1, indices: [1],
   })
-  assert.deepEqual(event.diagnostics.blockReasonContradictions[0].backEdgesBefore, ['T25', 'T26'])
+  assert.deepEqual(event.diagnostics.blockReasonContradictions[0].backEdgesBefore, ['T3', 'T4'])
 
   const invalidPlan = structuredClone(correctedPlan)
-  invalidPlan.tasks.find(task => task.id === 'T25').deps = ['T12']
+  invalidPlan.tasks.find(task => task.id === 'T3').deps = ['T2']
   writeFileSync(planPath, JSON.stringify(invalidPlan))
   const stateBeforeInvalid = readFileSync(statePath, 'utf8')
   const eventsBeforeInvalid = readFileSync(join(root, '.specs', 'graph', 'audit', 'events.ndjson'), 'utf8')
   const invalid = run('sync-plan', '--plan', planPath)
   assert.notEqual(invalid.status, 0)
   assert.match(invalid.stdout + invalid.stderr, /dependency cycle/)
-  assert.doesNotMatch(invalid.stdout + invalid.stderr, /T12 changed/)
+  assert.doesNotMatch(invalid.stdout + invalid.stderr, /T2 changed/)
   assert.equal(readFileSync(statePath, 'utf8'), stateBeforeInvalid)
   assert.equal(readFileSync(join(root, '.specs', 'graph', 'audit', 'events.ndjson'), 'utf8'), eventsBeforeInvalid)
 
   writeFileSync(planPath, JSON.stringify(correctedPlan))
   const stateWithDiagnostic = JSON.parse(stateBeforeInvalid)
-  stateWithDiagnostic.tasks.T12.blockReason = 'waiting for T99'
+  stateWithDiagnostic.tasks.T2.blockReason = 'waiting for T99'
   writeFileSync(statePath, JSON.stringify(stateWithDiagnostic))
   const stateBeforeAuditOnly = readFileSync(statePath, 'utf8')
   const auditOnly = run('sync-plan', '--plan', planPath)

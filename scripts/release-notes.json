@@ -1,195 +1,747 @@
 {
+  "2.3.0": {
+    "en": [
+      {
+        "title": "Fixed — Completed task totals",
+        "items": [
+          "Count completed tasks over valid tasks only, excluding skipped tasks and keeping sidebar and board totals consistent when filters change"
+        ]
+      },
+      {
+        "title": "Improved — Agent activity and estimated savings",
+        "items": [
+          "Display estimated savings alongside measured metrics and identify the fixed manual coordination assumption",
+          "Measure discussion, planning, execution and review with explicit activity start and stop intervals, excluding waits and preserving unknown legacy periods"
+        ]
+      },
+      {
+        "title": "Improved — Dashboard and interactive guide",
+        "items": [
+          "Use No Prumo for completed task labels and compare Sem prumo with No prumo in results",
+          "Keep task states, colors and synchronized activity indicators consistent in the dashboard and interactive guide",
+          "Navigate smoothly to tasks and phases without restarting the task card opening animation",
+          "Guide new users through roles, dashboard, results and approved planning before invoking Prumo"
+        ]
+      }
+    ]
+  },
   "2.2.1": {
     "en": [
-      { "title": "Fixed — Completed task totals", "items": ["Count completed tasks over valid tasks only, excluding skipped tasks and keeping sidebar and board totals consistent when filters change"] },
-      { "title": "Improved — Agent activity and estimated savings", "items": ["Display estimated savings alongside measured metrics and identify the fixed manual coordination assumption", "Measure discussion, planning, execution and review with explicit activity start and stop intervals, excluding waits and preserving unknown legacy periods"] }
+      {
+        "title": "Fixed — Completed task totals",
+        "items": [
+          "Count completed tasks over valid tasks only, excluding skipped tasks and keeping sidebar and board totals consistent when filters change"
+        ]
+      },
+      {
+        "title": "Improved — Agent activity and estimated savings",
+        "items": [
+          "Display estimated savings alongside measured metrics and identify the fixed manual coordination assumption",
+          "Measure discussion, planning, execution and review with explicit activity start and stop intervals, excluding waits and preserving unknown legacy periods"
+        ]
+      }
     ]
   },
   "2.2.0": {
     "en": [
-      { "title": "Improved — Dashboard clarity and navigation", "items": ["Use the task-state palette in cards and filters, with click-only task selection and direct phase navigation", "Simplify task cards, align dashboard controls and present the guide in fullscreen with consistent role names"] },
-      { "title": "Added — Command accounting and task lineage", "items": ["Separate measured parallel savings from a fixed three-minute estimate for every recorded run command, including queries and failures", "Keep initial task IDs sequential and link synchronized corrective tasks to their original IDs with letter suffixes while preserving historical aliases"] },
-      { "title": "Fixed — Update verification and isolated cleanup", "items": ["Test every published npm version against a freshly packed candidate while preserving run history and resumable workflow states", "Finish update output before reporting success and shut down isolated test dashboards with a scenario token instead of unverified process IDs"] }
+      {
+        "title": "Improved — Dashboard clarity and navigation",
+        "items": [
+          "Use the task-state palette in cards and filters, with click-only task selection and direct phase navigation",
+          "Simplify task cards, align dashboard controls and present the guide in fullscreen with consistent role names"
+        ]
+      },
+      {
+        "title": "Added — Command accounting and task lineage",
+        "items": [
+          "Separate measured parallel savings from a fixed three-minute estimate for every recorded run command, including queries and failures",
+          "Keep initial task IDs sequential and link synchronized corrective tasks to their original IDs with letter suffixes while preserving historical aliases"
+        ]
+      },
+      {
+        "title": "Fixed — Update verification and isolated cleanup",
+        "items": [
+          "Test every published npm version against a freshly packed candidate while preserving run history and resumable workflow states",
+          "Finish update output before reporting success and shut down isolated test dashboards with a scenario token instead of unverified process IDs"
+        ]
+      }
     ]
   },
   "2.1.2": {
     "en": [
-      { "title": "Fixed — Command validation and concurrent writes", "items": ["Reject invalid, repeated and incompatible arguments before changing data or starting services", "Recover concurrent lock release and keep healthy runs visible when another run has invalid state", "Validate malformed contracts and update paths before execution"] },
-      { "title": "Fixed — Dashboard recovery and language", "items": ["Preserve the managed dashboard process identity when language changes or registration and shutdown fail", "Keep run filters exclusive and expose installed engine and server dependencies correctly"] },
-      { "title": "Improved — Tests and continuous integration", "items": ["Expand command, planning, validation, installation and dashboard regression coverage", "Fix Node 22 test cleanup and historical update scenarios without weakening execution authorization", "Fetch release history and bound parallel verification with enough time for the expanded integrations"] },
-      { "title": "Fixed — Cross-platform dashboard and verification", "items": ["Reset event history after file replacement even when the filesystem reuses its identifier and preserves the initial records", "Retry temporarily unavailable dashboard health checks within a bounded interval while keeping foreign processes protected", "Allow slower Windows dashboard startup while keeping readiness checks bounded", "Resolve temporary directory aliases in installation tests without weakening linked-path protections"] }
+      {
+        "title": "Fixed — Command validation and concurrent writes",
+        "items": [
+          "Reject invalid, repeated and incompatible arguments before changing data or starting services",
+          "Recover concurrent lock release and keep healthy runs visible when another run has invalid state",
+          "Validate malformed contracts and update paths before execution"
+        ]
+      },
+      {
+        "title": "Fixed — Dashboard recovery and language",
+        "items": [
+          "Preserve the managed dashboard process identity when language changes or registration and shutdown fail",
+          "Keep run filters exclusive and expose installed engine and server dependencies correctly"
+        ]
+      },
+      {
+        "title": "Improved — Tests and continuous integration",
+        "items": [
+          "Expand command, planning, validation, installation and dashboard regression coverage",
+          "Fix Node 22 test cleanup and historical update scenarios without weakening execution authorization",
+          "Fetch release history and bound parallel verification with enough time for the expanded integrations"
+        ]
+      },
+      {
+        "title": "Fixed — Cross-platform dashboard and verification",
+        "items": [
+          "Reset event history after file replacement even when the filesystem reuses its identifier and preserves the initial records",
+          "Retry temporarily unavailable dashboard health checks within a bounded interval while keeping foreign processes protected",
+          "Allow slower Windows dashboard startup while keeping readiness checks bounded",
+          "Resolve temporary directory aliases in installation tests without weakening linked-path protections"
+        ]
+      }
     ]
   },
   "2.1.1": {
     "en": [
-      { "title": "Fixed — Dashboard restart after update", "items": ["Restart the automatic dashboard after prumo update even when the recorded process id is missing or stale", "Prove dashboard ownership through a fast Windows process query and keep the record until the old process is replaced", "Never stop a program that is not the managed Prumo dashboard and explain how to free the port"] }
+      {
+        "title": "Fixed — Dashboard restart after update",
+        "items": [
+          "Restart the automatic dashboard after prumo update even when the recorded process id is missing or stale",
+          "Prove dashboard ownership through a fast Windows process query and keep the record until the old process is replaced",
+          "Never stop a program that is not the managed Prumo dashboard and explain how to free the port"
+        ]
+      }
     ]
   },
   "2.1.0": {
     "en": [
-      { "title": "Changed — Results focused on the parallel gain", "items": ["Show the measured parallel-gain card with a separate manual-coordination estimate of 3 minutes per execution, review and retry command", "Remove the results timeline, reviewer gate, agent-time card and task detail blocks"] },
-      { "title": "Improved — Run selector progress", "items": ["Split runs into \"in progress\" and \"in prumo\" tabs with per-run task progress", "Count runs whose tasks are all done or skipped by decision as in prumo everywhere", "Show \"paused\" only for runs with pending work and no activity"] },
-      { "title": "Improved — Dashboard interactions", "items": ["Keep the orchestrator and role cards pinned while the graph scrolls", "Open linked or available tasks directly and highlight the selected card", "Name where the dashboard is served from and never scroll the page sideways"] },
-      { "title": "Added — Engine identity and planning metadata", "items": ["Identify the running engine in prumo status", "Accept manual estimates as task metadata", "Explain superseded and stale planning rounds and summarize planned open questions"] },
-      { "title": "Fixed — Shell-aware commands and translations", "items": ["Print the start progress line in POSIX syntax under Git Bash and in PowerShell syntax otherwise", "Prefer the most specific translation and add missing Brazilian Portuguese phase messages"] },
-      { "title": "Fixed — Updating 1.2.x runs", "items": ["Let started 1.2 task-planned attempts continue review, validation and completion after the update", "Verify updates from tagged releases since 1.0.2, including dashboard reading of their runs"] },
-      { "title": "Changed — Skill organized by step", "items": ["Turn SKILL.md into a compact router over step references with complete Brazilian Portuguese pairs"] }
+      {
+        "title": "Changed — Results focused on the parallel gain",
+        "items": [
+          "Show the measured parallel-gain card with a separate manual-coordination estimate of 3 minutes per execution, review and retry command",
+          "Remove the results timeline, reviewer gate, agent-time card and task detail blocks"
+        ]
+      },
+      {
+        "title": "Improved — Run selector progress",
+        "items": [
+          "Split runs into \"in progress\" and \"in prumo\" tabs with per-run task progress",
+          "Count runs whose tasks are all done or skipped by decision as in prumo everywhere",
+          "Show \"paused\" only for runs with pending work and no activity"
+        ]
+      },
+      {
+        "title": "Improved — Dashboard interactions",
+        "items": [
+          "Keep the orchestrator and role cards pinned while the graph scrolls",
+          "Open linked or available tasks directly and highlight the selected card",
+          "Name where the dashboard is served from and never scroll the page sideways"
+        ]
+      },
+      {
+        "title": "Added — Engine identity and planning metadata",
+        "items": [
+          "Identify the running engine in prumo status",
+          "Accept manual estimates as task metadata",
+          "Explain superseded and stale planning rounds and summarize planned open questions"
+        ]
+      },
+      {
+        "title": "Fixed — Shell-aware commands and translations",
+        "items": [
+          "Print the start progress line in POSIX syntax under Git Bash and in PowerShell syntax otherwise",
+          "Prefer the most specific translation and add missing Brazilian Portuguese phase messages"
+        ]
+      },
+      {
+        "title": "Fixed — Updating 1.2.x runs",
+        "items": [
+          "Let started 1.2 task-planned attempts continue review, validation and completion after the update",
+          "Verify updates from tagged releases since 1.0.2, including dashboard reading of their runs"
+        ]
+      },
+      {
+        "title": "Changed — Skill organized by step",
+        "items": [
+          "Turn SKILL.md into a compact router over step references with complete Brazilian Portuguese pairs"
+        ]
+      }
     ]
   },
   "2.0.0": {
     "en": [
-      { "title": "Fixed — Content-addressed installations", "items": ["Identify each same-version installation by its distributed bytes and verify the complete package", "Compare registered installations in the same language, including DeepSeek Harness"] },
-      { "title": "Fixed — Durable dashboard refresh", "items": ["Expose the served package identity through /api/about and the dashboard footer", "Persist same-version CLI refreshes in the managed global package and verify the restarted server serves the expected identity", "Report port occupants without terminating processes or changing ports"] },
-      { "title": "Improved — Versioned package safety", "items": ["Require a SemVer bump when bytes in the distributed package differ from the last-release baseline", "Validate local CLI archives in isolation and restore the previous global package if replacement verification fails", "Report Codex activation as pending only when the Prumo skill entry itself is disabled"] },
-      { "title": "Added — Decisions and execution authorization", "items": ["Keep open questions visible until their target is reached and a decision is recorded", "Record user-approved run, phase or task execution scope with automatic or manual dispatch", "Announce eligible phases and retain blocking questions and answers without starting work automatically"] },
-      { "title": "Fixed — Planning contracts and diagnostics", "items": ["Explain stale planning and require fresh acceptance for changed task contracts", "Reject conflicting checks, writes outside approved paths and nonexistent path prefixes early", "Show short task summaries and identify which plan each execution attempt follows"] },
-      { "title": "Improved — Evidence and dashboard workflow", "items": ["Show validation checks and reported executor and reviewer progress", "Keep task selection, history, event labels and fixed-scale scrolling consistent across dashboard views", "Count only measured agent work and fold long idle gaps in the results timeline"] },
-      { "title": "Improved — Measured activity and parallel gain", "items": ["Load complete event history and keep graph and results tied to the selected run", "Count activity between nearby recorded milestones and mark longer gaps unmeasured", "Compare recorded sequential and overlapping work while showing editable manual coordination estimates separately"] },
-      { "title": "Added — First-run dashboard guide", "items": ["Walk through Prumo roles, task flow and the live dashboard in six steps", "Use a clearly illustrative example when no run exists and show real gains only for a completed run with complete measurements", "Support keyboard navigation and reopening the guide"] }
+      {
+        "title": "Fixed — Content-addressed installations",
+        "items": [
+          "Identify each same-version installation by its distributed bytes and verify the complete package",
+          "Compare registered installations in the same language, including DeepSeek Harness"
+        ]
+      },
+      {
+        "title": "Fixed — Durable dashboard refresh",
+        "items": [
+          "Expose the served package identity through /api/about and the dashboard footer",
+          "Persist same-version CLI refreshes in the managed global package and verify the restarted server serves the expected identity",
+          "Report port occupants without terminating processes or changing ports"
+        ]
+      },
+      {
+        "title": "Improved — Versioned package safety",
+        "items": [
+          "Require a SemVer bump when bytes in the distributed package differ from the last-release baseline",
+          "Validate local CLI archives in isolation and restore the previous global package if replacement verification fails",
+          "Report Codex activation as pending only when the Prumo skill entry itself is disabled"
+        ]
+      },
+      {
+        "title": "Added — Decisions and execution authorization",
+        "items": [
+          "Keep open questions visible until their target is reached and a decision is recorded",
+          "Record user-approved run, phase or task execution scope with automatic or manual dispatch",
+          "Announce eligible phases and retain blocking questions and answers without starting work automatically"
+        ]
+      },
+      {
+        "title": "Fixed — Planning contracts and diagnostics",
+        "items": [
+          "Explain stale planning and require fresh acceptance for changed task contracts",
+          "Reject conflicting checks, writes outside approved paths and nonexistent path prefixes early",
+          "Show short task summaries and identify which plan each execution attempt follows"
+        ]
+      },
+      {
+        "title": "Improved — Evidence and dashboard workflow",
+        "items": [
+          "Show validation checks and reported executor and reviewer progress",
+          "Keep task selection, history, event labels and fixed-scale scrolling consistent across dashboard views",
+          "Count only measured agent work and fold long idle gaps in the results timeline"
+        ]
+      },
+      {
+        "title": "Improved — Measured activity and parallel gain",
+        "items": [
+          "Load complete event history and keep graph and results tied to the selected run",
+          "Count activity between nearby recorded milestones and mark longer gaps unmeasured",
+          "Compare recorded sequential and overlapping work while showing editable manual coordination estimates separately"
+        ]
+      },
+      {
+        "title": "Added — First-run dashboard guide",
+        "items": [
+          "Walk through Prumo roles, task flow and the live dashboard in six steps",
+          "Use a clearly illustrative example when no run exists and show real gains only for a completed run with complete measurements",
+          "Support keyboard navigation and reopening the guide"
+        ]
+      }
     ]
   },
   "1.3.17": {
     "en": [
-      { "title": "Fixed — Safe plan synchronization", "items": ["Synchronize approved contracts for every nonterminal task without rewriting lifecycle or history", "Recheck dependencies after synchronization and prevent force from bypassing unfinished prerequisites", "Invalidate prior validation receipts when execution scope changes"] },
-      { "title": "Improved — Actionable graph diagnostics", "items": ["Show bounded field-level changes and exact dependency differences after sync-plan", "Warn about missing or reversed blocked-task dependencies and new leaf tasks", "Recover stale legacy plan sources and record diagnostic-only synchronization events"] },
-      { "title": "Fixed — Partial run migration", "items": ["Adopt current planning structure while active legacy attempts continue", "Apply current gates to unstarted work without holding unrelated tasks", "Keep engine and dashboard state aligned and supersede stale discussion rounds"] }
+      {
+        "title": "Fixed — Safe plan synchronization",
+        "items": [
+          "Synchronize approved contracts for every nonterminal task without rewriting lifecycle or history",
+          "Recheck dependencies after synchronization and prevent force from bypassing unfinished prerequisites",
+          "Invalidate prior validation receipts when execution scope changes"
+        ]
+      },
+      {
+        "title": "Improved — Actionable graph diagnostics",
+        "items": [
+          "Show bounded field-level changes and exact dependency differences after sync-plan",
+          "Warn about missing or reversed blocked-task dependencies and new leaf tasks",
+          "Recover stale legacy plan sources and record diagnostic-only synchronization events"
+        ]
+      },
+      {
+        "title": "Fixed — Partial run migration",
+        "items": [
+          "Adopt current planning structure while active legacy attempts continue",
+          "Apply current gates to unstarted work without holding unrelated tasks",
+          "Keep engine and dashboard state aligned and supersede stale discussion rounds"
+        ]
+      }
     ]
   },
   "1.3.16": {
     "en": [
-      { "title": "Improved — Complete installed guidance", "items": ["Document recoverable updates, safe run migration and transactional legacy storage in English and Brazilian Portuguese", "Explain current PO First evidence, counterexample and prioritized-suggestion rules", "Update both READMEs, the skill and runtime references across Claude Code, Kiro and Codex"] },
-      { "title": "Fixed — Immutable skip decisions", "items": ["Require a nonempty reason before skipping work", "Close an active delivery attempt as skipped without fabricating validation evidence", "Refuse to rewrite tasks that are already done or skipped"] }
+      {
+        "title": "Improved — Complete installed guidance",
+        "items": [
+          "Document recoverable updates, safe run migration and transactional legacy storage in English and Brazilian Portuguese",
+          "Explain current PO First evidence, counterexample and prioritized-suggestion rules",
+          "Update both READMEs, the skill and runtime references across Claude Code, Kiro and Codex"
+        ]
+      },
+      {
+        "title": "Fixed — Immutable skip decisions",
+        "items": [
+          "Require a nonempty reason before skipping work",
+          "Close an active delivery attempt as skipped without fabricating validation evidence",
+          "Refuse to rewrite tasks that are already done or skipped"
+        ]
+      }
     ]
   },
   "1.3.15": {
     "en": [
-      { "title": "Fixed — Recoverable updates", "items": ["Recover damaged installation markers only from registered, byte-verified backups", "Reapply updates when managed files differ or activation remains pending", "Refuse to downgrade a newer global CLI to an older npm latest release"] },
-      { "title": "Fixed — Transactional legacy migration", "items": ["Detect concurrent changes and restore relocated state after later failures", "Preserve durable internal links across migration and restore", "Refuse unrecoverable empty-directory links before changing the legacy source"] },
-      { "title": "Fixed — Dashboard restart ownership", "items": ["Wait for the previous Windows dashboard to release its port", "Avoid duplicate managed processes when the scheduler entry is missing", "Remove a Startup fallback correctly after an interrupted restart"] },
-      { "title": "Fixed — Task history consistency", "items": ["Close an active attempt when its task is explicitly skipped", "Require sync-plan before retry when global plan decisions changed"] }
+      {
+        "title": "Fixed — Recoverable updates",
+        "items": [
+          "Recover damaged installation markers only from registered, byte-verified backups",
+          "Reapply updates when managed files differ or activation remains pending",
+          "Refuse to downgrade a newer global CLI to an older npm latest release"
+        ]
+      },
+      {
+        "title": "Fixed — Transactional legacy migration",
+        "items": [
+          "Detect concurrent changes and restore relocated state after later failures",
+          "Preserve durable internal links across migration and restore",
+          "Refuse unrecoverable empty-directory links before changing the legacy source"
+        ]
+      },
+      {
+        "title": "Fixed — Dashboard restart ownership",
+        "items": [
+          "Wait for the previous Windows dashboard to release its port",
+          "Avoid duplicate managed processes when the scheduler entry is missing",
+          "Remove a Startup fallback correctly after an interrupted restart"
+        ]
+      },
+      {
+        "title": "Fixed — Task history consistency",
+        "items": [
+          "Close an active attempt when its task is explicitly skipped",
+          "Require sync-plan before retry when global plan decisions changed"
+        ]
+      }
     ]
   },
   "1.3.14": {
     "en": [
-      { "title": "Fixed — Minimal legacy migration", "items": ["Move only graph state, graph backups and top-level plan or handoff files into Prumo storage", "Delete generated execution directories, dependency copies and build outputs after state verification", "Run the shared migration once instead of repeating it for Claude Code, Kiro and Codex"] },
-      { "title": "Improved — Fast first update", "items": ["Keep the recoverable backup proportional to plan data rather than the complete execution workspace", "Preserve conflicting graph copies and refuse migration instead of replacing current state"] }
+      {
+        "title": "Fixed — Minimal legacy migration",
+        "items": [
+          "Move only graph state, graph backups and top-level plan or handoff files into Prumo storage",
+          "Delete generated execution directories, dependency copies and build outputs after state verification",
+          "Run the shared migration once instead of repeating it for Claude Code, Kiro and Codex"
+        ]
+      },
+      {
+        "title": "Improved — Fast first update",
+        "items": [
+          "Keep the recoverable backup proportional to plan data rather than the complete execution workspace",
+          "Preserve conflicting graph copies and refuse migration instead of replacing current state"
+        ]
+      }
     ]
   },
   "1.3.13": {
     "en": [
-      { "title": "Fixed — Bounded workspace updates", "items": ["Relocate large legacy workspaces without retaining their file payloads in memory", "Keep a recoverable original while copying and byte-verifying the destination", "Detect concurrent changes and preserve internal and external junction targets"] },
-      { "title": "Fixed — Current-version updates", "items": ["Skip npm and harness rewrites when the CLI and every managed installation already match latest", "Continue updating when Claude Code, Kiro or Codex is stale or an explicit language change was requested"] }
+      {
+        "title": "Fixed — Bounded workspace updates",
+        "items": [
+          "Relocate large legacy workspaces without retaining their file payloads in memory",
+          "Keep a recoverable original while copying and byte-verifying the destination",
+          "Detect concurrent changes and preserve internal and external junction targets"
+        ]
+      },
+      {
+        "title": "Fixed — Current-version updates",
+        "items": [
+          "Skip npm and harness rewrites when the CLI and every managed installation already match latest",
+          "Continue updating when Claude Code, Kiro or Codex is stale or an explicit language change was requested"
+        ]
+      }
     ]
   },
   "1.3.12": {
     "en": [
-      { "title": "Improved — Evidence-focused PO First", "items": ["Preserve ordering, precedence, boundaries, invalid input and state transitions as explicit acceptance dimensions", "Stop investigation after every material criterion and the highest-risk counterexample have current evidence", "Lead final reports with the observable result and translate technical details into their practical effect"] },
-      { "title": "Improved — Independent adversarial review", "items": ["Require one independently derived counterexample for the highest-risk applicable criterion", "Reject a plan whose checks cannot establish every current criterion", "Keep review proportional and add suggestions only when they provide a real next action"] }
+      {
+        "title": "Improved — Evidence-focused PO First",
+        "items": [
+          "Preserve ordering, precedence, boundaries, invalid input and state transitions as explicit acceptance dimensions",
+          "Stop investigation after every material criterion and the highest-risk counterexample have current evidence",
+          "Lead final reports with the observable result and translate technical details into their practical effect"
+        ]
+      },
+      {
+        "title": "Improved — Independent adversarial review",
+        "items": [
+          "Require one independently derived counterexample for the highest-risk applicable criterion",
+          "Reject a plan whose checks cannot establish every current criterion",
+          "Keep review proportional and add suggestions only when they provide a real next action"
+        ]
+      }
     ]
   },
   "1.3.11": {
     "en": [
-      { "title": "Fixed — Filtered graph context", "items": ["Keep every task and phase visible while dimming cards outside the selected filter", "Disable nonmatching cards while preserving requested dependency context", "Preserve graph positions, zoom and canvas size when filters change"] },
-      { "title": "Fixed — Safe candidate updates", "items": ["Refuse to downgrade a locally installed newer candidate to an older npm latest release", "Retry isolated updater cleanup longer on Windows"] },
-      { "title": "Fixed — macOS path aliases", "items": ["Accept the macOS /var to /private/var home alias without allowing linked skill directories"] }
+      {
+        "title": "Fixed — Filtered graph context",
+        "items": [
+          "Keep every task and phase visible while dimming cards outside the selected filter",
+          "Disable nonmatching cards while preserving requested dependency context",
+          "Preserve graph positions, zoom and canvas size when filters change"
+        ]
+      },
+      {
+        "title": "Fixed — Safe candidate updates",
+        "items": [
+          "Refuse to downgrade a locally installed newer candidate to an older npm latest release",
+          "Retry isolated updater cleanup longer on Windows"
+        ]
+      },
+      {
+        "title": "Fixed — macOS path aliases",
+        "items": [
+          "Accept the macOS /var to /private/var home alias without allowing linked skill directories"
+        ]
+      }
     ]
   },
   "1.3.10": {
     "en": [
-      { "title": "Improved — Assertive next steps", "items": ["Give one to three concrete suggestions in priority order when a next action is useful", "Add a fourth suggestion only to prevent critical failure, loss or blockage", "Omit suggestion blocks when no useful next action exists"] }
+      {
+        "title": "Improved — Assertive next steps",
+        "items": [
+          "Give one to three concrete suggestions in priority order when a next action is useful",
+          "Add a fourth suggestion only to prevent critical failure, loss or blockage",
+          "Omit suggestion blocks when no useful next action exists"
+        ]
+      }
     ]
   },
   "1.3.9": {
     "en": [
-      { "title": "Fixed — Persistent Windows dashboard", "items": ["Start the Windows fallback through its registered Startup launcher with the configured environment", "Resolve and save the real server process after activation and update restart", "Bound process discovery and report the actual restart failure"] },
-      { "title": "Fixed — Dashboard failure recovery", "items": ["Keep serving healthy runs when a workspace or an update file is temporarily unreadable", "Recover auto-sync after incomplete state writes or failed synchronization", "Report the loaded server version until the process actually restarts"] },
-      { "title": "Fixed — Complete harness updates", "items": ["Report damaged installation markers without silently skipping an installed harness", "Continue independent harness updates while reporting partial failure", "Treat empty storage settings as unset instead of migrating the current directory"] },
-      { "title": "Fixed — Dashboard filters and zoom", "items": ["Show matching cards across every phase and compact empty lanes", "Reveal filtered-out tasks when opening their details", "Preserve zoom and pan when toggling the legend"] },
-      { "title": "Fixed — Legacy workspace migration", "items": ["Preserve dependency links and junctions without touching external targets", "Resume active legacy attempts while safely deferring structural migration", "Verify updates from every published npm version"] },
-      { "title": "Fixed — Interrupted update history", "items": ["Show release notes and installed CLI version after partial failures", "Retain missed release history until the whole update succeeds", "Report shared migration failures only once"] }
+      {
+        "title": "Fixed — Persistent Windows dashboard",
+        "items": [
+          "Start the Windows fallback through its registered Startup launcher with the configured environment",
+          "Resolve and save the real server process after activation and update restart",
+          "Bound process discovery and report the actual restart failure"
+        ]
+      },
+      {
+        "title": "Fixed — Dashboard failure recovery",
+        "items": [
+          "Keep serving healthy runs when a workspace or an update file is temporarily unreadable",
+          "Recover auto-sync after incomplete state writes or failed synchronization",
+          "Report the loaded server version until the process actually restarts"
+        ]
+      },
+      {
+        "title": "Fixed — Complete harness updates",
+        "items": [
+          "Report damaged installation markers without silently skipping an installed harness",
+          "Continue independent harness updates while reporting partial failure",
+          "Treat empty storage settings as unset instead of migrating the current directory"
+        ]
+      },
+      {
+        "title": "Fixed — Dashboard filters and zoom",
+        "items": [
+          "Show matching cards across every phase and compact empty lanes",
+          "Reveal filtered-out tasks when opening their details",
+          "Preserve zoom and pan when toggling the legend"
+        ]
+      },
+      {
+        "title": "Fixed — Legacy workspace migration",
+        "items": [
+          "Preserve dependency links and junctions without touching external targets",
+          "Resume active legacy attempts while safely deferring structural migration",
+          "Verify updates from every published npm version"
+        ]
+      },
+      {
+        "title": "Fixed — Interrupted update history",
+        "items": [
+          "Show release notes and installed CLI version after partial failures",
+          "Retain missed release history until the whole update succeeds",
+          "Report shared migration failures only once"
+        ]
+      }
     ]
   },
   "1.3.8": {
     "en": [
-      { "title": "Fixed — Dependency-aware phase planning", "items": ["Allow user-selected independent phases to be planned concurrently", "Block the whole phase when any unfinished member has an unfinished external dependency", "Show the blocking dependency phase in the CLI and dashboard"] },
-      { "title": "Fixed — Canonical Prumo storage", "items": ["Keep new central runs in the Prumo store even when legacy settings remain", "Follow stale central root references after verified graph-foreman migration"] },
-      { "title": "Improved — Approved graph integrity", "items": ["Tell agents to preserve phase assignments and dependencies instead of rewriting the graph to bypass blockers"] }
+      {
+        "title": "Fixed — Dependency-aware phase planning",
+        "items": [
+          "Allow user-selected independent phases to be planned concurrently",
+          "Block the whole phase when any unfinished member has an unfinished external dependency",
+          "Show the blocking dependency phase in the CLI and dashboard"
+        ]
+      },
+      {
+        "title": "Fixed — Canonical Prumo storage",
+        "items": [
+          "Keep new central runs in the Prumo store even when legacy settings remain",
+          "Follow stale central root references after verified graph-foreman migration"
+        ]
+      },
+      {
+        "title": "Improved — Approved graph integrity",
+        "items": [
+          "Tell agents to preserve phase assignments and dependencies instead of rewriting the graph to bypass blockers"
+        ]
+      }
     ]
   },
   "1.3.7": {
     "en": [
-      { "title": "Fixed — Reliable dashboard restart", "items": ["Recover stale or delayed Windows process identity during update", "Wait for the previous process to stop before starting its replacement", "Allow slower Windows startup without reporting a false failure"] },
-      { "title": "Improved — Fit and 100% view", "items": ["Toggle the fit button between the complete graph and a centered 100% view"] }
+      {
+        "title": "Fixed — Reliable dashboard restart",
+        "items": [
+          "Recover stale or delayed Windows process identity during update",
+          "Wait for the previous process to stop before starting its replacement",
+          "Allow slower Windows startup without reporting a false failure"
+        ]
+      },
+      {
+        "title": "Improved — Fit and 100% view",
+        "items": [
+          "Toggle the fit button between the complete graph and a centered 100% view"
+        ]
+      }
     ]
   },
   "1.3.6": {
     "en": [
-      { "title": "Fixed — Dashboard startup and restart", "items": ["Preserve the configured environment when starting the dashboard", "Recognize Windows Startup processes with harmless command-line spacing", "Filter dashboard process candidates before exact ownership checks"] },
-      { "title": "Fixed — Safe run migration", "items": ["Refuse to downgrade runs written by a newer state schema", "Verify published 1.0.8 upgrades, legacy workspace relocation and merged-task preservation end to end"] }
+      {
+        "title": "Fixed — Dashboard startup and restart",
+        "items": [
+          "Preserve the configured environment when starting the dashboard",
+          "Recognize Windows Startup processes with harmless command-line spacing",
+          "Filter dashboard process candidates before exact ownership checks"
+        ]
+      },
+      {
+        "title": "Fixed — Safe run migration",
+        "items": [
+          "Refuse to downgrade runs written by a newer state schema",
+          "Verify published 1.0.8 upgrades, legacy workspace relocation and merged-task preservation end to end"
+        ]
+      }
     ]
   },
   "1.3.5": {
     "en": [
-      { "title": "Fixed — Central workspace migration", "items": ["Move central graph-foreman workspaces to the Prumo store after byte verification", "Preserve project-local runs and roll back conflicting or concurrent changes", "Keep an empty Windows-locked legacy directory from reverting a completed data migration"] },
-      { "title": "Fixed — Dashboard continuity", "items": ["Adopt a running legacy dashboard that has no saved startup preference", "Preserve explicit dashboard opt-out during installation and update"] },
-      { "title": "Improved — Responsive phase board", "items": ["Choose phase columns from the available canvas", "Grow phase lanes only as far as their task cards require", "Open with the complete graph visible without manual zoom adjustments"] },
-      { "title": "Added — Direct migration command", "items": ["Expose prumo migrate and prumo migrate --check in the main CLI help", "Forward optional run selection to the installed migration engine"] }
+      {
+        "title": "Fixed — Central workspace migration",
+        "items": [
+          "Move central graph-foreman workspaces to the Prumo store after byte verification",
+          "Preserve project-local runs and roll back conflicting or concurrent changes",
+          "Keep an empty Windows-locked legacy directory from reverting a completed data migration"
+        ]
+      },
+      {
+        "title": "Fixed — Dashboard continuity",
+        "items": [
+          "Adopt a running legacy dashboard that has no saved startup preference",
+          "Preserve explicit dashboard opt-out during installation and update"
+        ]
+      },
+      {
+        "title": "Improved — Responsive phase board",
+        "items": [
+          "Choose phase columns from the available canvas",
+          "Grow phase lanes only as far as their task cards require",
+          "Open with the complete graph visible without manual zoom adjustments"
+        ]
+      },
+      {
+        "title": "Added — Direct migration command",
+        "items": [
+          "Expose prumo migrate and prumo migrate --check in the main CLI help",
+          "Forward optional run selection to the installed migration engine"
+        ]
+      }
     ]
   },
   "1.3.4": {
     "en": [
-      { "title": "Fixed — Complete update history", "items": ["Show every missed release when updating across multiple versions", "Use the oldest installed CLI or harness version as the update starting point"] },
-      { "title": "Added — Automatic legacy run migration", "items": ["Migrate safe pre-planning runs before engine commands and preserve terminal tasks", "Create a state backup without opening discussion or planning rounds", "Report active work that prevents a safe migration"] }
+      {
+        "title": "Fixed — Complete update history",
+        "items": [
+          "Show every missed release when updating across multiple versions",
+          "Use the oldest installed CLI or harness version as the update starting point"
+        ]
+      },
+      {
+        "title": "Added — Automatic legacy run migration",
+        "items": [
+          "Migrate safe pre-planning runs before engine commands and preserve terminal tasks",
+          "Create a state backup without opening discussion or planning rounds",
+          "Report active work that prevents a safe migration"
+        ]
+      }
     ]
   },
   "1.3.3": {
     "en": [
-      { "title": "Improved — Step-level corrective review", "items": ["Resume at the first invalid review step after a corrective retry", "Reuse deterministic static checks only when their declared files are unchanged", "Always rerun functional checks"] }
+      {
+        "title": "Improved — Step-level corrective review",
+        "items": [
+          "Resume at the first invalid review step after a corrective retry",
+          "Reuse deterministic static checks only when their declared files are unchanged",
+          "Always rerun functional checks"
+        ]
+      }
     ]
   },
   "1.3.2": {
     "en": [
-      { "title": "Fixed — Explicit task scope", "items": ["Keep one discussion and one planner when the user names one task", "Treat prerequisites and internal deliverables as plan context instead of new tasks", "Require approval before expanding the graph or planning siblings"] }
+      {
+        "title": "Fixed — Explicit task scope",
+        "items": [
+          "Keep one discussion and one planner when the user names one task",
+          "Treat prerequisites and internal deliverables as plan context instead of new tasks",
+          "Require approval before expanding the graph or planning siblings"
+        ]
+      }
     ]
   },
   "1.3.1": {
     "en": [
-      { "title": "Fixed — Sequential phase planning", "items": ["Open phases in declared order after earlier work is terminal", "Allow a later provider phase early only for direct or transitive dependency inputs"] },
-      { "title": "Improved — Legacy run adoption", "items": ["Normalize every nonterminal legacy contract before sync-plan", "Preserve the original run and adopt eligible phases without auxiliary migration runs"] }
+      {
+        "title": "Fixed — Sequential phase planning",
+        "items": [
+          "Open phases in declared order after earlier work is terminal",
+          "Allow a later provider phase early only for direct or transitive dependency inputs"
+        ]
+      },
+      {
+        "title": "Improved — Legacy run adoption",
+        "items": [
+          "Normalize every nonterminal legacy contract before sync-plan",
+          "Preserve the original run and adopt eligible phases without auxiliary migration runs"
+        ]
+      }
     ]
   },
   "1.3.0": {
     "en": [
-      { "title": "Added — Automatic global dashboard", "items": ["Start the read-only dashboard after global npm installation", "Manage per-user startup with dashboard enable, disable and status commands", "Keep Task Scheduler primary on Windows and fall back to one hidden current-user Startup entry without administrator access"] },
-      { "title": "Improved — Responsive graph observer", "items": ["Filter every lifecycle state with optional direct dependency context", "Adapt graph density and the collapsible details panel to the available viewport"] },
-      { "title": "Added — Phase-wide discussion and planning", "items": ["Discuss each phase once and generate one immutable plan per task", "Track later-phase inputs and replan only confirmed contract or plan defects", "Select permitted question tools from the current harness session"] }
+      {
+        "title": "Added — Automatic global dashboard",
+        "items": [
+          "Start the read-only dashboard after global npm installation",
+          "Manage per-user startup with dashboard enable, disable and status commands",
+          "Keep Task Scheduler primary on Windows and fall back to one hidden current-user Startup entry without administrator access"
+        ]
+      },
+      {
+        "title": "Improved — Responsive graph observer",
+        "items": [
+          "Filter every lifecycle state with optional direct dependency context",
+          "Adapt graph density and the collapsible details panel to the available viewport"
+        ]
+      },
+      {
+        "title": "Added — Phase-wide discussion and planning",
+        "items": [
+          "Discuss each phase once and generate one immutable plan per task",
+          "Track later-phase inputs and replan only confirmed contract or plan defects",
+          "Select permitted question tools from the current harness session"
+        ]
+      }
     ]
   },
   "1.2.2": {
     "en": [
-      { "title": "Fixed — Native discovery questions", "items": ["Select permitted question tools from the current harness session", "Use structured chat questions when native input is unavailable and wait for real answers"] },
-      { "title": "Added — Task progress visibility", "items": ["Order the legend by lifecycle and color all role counters", "Show executor step and review-check progress with explicit retry and cache-reuse events"] }
+      {
+        "title": "Fixed — Native discovery questions",
+        "items": [
+          "Select permitted question tools from the current harness session",
+          "Use structured chat questions when native input is unavailable and wait for real answers"
+        ]
+      },
+      {
+        "title": "Added — Task progress visibility",
+        "items": [
+          "Order the legend by lifecycle and color all role counters",
+          "Show executor step and review-check progress with explicit retry and cache-reuse events"
+        ]
+      }
     ]
   },
   "1.2.1": {
     "en": [
-      { "title": "Added — Discuss before planning", "items": ["Run task discovery in the principal conversation before dispatching a planner", "Require at least one answered question and resolved PO First coverage for every new task"] },
-      { "title": "Added — Host-agnostic discovery", "items": ["Use native questions when available and a structured chat fallback otherwise", "Persist and bind discovery context to planning without requiring global Plan mode"] },
-      { "title": "Preserved — Planning and legacy runs", "items": ["Keep discuss, planning, execution and review as separate responsibilities", "Keep existing 1.2.0 tasks and state compatible"] }
+      {
+        "title": "Added — Discuss before planning",
+        "items": [
+          "Run task discovery in the principal conversation before dispatching a planner",
+          "Require at least one answered question and resolved PO First coverage for every new task"
+        ]
+      },
+      {
+        "title": "Added — Host-agnostic discovery",
+        "items": [
+          "Use native questions when available and a structured chat fallback otherwise",
+          "Persist and bind discovery context to planning without requiring global Plan mode"
+        ]
+      },
+      {
+        "title": "Preserved — Planning and legacy runs",
+        "items": [
+          "Keep discuss, planning, execution and review as separate responsibilities",
+          "Keep existing 1.2.0 tasks and state compatible"
+        ]
+      }
     ]
   },
   "1.2.0": {
     "en": [
-      { "title": "Added — Per-task research and planning", "items": ["A dedicated planner researches each new task before execution", "Record sources, decisions, execution steps and criterion-to-check mappings"] },
-      { "title": "Added — Planning visibility", "items": ["Separate ready to plan, in planning and ready to execute", "Show the planner, task plans and planning time in the dashboard", "Keep native run-selector options readable with explicit dark-theme colors"] },
-      { "title": "Preserved — Existing work and independent review", "items": ["Keep legacy task history and replan paused scope changes in the same attempt", "Require fresh planning on retry and independent evidence before completion"] }
+      {
+        "title": "Added — Per-task research and planning",
+        "items": [
+          "A dedicated planner researches each new task before execution",
+          "Record sources, decisions, execution steps and criterion-to-check mappings"
+        ]
+      },
+      {
+        "title": "Added — Planning visibility",
+        "items": [
+          "Separate ready to plan, in planning and ready to execute",
+          "Show the planner, task plans and planning time in the dashboard",
+          "Keep native run-selector options readable with explicit dark-theme colors"
+        ]
+      },
+      {
+        "title": "Preserved — Existing work and independent review",
+        "items": [
+          "Keep legacy task history and replan paused scope changes in the same attempt",
+          "Require fresh planning on retry and independent evidence before completion"
+        ]
+      }
     ]
   },
   "1.1.2": {
     "en": [
-      { "title": "Fixed — Legacy run recovery", "items": ["Preserve terminal contracts during sync-plan and retry", "Reject malformed working directories before recording validation"] },
-      { "title": "Fixed — Windows state persistence", "items": ["Retry transient state-file locks without deleting previous state"] },
-      { "title": "Added — Executor alias and review guidance", "items": ["Accept start --executor as an alias for --agent", "Clarify executable gates, environment failures and independent review"] }
+      {
+        "title": "Fixed — Legacy run recovery",
+        "items": [
+          "Preserve terminal contracts during sync-plan and retry",
+          "Reject malformed working directories before recording validation"
+        ]
+      },
+      {
+        "title": "Fixed — Windows state persistence",
+        "items": [
+          "Retry transient state-file locks without deleting previous state"
+        ]
+      },
+      {
+        "title": "Added — Executor alias and review guidance",
+        "items": [
+          "Accept start --executor as an alias for --agent",
+          "Clarify executable gates, environment failures and independent review"
+        ]
+      }
     ]
   },
   "1.1.1": {
@@ -215,43 +767,143 @@
   },
   "1.1.0": {
     "en": [
-      { "title": "Improved — Installation and validation flow", "items": ["Improve installation progress and harness detection", "Add contract preflight, safe retry and resumable deterministic validation"] },
-      { "title": "Added — Update highlights and install commands", "items": ["Add English update highlights", "Document direct installation commands"] }
+      {
+        "title": "Improved — Installation and validation flow",
+        "items": [
+          "Improve installation progress and harness detection",
+          "Add contract preflight, safe retry and resumable deterministic validation"
+        ]
+      },
+      {
+        "title": "Added — Update highlights and install commands",
+        "items": [
+          "Add English update highlights",
+          "Document direct installation commands"
+        ]
+      }
     ]
   },
   "1.0.10": {
     "en": [
-      { "title": "Added — Safe graph-foreman migration", "items": ["Migrate existing graph-foreman skills into Prumo after preserving custom files", "Verify written files and roll back conflicts while keeping run data in place"] }
+      {
+        "title": "Added — Safe graph-foreman migration",
+        "items": [
+          "Migrate existing graph-foreman skills into Prumo after preserving custom files",
+          "Verify written files and roll back conflicts while keeping run data in place"
+        ]
+      }
     ]
   },
   "1.0.9": {
     "en": [
-      { "title": "Fixed — Global updates and Codex skill roots", "items": ["Install or update the global CLI through npx and bunx update flows", "Keep one personal Prumo skill root in Codex"] }
+      {
+        "title": "Fixed — Global updates and Codex skill roots",
+        "items": [
+          "Install or update the global CLI through npx and bunx update flows",
+          "Keep one personal Prumo skill root in Codex"
+        ]
+      }
     ]
   },
-  "1.0.8": { "en": [
-    { "title": "Fixed — Windows update progress", "items": ["Clear stale progress labels and use portable ASCII bar segments", "Show the installed version after a successful update and suppress successful npm runner notices"] },
-    { "title": "Fixed — GitHub Actions runtime", "items": ["Replace deprecated Node.js 20 action runtimes with Node.js 24"] }
-  ] },
-  "1.0.7": { "en": [
-    { "title": "Fixed — Windows npm execution", "items": ["Remove DEP0190 by invoking cmd.exe explicitly instead of shell:true"] },
-    { "title": "Improved — Concise and repeatable updates", "items": ["Show phase progress while preserving actionable failures and detailed previews", "Avoid rewriting complete same-version installations or creating redundant backups"] }
-  ] },
-  "1.0.6": { "en": [
-    { "title": "Added — Persistent global CLI", "items": ["Persist the global prumo command and update it together with installed harness adapters"] },
-    { "title": "Fixed — Dashboard run switching", "items": ["Ignore stale responses when selecting another run and remove duplicate empty-state borders"] }
-  ] },
-  "1.0.5": { "en": [
-    { "title": "Improved — Evidence and corrective retry", "items": ["Separate approved context, current acceptance criteria and executable proof", "Synchronize approved contract changes before retry while retaining failures and independent evidence", "Recover interrupted dispatch in the existing attempt"] }
-  ] },
-  "1.0.4": { "en": [
-    { "title": "Added — Interactive harness selection", "items": ["Select detected Claude Code, Kiro and Codex environments interactively or with install --all"] },
-    { "title": "Improved — Regional language defaults", "items": ["Select the initial language from the system region and preserve explicit choices", "Use the installation language in the dashboard"] }
-  ] },
-  "1.0.3": { "en": [
-    { "title": "Improved — Prumo branding and workspace guidance", "items": ["Standardize the displayed Prumo name while preserving command and data compatibility", "Clarify shared workspace setup and preserve explicit storage paths"] }
-  ] },
-  "1.0.2": { "en": [
-    { "title": "Added — npm distribution and automatic updates", "items": ["Publish @henri-ralmeida/prumo and add prumo update", "Detect installed environments and custom paths while preserving language, backups and rollback"] }
-  ] }
+  "1.0.8": {
+    "en": [
+      {
+        "title": "Fixed — Windows update progress",
+        "items": [
+          "Clear stale progress labels and use portable ASCII bar segments",
+          "Show the installed version after a successful update and suppress successful npm runner notices"
+        ]
+      },
+      {
+        "title": "Fixed — GitHub Actions runtime",
+        "items": [
+          "Replace deprecated Node.js 20 action runtimes with Node.js 24"
+        ]
+      }
+    ]
+  },
+  "1.0.7": {
+    "en": [
+      {
+        "title": "Fixed — Windows npm execution",
+        "items": [
+          "Remove DEP0190 by invoking cmd.exe explicitly instead of shell:true"
+        ]
+      },
+      {
+        "title": "Improved — Concise and repeatable updates",
+        "items": [
+          "Show phase progress while preserving actionable failures and detailed previews",
+          "Avoid rewriting complete same-version installations or creating redundant backups"
+        ]
+      }
+    ]
+  },
+  "1.0.6": {
+    "en": [
+      {
+        "title": "Added — Persistent global CLI",
+        "items": [
+          "Persist the global prumo command and update it together with installed harness adapters"
+        ]
+      },
+      {
+        "title": "Fixed — Dashboard run switching",
+        "items": [
+          "Ignore stale responses when selecting another run and remove duplicate empty-state borders"
+        ]
+      }
+    ]
+  },
+  "1.0.5": {
+    "en": [
+      {
+        "title": "Improved — Evidence and corrective retry",
+        "items": [
+          "Separate approved context, current acceptance criteria and executable proof",
+          "Synchronize approved contract changes before retry while retaining failures and independent evidence",
+          "Recover interrupted dispatch in the existing attempt"
+        ]
+      }
+    ]
+  },
+  "1.0.4": {
+    "en": [
+      {
+        "title": "Added — Interactive harness selection",
+        "items": [
+          "Select detected Claude Code, Kiro and Codex environments interactively or with install --all"
+        ]
+      },
+      {
+        "title": "Improved — Regional language defaults",
+        "items": [
+          "Select the initial language from the system region and preserve explicit choices",
+          "Use the installation language in the dashboard"
+        ]
+      }
+    ]
+  },
+  "1.0.3": {
+    "en": [
+      {
+        "title": "Improved — Prumo branding and workspace guidance",
+        "items": [
+          "Standardize the displayed Prumo name while preserving command and data compatibility",
+          "Clarify shared workspace setup and preserve explicit storage paths"
+        ]
+      }
+    ]
+  },
+  "1.0.2": {
+    "en": [
+      {
+        "title": "Added — npm distribution and automatic updates",
+        "items": [
+          "Publish @henri-ralmeida/prumo and add prumo update",
+          "Detect installed environments and custom paths while preserving language, backups and rollback"
+        ]
+      }
+    ]
+  }
 }

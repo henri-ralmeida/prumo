@@ -111,10 +111,10 @@ test('unblock restores running work and contract refresh can be reviewed in the 
 })
 
 test('legacy active work rechecks current dependencies before review, validation, done and unblock', (t) => {
-  const f = fixture(t, {}, { tasks: [{ id: 'T0', title: 'New prerequisite', validation: [functionalStep] }] })
+  const f = fixture(t, {}, { tasks: [{ id: 'T2', title: 'New prerequisite', validation: [functionalStep] }] })
   f.ok('start', 'T1', '--agent', 'executor')
   const before = structuredClone(f.state().tasks.T1.attempts)
-  f.plan.tasks.find(task => task.id === 'T1').deps = ['T0']
+  f.plan.tasks.find(task => task.id === 'T1').deps = ['T2']
   writeFileSync(f.planPath, JSON.stringify(f.plan))
   f.ok('sync-plan', '--plan', f.planPath)
   assert.deepEqual(f.state().tasks.T1.attempts, before)
@@ -123,11 +123,11 @@ test('legacy active work rechecks current dependencies before review, validation
     ['review', 'T1', '--agent', 'reviewer'],
     ['validate', 'T1', '--ok', '--evidence', 'Dependency must finish first', '--cwd', f.project],
     ['done', 'T1'],
-  ]) f.rejected(/still waiting on: T0/, ...command)
+  ]) f.rejected(/still waiting on: T2/, ...command)
   f.ok('block', 'T1', '--reason', 'Pause until prerequisite is complete')
-  f.rejected(/still waiting on: T0/, 'unblock', 'T1')
+  f.rejected(/still waiting on: T2/, 'unblock', 'T1')
   assert.equal(f.state().tasks.T1.state, 'blocked')
-  f.ok('skip', 'T0', '--reason', 'Fixture prerequisite waived')
+  f.ok('skip', 'T2', '--reason', 'Fixture prerequisite waived')
   f.ok('unblock', 'T1')
   f.ok('review', 'T1', '--agent', 'reviewer')
   assert.equal(f.validate().status, 0)
@@ -135,28 +135,28 @@ test('legacy active work rechecks current dependencies before review, validation
 })
 
 test('force never bypasses dependencies for legacy start or retry', (t) => {
-  const f = fixture(t, { deps: ['T0'] }, {
-    tasks: [{ id: 'T0', title: 'Pending prerequisite', validation: [functionalStep] }],
+  const f = fixture(t, { deps: ['T2'] }, {
+    tasks: [{ id: 'T2', title: 'Pending prerequisite', validation: [functionalStep] }],
   })
-  f.rejected(/still waiting on: T0/, 'start', 'T1', '--agent', 'legacy-executor', '--force')
+  f.rejected(/still waiting on: T2/, 'start', 'T1', '--agent', 'legacy-executor', '--force')
   const failed = f.state()
   failed.tasks.T1.state = 'failed'
   failed.tasks.T1.attempts = [{ n: 1, agent: 'legacy-executor', result: 'failed', reason: 'Retry fixture' }]
   f.save(failed)
   f.ok('retry', 'T1', '--force')
-  f.rejected(/still waiting on: T0/, 'start', 'T1', '--agent', 'legacy-executor-v2', '--force')
+  f.rejected(/still waiting on: T2/, 'start', 'T1', '--agent', 'legacy-executor-v2', '--force')
 })
 
 test('legacy validation cannot approve a scope synchronized afterwards', (t) => {
   const f = fixture(t, {}, {
-    tasks: [{ id: 'T0', title: 'Later prerequisite', validation: [functionalStep] }],
+    tasks: [{ id: 'T2', title: 'Later prerequisite', validation: [functionalStep] }],
   })
   f.beginReview()
   assert.equal(f.validate().status, 0)
-  f.plan.tasks.find(task => task.id === 'T1').deps = ['T0']
+  f.plan.tasks.find(task => task.id === 'T1').deps = ['T2']
   writeFileSync(f.planPath, JSON.stringify(f.plan))
   f.ok('sync-plan', '--plan', f.planPath)
-  f.ok('skip', 'T0', '--reason', 'Fixture dependency completed by waiver')
+  f.ok('skip', 'T2', '--reason', 'Fixture dependency completed by waiver')
   f.rejected(/execution scope changed after validation/, 'done', 'T1')
   assert.equal(f.validate().status, 0)
   f.ok('done', 'T1')
@@ -201,7 +201,7 @@ test('repeated block preserves the original phase and completed review evidence'
 })
 
 test('pending and failed tasks restore their phase without bypassing dependencies or retries', (t) => {
-  const f = fixture(t, { deps: ['T0'] }, { tasks: [{ id: 'T0', title: 'Prerequisite', validation: [functionalStep] }] })
+  const f = fixture(t, { deps: ['T2'] }, { tasks: [{ id: 'T2', title: 'Prerequisite', validation: [functionalStep] }] })
   f.ok('block', 'T1', '--reason', 'Planning pause')
   const before = f.state()
   f.rejected(/paused active attempt/, 'unblock', 'T1', '--reviewer', 'reviewer', '--force')
@@ -209,8 +209,8 @@ test('pending and failed tasks restore their phase without bypassing dependencie
   f.ok('unblock', 'T1')
   assert.equal(f.state().tasks.T1.state, 'pending')
   assert.equal(f.state().tasks.T1.attempts.length, 0)
-  f.rejected(/still waiting on: T0/, 'start', 'T1', '--agent', 'executor')
-  f.ok('skip', 'T0', '--reason', 'Prerequisite explicitly waived in this fixture')
+  f.rejected(/still waiting on: T2/, 'start', 'T1', '--agent', 'executor')
+  f.ok('skip', 'T2', '--reason', 'Prerequisite explicitly waived in this fixture')
   f.ok('start', 'T1', '--agent', 'executor')
   f.ok('fail', 'T1', '--reason', 'Actual defect')
   const attempts = f.state().tasks.T1.attempts
@@ -255,15 +255,15 @@ test('active resume checks total capacity and agent ownership, including reviewe
 })
 
 test('unblock rechecks dependencies and keeps failures atomic', (t) => {
-  const f = fixture(t, {}, { tasks: [{ id: 'T0', title: 'Prerequisite', validation: [functionalStep] }] })
+  const f = fixture(t, {}, { tasks: [{ id: 'T2', title: 'Prerequisite', validation: [functionalStep] }] })
   f.ok('start', 'T1', '--agent', 'executor')
   f.ok('block', 'T1', '--reason', 'Dependency changed in approved plan')
   const state = f.state()
-  state.tasks.T1.deps = ['T0']
+  state.tasks.T1.deps = ['T2']
   f.save(state)
-  f.rejected(/still waiting on: T0/, 'unblock', 'T1', '--reviewer', 'reviewer')
+  f.rejected(/still waiting on: T2/, 'unblock', 'T1', '--reviewer', 'reviewer')
   assert.deepEqual(f.state(), state)
-  f.ok('skip', 'T0', '--reason', 'Dependency explicitly resolved in fixture')
+  f.ok('skip', 'T2', '--reason', 'Dependency explicitly resolved in fixture')
   f.ok('unblock', 'T1', '--reviewer', 'reviewer')
 })
 
@@ -384,25 +384,25 @@ test('malformed prose, echo instructions and untyped steps cannot enter a functi
 })
 
 for (const terminal of ['done', 'skipped']) test(`sync-plan and retry preserve legacy ${terminal} contracts`, (t) => {
-  const f = fixture(t, {}, { tasks: [{ id: 'T0', title: 'Historical work', validation: [functionalStep] }] })
+  const f = fixture(t, {}, { tasks: [{ id: 'T2', title: 'Historical work', validation: [functionalStep] }] })
   const state = f.state()
-  state.tasks.T0.state = terminal
-  state.tasks.T0.validation = 'Historical prose'
+  state.tasks.T2.state = terminal
+  state.tasks.T2.validation = 'Historical prose'
   f.save(state)
   f.plan.tasks[1].validation = 'Historical prose'
   f.plan.tasks[0].title = 'Updated delivery'
   writeFileSync(f.planPath, JSON.stringify(f.plan))
   f.ok('sync-plan', '--plan', f.planPath)
-  assert.deepEqual(f.state().tasks.T0, state.tasks.T0)
+  assert.deepEqual(f.state().tasks.T2, state.tasks.T2)
   assert.equal(f.state().tasks.T1.title, 'Updated delivery')
   Object.assign(f.plan.tasks[1], { validationMode: 'inspection', inspectionReason: 'Historical inspection' })
   writeFileSync(f.planPath, JSON.stringify(f.plan))
   f.ok('sync-plan', '--plan', f.planPath)
-  assert.deepEqual(f.state().tasks.T0, state.tasks.T0)
+  assert.deepEqual(f.state().tasks.T2, state.tasks.T2)
   f.ok('start', 'T1', '--executor', 'executor')
   f.ok('fail', 'T1', '--reason', 'Rejected implementation')
   f.ok('retry', 'T1')
-  assert.deepEqual(f.state().tasks.T0, state.tasks.T0)
+  assert.deepEqual(f.state().tasks.T2, state.tasks.T2)
   f.plan.tasks[0].validation = 'Invalid current contract'
   writeFileSync(f.planPath, JSON.stringify(f.plan))
   const before = f.state()
