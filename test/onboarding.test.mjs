@@ -18,10 +18,12 @@ class Node {
   contains(node) { return node === this }
 }
 
-function harness({ saved = false, search = '', summary = () => null } = {}) {
+function harness({ saved = false, search = '', summary = () => null, launcherBottom = 48 } = {}) {
   const elements = new Map()
   const el = id => { if (!elements.has(id)) elements.set(id, new Node()); return elements.get(id) }
   const root = el('#onboarding'), launcher = el('#guideButton'), invite = el('#guideInvitation')
+  launcher.getBoundingClientRect = () => ({ bottom: launcherBottom })
+  invite.style = {}
   const graph = el('#guideExamplePanel'), filters = el('#guideMockFilters')
   const statuses = ['done', 'done', 'done', 'done', 'running', 'running', 'reviewing', 'failed', 'waiting', 'blocked']
   const cards = statuses.map((status, index) => {
@@ -44,10 +46,10 @@ function harness({ saved = false, search = '', summary = () => null } = {}) {
     querySelector: key => el(key), addEventListener(type, fn) { this.listeners.set(type, fn) },
     exitFullscreen() { this.fullscreenElement = null; this.listeners.get('fullscreenchange')?.() } }
   root.requestFullscreen = () => { document.fullscreenElement = root; document.listeners.get('fullscreenchange')?.(); return Promise.resolve() }
-  const window = { location: { search }, localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) } }
+  const window = { listeners: new Map(), addEventListener(type, listener) { this.listeners.set(type, listener) }, location: { search }, localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) } }
   root.hidden = true; invite.hidden = true; detail.hidden = true; el('#guideMockDetailMore').hidden = true
   const api = createPrumoOnboarding({ root, launcher, document, window, getCompletedRunSummary: summary })
-  return { api, el, root, launcher, invite, cards, buttons, storage, document }
+  return { api, el, root, launcher, invite, cards, buttons, storage, document, window }
 }
 
 test('primeira visita convida, clique abre em tela cheia e dispensa persiste sem abrir', async () => {
@@ -80,6 +82,14 @@ test('URL de primeira visita força apenas convite, sem remover preferência ou 
   assert.equal(ui.root.hidden, true)
   assert.equal(ui.storage.get('prumoOnboardingDismissed'), 'true')
   assert.equal(ui.storage.get('prumoPlanData'), 'preservado')
+})
+
+test('convite fica abaixo do botao Guia e acompanha a mudanca de largura', () => {
+  const ui = harness({ launcherBottom: 142 })
+  assert.equal(ui.invite.style.top, '154px')
+  ui.launcher.getBoundingClientRect = () => ({ bottom: 212 })
+  ui.window.listeners.get('resize')()
+  assert.equal(ui.invite.style.top, '224px')
 })
 
 test('o mesmo grafo permanece entre passos; filtro, contagem e detalhe usam só o exemplo', () => {

@@ -143,6 +143,12 @@ export function createPrumoOnboarding({ root, launcher, document, window, transl
     if (!invitation) return
     invitation.hidden = false
     document.documentElement?.classList?.add('guide-inviting')
+    positionInvitation()
+  }
+  function positionInvitation() {
+    if (!invitation || invitation.hidden) return
+    const bottom = launcher.getBoundingClientRect?.().bottom
+    if (Number.isFinite(bottom) && invitation.style) invitation.style.top = `${bottom + 12}px`
   }
   function leaveFullscreen() {
     if (fullscreenOwned && document.fullscreenElement === root && document.exitFullscreen) {
@@ -184,6 +190,7 @@ export function createPrumoOnboarding({ root, launcher, document, window, transl
     launcher.focus?.()
   }
   launcher.addEventListener('click', open)
+  window.addEventListener?.('resize', positionInvitation)
   invitationOpen?.addEventListener('click', open)
   invitationDismiss?.addEventListener('click', () => { hideInvitation(true); launcher.focus?.() })
   previous.addEventListener('click', previousStep)
