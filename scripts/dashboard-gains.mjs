@@ -161,10 +161,10 @@ export function renderGainPanel(gain, tr, fmtMs, esc, locale = 'en') {
   const estimatedPct = Math.max(0, 100 - parallelPct - measuredPct).toFixed(2)
   const bars = gain.oneAtATimeMs == null || !(gain.oneAtATimeMs > 0) ? '' : `<div class="gain-bars" aria-hidden="true">
       <div class="gbar"><span>${esc(tr('Without Prumo'))}</span><span class="gbar-track"><i class="seq" style="width:100%"></i></span></div>
-      <div class="gbar"><span>${esc(tr('With Prumo'))}</span><span class="gbar-track"><i class="par" style="width:${parallelPct.toFixed(2)}%"></i><i class="save" style="width:${measuredPct.toFixed(2)}%"></i><i class="est" style="width:${estimatedPct}%"></i></span></div>
+      <div class="gbar"><span class="gain-prumo">${esc(tr('With Prumo'))}</span><span class="gbar-track"><i class="par" style="width:${parallelPct.toFixed(2)}%"></i><i class="save" style="width:${measuredPct.toFixed(2)}%"></i><i class="est" style="width:${estimatedPct}%"></i></span></div>
     </div><div class="gain-legend">
       <span><i class="seq"></i>${esc(tr('Without Prumo'))}</span>
-      <span><i class="par"></i>${esc(tr('With Prumo'))}</span>
+      <span class="gain-prumo"><i class="par"></i>${esc(tr('With Prumo'))}</span>
       <span><i class="save"></i>${esc(tr('Measured savings'))}</span>
       <span><i class="est"></i>${esc(tr('Estimated calculation based on manual coordination'))}</span>
     </div>`
@@ -173,7 +173,7 @@ export function renderGainPanel(gain, tr, fmtMs, esc, locale = 'en') {
     <div class="gain-grid">
       <div><span>${esc(tr('Without Prumo'))}</span><strong>${shown(baselineMs)}</strong><small>${esc(tr('measured sequential work plus estimated manual coordination'))}</small></div>
       <div><span>${esc(tr('Parallel factor'))}</span><strong>${esc(factor)}</strong><small>${esc(tr('measured activity only'))}</small></div>
-      <div><span>${esc(tr('With Prumo'))}</span><strong>${shown(gain.withPrumoMs)}</strong><small>${esc(tr('union of recorded activity intervals; overlaps count once'))}</small></div>
+      <div><span class="gain-prumo">${esc(tr('With Prumo'))}</span><strong>${shown(gain.withPrumoMs)}</strong><small>${esc(tr('union of recorded activity intervals; overlaps count once'))}</small></div>
       <div class="gain-save"><span>${esc(tr('Measured savings'))}</span><strong>${shown(gain.savingsMs)}</strong></div>
       <div class="gain-save gain-estimate"><span>${esc(tr('Estimated savings'))}</span><strong>${shown(gain.combinedEstimateMs)}</strong><small>${esc(tr('Estimated calculation based on manual coordination'))}</small></div>
     </div>

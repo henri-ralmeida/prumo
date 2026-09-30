@@ -1854,7 +1854,7 @@ test('o tour só resume o ganho real do #39 com run concluída e medição ínte
   const measured = JSON.parse(ui.run('JSON.stringify(getCompletedRunSummary())'))
   assert.equal(measured.completed, true)
   assert.equal(measured.measurementComplete, true)
-  assert.equal(measured.text, 'Sem prumo: 3m20 · Fator de paralelismo: 1,00× · No Prumo: 20s · Economia aferida: 0s · Economia estimada: 3m00')
+  assert.equal(measured.text, 'Sem prumo: 3m20 · Fator de paralelismo: 1,00× · No prumo: 20s · Economia aferida: 0s · Economia estimada: 3m00')
 
   ui.run("SELECTED_ROOT = 'root-b'; SELECTED_RUN = 'loading'; CURRENT_ROOT = 'root-b'; CURRENT_RUN = 'loading'")
   assert.equal(ui.run('selectedRunStateAvailable()'), false, 'A não fica disponível enquanto a seleção aponta para B')

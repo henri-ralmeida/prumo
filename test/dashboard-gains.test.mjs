@@ -53,8 +53,9 @@ test('START e STOP incluem discussão e planejamento de fase uma vez e a barra b
   assert.ok(lower)
   assert.equal(lower.slice(1).reduce((sum, width) => sum + Number(width), 0), 100)
   assert.match(rendered, /Sem prumo<\/span><strong>3m40<\/strong>/)
-  const labels = ['Sem prumo', 'Fator de paralelismo', 'No Prumo', 'Economia aferida', 'Economia estimada']
-  assert.deepEqual(labels.map(label => rendered.indexOf(`<span>${label}</span>`)).every((index, position, positions) => index >= 0 && (position === 0 || index > positions[position - 1])), true)
+  const labels = ['Sem prumo', 'Fator de paralelismo', 'No prumo', 'Economia aferida', 'Economia estimada']
+  assert.deepEqual(labels.map(label => rendered.indexOf(`${label}</span>`)).every((index, position, positions) => index >= 0 && (position === 0 || index > positions[position - 1])), true)
+  assert.equal((rendered.match(/class="gain-prumo"/g) ?? []).length, 3)
 })
 
 test('ganho medido soma o trabalho por tarefa e une intervalos paralelos, sem contar bloqueios', () => {
@@ -238,7 +239,7 @@ test('fase gera um comando de planejamento e ganho combinado nunca é apresentad
   const html = renderGainPanel(gain, localizer('pt-BR'), fmtMs, esc, 'pt-BR')
   assert.match(html, /Economia estimada<\/span><strong>4m00<\/strong>/)
   assert.match(html, /Premissa fixa de 3 minutos por comando/)
-  assert.match(html, /No Prumo/)
+  assert.match(html, /No prumo/)
   const widths = [...html.matchAll(/width:([\d.]+)%/g)].map(match => Number(match[1]))
   assert.equal(widths[0], 100, 'Sem prumo ocupa toda a base')
   assert.ok(Math.abs(widths.slice(1, 4).reduce((sum, width) => sum + width, 0) - 100) < 0.02, 'as parcelas usam a mesma escala sem exceder a barra')
