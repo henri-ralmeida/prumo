@@ -925,7 +925,7 @@ test('review rejection history prefers its validation summary and truncates evid
   assert.doesNotMatch(log, /Raw evidence replaced by summary\./)
   assert.ok(log.includes('A'.repeat(80)))
   assert.doesNotMatch(log, /UNTRUNCATED_SENTINEL/)
-  const repeatLines = log.match(/<(?:div|button) class="ev"[^>]*>[\s\S]*?<\/(?:div|button)>/g).filter(line => line.includes('REPEAT'))
+  const repeatLines = log.match(/<div class="ev">[\s\S]*?<\/div>/g).filter(line => line.includes('REPEAT'))
   assert.equal(repeatLines.length, 2)
   assert.ok(repeatLines[0].includes(secondSummary), 'the latest rejection keeps its full summary')
   assert.ok(repeatLines[1].includes(firstSummary), 'the earlier rejection keeps its own full summary')
@@ -2229,7 +2229,7 @@ test('results and back-to-graph are one CTA whose label alternates', async () =>
 })
 
 test('historico clicavel oferece foco visivel para navegacao por teclado', () => {
-  assert.match(html, /button\.ev:focus-visible \{ outline: 1px solid var\(--accent\)/)
+  assert.match(html, /\.ev-open:focus-visible, \.task-ref:focus-visible \{ outline: 1px solid var\(--accent\)/)
 })
 
 test('lateral preserva o historico sem a secao de falhas e retentativas', () => {
@@ -2245,11 +2245,35 @@ test('historico abre a tarefa atual por alias e nao oferece acao para tarefa ine
     {type:'task_note',task:'T99',text:'Nota antiga',at:instant(2)},
   ])
   const log = ui.nodes.get('#events').innerHTML
-  assert.match(log, /<button class="ev" type="button" onclick="openTask\('T11a'\)"/)
-  assert.doesNotMatch(log, /onclick="openTask\('T99'\)"/)
+  assert.match(log, /<button class="ev-open" type="button" onclick="jumpTo\('T11a'\)"/)
+  assert.doesNotMatch(log, /onclick="jumpTo\('T99'\)"/)
   assert.match(log, /data-ok="false"/)
-  assert.equal(ui.run('openTask("T11a"); POP.id'), 'T11a')
+  const eventTarget = { closest(selector) { return selector === '.ev' ? this : null } }
+  ui.dispatchDocument('click', {target:eventTarget}, () => ui.run('jumpTo("T11a")'))
+  assert.equal(ui.run('POP.id'), 'T11a', 'o clique propagado nao fecha o card que acabou de abrir')
   assert.equal(ui.run('POP_EXPANDED'), false)
+})
+
+test('referencias usam o estado atual e localizam tarefas concluidas ocultas pelo filtro', () => {
+  const ui = dashboard('pt-BR')
+  ui.render({run:'referencias',plan:{},tasks:{T1:task('T1','done'),T2:task('T2','blocked',{blockReason:'Aguardar T1 e T99 <img src=x onerror=alert(1)>'})},derived:{}},[
+    {type:'task_review',task:'T1',at:instant(1)},
+    {type:'task_note',task:'T2',at:instant(2),text:'Conferir T1 e T99 <img src=x onerror=alert(1)>'},
+  ])
+  const log = ui.nodes.get('#events').innerHTML, available = ui.nodes.get('#available').innerHTML
+  for (const content of [log,available]) {
+    assert.match(content, /class="task-ref ev-task" style="color:var\(--done\)"/)
+    assert.match(content, /jumpTo\('T1'\)/)
+    assert.doesNotMatch(content, /jumpTo\('T99'\)|<img/)
+    assert.match(content, /&lt;img/)
+  }
+  ui.run('setFilter("running")')
+  assert.equal(ui.cards.find(card=>card.dataset.id==='T1').classList.contains('filtered-out'), true)
+  ui.run('jumpTo("T1")')
+  assert.equal(ui.run('FILTER'), 'all')
+  assert.equal(ui.run('POP.id'), 'T1')
+  assert.equal(ui.nodes.get('#pop').dataset.st, 'done')
+  assert.equal(ui.cards.find(card=>card.dataset.id==='T1').classList.contains('filtered-out'), false)
 })
 
 test('reprovacao historica permanece vermelha mesmo depois da conclusao aprovada', () => {

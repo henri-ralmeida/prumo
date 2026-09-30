@@ -538,7 +538,10 @@ SOFTWARE. -->
            border-radius: 12px; cursor: pointer; font-size: 11px; color: #bdb5a8;
            background: color-mix(in srgb, var(--role) 9%, var(--bg)); border: 1px solid color-mix(in srgb, var(--role) 38%, var(--line));
            transition: border-color .24s var(--ease), transform .24s var(--ease); }
-  .avail:hover, .avail:focus-visible { border-color: var(--role); transform: translateY(-1px); }
+  .avail:hover, .avail:focus-within { border-color: var(--role); }
+  .avail-open { all: unset; display: flex; flex-direction: column; gap: 6px; width: 100%; cursor: pointer; }
+  .avail-open:focus-visible { outline: 1px solid var(--role); outline-offset: 4px; border-radius: 4px; }
+  .avail .task-ref { font: 600 11px/1.45 var(--font-mono); }
   .avail .ak { display: flex; justify-content: space-between; gap: 8px; color: var(--role); font-size: 10px;
                letter-spacing: .14em; text-transform: uppercase; }
   .avail .ak span { color: var(--dim); letter-spacing: 0; text-transform: none; }
@@ -556,10 +559,12 @@ SOFTWARE. -->
   #events { flex: 1 1 0; min-height: 40px; overflow-y: auto; }
   #eventsBox { display: flex; flex: 1 1 0; flex-direction: column; min-height: 64px; }
   #parallel { max-height: 150px; overflow-y: auto; }
-  .ev { padding: 3px 0; font-size: 11px; color: #bdb5a8; }
-  button.ev { display: block; width: 100%; border: 0; border-radius: 4px; background: transparent; text-align: left; font-family: inherit; cursor: pointer; }
-  button.ev:hover { background: var(--card-hi); }
-  button.ev:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+  .ev { padding: 6px 8px; margin: 2px 0; border-left: 2px solid transparent; border-radius: 4px; font-size: 11px; line-height: 1.5; color: #bdb5a8; transition: background-color .15s var(--ease), border-color .15s var(--ease); }
+  .ev:has(.ev-open):hover, .ev:focus-within { background: color-mix(in srgb, var(--accent) 5%, var(--bg)); border-left-color: var(--accent); }
+  .ev-open { all: unset; cursor: pointer; }
+  .ev-open:focus-visible, .task-ref:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+  .task-ref { font-weight: 600; text-decoration: none; }
+  a.task-ref:hover { text-decoration: underline; text-underline-offset: 3px; }
   .ev time { display: inline-block; width: 58px; color: #6b645a; }
   [data-i18n] { text-transform: lowercase; }
   #events .ev b { text-transform: none; }
@@ -1118,6 +1123,7 @@ function createGuideDemoData(mode = 'board') {
   if (mode === 'board') tasks.T14 = { id: 'T14', title: 'Review handoff', state: 'running', phase: 'F3', deps: ['T2'], agent: 'executor-1', summary: 'Execution is complete; the independent Reviewer is next.', validation: 'echo validation', notes: [], validations: [], planningAttempts: [], attempts: [{ n: 1, agent: 'executor-1', startedAt: at(120), activityTiming: 'explicit', activityIntervals: [{ role: 'execution', agent: 'executor-1', startedAt: at(120), endedAt: at(130) }] }] }
   const derived = Object.fromEntries(Object.values(tasks).map(task => [task.id, { effective: task.state }]))
   return { run: 'checkout', createdAt: at(0), plan: { name: 'Checkout', description: 'An approved checkout plan.', maxParallel: 3, phases: [{ id: 'F1', title: 'Scope and contracts' }, { id: 'F2', title: 'Implementation and review' }, { id: 'F3', title: 'Validation and release' }] }, tasks, derived,
+    events: mode === 'board' ? [{type:'task_review',task:'T1',at:at(15)}, {type:'task_note',task:'T14',at:at(130),text:'T1 → T14'}] : [],
     commandMetrics: { total: 39, complete: true, byCommand: { 'plan-task': 13, start: 13, review: 13 } },
   }
 }
@@ -2674,7 +2680,19 @@ function eventIds(value) { return String(value ?? '').replace(/\b([tf])(\d+)([a-
   const id = prefix.toUpperCase() + number + suffix.toLowerCase()
   return STATE?.taskIdAliases?.[id] ?? id
 }) }
-function eventTask(id) { return '<b class="ev-task">' + esc(eventIds(id)) + '</b>' }
+function taskReference(id, interactive = true) {
+  const label = eventIds(id)
+  const known = Object.hasOwn(STATE?.tasks ?? {}, label)
+  const color = known ? ST_COLOR[eff(label)] ?? 'var(--dim)' : 'var(--dim)'
+  const content = ' class="task-ref ev-task" style="color:' + color + '"'
+  return known && interactive
+    ? `<a${content} href="#task-${encodeURIComponent(label)}" onclick="event.preventDefault();event.stopPropagation();jumpTo('${jsq(label)}')">${esc(label)}</a>`
+    : `<b${content}>${esc(label)}</b>`
+}
+function taskText(value, interactive = true) {
+  return String(value ?? '').split(/(\bT\d+[a-z]?\b)/gi).map(part => /^T\d+[a-z]?$/i.test(part) ? taskReference(part, interactive) : esc(part)).join('')
+}
+function eventTask(id) { return taskReference(id, false) }
 function eventPhase(id, color) {
   return '<b class="ev-phase" style="color:var(--' + color + ')">' + esc(eventIds(id)) + '</b>'
 }
@@ -3177,11 +3195,11 @@ function render(s, events = []) {
     const detail = eventDetail(e, events)
     const outcome = e.type === 'task_validate' ? ' data-ok="' + Boolean(e.ok) + '"' : ''
     const taskId = s.tasks[e.task] ? e.task : eventIds(e.task)
-    const target = s.tasks[taskId] ? 'button' : 'div'
-    const action = target === 'button' ? ` type="button" onclick="openTask('${jsq(taskId)}')"` : ''
-    return '<' + target + ' class="ev"' + action + '><span class="t-' + esc(e.type) + '"' + outcome + '><time>' + fmtTime(e.at) +
+    const clickable = Object.hasOwn(s.tasks, taskId)
+    const opening = clickable ? `<button class="ev-open" type="button" onclick="jumpTo('${jsq(taskId)}')">` : ''
+    return '<div class="ev">' + opening + '<span class="t-' + esc(e.type) + '"' + outcome + '><time>' + fmtTime(e.at) +
       '</time><span class="pipe" aria-hidden="true">|</span> <span class="ev-text">' + eventSentence(e) + fraction + '</span>' +
-      (detail ? ' <span class="ev-detail">' + esc(eventIds(detail)) + '</span>' : '') + '</span></' + target + '>'
+      '</span>' + (clickable ? '</button>' : '') + (detail ? ' <span class="ev-detail">' + taskText(eventIds(detail)) + '</span>' : '') + '</div>'
   }).join('')
 
   paintStable('#events', eventsHtml)
@@ -3388,14 +3406,14 @@ function renderAvailable() {
       : state === 'ready' ? tr('the executor takes it next and proves it with:')
       : state === 'ready_to_plan' ? tr('the planner writes its plan before anyone executes')
       : tr('the orchestrator settles the scope with you before planning')
-    return '<button class="avail" style="--role:' + colour + '" onclick="jumpTo(\'' + esc(t.id) + '\')">' +
-      '<span class="ak">' + esc(tr(role)) + '<span>' + esc(t.id) + '</span></span>' +
-      '<b title="' + esc(t.title) + '">' + esc(t.label || t.title) + '</b>' +
-      (summary ? '<span class="ad">' + esc(summary) + '</span>' : '') +
-      '<span class="ad">' + esc(what) + '</span>' +
-      (state === 'ready' && run ? '<span class="cmd">$ ' + esc(run) + '</span>' : '') +
-      (state === 'ready' && acceptance ? '<span class="exp">' + esc(tr('expects')) + ': <em>' + esc(acceptance) + '</em></span>' : '') +
-      '</button>'
+    return '<div class="avail" style="--role:' + colour + '" onclick="jumpTo(\'' + jsq(t.id) + '\')">' +
+      '<button class="avail-open" type="button"><span class="ak">' + esc(tr(role)) + '<span style="color:' + (ST_COLOR[state] ?? 'var(--dim)') + '">' + esc(eventIds(t.id)) + '</span></span>' +
+      '</button><b title="' + esc(t.title) + '">' + taskText(t.label || t.title) + '</b>' +
+      (summary ? '<span class="ad">' + taskText(summary) + '</span>' : '') +
+      '<span class="ad">' + taskText(what) + '</span>' +
+      (state === 'ready' && run ? '<span class="cmd">$ ' + taskText(run) + '</span>' : '') +
+      (state === 'ready' && acceptance ? '<span class="exp">' + esc(tr('expects')) + ': <em>' + taskText(acceptance) + '</em></span>' : '') +
+      '</div>'
   }
   $('#available').innerHTML = list.slice(0, AVAILABLE_MAX).map(card).join('') +
     (list.length > AVAILABLE_MAX ? '<span class="avail-more">' + esc(tr('+{0} more', list.length - AVAILABLE_MAX)) + '</span>' : '')
@@ -3700,6 +3718,9 @@ function renderResults(s) {
 }
 
 function jumpTo(id) {
+  id = Object.hasOwn(STATE?.tasks ?? {}, id) ? id : eventIds(id)
+  if (!Object.hasOwn(STATE?.tasks ?? {}, id)) return
+  if (!filterSets(STATE.tasks).allowed.has(id)) setFilter('all')
   if (RESULTS_OPEN) toggleResults()
   suppressClick = false // explicit navigation is not the trailing click from a graph drag
   openPop(id, true)
@@ -3799,7 +3820,7 @@ function togglePopExpand(on = !POP_EXPANDED) {
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePop() })
 /* Expandir e seguir dependencias recria o conteudo durante o clique. O caminho original
    do evento conserva #pop mesmo quando o controle clicado ja saiu do documento. */
-const KEEPS_POPOVER = ['#pop', '#popScrim', '.node', '.par', '.avail', '#results']
+const KEEPS_POPOVER = ['#pop', '#popScrim', '.node', '.par', '.avail', '.ev', '.task-ref', '#results']
 function clickKeepsPopover(e) {
   const path = typeof e.composedPath === 'function' ? e.composedPath() : []
   return KEEPS_POPOVER.some((selector) => path.some((node) => node?.matches?.(selector)) || Boolean(e.target?.closest?.(selector)))
@@ -3837,11 +3858,11 @@ if (GUIDE_DEMO) {
   for (const phase of STATE.plan.phases) phase.title = tr(phase.title)
   SELECTED_ROOT = CURRENT_ROOT = null; SELECTED_RUN = CURRENT_RUN = STATE.run
   STATE_RUN_KEY = EVENT_HISTORY_KEY = '\0' + STATE.run
-  FULL_EVENTS = []; EVENTS_COMPLETE = true
+  FULL_EVENTS = STATE.events ?? []; EVENTS_COMPLETE = true
   $('#runName').textContent = 'checkout'; $('#runLabel').textContent = tr(STATE.plan.description)
   STATE.plan.description = tr(STATE.plan.description)
   $('#runMenu').inert = true; $('#guideButton').hidden = true; $('#identity').textContent = 'prumo'
-  render(STATE)
+  render(STATE, FULL_EVENTS)
   if (GUIDE_DEMO === 'results') { RESULTS_OPEN = true; $('#results').classList.add('open'); renderResults(STATE); $('#resBtn').hidden = true }
   window.prumoGuideDemo = { pause(paused) { document.documentElement.classList.toggle('guide-paused', paused); document.querySelectorAll('svg').forEach(svg => paused ? svg.pauseAnimations?.() : svg.unpauseAnimations?.()) }, focus(target) {
     document.querySelectorAll('.prumo-guide-target').forEach(node => node.classList.remove('prumo-guide-target'))
