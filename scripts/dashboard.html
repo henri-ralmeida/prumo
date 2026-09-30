@@ -907,8 +907,8 @@ SOFTWARE. -->
   .guide-controls button:focus-visible, .guide-head button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .guide-controls button:disabled { opacity: .48; cursor: default; }
   .guide-controls #guideNext { color: var(--bg); background: var(--accent); border-color: var(--accent); font-weight: 700; }
-  .prumo-guide-target { z-index: 1; outline: 2px solid var(--accent) !important; outline-offset: 3px;
-    box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 20%, transparent) !important; }
+  .prumo-guide-target { z-index: 1; outline: 2px solid var(--accent) !important; outline-offset: -2px; scroll-margin-block: 12px;
+    box-shadow: inset 0 0 0 5px color-mix(in srgb, var(--accent) 20%, transparent) !important; }
   #onboarding.presenting { inset: 0; width: auto; max-height: none; height: 100dvh; overflow: auto; display: flex; flex-direction: column;
     justify-content: flex-start; align-items: center; padding: clamp(20px, 3vw, 40px); border: 0; border-radius: 0; text-align: center; background: var(--bg); }
   #onboarding.presenting .guide-head { width: min(1080px, 100%); margin-bottom: clamp(20px, 4vh, 36px); }
@@ -3911,7 +3911,7 @@ if (GUIDE_DEMO) {
     const selectors = { board: '.lane-h', filters: '#filterToggle', card: '.node[data-id="T8"]', activity: '#agentsBox', gain: '#results .gcard', times: '#results .agent-activity', commands: '#results .gcard:last-child' }
     const node = document.querySelector(selectors[target])
     node?.classList.add('prumo-guide-target')
-    if (['gain','times','commands'].includes(target)) node?.scrollIntoView({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'})
+    if (['gain','times','commands'].includes(target)) node?.scrollIntoView({block:'nearest',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'})
     if (target === 'filters') { $('#filterPanel').hidden = false; $('#filterToggle').setAttribute('aria-expanded','true') }
     else { $('#filterPanel').hidden = true; $('#filterToggle').setAttribute('aria-expanded','false') }
     if (target === 'card') { setFilter('all'); openPop('T8', true); focusTask('T8') }
