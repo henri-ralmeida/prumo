@@ -884,7 +884,7 @@ test('historico continua mostrando acoes com suas cores sem legenda separada', (
     assert.ok(visibleLog.includes(lang === 'en' ? 'Planner started planning for phase P2' : 'Planejador iniciou o planejamento da fase P2'))
     assert.ok(visibleLog.includes(lang === 'en' ? 'Orchestrator freed an execution slot when task T4 went to review; next authorized: T5'
       : 'Orquestrador liberou uma vaga de execução quando a tarefa T4 foi para revisão; próxima autorizada: T5'), visibleLog)
-    assert.match(log, /class="ev-phase" style="color:var\(--planning\)">P2/)
+    assert.match(log, /class="task-ref ev-phase" style="color:var\(--accent\)">P2/)
     assert.match(log, /class="t-task_validate" data-ok="true"/)
     assert.match(log, /class="t-task_validate" data-ok="false"/)
     assert.doesNotMatch(visibleLog, /\b(?:phase|task)_[a-z_]+\b/)
@@ -1717,7 +1717,7 @@ test('IDs F dos cabeçalhos e cards levam à fase real sem perder o alvo', () =>
   for (const value of Object.values(state.tasks)) if (value.phase === 'P8') value.phase = 'f8B'
   ui.render(state)
   const laneMarkup = ui.nodes.get('#lanes').innerHTML
-  assert.match(laneMarkup, /<button type="button" class="ln" onclick="jumpToPhase\('f8B'\)" aria-label="[^"]*: F8b">F8b<\/button>/)
+  assert.match(laneMarkup, /<button type="button" class="ln"[^>]*onclick="jumpToPhase\('f8B'\)" aria-label="[^"]*: F8b">F8b<\/button>/)
   assert.match(html, /\.lane-h \.ln:focus-visible, #pop \.phase-link:focus-visible \{ outline: 2px solid var\(--accent\)/)
   ui.run("setFilter('done'); jumpToPhase('f8B')")
   assert.equal(ui.run('FILTER'), 'all')
@@ -2245,7 +2245,7 @@ test('historico abre a tarefa atual por alias e nao oferece acao para tarefa ine
     {type:'task_note',task:'T99',text:'Nota antiga',at:instant(2)},
   ])
   const log = ui.nodes.get('#events').innerHTML
-  assert.match(log, /<div class="ev" onclick="jumpTo\('T11a'\)"><button class="ev-open" type="button">/)
+  assert.match(log, /onclick="selectHistoryEvent\('[^']*','T11a',''\)"><button class="ev-open" type="button">/)
   assert.doesNotMatch(log, /onclick="jumpTo\('T99'\)"/)
   assert.match(log, /data-ok="false"/)
   const eventTarget = { closest(selector) { return selector === '.ev' ? this : null } }
@@ -2279,15 +2279,47 @@ test('referencias usam o estado atual e localizam tarefas concluidas ocultas pel
 test('contador do historico fica vermelho em reprovação mesmo com a tarefa concluida', () => {
   const ui = dashboard('pt-BR')
   ui.render({run:'contadores',plan:{},tasks:{T1:task('T1','done'),T2:task('T2','blocked')},derived:{}},[
-    {type:'task_note',task:'T1',at:instant(1),current:4,total:6},
+    {type:'task_done',task:'T1',at:instant(1),current:4,total:6},
     {type:'task_validate',task:'T1',at:instant(2),ok:false,current:4,total:6},
-    {type:'task_note',task:'T2',at:instant(3),current:2,total:6},
+    {type:'task_block',task:'T2',at:instant(3),current:2,total:6},
   ])
   const log = ui.nodes.get('#events').innerHTML
-  assert.match(log, /class="ev-count done"> \[4\/6\]/)
-  assert.match(log, /class="ev-count bad"> \[4\/6\]/)
-  assert.match(log, /class="ev-count bad"> \[2\/6\]/)
+  assert.match(log, /class="ev-count" style="color:var\(--done\)"> \[4\/6\]/)
+  assert.match(log, /class="ev-count" style="color:var\(--failed\)"> \[4\/6\]/)
+  assert.match(log, /class="ev-count" style="color:var\(--failed\)"> \[2\/6\]/)
   assert.match(html, /\.ev:has\(\.ev-open\) \{[^}]*cursor: pointer; user-select: none/)
+})
+
+test('o momento do evento preserva revisao azul e aprovacao verde na tarefa hoje concluida', () => {
+  const ui=dashboard('pt-BR')
+  ui.render({run:'cores',plan:{phases:[{id:'F1'}]},tasks:{T1:task('T1','done',{phase:'F1'})},derived:{}},[
+    {id:'inicio',type:'task_check',task:'T1',by:'review',status:'started',at:instant(1),current:5,total:6},
+    {id:'aprovado',type:'task_check',task:'T1',by:'review',status:'passed',at:instant(2),current:5,total:6},
+    {id:'executor',type:'task_start',task:'T1',at:instant(0)},
+    {id:'fase',type:'phase_planning',phase:'F1',at:instant(3)},
+    {id:'global',type:'run_init',at:instant(4)},
+  ])
+  const log=ui.nodes.get('#events').innerHTML
+  assert.match(log,/data-event-key="inicio"[\s\S]*?ev-task" style="color:var\(--review\)"[\s\S]*?ev-count" style="color:var\(--review\)"> \[5\/6\]/)
+  assert.match(log,/data-event-key="aprovado"[\s\S]*?ev-task" style="color:var\(--done\)"[\s\S]*?ev-count" style="color:var\(--done\)"> \[5\/6\]/)
+  assert.match(log,/data-event-key="executor"[\s\S]*?ev-task" style="color:var\(--running\)"/)
+  assert.equal((log.match(/class="ev-open"/g)??[]).length,5)
+  ui.run('selectHistoryEvent("global","","")')
+  assert.equal(ui.run('SELECTED_EVENT'),'global')
+  ui.run('selectHistoryEvent("fase","","F1")')
+  assert.equal(ui.run('VIEW_MANUAL'),true)
+  ui.run('selectHistoryEvent("inicio","T1","")')
+  assert.equal(ui.nodes.get('#pop').dataset.st,'done')
+})
+
+test('fases ficam verdes so depois de todas as tarefas validas e usam a paleta aprovada', () => {
+  const ui=dashboard('pt-BR')
+  ui.render({run:'fases',plan:{phases:['F1','F2','F3','F4'].map(id=>({id}))},tasks:{T1:task('T1','waiting',{phase:'F1'}),T2:task('T2','discussing',{phase:'F2'}),T3:task('T3','running',{phase:'F3'}),T4:task('T4','done',{phase:'F4'}),T5:task('T5','skipped',{phase:'F4'})},derived:{}})
+  assert.equal(ui.run('phaseColour("F1")'),'var(--waiting)')
+  assert.equal(ui.run('phaseColour("F2")'),'var(--planning)')
+  assert.equal(ui.run('phaseColour("F3")'),'var(--accent)')
+  assert.equal(ui.run('phaseColour("F4")'),'var(--done)')
+  assert.match(ui.run('taskText("T1 e F3")'),/href="#phase-F3"[^>]*jumpToPhase\('F3'\)/)
 })
 
 test('reprovacao historica permanece vermelha mesmo depois da conclusao aprovada', () => {

@@ -562,10 +562,9 @@ SOFTWARE. -->
   #parallel { max-height: 150px; overflow-y: auto; }
   .ev { padding: 6px 8px; margin: 2px 0; border-left: 2px solid transparent; border-radius: 4px; font-size: 11px; line-height: 1.5; color: #bdb5a8; transition: background-color .15s var(--ease), border-color .15s var(--ease); }
   .ev:has(.ev-open):hover, .ev:focus-within { background: color-mix(in srgb, var(--accent) 5%, var(--bg)); border-left-color: var(--accent); }
+  .ev.selected { background: color-mix(in srgb, var(--accent) 7%, var(--bg)); border-left-color: var(--accent); }
   .ev:has(.ev-open) { cursor: pointer; user-select: none; -webkit-user-select: none; }
   .ev-count { color: var(--dim); font-weight: 600; white-space: nowrap; }
-  .ev-count.done { color: var(--done); }
-  .ev-count.bad { color: var(--failed); }
   .ev-open { all: unset; cursor: pointer; }
   .ev-open:focus-visible, .task-ref:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
   .task-ref { font-weight: 600; text-decoration: none; }
@@ -1128,7 +1127,7 @@ function createGuideDemoData(mode = 'board') {
   if (mode === 'board') tasks.T14 = { id: 'T14', title: 'Review handoff', state: 'running', phase: 'F3', deps: ['T2'], agent: 'executor-1', summary: 'Execution is complete; the independent Reviewer is next.', validation: 'echo validation', notes: [], validations: [], planningAttempts: [], attempts: [{ n: 1, agent: 'executor-1', startedAt: at(120), activityTiming: 'explicit', activityIntervals: [{ role: 'execution', agent: 'executor-1', startedAt: at(120), endedAt: at(130) }] }] }
   const derived = Object.fromEntries(Object.values(tasks).map(task => [task.id, { effective: task.state }]))
   return { run: 'checkout', createdAt: at(0), plan: { name: 'Checkout', description: 'An approved checkout plan.', maxParallel: 3, phases: [{ id: 'F1', title: 'Scope and contracts' }, { id: 'F2', title: 'Implementation and review' }, { id: 'F3', title: 'Validation and release' }] }, tasks, derived,
-    events: mode === 'board' ? [{type:'task_review',task:'T1',at:at(15),current:4,total:6}, {type:'task_note',task:'T14',at:at(130),text:'T1 → T14'}] : [],
+    events: mode === 'board' ? [{type:'run_init',at:at(0)}, {type:'phase_planning',phase:'F2',at:at(10)}, {type:'task_check',task:'T1',by:'review',status:'started',at:at(15),current:5,total:6}, {type:'task_check',task:'T1',by:'review',status:'passed',at:at(20),current:5,total:6}, {type:'task_note',task:'T14',at:at(130),text:'T1 → T14 · F3'}] : [],
     commandMetrics: { total: 39, complete: true, byCommand: { 'plan-task': 13, start: 13, review: 13 } },
   }
 }
@@ -1674,6 +1673,7 @@ const HUB_TOP = PAD - 10          // where the pinned hub's shade starts: 10px a
 let CANVAS_W = 0, CANVAS_H = 0
 let LAST_METRICS = DENSITY_METRICS.detailed
 let EVENTS = []
+let SELECTED_EVENT = null
 let FULL_EVENTS = []
 let EVENTS_COMPLETE = true
 let EVENT_OFFSET = 0
@@ -1931,6 +1931,7 @@ function showRunLoading(run) {
   $('#parallel').innerHTML = ''
   $('#available').innerHTML = ''
   $('#events').innerHTML = ''
+  SELECTED_EVENT = null
   $('#orchNode').classList.remove('live', 'discussing')
   $('#planNode').classList.remove('live')
   $('#execNode').classList.remove('live')
@@ -2685,26 +2686,56 @@ function eventIds(value) { return String(value ?? '').replace(/\b([tf])(\d+)([a-
   const id = prefix.toUpperCase() + number + suffix.toLowerCase()
   return STATE?.taskIdAliases?.[id] ?? id
 }) }
-function taskReference(id, interactive = true) {
+function phaseColour(id) {
+  id = STATE?.plan?.phases?.find(phase => phase.id === id || eventIds(phase.id) === eventIds(id))?.id ?? id
+  const states = Object.values(STATE?.tasks ?? {}).filter(task => task.phase === id && eff(task.id) !== 'skipped').map(task => eff(task.id))
+  const workflow = STATE?.phaseWorkflows?.[id]?.state
+  if (states.length && states.every(state => state === 'done') && !['discussing', 'planning'].includes(workflow)) return 'var(--done)'
+  if (workflow === 'discussing' || states.includes('discussing')) return 'var(--planning)'
+  return workflow === 'planning' || states.some(state => ['planning', 'running', 'reviewing'].includes(state)) ? 'var(--accent)' : 'var(--waiting)'
+}
+function eventColour(e) {
+  if (['task_fail', 'task_block', 'task_block_updated'].includes(e.type) || e.status === 'failed' || e.type === 'task_validate' && e.ok === false) return 'var(--failed)'
+  if (e.type === 'task_done' || e.type === 'task_validate' && e.ok === true || e.type === 'task_check' && ['passed', 'reused'].includes(e.status)) return 'var(--done)'
+  if (['task_check', 'task_validation_started'].includes(e.type)) {
+    const validation = STATE?.tasks?.[eventIds(e.task)]?.validations?.findLast(item => item.token === e.token)
+    return (e.by ?? validation?.by) === 'review' ? 'var(--review)' : 'var(--running)'
+  }
+  if (['task_review', 'task_review_progress'].includes(e.type)) return 'var(--review)'
+  if (['task_start', 'task_progress'].includes(e.type)) return 'var(--running)'
+  if ((e.type ?? '').includes('planning') || e.type === 'task_planned') return 'var(--planning)'
+  if ((e.type ?? '').includes('discussion') || e.type === 'task_discussed') return 'var(--discussion)'
+  return e.state && ST_COLOR[e.state] || null
+}
+function taskReference(id, interactive = true, eventColor = null) {
   const label = eventIds(id)
   const known = Object.hasOwn(STATE?.tasks ?? {}, label)
-  const color = known ? ST_COLOR[eff(label)] ?? 'var(--dim)' : 'var(--dim)'
+  const color = eventColor ?? (known ? ST_COLOR[eff(label)] ?? 'var(--dim)' : 'var(--dim)')
   const content = ' class="task-ref ev-task" style="color:' + color + '"'
   return known && interactive
     ? `<a${content} href="#task-${encodeURIComponent(label)}" onclick="event.preventDefault();event.stopPropagation();jumpTo('${jsq(label)}')">${esc(label)}</a>`
     : `<b${content}>${esc(label)}</b>`
 }
-function taskText(value, interactive = true) {
-  return String(value ?? '').split(/(\bT\d+[a-z]?\b)/gi).map(part => /^T\d+[a-z]?$/i.test(part) ? taskReference(part, interactive) : esc(part)).join('')
+function taskText(value, interactive = true, eventColor = null) {
+  return String(value ?? '').split(/(\b[TF]\d+[a-z]?\b)/gi).map(part => /^T\d+[a-z]?$/i.test(part) ? taskReference(part, interactive, eventColor) : /^F\d+$/i.test(part) ? phaseReference(part, interactive) : esc(part)).join('')
 }
 function eventTask(id) { return taskReference(id, false) }
-function eventPhase(id, color) {
-  return '<b class="ev-phase" style="color:var(--' + color + ')">' + esc(eventIds(id)) + '</b>'
+function selectHistoryEvent(key, taskId, phaseId) {
+  SELECTED_EVENT = key
+  document.querySelectorAll('#events .ev').forEach(row => row.classList.toggle('selected', row.dataset.eventKey === key))
+  if (Object.hasOwn(STATE?.tasks ?? {}, taskId)) jumpTo(taskId)
+  else if (STATE?.plan?.phases?.some(phase => eventIds(phase.id) === eventIds(phaseId))) jumpToPhase(phaseId)
+}
+function phaseReference(id, interactive = true, color = null) {
+  id = eventIds(id)
+  const known = STATE?.plan?.phases?.some(phase => eventIds(phase.id) === id)
+  const attrs = ` class="task-ref ev-phase" style="color:${color ?? phaseColour(id)}"`
+  return known && interactive ? `<a${attrs} href="#phase-${encodeURIComponent(id)}" onclick="event.preventDefault();event.stopPropagation();jumpToPhase('${jsq(id)}')">${esc(id)}</a>` : `<b${attrs}>${esc(id)}</b>`
 }
 function eventSentence(e) {
   const actor = (role) => eventRole(role)
-  const task = eventTask(e.task)
-  const phase = (color) => eventPhase(e.phase, color)
+  const task = taskReference(e.task, false, eventColour(e))
+  const phase = () => phaseReference(e.phase, false, ['phase_discussion','phase_discussed','phase_discussion_skipped'].includes(e.type) ? 'var(--planning)' : 'var(--accent)')
   const phrase = (key, ...values) => tr(key, ...values)
   switch (e.type) {
     case 'run_init': return phrase('{0} initialized the run', actor('orchestrator'))
@@ -2743,9 +2774,9 @@ function eventSentence(e) {
     case 'task_review_progress': return phrase('{0} reported review progress {1}/{2} on task {3}', actor('reviewer'), e.traversed, e.total, task)
     case 'task_contract_refreshed': return phrase('{0} refreshed the contract for task {1}', actor('orchestrator'), task)
     case 'task_validation_started': {
-      const validations = STATE?.tasks?.[e.task]?.validations ?? []
+      const validations = STATE?.tasks?.[eventIds(e.task)]?.validations ?? []
       const validation = validations.slice().reverse().find(item => item.token === e.token)
-      return phrase('{0} began validation for task {1}', actor(validation?.by === 'review' ? 'reviewer' : 'executor'), task)
+      return phrase('{0} began validation for task {1}', actor((e.by ?? validation?.by) === 'review' ? 'reviewer' : 'executor'), task)
     }
     case 'task_validate': {
       const role = e.by === 'review' ? 'reviewer' : 'executor'
@@ -2938,7 +2969,7 @@ function render(s, events = []) {
     const phaseState = workflow?.state === 'discussing' ? { cls: 'discussion', label: tr('discussion · orchestrator') } :
       workflow?.state === 'planning' ? { cls: 'planning', label: tr('Active time not measured') } : null
     return `<div class="lane ${laneStatus(i)}" style="top:${p.y}px;height:${p.height}px">
-      <span class="lane-h"><button type="button" class="ln" onclick="jumpToPhase('${jsq(p.id)}')" aria-label="${esc(tr('Locate phase on board'))}: ${esc(eventIds(p.id))}">${esc(eventIds(p.id))}</button><span class="lt">${esc(p.title)}</span><span class="ls">${esc(laneLine(i))}</span></span>${phaseState ?
+      <span class="lane-h"><button type="button" class="ln" style="color:${phaseColour(p.id)}" onclick="jumpToPhase('${jsq(p.id)}')" aria-label="${esc(tr('Locate phase on board'))}: ${esc(eventIds(p.id))}">${esc(eventIds(p.id))}</button><span class="lt">${esc(p.title)}</span><span class="ls">${esc(laneLine(i))}</span></span>${phaseState ?
         `<span class="lane-state ${phaseState.cls}">${esc(phaseState.label)}</span>` : ''}</div>`
   }).join('') + `<div class="run-sum" style="top:${sumY}px"><b>${esc(tr(GUIDE_DEMO ? '{0} of {1} Prumo' : '{0} of {1} in prumo', completedTasks, validTasks))}</b><span>${esc(tr(GUIDE_DEMO ? 'Completion requires independent review.' : 'a task only enters prumo after the independent reviewer'))}</span></div>`
 
@@ -3194,21 +3225,20 @@ function render(s, events = []) {
     : '<span class="empty"><span data-i18n="nothing running">nothing running</span></span>'
   paintStable('#parallel', parallelHtml)
   renderAvailable()
-  const eventsHtml = events.slice().reverse().map((e) => {
+  const eventsHtml = events.slice().reverse().map((e, index) => {
     const taskId = Object.hasOwn(s.tasks, e.task) ? e.task : eventIds(e.task)
     const clickable = Object.hasOwn(s.tasks, taskId)
-    const state = clickable ? eff(taskId) : null
-    const bad = ['task_fail', 'task_block'].includes(e.type) || e.type === 'task_validate' && e.ok === false || ['failed', 'blocked'].includes(state)
-    const complete = e.type === 'task_done' || state === 'done'
+    const colour = eventColour(e) ?? 'var(--dim)'
     const fraction = Number.isSafeInteger(e.current) && Number.isSafeInteger(e.total) && e.current > 0 && e.current <= e.total
-      ? `<span class="ev-count${bad ? ' bad' : complete ? ' done' : ''}"> [${e.current}/${e.total}]</span>` : ''
+      ? `<span class="ev-count" style="color:${colour}"> [${e.current}/${e.total}]</span>` : ''
     const detail = eventDetail(e, events)
     const outcome = e.type === 'task_validate' ? ' data-ok="' + Boolean(e.ok) + '"' : ''
-    const action = clickable ? ` onclick="jumpTo('${jsq(taskId)}')"` : ''
-    const opening = clickable ? '<button class="ev-open" type="button">' : ''
-    return '<div class="ev"' + action + '>' + opening + '<span class="t-' + esc(e.type) + '"' + outcome + '><time>' + fmtTime(e.at) +
+    const key = eventIds(e.id ?? [e.at,e.type,e.task ?? '',e.phase ?? '',events.length-index].join('|'))
+    const action = ` onclick="selectHistoryEvent('${jsq(key)}','${jsq(clickable ? taskId : '')}','${jsq(eventIds(e.phase))}')"`
+    const opening = '<button class="ev-open" type="button">'
+    return '<div class="ev' + (SELECTED_EVENT === key ? ' selected' : '') + '" data-event-key="' + esc(key) + '"' + action + '>' + opening + '<span class="t-' + esc(e.type) + '"' + outcome + '><time>' + fmtTime(e.at) +
       '</time><span class="pipe" aria-hidden="true">|</span> <span class="ev-text">' + eventSentence(e) + fraction + '</span>' +
-      '</span>' + (clickable ? '</button>' : '') + (detail ? ' <span class="ev-detail">' + taskText(eventIds(detail)) + '</span>' : '') + '</div>'
+      '</span></button>' + (detail ? ' <span class="ev-detail">' + taskText(eventIds(detail)) + '</span>' : '') + '</div>'
   }).join('')
 
   paintStable('#events', eventsHtml)
@@ -3493,7 +3523,7 @@ function fillPop(id, swap = false) {
     const marker = STATE.tasks[taskId] ? DOT[eff(taskId)] ?? '' : ''
     return `<button type="button" class="dep" onclick="jumpTo('${jsq(taskId)}')"><span>${esc(tr(relation))}</span><b>${esc(eventIds(taskId))}${marker ? ` ${marker}` : ''}</b></button>`
   }
-  const phaseChip = t.phase ? `<button type="button" class="chip phase-link" style="color:var(--accent);cursor:pointer" onclick="jumpToPhase('${jsq(t.phase)}')" aria-label="${esc(tr('Locate phase on board'))}: ${esc(eventIds(t.phase))}">${esc(eventIds(t.phase))}</button>` : ''
+  const phaseChip = t.phase ? `<button type="button" class="chip phase-link" style="color:${phaseColour(t.phase)};cursor:pointer" onclick="jumpToPhase('${jsq(t.phase)}')" aria-label="${esc(tr('Locate phase on board'))}: ${esc(eventIds(t.phase))}">${esc(eventIds(t.phase))}</button>` : ''
   const dependents = Object.values(STATE.tasks).filter((x) => (x.deps ?? []).includes(id)).map((x) => x.id)
   const summary = said(t.summary) || said(t.taskPlan?.summary)
   const toPass = said(t.validationSummary)
@@ -3742,6 +3772,7 @@ function locateSelectedTask() {
 }
 
 function jumpToPhase(id) {
+  id = STATE?.plan?.phases?.find(phase => phase.id === id || eventIds(phase.id) === eventIds(id))?.id ?? id
   const lane = LAST_LANES.find(phase => phase.id === id)
   if (!lane) return
   if (RESULTS_OPEN) toggleResults()
