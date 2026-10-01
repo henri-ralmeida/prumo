@@ -6,6 +6,7 @@ Historical tag and commit corrections are documented in [Release history recover
 
 - Return the valid-task summary to the board footer in the dashboard and guide while excluding skipped tasks.
 - Start the dashboard directly on Windows and record its PID to verify process ownership while preserving startup at login.
+- Check startup readiness without binding the dashboard port, preventing the probe from competing with the new server.
 - Run Windows integrations without concurrent test files and verify packaged installation with the actual dashboard launcher arguments.
 
 ## 2.3.0 — 2026-09-30

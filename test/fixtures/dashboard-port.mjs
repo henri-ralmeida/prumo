@@ -19,6 +19,12 @@ const DASHBOARD_PORT = 4949
 const port = Number(process.env.PRUMO_TEST_DASHBOARD_PORT)
 const shutdownToken = process.env.PRUMO_TEST_DASHBOARD_SHUTDOWN_TOKEN
 if (Number.isInteger(port) && port > 0 && port !== DASHBOARD_PORT) {
+  const connect = net.createConnection
+  net.createConnection = function (options, ...args) {
+    if (options && typeof options === 'object' && Number(options.port) === DASHBOARD_PORT)
+      options = { ...options, port }
+    return connect.call(this, options, ...args)
+  }
   const listen = net.Server.prototype.listen
   net.Server.prototype.listen = function (...args) {
     const legacyPort = Number(args[0]) === DASHBOARD_PORT && typeof args[0] !== 'object'

@@ -1,9 +1,30 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import net from 'node:net'
+import { EventEmitter } from 'node:events'
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, rmdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { dashboardHealth, dashboardNeedsRepair, dashboardStatus, disableDashboard, enableDashboard, readDashboardEvents, restartDashboard, runDashboardForeground } from '../lib/autostart.mjs'
+
+test('readiness never reserves the startup port and protects occupied or uncertain ports', async t => {
+  for (const [event, code, expected] of [['error', 'ECONNREFUSED', 'stopped'], ['connect', null, 'conflict'], ['error', 'ETIMEDOUT', 'conflict']]) {
+    await t.test(expected + ' ' + (code ?? event), async t => {
+      t.mock.method(net.Server.prototype, 'listen', () => { throw new Error('a readiness probe must not bind the dashboard port') })
+      t.mock.method(net, 'createConnection', options => {
+        assert.deepEqual(options, { port: 4949, host: '127.0.0.1' })
+        const socket = new EventEmitter()
+        socket.destroy = () => {}
+        socket.unref = () => {}
+        socket.setTimeout = () => {}
+        queueMicrotask(() => socket.emit(event, { code }))
+        return socket
+      })
+      const health = await dashboardHealth({ fetch: async () => { throw new Error('not ready') }, delay: async () => {} })
+      assert.equal(health.state, expected)
+    })
+  }
+})
 
 function fixture(t, platform, extra = {}) {
   const home = mkdtempSync(join(tmpdir(), 'prumo autostart-'))
