@@ -428,18 +428,19 @@ test('13 concluidas e uma pulada mostram 13 de 13 e o resumo existe em planos gr
     const state = { run: 'totais-validos', plan: { phases: [] }, tasks, derived: {} }
     ui.render(state)
     assert.match(ui.nodes.get('#counts').innerHTML, /No Prumo<\/span> <b>13\/13<\/b>/)
-    assert.match(ui.nodes.get('#runSummary').innerHTML, /13 de 13 no prumo/)
-    assert.doesNotMatch(ui.nodes.get('#lanes').innerHTML, /run-sum/)
-    const fixedSummary = ui.nodes.get('#runSummary').innerHTML
-    ui.run('VIEW.x = -100; VIEW.y = -300; applyView()')
-    assert.equal(ui.nodes.get('#runSummary').innerHTML, fixedSummary)
+    assert.match(ui.nodes.get('#lanes').innerHTML, /class="run-sum" style="top:\d+px"/)
+    assert.match(ui.nodes.get('#lanes').innerHTML, /13 de 13 no prumo/)
+    const boardLayout = ui.run('layout(STATE.tasks)')
+    const lastCardBottom = Math.max(...Object.values(boardLayout.pos).map(position => position.y)) + boardLayout.metrics.nodeH
+    assert.ok(boardLayout.sumY > lastCardBottom)
+    assert.ok(boardLayout.h > boardLayout.sumY + 60)
     ui.run("setFilter('skipped')")
     assert.match(ui.nodes.get('#counts').innerHTML, /<b>13\/13<\/b>/)
     const last = Object.values(state.tasks).at(-1)
     last.state = 'pending'
     ui.render(state)
     assert.match(ui.nodes.get('#counts').innerHTML, /<b>13\/14<\/b>/)
-    assert.match(ui.nodes.get('#runSummary').innerHTML, /13 de 14 no prumo/)
+    assert.match(ui.nodes.get('#lanes').innerHTML, /13 de 14 no prumo/)
   }
 })
 

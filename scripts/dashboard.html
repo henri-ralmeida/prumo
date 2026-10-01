@@ -347,15 +347,9 @@ SOFTWARE. -->
   .lane.live .ln { color: var(--accent); }
   .lanes-cap { position: absolute; left: 40px; color: #6b645a; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }
   .lanes-cap [data-i18n] { text-transform: inherit; }
-  .run-sum { position: absolute; left: 24px; top: 44px; z-index: 5; width: clamp(140px, calc(50% - 168px), 380px); display: flex; flex-direction: column; gap: 4px; pointer-events: none; }
+  .run-sum { position: absolute; left: 40px; display: flex; flex-direction: column; gap: 4px; }
   .run-sum b { font: 800 28px/1 var(--font-display); letter-spacing: -.03em; color: var(--text); }
   .run-sum span { color: var(--dim); font-size: 11px; }
-  @media (max-width: 1000px) { .run-sum b { font-size: 20px; } }
-  @media (max-width: 700px) {
-    .run-sum { left: 14px; top: 8px; width: auto; max-width: calc(100% - 48px); }
-    .run-sum b { font-size: 16px; }
-    .run-sum span { display: none; }
-  }
   .lane-state { position: absolute; top: 4px; right: 14px;
                 padding: 1px 8px; border-radius: 999px; background: var(--bg); font-size: 9px;
                 letter-spacing: .04em; white-space: nowrap; }
@@ -1052,7 +1046,7 @@ SOFTWARE. -->
       <g id="edgePaths"></g>
     </svg>
     <div id="nodes" data-prumo-guide-anchor="tasks"></div>
-  </div><div id="runSummary" class="run-sum"></div><div id="runLoading" aria-hidden="true" hidden data-i18n="Loading run">Loading run…</div></div>
+  </div><div id="runLoading" aria-hidden="true" hidden data-i18n="Loading run">Loading run…</div></div>
   <button class="lbtn" id="sidebarToggle" aria-controls="sidebar" aria-expanded="true" onclick="toggleSidebar()"></button>
   <aside id="sidebar">
     <section id="statusBox">
@@ -1941,7 +1935,6 @@ function showRunLoading(run) {
   paintedMarkup.clear()
   $('#nodes').innerHTML = ''
   $('#lanes').innerHTML = ''
-  $('#runSummary').innerHTML = ''
   $('#structPaths').innerHTML = ''
   $('#hubPaths').innerHTML = ''
   lastHubHtml = ''
@@ -2285,8 +2278,8 @@ function layout(tasks) {
     if (phases[key]) lanes.push({ ...phases[key], y: laneTop, height: laneHeight - 14 })
     laneTop += laneHeight
   }
-  const h = Math.max(laneTop + PAD, y0 + PAD)
-  return { pos, w, h, lanes, density, metrics, capacity }
+  const h = Math.max(laneTop + 76 + PAD, y0 + PAD)
+  return { pos, w, h, lanes, density, metrics, capacity, sumY: laneTop + 6 }
 }
 
 const MAX_ACTIVITY_GAP_MS = 30 * 60e3
@@ -2958,7 +2951,7 @@ function render(s, events = []) {
   const validTasks = list.filter(task => task.state !== 'skipped').length
 
 
-  const { pos, w, h, lanes, density, metrics } = layout(tasks)
+  const { pos, w, h, lanes, density, metrics, sumY } = layout(tasks)
   const { nodeW, nodeH } = metrics
   const canvas = $('#canvas')
   canvas.dataset.density = density
@@ -2995,9 +2988,7 @@ function render(s, events = []) {
     return `<div class="lane ${laneStatus(i)}" style="top:${p.y}px;height:${p.height}px">
       <span class="lane-h"><button type="button" class="ln" style="color:${phaseColour(p.id)}" onclick="jumpToPhase('${jsq(p.id)}')" aria-label="${esc(tr('Locate phase on board'))}: ${esc(eventIds(p.id))}">${esc(eventIds(p.id))}</button><span class="lt">${esc(p.title)}</span><span class="ls">${esc(laneLine(i))}</span></span>${phaseState ?
         `<span class="lane-state ${phaseState.cls}">${esc(phaseState.label)}</span>` : ''}</div>`
-  }).join('')
-
-  paintStable('#runSummary', `<b>${esc(tr(GUIDE_DEMO ? '{0} of {1} Prumo' : '{0} of {1} in prumo', completedTasks, validTasks))}</b><span>${esc(tr(GUIDE_DEMO ? 'Completion requires independent review.' : 'a task only enters prumo after the independent reviewer'))}</span>`)
+  }).join('') + `<div class="run-sum" style="top:${sumY}px"><b>${esc(tr(GUIDE_DEMO ? '{0} of {1} Prumo' : '{0} of {1} in prumo', completedTasks, validTasks))}</b><span>${esc(tr(GUIDE_DEMO ? 'Completion requires independent review.' : 'a task only enters prumo after the independent reviewer'))}</span></div>`
 
   paintStable('#lanes', lanesHtml)
 
