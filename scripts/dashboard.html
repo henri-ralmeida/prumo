@@ -2146,7 +2146,8 @@ function matchesFilter(state, filter) {
 
 document.addEventListener('visibilitychange', () => {
   document.documentElement.classList.toggle('page-paused', document.hidden)
-  document.querySelectorAll('svg').forEach(svg => document.hidden ? svg.pauseAnimations?.() : svg.unpauseAnimations?.())
+  const paused = document.hidden || document.documentElement.classList.contains('guide-paused')
+  document.querySelectorAll('svg').forEach(svg => paused ? svg.pauseAnimations?.() : svg.unpauseAnimations?.())
   if (GUIDE_DEMO) return
   clearTimeout(TICK_TIMER)
   const generation = ++TICK_GENERATION
