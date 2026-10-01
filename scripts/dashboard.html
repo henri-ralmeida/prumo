@@ -452,17 +452,19 @@ SOFTWARE. -->
   .node[data-st="ready_for_review"] { --st: var(--review); border-color: color-mix(in srgb, var(--review) 45%, var(--line)); }
   .node[data-st="ready_to_plan"] { --st: var(--ready-plan); border-color: color-mix(in srgb, var(--ready-plan) 45%, var(--line)); }
   .node[data-st="ready"] { --st: var(--ready); border-color: color-mix(in srgb, var(--ready) 45%, var(--line)); }
+  .node:is([data-st="ready_for_discussion"], [data-st="ready_to_plan"], [data-st="ready"], [data-st="ready_for_review"]) { border-style: dashed; }
   .node[data-st="done"] { --st: var(--done); }
   .node:is([data-st="discussing"], [data-st="planning"], [data-st="running"], [data-st="reviewing"]) .nbar { display: block; }
   .node[data-st="discussing"] { --st: var(--discussion); border-color: var(--discussion);
                                 box-shadow: 0 0 0 4px rgba(232, 176, 75, .10), 0 10px 30px rgba(232, 176, 75, .12); }
-  .node[data-st="planning"] { --st: var(--planning); border: 1px dashed var(--planning); }
+  .node[data-st="planning"] { --st: var(--planning); border-color: var(--planning);
+                             box-shadow: 0 0 0 4px rgba(182, 156, 255, .10), 0 10px 30px rgba(182, 156, 255, .12); }
   .node[data-st="running"] { --st: var(--running); border-color: var(--running);
                              box-shadow: 0 0 0 4px rgba(242, 140, 82, .10), 0 10px 30px rgba(242, 140, 82, .12); }
   .node[data-st="reviewing"] { --st: var(--review); border-color: var(--review);
                                box-shadow: 0 0 0 4px rgba(79, 195, 247, .14), 0 10px 30px rgba(79, 195, 247, .10); }
   .node[data-st="failed"] { --st: var(--failed); border-color: #7a2432; }
-  .node[data-st="blocked"] { --st: var(--blocked); border: 1px dashed #8b5269; }
+  .node[data-st="blocked"] { --st: var(--blocked); border-color: #8b5269; }
   .node[data-st="blocked"] .nt { color: #bdb5a8; }
   /* blocked = a QUESTION for the dev, and the dev is exactly who is looking at this screen —
      so the card itself says so; a legend colour alone asks to be decoded */
