@@ -8,6 +8,7 @@ Historical tag and commit corrections are documented in [Release history recover
 - Start the dashboard directly on Windows and record its PID to verify process ownership while preserving startup at login.
 - Check startup readiness without binding the dashboard port, preventing the probe from competing with the new server.
 - Run Windows integrations without concurrent test files and verify packaged installation with the actual dashboard launcher arguments.
+- Avoid redrawing unchanged inactive plans, pause polling and animations in hidden tabs, and preserve live clocks and the dashboard's visual identity.
 
 ## 2.3.0 — 2026-09-30
 

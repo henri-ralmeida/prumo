@@ -1148,5 +1148,7 @@
   "Return the valid-task summary to the board footer in the dashboard and guide while excluding skipped tasks": "Devolva o resumo de tarefas válidas ao rodapé do board no dashboard e no guia, excluindo as tarefas puladas",
   "Fixed — Windows dashboard startup": "Corrigido — Inicialização do dashboard no Windows",
   "Improved — Cross-platform verification": "Melhorado — Verificação nos sistemas suportados",
-  "Run Windows integration checks sequentially and verify packaged installation with the actual dashboard launcher": "Execute as verificações de integração do Windows em sequência e confira a instalação do pacote com o lançador real do dashboard"
+  "Run Windows integration checks sequentially and verify packaged installation with the actual dashboard launcher": "Execute as verificações de integração do Windows em sequência e confira a instalação do pacote com o lançador real do dashboard",
+  "Improved — Dashboard performance": "Melhorado — Desempenho do dashboard",
+  "Avoid redrawing unchanged inactive plans and pause hidden dashboards while preserving live clocks, task navigation and visual identity": "Evite redesenhar planos inativos sem alterações e pause dashboards ocultos, preservando relógios ativos, navegação pelas tarefas e identidade visual"
 }

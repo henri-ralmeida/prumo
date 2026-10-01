@@ -3009,6 +3009,48 @@ test('closing results while event history is pending prevents a late repaint', a
   assert.equal(ui.nodes.get('#results').innerHTML, 'closed-tab marker')
 })
 
+test('unchanged inactive plans skip rendering while new events and active clocks still refresh', async () => {
+  const ui = dashboard()
+  const state = { run: 'run-a', createdAt: instant(0), plan: { phases: [] }, tasks: { A: task('A', 'done') }, derived: {} }
+  let history = { events: [], next: 0, total: 0, complete: true, revision: 'one' }
+  ui.run("SELECTED_ROOT = 'root-a'; SELECTED_RUN = 'run-a'; TICK_GENERATION = 1; let paints = 0; const realRender = render; render = (...args) => { paints++; return realRender(...args) }; fetch = inputFetch", {
+    inputFetch: async url => ({ ok: true, json: async () => String(url).includes('/api/runs')
+      ? { currentRoot: 'root-a', current: state.run, runs: [] }
+      : String(url).includes('/api/events') ? history : state }),
+  })
+  await ui.run('tick(1)')
+  await ui.run('tick(1)')
+  assert.equal(ui.run('paints'), 1, 'unchanged inactive data must not redraw the graph')
+  history = { events: [{ type: 'task_note', task: 'A', at: instant(30), note: 'New evidence' }], next: 1, total: 1, complete: true, revision: 'two', reset: true }
+  await ui.run('tick(1)')
+  assert.equal(ui.run('paints'), 2, 'an event must refresh even when the task state is unchanged')
+  state.tasks.A.state = 'running'
+  await ui.run('tick(1)')
+  await ui.run('tick(1)')
+  assert.equal(ui.run('paints'), 4, 'active clocks keep refreshing between state changes')
+})
+
+test('hidden dashboards stop polling and refresh immediately when visible again', async () => {
+  const ui = dashboard()
+  const state = { run: 'run-a', createdAt: instant(0), plan: { phases: [] }, tasks: {}, derived: {} }
+  let requests = 0
+  ui.run("document.hidden = true; SELECTED_ROOT = 'root-a'; SELECTED_RUN = 'run-a'; TICK_GENERATION = 1; fetch = inputFetch", {
+    inputFetch: async url => { requests++; return { ok: true, json: async () => String(url).includes('/api/runs')
+      ? { currentRoot: 'root-a', current: state.run, runs: [] }
+      : String(url).includes('/api/events') ? { events: [], next: 0, total: 0, complete: true, revision: 'one' } : state } },
+  })
+  await ui.run('tick(1)')
+  assert.equal(requests, 0)
+  ui.dispatchDocument('visibilitychange')
+  assert.equal(ui.run("document.documentElement.classList.contains('page-paused')"), true)
+  ui.run('document.hidden = false')
+  ui.dispatchDocument('visibilitychange')
+  await new Promise(resolve => setImmediate(resolve))
+  assert.ok(requests >= 3, 'returning to the dashboard immediately fetches state, catalog and events')
+  assert.equal(ui.run('STATE.run'), 'run-a')
+  assert.equal(ui.run("document.documentElement.classList.contains('page-paused')"), false)
+})
+
 test('a changed event revision replaces the cached browser history from its first page', async () => {
   const ui = dashboard()
   const responses = [

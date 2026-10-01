@@ -11,6 +11,7 @@ test('current release has concise English update highlights with descriptive sub
     'Fixed — Dashboard summary placement',
     'Fixed — Windows dashboard startup',
     'Improved — Cross-platform verification',
+    'Improved — Dashboard performance',
   ])
   assert.deepEqual(releaseNotes('2.1.1').map(section => section.title), ['Fixed — Dashboard restart after update'])
   assert.deepEqual(releaseNotes('2.1.0').map(section => section.title), [
