@@ -1,4 +1,11 @@
 {
+  "2.3.1": {
+    "en": [
+      {"title":"Fixed — Dashboard summary placement","items":["Return the valid-task summary to the board footer in the dashboard and guide while excluding skipped tasks"]},
+      {"title":"Fixed — Windows dashboard startup","items":["Start the dashboard directly on Windows to record its process identity while preserving startup at login"]},
+      {"title":"Improved — Cross-platform verification","items":["Run Windows integration checks sequentially and verify packaged installation with the actual dashboard launcher"]}
+    ]
+  },
   "2.3.0": {
     "en": [
       {"title":"Fixed — Completed task totals","items":["Count completed tasks over valid tasks only, excluding skipped tasks and keeping sidebar and board totals consistent when filters change"]},

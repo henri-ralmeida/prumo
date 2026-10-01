@@ -2,6 +2,12 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.3.1 — 2026-10-01
+
+- Return the valid-task summary to the board footer in the dashboard and guide while excluding skipped tasks.
+- Start the dashboard directly on Windows and record its PID to verify process ownership while preserving startup at login.
+- Run Windows integrations without concurrent test files and verify packaged installation with the actual dashboard launcher arguments.
+
 ## 2.3.0 — 2026-09-30
 
 - Inicie o dashboard diretamente pelo comando no Windows para registrar seu PID e confirmar a identidade do processo; preserve o registro de inicialização no próximo login.

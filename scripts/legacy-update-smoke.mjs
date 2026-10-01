@@ -25,7 +25,9 @@ const home = realpathSync(mkdtempSync(join(tmpdir(), 'prumo-legacy-smoke-')))
 const project = join(home, 'project'), prefix = join(home, 'npm-global')
 const installed = join(prefix, process.platform === 'win32' ? 'node_modules' : 'lib/node_modules', '@henri-ralmeida/prumo')
 const cli = join(installed, 'bin/prumo.mjs'), engine = join(installed, 'scripts/engine.mjs')
-const oldRoot = join(home, '.local/share/graph-foreman/legacy')
+// From 2.3.0, Prumo already owns its data namespace; an update preserves that location.
+const modernNamespace = since('2.3.0')
+const oldRoot = join(home, modernNamespace ? '.local/share/prumo/legacy' : '.local/share/graph-foreman/legacy')
 const newRoot = join(home, '.local/share/prumo/legacy')
 const env = { ...process.env, HOME: home, USERPROFILE: home, APPDATA: join(home, 'AppData/Roaming'),
   LOCALAPPDATA: join(home, 'AppData/Local'), CODEX_HOME: join(home, '.codex'),
@@ -359,7 +361,7 @@ try {
   assert.equal(existsSync(oldRoot), true, 'a copia preserva a pasta de dados original do Prumo antigo')
   assert.deepEqual(JSON.parse(readFileSync(join(oldRoot, relativeState), 'utf8')), before)
   assert.equal(readFileSync(join(newRoot, '.specs/graph/legacy/events.ndjson'), 'utf8'), beforeEvents)
-  assert.equal(existsSync(join(newRoot, 'attempt4')), false, 'a migracao minima descarta copias de execucao')
+  assert.equal(existsSync(join(newRoot, 'attempt4')), modernNamespace, 'Only a legacy namespace copy excludes generated execution artifacts; an existing Prumo namespace remains intact.')
   assert.deepEqual(JSON.parse(readFileSync(join(newRoot, 'approved.plan.json'), 'utf8')), plan)
   assert.deepEqual(JSON.parse(readFileSync(join(newRoot, 'backups/approved.plan.json'), 'utf8')), plan)
   await checkDashboard([...flows.keys()])
