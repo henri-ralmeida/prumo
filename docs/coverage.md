@@ -45,8 +45,10 @@ No GitHub Actions, os seis ambientes coletam dados sem ocultar ramos exclusivos 
 um sistema operacional. A consolidacao exige os mesmos fontes e 100% em todas as
 dimensoes por arquivo. Relatorios antigos, fontes ausentes e denominador vazio
 fazem a verificacao falhar, inclusive quando um arquivo aparece sem instrucoes medidas.
-O Node 24 no Windows verifica todas as tags com update;
-os demais ambientes verificam uma amostra de cada era e os pacotes publicados.
+Cada ambiente verifica as versões efetivamente publicadas no npm usando seus tarballs
+reais. Essa matriz faz parte da coleta c8, para que os subprocessos do código atual
+também contribuam para a cobertura. Não há uma segunda execução da mesma matriz após
+o empacotamento.
 
 Copias instaladas so compartilham contadores quando seu JavaScript e identico ao
 fonte atual. A instrumentacao nao muda `import.meta.url`, a origem da instalacao
@@ -54,7 +56,11 @@ nem os arquivos distribuidos. Codigo de uma versao antiga nao recebe credito na 
 
 ## Versoes antigas
 
-As versoes v1.0.0 e v1.0.1 nao possuem comando de atualizacao e exigem reinstalacao.
-As versoes com atualizacao suportada devem ser verificadas com seus instaladores e
-comandos reais. Dados de produtos distintos permanecem separados; migracoes de
-versoes antigas do Prumo copiam dados duraveis e preservam a origem.
+O registro npm define quais versões entram na matriz automática. Tags que nunca
+foram publicadas não representam instalações distribuídas por esse canal e ficam
+fora dessa rotina. As verificações de reinstalação das tags v1.0.0 e v1.0.1 continuam
+disponíveis mediante `PRUMO_TEST_GIT_RELEASES=1`, para uma investigação explícita.
+
+As versões publicadas são verificadas com seus instaladores e comandos reais.
+Dados de produtos distintos permanecem separados; migrações de versões antigas do
+Prumo copiam dados duráveis e preservam a origem.

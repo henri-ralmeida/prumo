@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,8 +10,8 @@ import { runPostinstall } from '../scripts/postinstall.mjs'
 import { packageDistributionFiles } from '../scripts/package-content.mjs'
 
 test('instalação local não ativa instalação global nem altera arquivos no diretório', t => {
-  const root = mkdtempSync(join(tmpdir(), 'prumo-local-postinstall-'))
-  t.after(() => { assert.equal(dirname(root), tmpdir()); rmSync(root, { recursive: true, force: true }) })
+  const base = realpathSync(tmpdir()), root = mkdtempSync(join(base, 'prumo-local-postinstall-'))
+  t.after(() => { assert.equal(dirname(root), base); rmSync(root, { recursive: true, force: true }) })
   assert.equal(runPostinstall(), 0)
   const result = spawnSync(process.execPath, [fileURLToPath(new URL('../scripts/postinstall.mjs', import.meta.url))], {
     cwd: root, encoding: 'utf8', windowsHide: true, timeout: 10000,
@@ -24,8 +24,8 @@ test('instalação local não ativa instalação global nem altera arquivos no d
 
 test('verificação pública aceita o pacote atual e inspeciona arquivos distribuídos em subpastas', t => {
   const repository = fileURLToPath(new URL('..', import.meta.url))
-  const root = mkdtempSync(join(tmpdir(), 'prumo-package-check-'))
-  t.after(() => { assert.equal(dirname(root), tmpdir()); rmSync(root, { recursive: true, force: true }) })
+  const base = realpathSync(tmpdir()), root = mkdtempSync(join(base, 'prumo-package-check-'))
+  t.after(() => { assert.equal(dirname(root), base); rmSync(root, { recursive: true, force: true }) })
   const invoke = base => spawnSync(process.execPath, [join(base, 'scripts/check-package.mjs')], {
     encoding: 'utf8', windowsHide: true, timeout: 30000,
   })
@@ -70,8 +70,8 @@ test('instalação automática propaga falha de início e não trata processo in
 })
 
 test('gerador detecta catálogo antigo e só o substitui mediante opção explícita', t => {
-  const root = mkdtempSync(join(tmpdir(), 'prumo-build-catalog-'))
-  t.after(() => { assert.equal(dirname(root), tmpdir()); rmSync(root, { recursive: true, force: true }) })
+  const base = realpathSync(tmpdir()), root = mkdtempSync(join(base, 'prumo-build-catalog-'))
+  t.after(() => { assert.equal(dirname(root), base); rmSync(root, { recursive: true, force: true }) })
   cpSync(fileURLToPath(new URL('../scripts', import.meta.url)), join(root, 'scripts'), { recursive: true })
   const htmlPath = join(root, 'scripts/dashboard.html'), script = join(root, 'scripts/build-dashboard.mjs')
   const current = readFileSync(htmlPath, 'utf8')

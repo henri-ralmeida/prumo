@@ -9,7 +9,8 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { installedPoFirstLanguage, planInstall, applyInstall, restoreInstall } from '../lib/install.mjs'
 
 const nodeFs = createRequire(import.meta.url)('node:fs')
-const temporary = prefix => mkdtempSync(join(resolve(tmpdir()), prefix))
+const temporaryRoot = realpathSync(tmpdir())
+const temporary = prefix => mkdtempSync(join(temporaryRoot, prefix))
 const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 
 function fixture(t, prefix = 'prumo-install-hardening-', apply = true) {
@@ -32,7 +33,7 @@ function fixture(t, prefix = 'prumo-install-hardening-', apply = true) {
   const applied = apply ? applyInstall(plan) : null
   if (apply) assert.ok(applied.backup, 'o fixture precisa produzir um backup real')
   t.after(() => {
-    assert.ok(home.startsWith(join(resolve(tmpdir()), prefix)))
+    assert.ok(home.startsWith(join(temporaryRoot, prefix)))
     rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   })
   return { home, config, cwd: project, env, plan, backup: applied?.backup, settings }
@@ -44,7 +45,7 @@ test('restore recusa um alvo fora das raízes registradas antes de alterar arqui
   const target = join(outside, 'protected.txt')
   writeFileSync(target, 'conteúdo protegido')
   t.after(() => {
-    assert.ok(outside.startsWith(join(resolve(tmpdir()), 'prumo-restore-outside-')))
+    assert.ok(outside.startsWith(join(temporaryRoot, 'prumo-restore-outside-')))
     rmSync(outside, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   })
 
@@ -129,7 +130,7 @@ test('restore reconstitui relocação interrompida e remove origem vazia', t => 
 test('aplicação limpa pastas legadas vazias e rejeita alterações inesperadas', t => {
   const home = temporary('prumo-install-cleanup-')
   t.after(() => {
-    assert.ok(home.startsWith(join(resolve(tmpdir()), 'prumo-install-cleanup-')))
+    assert.ok(home.startsWith(join(temporaryRoot, 'prumo-install-cleanup-')))
     rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   })
   const missing = join(home, 'missing')
@@ -262,13 +263,13 @@ test('aplicação restaura uma relocação já aplicada quando uma alteração p
 
 test('aplicação restaura relocação quando a cópia encontra entrada especial Unix', async t => {
   if (process.platform === 'win32') return t.skip('socket Unix não existe como entrada de diretório no Windows')
-  const home = temporary('prumo-install-relocation-socket-')
-  const sourceRoot = join(home, 'legacy')
+  const home = temporary('ps-')
+  const sourceRoot = join(home, 's')
   t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
   const source = join(sourceRoot, '.specs')
   const destination = join(home, 'current', '.specs')
   mkdirSync(source, { recursive: true })
-  const socket = join(source, 'special-entry')
+  const socket = join(source, 'x')
   const server = createServer()
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socket, resolve) })
   const stamp = createHash('sha256').digest('hex')
@@ -361,7 +362,7 @@ test('restore valida limites do manifesto e recupera arquivos e links íntegros'
   mkdirSync(newTarget, { recursive: true })
   writeFileSync(join(oldTarget, 'preservar.txt'), 'dados antigos')
   writeFileSync(join(newTarget, 'preservar.txt'), 'dados atuais')
-  const linkType = process.platform === 'win32' ? 'junction' : 'dir'
+  const linkType = 'junction'
   symlinkSync(newTarget, linkFile, linkType)
   const linkBytes = Buffer.from(readlinkSync(linkFile).replace(/^\\\\\?\\/, ''))
   const oldBytes = Buffer.from(oldTarget)
@@ -412,7 +413,7 @@ test('aplicação restaura link anterior quando uma limpeza posterior falha sem 
   writeFileSync(join(replacementTarget, 'dados.txt'), 'substituto')
   mkdirSync(cleanup, { recursive: true })
   writeFileSync(join(cleanup, 'mudanca.txt'), 'não descartar')
-  const linkType = process.platform === 'win32' ? 'junction' : 'dir'
+  const linkType = 'junction'
   symlinkSync(originalTarget, linkFile, linkType)
   const result = applyInstall({
     home,
@@ -442,7 +443,7 @@ test('aplicação recupera link anterior quando a renomeação temporária falha
   mkdirSync(replacementTarget, { recursive: true })
   writeFileSync(join(originalTarget, 'dados.txt'), 'original')
   writeFileSync(join(replacementTarget, 'dados.txt'), 'substituto')
-  const linkType = process.platform === 'win32' ? 'junction' : 'dir'
+  const linkType = 'junction'
   symlinkSync(originalTarget, linkFile, linkType)
   const originalRename = nodeFs.renameSync
   let renameAttempted = false
@@ -483,7 +484,7 @@ test('falhas secundárias na troca de link preservam diagnóstico original e dad
     t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
     const before = join(home, 'original'), after = join(home, 'replacement'), file = join(home, 'managed-link')
     for (const path of [before, after]) { mkdirSync(path); writeFileSync(join(path, 'dados.txt'), path) }
-    const type = process.platform === 'win32' ? 'junction' : 'dir'
+    const type = 'junction'
     symlinkSync(before, file, type)
     const rename = nodeFs.renameSync, link = nodeFs.symlinkSync, unlink = nodeFs.unlinkSync
     nodeFs.renameSync = (from, to, ...args) => {
@@ -594,7 +595,7 @@ test('applyInstall cobre alterações nulas, prévia e tipos de arquivo inconsis
   const newLink = join(home, 'new-link')
   mkdirSync(linkTarget, { recursive: true })
   writeFileSync(join(linkTarget, 'dados.txt'), 'não tocar')
-  const linkType = process.platform === 'win32' ? 'junction' : 'dir'
+  const linkType = 'junction'
   const linkResult = applyInstall({
     home, allowedRoots: [home],
     groups: [{ name: 'new-link', snapshots: [], cleanup: [], conflicts: [], changes: [{ file: newLink, before: null, after: Buffer.from(linkTarget), link: linkType }] }],

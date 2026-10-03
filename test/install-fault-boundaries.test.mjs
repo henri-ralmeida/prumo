@@ -10,8 +10,8 @@ import { fileURLToPath } from 'node:url'
 
 const repository = fileURLToPath(new URL('..', import.meta.url))
 function temporary(t) {
-  const home = fs.mkdtempSync(join(tmpdir(), 'prumo-install-public-boundary-'))
-  t.after(() => { assert.equal(dirname(home), tmpdir()); fs.rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }) })
+  const base = fs.realpathSync(tmpdir()), home = fs.mkdtempSync(join(base, 'prumo-install-public-boundary-'))
+  t.after(() => { assert.equal(dirname(home), base); fs.rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }) })
   return home
 }
 
@@ -203,10 +203,10 @@ test('espaço de dados já compartilhado conserva histórico em vez de planejar 
 
 for (const scenario of ['cross-volume', 'copy-denied', 'backup-corrupt', 'source-backup-corrupt', 'source-backup-extra', 'source-backup-renamed', 'move-denied', 'saved-changed', 'destination-corrupt', 'source-changed', 'rollback-destination-changed']) {
   test(`relocação preserva dados e informa falha em ${scenario}`, t => {
-    const home = fs.mkdtempSync(join(tmpdir(), 'prumo-install-fault-boundary-'))
+    const base = fs.realpathSync(tmpdir()), home = fs.mkdtempSync(join(base, 'prumo-install-fault-boundary-'))
     t.after(() => {
       t.mock.restoreAll(); syncBuiltinESMExports()
-      assert.equal(dirname(home), tmpdir())
+      assert.equal(dirname(home), base)
       fs.rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
     })
     const sourceRoot = join(home, 'legacy'), source = join(sourceRoot, '.specs')

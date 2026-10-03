@@ -1,14 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 
 test('copia identica compartilha contadores sem mudar import.meta.url; copia adulterada fica separada', t => {
-  const home = mkdtempSync(join(tmpdir(), 'prumo-coverage-alias-'))
-  t.after(() => { assert.equal(dirname(home), tmpdir()); rmSync(home, { recursive: true, force: true }) })
+  const base = realpathSync(tmpdir()), home = mkdtempSync(join(base, 'prumo-coverage-alias-'))
+  t.after(() => { assert.equal(dirname(home), base); rmSync(home, { recursive: true, force: true }) })
   const original = join(home, 'original'), copied = join(home, 'copied'), changed = join(home, 'changed')
   for (const root of [original, copied, changed]) mkdirSync(join(root, 'lib'), { recursive: true })
   const source = 'export function valor() { return import.meta.url }\n'

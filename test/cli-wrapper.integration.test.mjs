@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -12,7 +12,7 @@ const cli = join(repository, 'bin', 'prumo.mjs')
 const packageVersion = JSON.parse(readFileSync(join(repository, 'package.json'), 'utf8')).version
 
 function temporaryHome(t, prefix) {
-  const home = mkdtempSync(join(tmpdir(), prefix))
+  const home = mkdtempSync(join(realpathSync(tmpdir()), prefix))
   t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
   return home
 }

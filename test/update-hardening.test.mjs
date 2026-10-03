@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import { createServer } from 'node:net'
-import { copyFileSync, cpSync, existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, cpSync, existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -15,8 +15,8 @@ const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const packageVersion = JSON.parse(readFileSync(join(repository, 'package.json'), 'utf8')).version
 const nodeFs = createRequire(import.meta.url)('node:fs')
 
-function temporary(prefix) {
-  return mkdtempSync(join(resolve(tmpdir()), prefix))
+function temporary(prefix, base = realpathSync(tmpdir())) {
+  return mkdtempSync(join(base, prefix))
 }
 
 function child(code, stderr = '') {
@@ -53,8 +53,8 @@ function simulatedNpmRoot(f, options) {
     : join(options.env.npm_config_prefix, process.platform === 'win32' ? 'node_modules' : 'lib', 'node_modules')
 }
 
-function fixture(t, prefix = 'prumo-update-hardening-') {
-  const home = temporary(prefix)
+function fixture(t, prefix = 'prumo-update-hardening-', base = realpathSync(tmpdir())) {
+  const home = temporary(prefix, base)
   const external = temporary('prumo-update-external-')
   const globalRoot = join(home, 'global', 'lib', 'node_modules')
   const target = join(globalRoot, '@henri-ralmeida', 'prumo')
@@ -69,8 +69,9 @@ function fixture(t, prefix = 'prumo-update-hardening-') {
     return { status: 0, stdout: globalRoot, stderr: '' }
   }
   t.after(() => {
-    assert.ok(home.startsWith(join(resolve(tmpdir()), prefix)))
-    assert.ok(external.startsWith(join(resolve(tmpdir()), 'prumo-update-external-')))
+    assert.equal(dirname(home), base)
+    assert.ok(home.startsWith(join(base, prefix)))
+    assert.ok(external.startsWith(join(realpathSync(tmpdir()), 'prumo-update-external-')))
     rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
     rmSync(external, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   })
@@ -344,21 +345,25 @@ test('preflight rejeita metadados, baseline e diretório global não gerenciado'
   await assert.rejects(updateGlobalCliFromPackage(linkedSource, { env: linkedTree.env, temporaryRoot: linkedTree.temporaryRoot, runSync: linkedTree.runSync, run: () => { throw new Error('npm não deveria iniciar') } }), /Local Prumo CLI package path is linked/)
 
   if (process.platform !== 'win32') {
-    const special = fixture(t, 'prumo-update-special-tree-')
+    const special = fixture(t, 'prumo-sock-', realpathSync('/tmp'))
     const socket = join(special.target, 'special-entry')
+    assert.ok(Buffer.byteLength(socket) < 104, 'o socket permanece dentro da árvore e abaixo do limite Unix')
     const server = createServer()
-    await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socket, resolve) })
-    const specialSync = (_command, _args, options) => ({ status: 0, stdout: simulatedNpmRoot(special, options), stderr: '' })
-    const specialRun = (_command, args, options) => {
-      if (args.includes('pack')) {
-        writeFileSync(join(options.cwd, 'prumo.tgz'), 'arquivo de pacote')
+    try {
+      await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socket, resolve) })
+      const specialSync = (_command, _args, options) => ({ status: 0, stdout: simulatedNpmRoot(special, options), stderr: '' })
+      const specialRun = (_command, args, options) => {
+        if (args.includes('pack')) {
+          writeFileSync(join(options.cwd, 'prumo.tgz'), 'arquivo de pacote')
+          return child(0)
+        }
+        copyDistributedPackage(repository, join(simulatedNpmRoot(special, options), '@henri-ralmeida', 'prumo'))
         return child(0)
       }
-      copyDistributedPackage(repository, join(simulatedNpmRoot(special, options), '@henri-ralmeida', 'prumo'))
-      return child(0)
+      await assert.rejects(updateGlobalCliFromPackage(repository, { env: special.env, temporaryRoot: special.temporaryRoot, runSync: specialSync, run: specialRun }), /Package tree contains an invalid path/)
+    } finally {
+      if (server.listening) await new Promise(resolve => server.close(resolve))
     }
-    await assert.rejects(updateGlobalCliFromPackage(repository, { env: special.env, temporaryRoot: special.temporaryRoot, runSync: specialSync, run: specialRun }), /Package tree contains an invalid path/)
-    await new Promise(resolve => server.close(resolve))
   }
 })
 
@@ -458,7 +463,7 @@ test('update sem pacote global falha antes de declarar conteúdo atualizado', as
     run: () => { queueMicrotask(() => noCode.emit('close', null, null)); return noCode },
   }), 1)
 
-  const dashboard = mkdtempSync(join(resolve(tmpdir()), 'prumo-update-dashboard-process-'))
+  const dashboard = temporary('prumo-update-dashboard-process-')
   const root = join(dashboard, 'skills')
   mkdirSync(join(root, 'prumo'), { recursive: true })
   writeFileSync(join(root, 'prumo', '.prumo-install.json'), JSON.stringify({ product: 'prumo', harness: 'claude', version: packageVersion }))

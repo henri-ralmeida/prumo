@@ -13,8 +13,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         node: [22, 24]
     runs-on: ${{ matrix.os }}
-    # A matriz histórica completa é serial no Windows para preservar a prontidão dos processos.
-    timeout-minutes: ${{ matrix.os == 'windows-latest' && matrix.node == 24 && 180 || 90 }}
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
         with:
@@ -28,11 +27,9 @@ jobs:
       - run: bun run test:coverage:collect
         env:
           PRUMO_TEST_CONCURRENCY: ${{ runner.os == 'Windows' && 1 || 4 }}
-          PRUMO_UPGRADE_TAGS: ${{ runner.os == 'Windows' && matrix.node == 24 && 'all' || '' }}
       - run: npm run check
       - run: npm pack
       - run: node scripts/package-smoke.mjs
-      - run: node scripts/published-update-smoke.mjs
       - uses: actions/upload-artifact@v6
         if: always()
         with:

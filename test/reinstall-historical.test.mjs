@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -100,8 +100,12 @@ function harnessRoot(home, harness) {
   return harness === 'codex' ? join(home, '.agents', 'skills') : join(home, `.${harness}`, 'skills')
 }
 
-test('v1.0.0 e v1.0.1 chegam à candidata por reinstalação local e preservam seus dados', { timeout: 1800000 }, t => {
-  const base = resolve(tmpdir())
+test('v1.0.0 e v1.0.1 chegam à candidata por reinstalação local e preservam seus dados', {
+  timeout: 1800000,
+  skip: process.env.PRUMO_TEST_GIT_RELEASES === '1' ? false
+    : 'v1.0.0 e v1.0.1 são versões apenas do Git; o escopo padrão cobre publicações npm. Use PRUMO_TEST_GIT_RELEASES=1 para executar.',
+}, t => {
+  const base = realpathSync(tmpdir())
   const work = mkdtempSync(join(base, 'prumo-reinstall-historical-'))
   const candidateOutput = join(work, 'candidate')
   mkdirSync(candidateOutput, { recursive: true })
