@@ -27,7 +27,7 @@ test('Windows Startup launches and restarts a real isolated dashboard process', 
   mkdirSync(join(home, '.local/share/prumo'), { recursive: true })
   writeFileSync(preferencePath, JSON.stringify({ enabled: true, mechanism: 'windows-startup' }))
   const options = { home, script: script.replaceAll('\\', '/'), packageRoot: fileURLToPath(new URL('..', import.meta.url)), env,
-    readinessAttempts: 100, readinessInterval: 50,
+    // A inicialização real usa o prazo do produto; a cobertura não deve reduzi-lo para cinco segundos.
     fetch: (url, init) => fetch(String(url).replace(':4949/', `:${port}/`), init),
     portAvailable: async () => true }
   const pids = new Set()
@@ -83,7 +83,7 @@ test('Windows Startup launches and restarts a real isolated dashboard process', 
   const entry = join(env.APPDATA, 'Microsoft/Windows/Start Menu/Programs/Startup/Prumo Dashboard.vbs')
   execFileSync('cscript.exe', ['//B', '//Nologo', entry], { env, windowsHide: true, timeout: 10000 })
   let loginReady = false
-  for (let attempt = 0; attempt < 100 && !loginReady; attempt++) {
+  for (let attempt = 0; attempt < 300 && !loginReady; attempt++) {
     try {
       const response = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(500) })
       const body = await response.json()
