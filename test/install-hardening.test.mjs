@@ -137,12 +137,17 @@ test('restore reconstitui relocação interrompida e remove origem vazia', t => 
   }
   const result = applyInstall(planInstall({ harness: 'claude', home: f.home, cwd: f.cwd, env: f.env, lang: 'en' }))
   assert.ok(result.backup, 'a migração precisa deixar um backup transacional')
+  assert.ok(result.groups.every(group => group.status !== 'conflict'), JSON.stringify(result.groups))
 
   const manifestFile = join(result.backup, 'manifest.json')
   const manifest = JSON.parse(readFileSync(manifestFile, 'utf8'))
   const relocation = manifest.relocations.find(entry => entry.source === source)
   assert.ok(relocation, 'o manifesto precisa registrar a relocação')
   assert.equal(relocation.preserveSource, true)
+  assert.equal(relocation.applied, true, 'a recuperação parte de uma cópia concluída e verificada')
+  assert.equal(readFileSync(join(relocation.destination, 'graph', 'run', 'state.json'), 'utf8'), readFileSync(state, 'utf8'))
+  assert.equal(readlinkSync(join(result.backup, relocation.backup, 'link-diretorio')), readlinkSync(relativeDirectoryLink), 'o backup preserva a representação do link')
+  assert.equal(readFileSync(join(relocation.destination, 'link-diretorio', 'valor.txt'), 'utf8'), 'fora da origem', 'o link copiado continua acessando o diretório externo original')
 
   rmSync(source, { recursive: true, force: true })
   mkdirSync(join(source, 'vazio', 'aninhado'), { recursive: true })
