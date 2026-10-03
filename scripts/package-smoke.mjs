@@ -19,6 +19,8 @@ writeFileSync(join(cwd, 'package.json'), JSON.stringify({ name: 'prumo-package-s
 const env = { ...process.env, HOME: home, USERPROFILE: home, CODEX_HOME: join(home, '.codex'), DSH_HOME: join(home, '.dsh'), CLAUDE_CONFIG_DIR: join(home, '.claude'), PRUMO_HOME: join(home, 'data'), PRUMO_LANG: 'en',
   APPDATA: join(home, 'AppData', 'Roaming'), LOCALAPPDATA: join(home, 'AppData', 'Local'),
   npm_config_cache: join(home, 'npm-cache'), npm_config_userconfig: join(home, 'npmrc'), npm_config_prefix: globalPrefix, BUN_INSTALL_CACHE_DIR: join(home, 'bun-cache') }
+// As instalações sem dashboard não consultam nem encerram o serviço real na porta do usuário.
+env.NODE_OPTIONS = `${env.NODE_OPTIONS ?? ''} --import="${pathToFileURL(join(root, 'test', 'fixtures', 'dashboard-absent.mjs')).href}"`.trim()
 delete env.PRUMO_ROOT
 delete env.GRAPH_ROOT
 delete env.GRAPH_FOREMAN_HOME
@@ -68,6 +70,7 @@ try {
   writeFileSync(preload, `
 import childProcess from 'node:child_process'
 import net from 'node:net'
+import { EventEmitter } from 'node:events'
 import { appendFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { syncBuiltinESMExports } from 'node:module'
@@ -109,12 +112,16 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
     }
     return originalSpawn(file, args, options)
   }
-  net.createServer = () => ({
-    unref() { return this },
-    once() { return this },
-    listen(port, host, ready) { ready(); return this },
-    close(done) { done() },
-  })
+  const originalConnect = net.createConnection
+  net.createConnection = (options, ...args) => {
+    if (options?.host !== '127.0.0.1' || options?.port !== 4949) return originalConnect(options, ...args)
+    // A disponibilidade simulada acompanha o processo simulado, sem consultar o dashboard do usuário.
+    const socket = new EventEmitter()
+    socket.unref = socket.destroy = socket.setTimeout = () => socket
+    queueMicrotask(() => running ? socket.emit('connect')
+      : socket.emit('error', Object.assign(new Error('stopped'), { code: 'ECONNREFUSED' })))
+    return socket
+  }
   globalThis.fetch = async url => {
     if (!running) throw new Error('stopped')
     return { ok: true, json: async () => String(url).endsWith('/api/about')
@@ -128,7 +135,8 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
     APPDATA: join(autoHome, 'AppData', 'Roaming'), LOCALAPPDATA: join(autoHome, 'AppData', 'Local'),
     PRUMO_HOME: join(autoHome, 'data'), npm_config_prefix: autoPrefix,
     npm_config_allow_scripts: name,
-    npm_config_cache: join(autoHome, 'npm-cache'), NODE_OPTIONS: `--import=${pathToFileURL(preload).href}` }
+    npm_config_cache: join(autoHome, 'npm-cache'), NODE_OPTIONS: `${process.env.NODE_V8_COVERAGE && process.env.PRUMO_TEST_COVERAGE_FLUSH === '1'
+      ? `--import="${new URL('../test/fixtures/coverage-flush.mjs', import.meta.url).href}"` : ''} --import=${pathToFileURL(preload).href}`.trim() }
   delete autoEnv.CLAUDE_CONFIG_DIR
   for (const key of Object.keys(autoEnv)) if (/^path$/i.test(key)) delete autoEnv[key]
   autoEnv.PATH = [dirname(process.execPath), ...(process.platform === 'win32' ? [] : ['/usr/bin', '/bin'])].join(delimiter)

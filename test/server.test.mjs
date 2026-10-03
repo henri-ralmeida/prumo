@@ -4,10 +4,11 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, realpathSy
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { spawn, execFileSync } from 'node:child_process'
+import { spawn, spawnSync, execFileSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import { setTimeout } from 'node:timers/promises'
 import { contentId } from '../lib/install.mjs'
+import { readDashboardEvents } from '../scripts/dashboard-diagnostics.mjs'
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
 /** The short commit git reports for this checkout, or undefined when git cannot answer. */
@@ -17,24 +18,153 @@ function checkoutCommit(root = packageRoot) {
   } catch { return undefined }
 }
 
-/** Start a dashboard server on a free port and return a fetch helper bound to it. */
+const dashboardFixtures = new WeakMap()
+
+function dashboardHome(t, prefix, remove = home => rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })) {
+  const base = realpathSync(tmpdir())
+  const home = mkdtempSync(join(base, prefix))
+  const stops = []
+  dashboardFixtures.set(t, stops)
+  t.after(async () => {
+    const closed = await Promise.allSettled(stops.map(stop => stop()))
+    const failures = closed.filter(result => result.status === 'rejected').map(result => result.reason)
+    // Os arquivos só podem ser removidos depois de todos os servidores encerrarem.
+    if (failures.length) throw new AggregateError(failures, 'Falha ao encerrar servidores do teste')
+    assert.equal(dirname(home), base)
+    await remove(home)
+  })
+  return home
+}
+
+/** Inicia o servidor isolado e vincula seu encerramento à limpeza dos arquivos. */
 async function startDashboard(t, script, args, env) {
+  const stops = dashboardFixtures.get(t)
+  assert.ok(stops, 'o servidor precisa de uma fixture responsável pela limpeza')
   const child = spawn(process.execPath, [script, ...args, '--port', '0'], { env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
   let output = ''
   child.stdout.on('data', chunk => { output += chunk })
   child.stderr.on('data', chunk => { output += chunk })
   const closed = new Promise((resolve, reject) => { child.on('close', resolve); child.on('error', reject) })
-  t.after(async () => { if (child.exitCode === null) child.kill(); await closed })
+  const stop = async () => { if (child.exitCode === null) child.kill(); await closed }
+  stops.push(stop)
   const deadline = Date.now() + 15000
   while (!/localhost:\d+/.test(output) && child.exitCode === null && Date.now() < deadline) await setTimeout(30)
   const port = output.match(/localhost:(\d+)/)?.[1]
   assert.ok(port && port !== '0', output)
-  return path => fetch(`http://127.0.0.1:${port}${path}`, { signal: AbortSignal.timeout(10000) })
+  const request = path => fetch(`http://127.0.0.1:${port}${path}`, { signal: AbortSignal.timeout(10000) })
+  request.pid = child.pid
+  return request
 }
 
+test('limpeza do dashboard encerra filhos mesmo após falha de asserção ou remoção', { timeout: 30000 }, async t => {
+  for (const failure of ['assertion', 'cleanup']) {
+    let cleanup
+    const context = { after: callback => { cleanup = callback } }
+    const original = new Error(`falha simulada de ${failure}`)
+    const home = dashboardHome(context, 'prumo-server-cleanup-', failure === 'cleanup'
+      ? () => { throw original }
+      : undefined)
+    t.after(async () => {
+      await cleanup().catch(() => {})
+      rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+    })
+    const request = await startDashboard(context, join(packageRoot, 'scripts/serve.mjs'), ['--global'], {
+      ...process.env, HOME: home, USERPROFILE: home, PRUMO_HOME: join(home, 'central'),
+    })
+    assert.equal((await request('/api/health')).status, 200)
+    if (failure === 'assertion') {
+      await assert.rejects(async () => {
+        try { throw original }
+        finally { await cleanup() }
+      }, error => error === original, 'o encerramento não substitui o diagnóstico da asserção')
+    } else {
+      await assert.rejects(cleanup(), error => error === original, 'a falha da remoção continua observável')
+    }
+    assert.throws(() => process.kill(request.pid, 0), error => error.code === 'ESRCH',
+      'nenhum servidor filho pode permanecer vivo depois da limpeza')
+  }
+})
+
+test('falha inesperada ao iniciar servidor produz diagnóstico e saída de erro', t => {
+  const home = mkdtempSync(join(realpathSync(tmpdir()), 'prumo-listen-failure-'))
+  t.after(() => { assert.equal(dirname(home), realpathSync(tmpdir())); rmSync(home, { recursive: true, force: true }) })
+  const result = spawnSync(process.execPath, ['--import', new URL('./fixtures/server-listen-failure.mjs', import.meta.url).href,
+    join(packageRoot, 'scripts/serve.mjs'), '--global', '--port', '0'], {
+    env: { ...process.env, HOME: home, USERPROFILE: home, PRUMO_HOME: join(home, 'central') },
+    encoding: 'utf8', windowsHide: true, timeout: 10000,
+  })
+  assert.ifError(result.error)
+  assert.equal(result.status, 1, result.stdout + result.stderr)
+  assert.match(result.stderr, /falha de inicialização simulada/)
+  const events = readDashboardEvents({ home })
+  assert.ok(events.some(event => event.event === 'server-error' && event.code === 'EIO'))
+  assert.ok(events.some(event => event.event === 'fatal'))
+})
+
+test('sincronização opcional recupera plano inválido sem perder estado nem parar o dashboard', { timeout: 30000 }, async t => {
+  const home = dashboardHome(t, 'prumo-sync-server-')
+  const root = join(home, 'central', 'project')
+  mkdirSync(root, { recursive: true })
+  const env = { ...process.env, HOME: home, USERPROFILE: home, PRUMO_ROOT: root, PRUMO_HOME: join(home, 'central'), PRUMO_LANG: 'en' }
+  const source = join(home, 'plan.json')
+  const plan = { name: 'Sincronização', tasks: [{ id: 'T1', title: 'Original', deps: [], validationMode: 'inspection',
+    inspectionReason: 'Plano de teste sem alteração executável', validation: 'Inspecionar o título' }] }
+  writeFileSync(source, JSON.stringify(plan))
+  execFileSync(process.execPath, [join(packageRoot, 'scripts/engine.mjs'), 'init', '--plan', source, '--run', 'sync'], { cwd: root, env, windowsHide: true })
+  const request = await startDashboard(t, join(packageRoot, 'scripts/serve.mjs'), ['--sync-plan'], env)
+  await setTimeout(1300)
+  const before = await (await request('/api/state')).json()
+  writeFileSync(source, '{')
+  await setTimeout(1300)
+  const failed = await (await request('/api/state')).json()
+  assert.equal(failed.tasks.T1.title, before.tasks.T1.title)
+  assert.equal((await request('/api/health')).status, 200)
+  plan.tasks[0].title = 'Atualizado'
+  writeFileSync(source, JSON.stringify(plan))
+  const deadline = Date.now() + 10000
+  let state
+  do {
+    await setTimeout(100)
+    state = await (await request('/api/state')).json()
+  } while (state.tasks.T1.title !== 'Atualizado' && Date.now() < deadline)
+  assert.equal(state.tasks.T1.title, 'Atualizado')
+  assert.equal(state.tasks.T1.state, before.tasks.T1.state)
+})
+
+test('histórico vazio, parcial e muitos planos mantêm paginação consistente', { timeout: 30000 }, async t => {
+  const home = dashboardHome(t, 'prumo-history-cache-')
+  const root = join(home, 'central', 'project'), graph = join(root, '.specs', 'graph')
+  for (let index = 0; index < 34; index++) {
+    const run = join(graph, `run${index}`)
+    mkdirSync(run, { recursive: true })
+    writeFileSync(join(run, 'state.json'), JSON.stringify({ plan: { name: `run${index}` }, tasks: {} }))
+    writeFileSync(join(run, 'events.ndjson'), index === 0 ? '' : JSON.stringify({ type: 'note', task: `T${index}` }) + '\n')
+  }
+  writeFileSync(join(graph, 'CURRENT'), 'run0')
+  const env = { ...process.env, HOME: home, USERPROFILE: home, PRUMO_ROOT: root, PRUMO_HOME: join(home, 'central') }
+  const request = await startDashboard(t, join(packageRoot, 'scripts/serve.mjs'), [], env)
+  const empty = await (await request('/api/events?run=run0&after=0')).json()
+  assert.equal(empty.complete, true)
+  assert.equal(empty.total, 0)
+  const file = join(graph, 'run0/events.ndjson')
+  writeFileSync(file, '{"type":"note"')
+  const partial = await (await request('/api/events?run=run0&after=0')).json()
+  assert.equal(partial.complete, false)
+  assert.equal(partial.total, 0)
+  writeFileSync(file, '{"type":"note","task":"T0"}\n')
+  const complete = await (await request('/api/events?run=run0&after=0')).json()
+  assert.equal(complete.complete, true)
+  assert.deepEqual(complete.events, [{ type: 'note', task: 'T0' }])
+  for (let index = 1; index < 34; index++) {
+    const page = await (await request(`/api/events?run=run${index}&after=0`)).json()
+    assert.deepEqual(page.events, [{ type: 'note', task: `T${index}` }])
+  }
+  const returned = await (await request('/api/events?run=run0&after=0')).json()
+  assert.deepEqual(returned.events, complete.events)
+})
+
 test('guia carrega apenas quadros locais e preserva dados existentes', async t => {
-  const home = mkdtempSync(join(realpathSync(tmpdir()), 'prumo-guia-'))
-  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
+  const home = dashboardHome(t, 'prumo-guia-')
   const graph = join(home, 'project', '.specs', 'graph')
   mkdirSync(join(graph, 'real'), { recursive: true })
   const statePath = join(graph, 'real', 'state.json')
@@ -56,8 +186,7 @@ test('guia carrega apenas quadros locais e preserva dados existentes', async t =
 })
 
 test('/api/about reports where the package lives, not the --global serving mode', async t => {
-  const home = mkdtempSync(join(realpathSync(tmpdir()), 'prumo-origin-'))
-  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
+  const home = dashboardHome(t, 'prumo-origin-')
   const env = { ...process.env, HOME: home, USERPROFILE: home, PRUMO_HOME: join(home, 'central'), PRUMO_LANG: 'en' }
 
   // the source checkout served with --global is still the repository
@@ -76,6 +205,24 @@ test('/api/about reports where the package lives, not the --global serving mode'
   assert.equal(npm.origin, 'global')
   assert.equal(npm.commit, undefined)
   assert.equal(npm.path, installed)
+})
+
+test('identidade informa ausência de metadados sem inventar versão ou revisão Git', async t => {
+  const home = dashboardHome(t, 'prumo-partial-server-')
+  const env = { ...process.env, HOME: home, USERPROFILE: home, PRUMO_HOME: join(home, 'central'), PRUMO_LANG: 'en' }
+  for (const origin of ['unknown', 'repository', 'installed']) {
+    const root = join(home, origin)
+    for (const entry of ['bin', 'lib', 'scripts', 'references', 'SKILL.md']) cpSync(join(packageRoot, entry), join(root, entry), { recursive: true })
+    if (origin === 'repository') mkdirSync(join(root, '.git'))
+    if (origin === 'installed') writeFileSync(join(root, '.prumo-install.json'), JSON.stringify({ version: '2.0.0' }))
+    else writeFileSync(join(root, 'package.json'), '{}')
+    const request = await startDashboard(t, join(root, 'scripts/serve.mjs'), ['--global'], env)
+    const about = await (await request('/api/about')).json()
+    assert.equal(about.origin, origin)
+    assert.equal(about.version, origin === 'installed' ? '2.0.0' : 'unknown')
+    assert.equal(about.commit, undefined)
+    assert.equal(about.contentId, null)
+  }
 })
 
 test('dashboard selects legacy and central data without writes or translation of user content', async t => {

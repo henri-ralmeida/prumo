@@ -2,6 +2,24 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.4.0 — 2026-10-02
+
+- Pare o dashboard comprovadamente pertencente à instalação e aguarde a liberação da porta antes de substituir a CLI ou os arquivos dos harnesses, evitando atualizar com o serviço antigo em execução.
+- Restaure o dashboard se a instalação falhar, preserve a preferência de inicialização e mantenha a atualização pendente para uma nova tentativa.
+- Preserve processos alheios e recuse a atualização quando não for possível confirmar ou encerrar o dashboard com segurança.
+- Reconheça argumentos equivalentes no Windows mesmo quando as aspas diferem, mantendo a comprovação do executável, do script e das opções antes de encerrar um processo.
+- Instale o pacote local verificado da CLI sem nova busca no registro e restaure o pacote anterior se a substituição falhar.
+- Restaure links gerenciados no Windows sem alterar os destinos e rejeite referências herdadas que não representam tarefas ou fases existentes.
+- Meça a cobertura com c8 e consolide caminhos exclusivos de Windows, Linux e macOS; acrescente contraprovas de recuperação, preservação e comandos públicos.
+- Rejeite valores de versão malformados nos pacotes, nos marcadores de instalação e na recuperação por backup, preservando os arquivos originais.
+- Preserve identificadores legítimos de tarefas nas respostas do dashboard sem tratar propriedades herdadas como tarefas.
+- Valide planos sincronizados pelo modo de planejamento da execução existente, recusando alterações incompatíveis sem modificar estado ou histórico.
+- Priorize o arquivo informado em sync-plan para sincronizar planos legados com nomes humanos e sem caminho de origem armazenado.
+- Mostre os indicadores de estado à direita, com animação sincronizada e espaçamento consistente nos planos e no cabeçalho ao vivo.
+- Mostre as tarefas visíveis e o total dentro do controle de filtros; mantenha os menus de planos e filtros mutuamente exclusivos.
+- Mantenha a navegação manual da pipeline na vertical e compartilhe os controles e visuais atualizados com o guia.
+- Rejeite relatórios vazios que apresentariam cobertura completa sem instruções medidas e preserve a identidade dos fontes ao combinar subprocessos.
+
 ## 2.3.1 — 2026-10-01
 
 - Return the valid-task summary to the board footer in the dashboard and guide while excluding skipped tasks.

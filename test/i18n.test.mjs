@@ -1,10 +1,53 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { Script, runInNewContext } from 'node:vm'
-import { messages, createTranslator, language, localizeDashboard } from '../scripts/i18n.mjs'
+import { messages, createTranslator, language, localizeDashboard, log, errorLog } from '../scripts/i18n.mjs'
 import { regionalLanguage } from '../scripts/region.mjs'
 import { dashboardWithCatalog } from '../scripts/build-dashboard.mjs'
+
+test('tradução conserva valores não textuais e placeholders sem parâmetro', () => {
+  const dictionary = { 'Command {0}: {1}': 'Comando {0}: {1}' }
+  const pt = createTranslator(dictionary, 'pt-BR')
+  const en = createTranslator(dictionary, 'en')
+  const value = { state: 'done' }
+  assert.equal(pt(value), value)
+  assert.equal(pt(null), null)
+  assert.equal(pt(3), 3)
+  assert.equal(pt('Uncatalogued {0}', 'valor'), 'Uncatalogued valor')
+  assert.equal(pt('Command {0}: {1}', 'verificar'), 'Comando verificar: {1}')
+  assert.equal(en('Command {0}: {1}', 'verificar'), 'Command verificar: {1}')
+})
+
+test('idioma inválido encerra inicialização com erro explícito e sem saída traduzida', () => {
+  const result = spawnSync(process.execPath, [fileURLToPath(new URL('../scripts/i18n.mjs', import.meta.url)), '--lang', 'fr'], {
+    encoding: 'utf8', windowsHide: true, timeout: 10000,
+  })
+  assert.equal(result.error, undefined)
+  assert.equal(result.status, 1)
+  assert.equal(result.stdout, '')
+  assert.match(result.stderr, /Language must be en or pt-BR/)
+})
+
+test('logs preservam dados não textuais e encaminham falhas para o canal de erro', () => {
+  const normal = [], errors = [], value = { state: 'done' }
+  const originalLog = console.log, originalError = console.error
+  try {
+    console.log = (...args) => normal.push(args)
+    console.error = (...args) => errors.push(args)
+    log('mensagem externa', value, 3)
+    errorLog('falha externa', value)
+  } finally {
+    console.log = originalLog
+    console.error = originalError
+  }
+  assert.deepEqual(normal, [['mensagem externa', value, 3]])
+  assert.deepEqual(errors, [['falha externa', value]])
+  assert.equal(normal[0][1], value)
+  assert.equal(errors[0][1], value)
+})
 
 test('language selection and interpolation preserve data and placeholders', () => {
   assert.equal(language(undefined, { LANG: 'en_US.UTF-8' }, () => 'pt-BR'), 'pt-BR')

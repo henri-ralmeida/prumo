@@ -4,6 +4,7 @@
 node_modules/
 *.tgz
 .test-output/
+/coverage/
 .npm-cache/
 /.ai-memory.toml
 /.serena/

@@ -58,7 +58,8 @@ test('dashboard root names keep the selected legacy workspace unambiguous', t =>
 })
 
 function isolatedCli(f) {
-  const env = { ...process.env, HOME: f.home, USERPROFILE: f.home, CLAUDE_CONFIG_DIR: join(f.home, '.claude'), CODEX_HOME: join(f.home, '.codex'), DSH_HOME: join(f.home, '.dsh'), PRUMO_HOME: join(f.home, 'data'), PRUMO_LANG: 'en' }
+  const env = { ...process.env, HOME: f.home, USERPROFILE: f.home, CLAUDE_CONFIG_DIR: join(f.home, '.claude'), CODEX_HOME: join(f.home, '.codex'), DSH_HOME: join(f.home, '.dsh'), PRUMO_HOME: join(f.home, 'data'), PRUMO_LANG: 'en',
+    NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${new URL('./fixtures/dashboard-absent.mjs', import.meta.url).href}`.trim() }
   for (const key of Object.keys(env)) if (/^path$/i.test(key) || ['GRAPH_ROOT', 'PRUMO_ROOT', 'GRAPH_FOREMAN_HOME'].includes(key)) delete env[key]
   const commands = join(f.home, 'test-commands')
   const commandLog = join(f.home, 'npm-commands')
@@ -70,25 +71,32 @@ function isolatedCli(f) {
   copyPrumoPackage(source, globalPackage)
   env.npm_config_prefix = prefix
   env.npm_config_cache = join(f.home, 'npm-cache')
-  env.PRUMO_TEST_NPM_ROOT = moduleRoot
-  env.PRUMO_TEST_NPM_PACKAGE = globalPackage
   env.PRUMO_TEST_PACKAGE_ROOT = source
   env.PRUMO_TEST_NPM_LOG = commandLog
   env.PRUMO_TEST_NPM_HOME = f.home
   put(npmStub, `
-import { appendFileSync, copyFileSync, mkdirSync, rmSync } from 'node:fs'
+import { appendFileSync, copyFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { isAbsolute, relative, resolve, dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 const args = process.argv.slice(2)
 appendFileSync(process.env.PRUMO_TEST_NPM_LOG, args.join(' ') + '\\n')
+const prefix = process.env.npm_config_prefix
+const moduleRoot = join(prefix, process.platform === 'win32' ? 'node_modules' : 'lib/node_modules')
 if (args[0] === 'root' && args.includes('--global')) {
-  process.stdout.write(process.env.PRUMO_TEST_NPM_ROOT + '\\n')
+  process.stdout.write(moduleRoot + '\\n')
+} else if (args[0] === 'pack') {
+  writeFileSync(join(process.cwd(), 'prumo-test-package.tgz'), '')
+  process.stdout.write('[{"filename":"prumo-test-package.tgz"}]')
 } else if (args[0] === 'install' && args.includes('--global')) {
   const root = resolve(process.env.PRUMO_TEST_NPM_HOME)
-  const target = resolve(process.env.PRUMO_TEST_NPM_PACKAGE)
+  const target = resolve(moduleRoot, '@henri-ralmeida', 'prumo')
   const source = resolve(process.env.PRUMO_TEST_PACKAGE_ROOT)
   const path = relative(root, target)
-  if (path.startsWith('..') || isAbsolute(path)) throw new Error('test npm target escaped its temporary home')
+  const validationPrefix = resolve(process.cwd(), '..', 'validation-prefix')
+  const temporaryPath = relative(validationPrefix, target)
+  if ((path.startsWith('..') || isAbsolute(path)) &&
+      (resolve(prefix) !== validationPrefix || temporaryPath.startsWith('..') || isAbsolute(temporaryPath)))
+    throw new Error('test npm target escaped its temporary home or validation prefix')
   if (process.env.PRUMO_TEST_NPM_FAIL === '1') process.exit(1)
   rmSync(target, { recursive: true, force: true })
   for (const name of (await import(pathToFileURL(join(source, 'scripts', 'package-content.mjs')).href)).packageDistributionFiles(source)) {
@@ -854,7 +862,8 @@ test('only an authentic postinstall child skips the recursive global CLI update'
   put(join(cli.globalPackage, 'package.json'), { name: '@henri-ralmeida/prumo', version: '0.0.1' })
   const markerOnly = cli(['install', '--all'], { PRUMO_POSTINSTALL_LIFECYCLE: '1' })
   assert.equal(markerOnly.status, 0, markerOnly.stdout + markerOnly.stderr)
-  assert.match(read(cli.commandLog), /install --global --ignore-scripts/)
+  assert.match(read(cli.commandLog), /pack --ignore-scripts/)
+  assert.match(read(cli.commandLog), /install --global --force --ignore-scripts --offline/)
   rmSync(cli.commandLog, { force: true })
   const lifecycle = cli(['install', '--all'], {
     PRUMO_POSTINSTALL_LIFECYCLE: '1', npm_lifecycle_event: 'postinstall', npm_package_json: join(source, 'package.json'),

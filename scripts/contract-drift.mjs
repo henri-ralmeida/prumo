@@ -60,7 +60,7 @@ export function contractDrift(state, { plan: suppliedPlan } = {}) {
   const approvedIds = new Set(approved.tasks.map(task => task.id))
   const tasks = []
   for (const task of approved.tasks) {
-    const current = state.tasks?.[task.id]
+    const current = Object.hasOwn(state.tasks ?? {}, task.id) ? state.tasks[task.id] : undefined
     if (!current) {
       tasks.push({ task: task.id, fields: ['notSynchronized'] })
       continue

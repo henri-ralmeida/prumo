@@ -38,7 +38,7 @@ export function createTranslator(dictionary, lang) {
     for (const { pattern, slots, translated } of templates) {
       const match = pattern.exec(value)
       // A slot never absorbs the "[prumo] " log prefix; that prefix is stripped below and the rest retried.
-      if (match && !match.slice(1).some(part => /^\s*\[prumo\] /.test(part))) return translated.replace(/\{(\d+)\}/g, (all, index) => match[slots.indexOf(Number(index)) + 1] ?? all)
+      if (match && !match.slice(1).some(part => /^\s*\[prumo\] /.test(part))) return translated.replace(/\{(\d+)\}/g, (_, index) => match[slots.indexOf(Number(index)) + 1])
     }
     const prefix = /^(\s*\[prumo\] )(ERROR: )?([\s\S]*)$/.exec(value)
     if (prefix) return prefix[1] + (prefix[2] ? 'ERRO: ' : '') + translate(prefix[3])

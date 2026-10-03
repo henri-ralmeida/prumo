@@ -245,7 +245,6 @@ function selectedGraph(url) {
 let lastPlanSignature = null
 let planSyncing = false
 function syncPlanIfChanged() {
-  if (!SYNC_PLAN) return
   const run = currentRun()
   if (!run) return
   const statePath = join(GRAPH_DIR, run, 'state.json')
@@ -287,12 +286,16 @@ function phaseTargets(state, phaseId) {
     !(task.taskPlan?.phaseId === phaseId && hasCurrentTaskPlan(state, task)))
 }
 
+function taskById(state, id) {
+  return Object.hasOwn(state.tasks, id) ? state.tasks[id] : undefined
+}
+
 function phasePlanningBlockers(state, phaseId) {
   const blockers = new Set()
   for (const task of Object.values(state.tasks).filter(task => task.phase === phaseId)) {
     if (['done', 'skipped'].includes(task.state) || !usesCurrentPlanning(state, task)) continue
     for (const id of task.deps ?? []) {
-      const dep = state.tasks[id]
+      const dep = taskById(state, id)
       if (dep?.phase !== phaseId && !['done', 'skipped'].includes(dep?.state)) {
         blockers.add(dep?.phase ?? id)
       }
@@ -308,7 +311,7 @@ function phaseContext(state, phaseId, targets = phaseTargets(state, phaseId)) {
 
 function currentPhaseDiscussion(state, phase) {
   const round = phase?.discussionAttempts?.at(-1)
-  const targets = round?.targets?.map(id => state.tasks[id]).filter(Boolean)
+  const targets = round?.targets?.map(id => taskById(state, id)).filter(Boolean)
   if (round?.result !== 'discussed' || targets?.length !== round.targets.length ||
       !phaseTargets(state, phase.id).every(task => round.targets.includes(task.id))) return false
   const context = phaseContext(state, phase.id, targets)
@@ -320,7 +323,7 @@ function currentPhaseDiscussion(state, phase) {
 function currentPhaseDiscussionSkip(state, phase) {
   const decision = phase?.discussionSkips?.at(-1)
   if (decision?.decision !== 'skipped' || decision.confirmedByUser !== true) return null
-  const targets = decision.targets?.map(id => state.tasks[id]).filter(Boolean)
+  const targets = decision.targets?.map(id => taskById(state, id)).filter(Boolean)
   return targets?.length === decision.targets.length &&
     phaseTargets(state, phase.id).every(task => decision.targets.includes(task.id)) &&
     decision.context === phaseContext(state, phase.id, targets) ? decision : null
@@ -341,14 +344,14 @@ function currentTaskDiscussionDecision(state, task) {
     decision.scope === phasePlanningContext(state, task)
 }
 
-function currentPhasePlanning(state, phase, round = phase?.planningAttempts?.at(-1)) {
+function currentPhasePlanning(state, phase, round) {
   if (!round || round.endedAt || !Array.isArray(round.targets)) return false
   const discussion = currentPhaseDiscussionDecision(state, phase)
-  const targets = round.targets.map(id => state.tasks[id]).filter(Boolean)
+  const targets = round.targets.map(id => taskById(state, id)).filter(Boolean)
   const liveTargets = phaseTargets(state, phase.id).map(task => task.id).sort()
   return discussion?.id === round.discussionRoundId && discussion.digest === (round.discussionDigest ?? round.discoveryDigest) &&
     targets.length === round.targets.length && JSON.stringify([...round.targets].sort()) === JSON.stringify(liveTargets) &&
-    round.context === phaseContext(state, phase.id, discussion.targets.map(id => state.tasks[id]))
+    round.context === phaseContext(state, phase.id, discussion.targets.map(id => taskById(state, id)))
 }
 
 function currentDiscussion(state, task) {
@@ -360,7 +363,7 @@ function currentDiscussion(state, task) {
 }
 
 function derive(state) {
-  const out = {}
+  const out = Object.create(null)
   const migrationPending = !['phase', 'task'].includes(state.plan?.planningMode)
   for (const [id, t] of Object.entries(state.tasks)) {
     let effective = t.state
@@ -369,7 +372,7 @@ function derive(state) {
     const phase = state.phaseWorkflows?.[t.phase]
     if (t.state === 'pending') {
       blockedBy = t.deps.filter((d) => {
-        const dep = state.tasks[d]
+        const dep = taskById(state, d)
         return !dep || (dep.state !== 'done' && dep.state !== 'skipped')
       })
       const phaseAdopted = !(state.legacyPhaseAdoption && !phase?.adoptedLegacy)
@@ -398,7 +401,7 @@ function derive(state) {
       phase?.state === 'discussing' ? 'phase_discussing' : phase?.state === 'planning' ? 'phase_planning' : 'awaiting_phase_plan'
     let inputStatus
     if (t.taskPlan?.phaseId && t.taskPlan.unresolvedInputs?.length) {
-      const entries = t.taskPlan.unresolvedInputs.map(input => ({ input, task: state.tasks[input.task] }))
+      const entries = t.taskPlan.unresolvedInputs.map(input => ({ input, task: taskById(state, input.task) }))
       const unresolved = entries.filter(({ task }) => !task || !['done', 'skipped'].includes(task.state))
       const inputs = entries.map(({ task }) => task)
       inputStatus = unresolved.length ?

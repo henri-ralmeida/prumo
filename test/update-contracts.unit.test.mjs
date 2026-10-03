@@ -17,6 +17,15 @@ for (const field of ['cwd', 'projects']) test(`update rejeita NUL em ${field} an
   const path = resolve('projeto') + '\0oculto'
   assert.throws(() => updateRequest(JSON.stringify({ ...request(), [field]: field === 'cwd' ? path : [path] })), /Invalid Prumo update request/)
 })
+for (const field of ['sourceVersion', 'globalVersion']) for (const value of [['2.4.0'], [['2.4.0']]]) test(`update recusa versão array em ${field}: ${JSON.stringify(value)}`, () => {
+  assert.throws(() => updateRequest(JSON.stringify({ ...request(), [field]: value })), /Invalid Prumo update request/)
+})
+test('npm normaliza lista plana de versões e rejeita versão selecionada como array aninhado', () => {
+  const run = value => () => ({ status: 0, stdout: JSON.stringify(value) })
+  assert.equal(npmLatestVersion({ run: run(['1.0', '2.4.0']) }), '2.4.0')
+  for (const value of [[['2.4.0']], [['2.3.0'], ['2.4.0']]])
+    assert.throws(() => npmLatestVersion({ run: run(value) }), /npm returned an invalid Prumo version/)
+})
 for (const value of [null, {}, [], [null], '', 'next', '1.2', '1.2.3-beta']) test(`registro npm inválido ${JSON.stringify(value)} não seleciona versão`, () => {
   assert.throws(() => npmLatestVersion({ run: () => ({ status: 0, stdout: JSON.stringify(value) }) }))
 })

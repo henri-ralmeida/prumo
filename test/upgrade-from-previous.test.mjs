@@ -74,9 +74,11 @@ function runScenario(from, archive, env) {
 
 const tags = releaseTags()
 const skip = !tags?.length ? 'release tags are unavailable; fetch tags (git fetch --tags) to run this matrix' : false
+const selected = tags?.length ? selectedTags(tags) : []
+// Cada cenário mantém seu próprio prazo; a matriz precisa comportar todos os lotes e o empacotamento.
+const matrixTimeout = Math.ceil(selected.length / parallel) * scenarioTimeout + (selected.length + 1) * 120000
 
-test('every selected tagged release upgrades to this candidate and keeps its runs usable', { skip, timeout: 3600000 }, async () => {
-  const selected = selectedTags(tags)
+test('every selected tagged release upgrades to this candidate and keeps its runs usable', { skip, timeout: matrixTimeout }, async () => {
   assert.ok(selected.length > 0, 'no release tags selected')
   const base = realpathSync(tmpdir())
   const work = mkdtempSync(join(base, 'prumo-upgrade-matrix-'))

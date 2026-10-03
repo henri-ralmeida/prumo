@@ -185,14 +185,13 @@ function dependencyMap(tasks) {
 }
 
 function reaches(byId, from, to, seen = new Set()) {
-  if (from === to) return false
   if (seen.has(from)) return false
   seen.add(from)
   return (byId[from]?.deps ?? []).some(dep => dep === to || reaches(byId, dep, to, seen))
 }
 
 function planTaskMap(tasks) {
-  return Object.fromEntries((tasks ?? []).map(task => [task.id, {
+  return Object.fromEntries(tasks.map(task => [task.id, {
     ...task,
     deps: Array.isArray(task.deps) ? task.deps : [],
   }]))

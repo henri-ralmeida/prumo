@@ -32,7 +32,7 @@ test('somente dashboard com preload e token do cenário encerra o próprio proce
   await close(probe)
   const child = spawn(process.execPath, ['-e',
     "require('node:http').createServer((request, response) => { response.end('ativo') }).listen(4949, '127.0.0.1', () => console.log('pronto'))"], {
-    env: { ...process.env, NODE_OPTIONS: `--import="${new URL('./fixtures/dashboard-port.mjs', import.meta.url).href}"`,
+    env: { ...process.env, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import="${new URL('./fixtures/dashboard-port.mjs', import.meta.url).href}"`.trim(),
       PRUMO_TEST_DASHBOARD_PORT: String(port), PRUMO_TEST_DASHBOARD_SHUTDOWN_TOKEN: 'token-do-cenario' },
     stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
   })

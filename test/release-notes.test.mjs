@@ -5,13 +5,21 @@ import { releaseHistory, releaseNotes } from '../lib/release-notes.mjs'
 
 const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 
+test('histórico ignora versões de tipos inválidos sem modificar os registros recebidos', () => {
+  const invalid = [null, 42, true, ['2.3.1'], { version: '2.3.1' }, 'invalid']
+  const before = structuredClone(invalid)
+  assert.deepEqual(releaseHistory(invalid, version), [{ version, sections: releaseNotes(version) }])
+  assert.deepEqual(releaseHistory([...invalid, '2.3.0'], version), releaseHistory(['2.3.0'], version))
+  assert.deepEqual(invalid, before)
+})
+
 test('current release has concise English update highlights with descriptive subtitles', () => {
   const notes = releaseNotes(version)
   assert.deepEqual(notes.map(section => section.title), [
-    'Fixed — Dashboard summary placement',
-    'Fixed — Windows dashboard startup',
-    'Improved — Cross-platform verification',
-    'Improved — Dashboard performance',
+    'Fixed — Dashboard shutdown before update',
+    'Fixed — Installation and task identity',
+    'Improved — Behavioral verification',
+    'Improved — Dashboard filters and guide',
   ])
   assert.deepEqual(releaseNotes('2.1.1').map(section => section.title), ['Fixed — Dashboard restart after update'])
   assert.deepEqual(releaseNotes('2.1.0').map(section => section.title), [

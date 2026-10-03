@@ -30,6 +30,7 @@ export const dashboardNeedsRepair = () => false
 export const dashboardStatus = async () => result('status')
 export const enableDashboard = async () => result('enable')
 export const disableDashboard = async () => result('disable')
+export const stopDashboardForUpdate = async () => result('stop')
 export const restartDashboard = async () => result('restart')
 export const runDashboardForeground = () => result('foreground').code
 export const readDashboardEvents = () => result('logs').events

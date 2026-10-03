@@ -63,7 +63,6 @@ export function globalGraphRoots(env = process.env, home = homedir()) {
   const paths = new Map()
   const key = path => process.platform === 'win32' ? path.toLowerCase() : path
   const add = path => {
-    if (typeof path !== 'string' || !isAbsolute(path)) return
     path = resolve(path)
     if (existsSync(join(path, '.specs', 'graph'))) paths.set(key(path), path)
   }

@@ -6,9 +6,9 @@ import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { resolve, join, dirname } from 'node:path'
 import { planInstall, applyInstall, restoreInstall, installationStatus, discoverInstallations, detectHarnesses, reconcileDashboardInstall, readInstallationMarker, installedPoFirstLanguage, inspectInstallation } from '../lib/install.mjs'
-import { assertUpdateVersion, ensureGlobalCliContent, globalCliContentCurrent, globalCliState, launchUpdate, reconcileDashboardUpdate, updateGlobalCli, updateRequest } from '../lib/update.mjs'
+import { assertUpdateVersion, ensureGlobalCliContent, globalCliContentCurrent, globalCliState, launchUpdate, reconcileDashboardUpdate, updateGlobalCliFromPackage, updateRequest } from '../lib/update.mjs'
 import { releaseHistory } from '../lib/release-notes.mjs'
-import { dashboardNeedsRepair, dashboardStatus, disableDashboard, enableDashboard, readDashboardEvents, runDashboardForeground } from '../lib/autostart.mjs'
+import { dashboardNeedsRepair, dashboardStatus, disableDashboard, enableDashboard, readDashboardEvents, runDashboardForeground, stopDashboardForUpdate } from '../lib/autostart.mjs'
 import { selectHarnesses } from '../lib/prompt.mjs'
 import { assertCliOptions } from '../lib/cli-args.mjs'
 import { language, createTranslator, messages } from '../scripts/i18n.mjs'
@@ -70,11 +70,9 @@ function runInstall(options, { command = 'install', dryRun = false, quiet = fals
     for (const data of plan.data) print(data.action === 'migrate' ? t('Migrate existing data: {0} -> {1}', data.source, data.root) : t('Existing data stays in place: {0}', data.root))
     for (const warning of plan.warnings) print(`${t('pending activation')}: ${t(warning)}`)
     const result = applyInstall(plan, { dryRun, onProgress })
-    if (result.backup) print(t('Backup: {0}', result.backup))
     for (const group of result.groups) { print(`${group.name}: ${t(group.status)}`); for (const error of group.errors) print(t(error)) }
     if (result.groups.some(group => group.status === 'conflict')) process.exitCode = 2
-    if (dryRun) print('Dry run: no files changed')
-    else print('Open a new session to load Prumo and PO First')
+    print('Dry run: no files changed')
   } else if (command === 'install') {
     const result = applyInstall(plan, { dryRun, onProgress })
     for (const group of result.groups.filter(group => group.status === 'conflict')) {
@@ -146,7 +144,7 @@ try {
     print(`Prumo ${version} — graph-foreman + PO First\n\nprumo install [--all | --claude|--kiro|--codex|--dsh] [--lang en|pt-BR] [--dry-run] [--project <path>]\nprumo update [--dry-run] [--lang en|pt-BR] [--project <path>]\nprumo status [--verify-install] [--project <path>]\nprumo migrate [--check] [--run <name>]\nprumo doctor --claude|--kiro|--codex|--dsh [--lang en|pt-BR] [--project <path>]\nprumo dashboard [enable|disable|status|logs]\nprumo restore <backup>\n`)
     print('Install opens a selection of detected environments; --all selects all without prompting')
   } else if (positionals[0] === 'status') {
-    if (positionals.length !== 1 || ['claude', 'kiro', 'codex', 'dsh', 'all', 'dry-run'].some(name => values[name]) || values.lang || values.check || values.run) {
+    if (positionals.length !== 1) {
       throw new Error('Status accepts only --verify-install and --project <path>')
     }
     const { reports, errors } = registeredReports({ projects: values.project ?? [] })
@@ -160,7 +158,7 @@ try {
       if (values['verify-install'] && (errors.length || reports.some(report => !report.filesCurrent))) process.exitCode = 2
     }
   } else if (positionals[0] === 'dashboard') {
-    if (positionals.length > 2 || ['claude', 'kiro', 'codex', 'dsh', 'all'].some(name => values[name]) || values.lang || values['dry-run'] || values.project?.length) throw new Error('Dashboard accepts only enable, disable, status or logs')
+    if (positionals.length > 2) throw new Error('Dashboard accepts only enable, disable, status or logs')
     const action = positionals[1]
     if (!action) process.exitCode = runDashboardForeground()
     else if (action === 'logs') {
@@ -182,7 +180,7 @@ try {
       if (result.conflict || 'ok' in result && !result.ok) process.exitCode = 2
     }
   } else if (['update', '_update'].includes(positionals[0])) {
-    if (positionals.length !== 1 || ['claude', 'kiro', 'codex', 'dsh', 'all'].some(name => values[name])) throw new Error('Update automatically selects installed environments; do not select a harness')
+    if (positionals.length !== 1) throw new Error('Update automatically selects installed environments; do not select a harness')
     if (positionals[0] === 'update') {
       const pendingUpdate = existsSync(join(homedir(), '.local/share/prumo/update-pending.json'))
       const request = { dryRun: values['dry-run'] ?? false, lang: values.lang, projects: (values.project ?? []).map(path => resolve(path)), cwd: process.cwd(), updateCli: true, sourceVersion: version, globalVersion: globalCliState(packageRoot).version, pendingUpdate }
@@ -200,83 +198,106 @@ try {
       assertUpdateVersion(request.sourceVersion, version)
       const quiet = !request.dryRun
       const progress = progressUi(quiet)
-      const previousVersions = [globalCliState(packageRoot).version]
+      const previousGlobal = globalCliState(packageRoot)
+      const previousVersions = [previousGlobal.version]
       const dashboardBefore = await dashboardStatus()
       const installed = discoverInstallations({ ...request, onError(error) {
         console.error(`[prumo] ${error.message}`)
         process.exitCode = 2
       } })
       const checkpoint = join(homedir(), '.local/share/prumo/update-pending.json')
-      try { previousVersions.push(...JSON.parse(readFileSync(checkpoint, 'utf8')).fromVersions) } catch { /* no unfinished update */ }
-      for (const entry of installed) for (const root of entry.roots) {
-        previousVersions.push(readInstallationMarker(root, { harness: entry.harness }).version)
-      }
-      if (!request.dryRun) {
-        mkdirSync(dirname(checkpoint), { recursive: true })
-        const temporary = `${checkpoint}.${process.pid}.tmp`
-        writeFileSync(temporary, JSON.stringify({ fromVersions: [...new Set(previousVersions.filter(value => typeof value === 'string'))], toVersion: version }))
-        renameSync(temporary, checkpoint)
-      }
-      const reported = new Set()
-      progress.update(10, t('Preparing Prumo update'))
-      if (request.updateCli) {
-        if (request.dryRun) print(t('Would update global Prumo CLI to {0}', version))
-        else {
-          progress.update(30, t('Updating Prumo CLI'))
-          if (await updateGlobalCli(version) !== 0) throw new Error('Global Prumo CLI update failed')
+      const stopped = request.dryRun || dashboardBefore.process === 'stopped'
+        ? { ok: true, stopped: false } : await stopDashboardForUpdate({ packageRoot: previousGlobal.packageRoot ?? packageRoot })
+      if (!stopped.ok) throw new Error(t('Dashboard restart failed: {0}', t(stopped.error)))
+      let dashboardRestored = false
+      try {
+        try { previousVersions.push(...JSON.parse(readFileSync(checkpoint, 'utf8')).fromVersions) } catch { /* no unfinished update */ }
+        for (const entry of installed) for (const root of entry.roots) {
+          previousVersions.push(readInstallationMarker(root, { harness: entry.harness }).version)
         }
-      }
-      if (!installed.length) print('No Prumo installations found; install an environment first')
-      for (const [index, entry] of installed.entries()) {
-        try {
-          const variants = new Map()
-          let firstSavedLanguage
-          for (const root of entry.roots) {
-            const marker = readInstallationMarker(root, { harness: entry.harness })
-            previousVersions.push(marker.version)
-            const saved = marker.lang
-            const lang = request.lang ?? (['en', 'pt-BR'].includes(saved) ? saved : undefined)
-            if (firstSavedLanguage === undefined && ['en', 'pt-BR'].includes(saved)) firstSavedLanguage = saved
-            if (!variants.has(lang)) variants.set(lang, [])
-            variants.get(lang).push(root)
+        if (!request.dryRun) {
+          mkdirSync(dirname(checkpoint), { recursive: true })
+          const temporary = `${checkpoint}.${process.pid}.tmp`
+          writeFileSync(temporary, JSON.stringify({ fromVersions: [...new Set(previousVersions.filter(value => typeof value === 'string'))], toVersion: version }))
+          renameSync(temporary, checkpoint)
+        }
+        const reported = new Set()
+        progress.update(10, t('Preparing Prumo update'))
+        if (request.updateCli) {
+          if (request.dryRun) print(t('Would update global Prumo CLI to {0}', version))
+          else {
+            progress.update(30, t('Updating Prumo CLI'))
+            try {
+              await updateGlobalCliFromPackage(packageRoot, { lang: request.lang ?? lang })
+            } catch (error) {
+              throw new Error(`Global Prumo CLI update failed: ${error.message}`, { cause: error })
+            }
           }
-          const poFirstLang = request.lang ?? installedPoFirstLanguage(entry.harness, entry.config) ?? firstSavedLanguage ?? language(undefined)
-          for (const [lang, roots] of variants) {
-            t = createTranslator(messages, language(lang))
-            if (!quiet) print(t('Updating {0} with Prumo {1}', entry.harness, version))
-            else progress.update(45 + Math.round(45 * (index + 1) / Math.max(installed.length, 1)), t('Updating {0}', entry.harness))
-            const percent = 45 + Math.round(45 * (index + 1) / Math.max(installed.length, 1))
-            runInstall({ harness: entry.harness, configRoot: entry.config, skillRoots: roots, onlyInstalled: true, cwd: request.cwd, projects: entry.projects, lang, poFirstLang }, { dryRun: request.dryRun, quiet, reported,
-              onProgress: event => progress.update(percent, t('Migrating workspace {0}', event.name)) })
-          }
-        } catch (error) { console.error(`[prumo] ${t(error.message)}`); process.exitCode = 2 }
-      }
-      const globalPackage = globalCliState(packageRoot).packageRoot ?? packageRoot
-      const dashboard = await reconcileDashboardUpdate({ dryRun: request.dryRun, before: dashboardBefore, lang: request.lang, dashboardOptions: { packageRoot: globalPackage } })
-      if (dashboard.action === 'enable' && request.dryRun) print('Would enable and start the Prumo dashboard')
-      if (dashboard.action === 'restart' && request.dryRun) print('Would restart the enabled Prumo dashboard')
-      else if (dashboard.action === 'disabled' && request.dryRun) print('Dashboard remains disabled by user preference')
-      if (!dashboard.ok) {
-        const detail = dashboard.status.error ?? (dashboard.status.conflict ? `port ${dashboard.status.port} is used by another process` : undefined)
-        console.error(`[prumo] ${detail ? t('Dashboard restart failed: {0}', t(detail)) : t('Dashboard restart failed')}`)
-        process.exitCode = 2
-      }
-      if (quiet && !process.exitCode) {
-        t = createTranslator(messages, lang)
-        progress.success(t('Prumo updated successfully'), version)
-        printReleaseNotes(previousVersions, version)
-        rmSync(checkpoint, { force: true })
-      } else {
-        progress.clear()
-        if (quiet) {
-          print('Update incomplete; resolve the reported issues and run prumo update again')
-          print(`Prumo v${globalCliState(packageRoot).version ?? version}`)
+        }
+        if (!installed.length) print('No Prumo installations found; install an environment first')
+        for (const [index, entry] of installed.entries()) {
+          try {
+            const variants = new Map()
+            let firstSavedLanguage
+            for (const root of entry.roots) {
+              const marker = readInstallationMarker(root, { harness: entry.harness })
+              previousVersions.push(marker.version)
+              const saved = marker.lang
+              const lang = request.lang ?? (['en', 'pt-BR'].includes(saved) ? saved : undefined)
+              if (firstSavedLanguage === undefined && ['en', 'pt-BR'].includes(saved)) firstSavedLanguage = saved
+              if (!variants.has(lang)) variants.set(lang, [])
+              variants.get(lang).push(root)
+            }
+            const poFirstLang = request.lang ?? installedPoFirstLanguage(entry.harness, entry.config) ?? firstSavedLanguage ?? language(undefined)
+            for (const [lang, roots] of variants) {
+              t = createTranslator(messages, language(lang))
+              if (!quiet) print(t('Updating {0} with Prumo {1}', entry.harness, version))
+              else progress.update(45 + Math.round(45 * (index + 1) / Math.max(installed.length, 1)), t('Updating {0}', entry.harness))
+              const percent = 45 + Math.round(45 * (index + 1) / Math.max(installed.length, 1))
+              runInstall({ harness: entry.harness, configRoot: entry.config, skillRoots: roots, onlyInstalled: true, cwd: request.cwd, projects: entry.projects, lang, poFirstLang }, { dryRun: request.dryRun, quiet, reported,
+                onProgress: event => progress.update(percent, t('Migrating workspace {0}', event.name)) })
+            }
+          } catch (error) { console.error(`[prumo] ${t(error.message)}`); process.exitCode = 2 }
+        }
+        const globalPackage = globalCliState(packageRoot).packageRoot ?? packageRoot
+        const dashboard = await reconcileDashboardUpdate({ dryRun: request.dryRun, before: dashboardBefore, lang: request.lang, dashboardOptions: { packageRoot: globalPackage } })
+        dashboardRestored = true
+        if (dashboard.action === 'enable' && request.dryRun) print('Would enable and start the Prumo dashboard')
+        if (dashboard.action === 'restart' && request.dryRun) print('Would restart the enabled Prumo dashboard')
+        else if (dashboard.action === 'disabled' && request.dryRun) print('Dashboard remains disabled by user preference')
+        if (!dashboard.ok) {
+          const detail = dashboard.status.error ?? (dashboard.status.conflict ? `port ${dashboard.status.port} is used by another process` : undefined)
+          console.error(`[prumo] ${detail ? t('Dashboard restart failed: {0}', t(detail)) : t('Dashboard restart failed')}`)
+          process.exitCode = 2
+        }
+        if (quiet && !process.exitCode) {
+          t = createTranslator(messages, lang)
+          progress.success(t('Prumo updated successfully'), version)
           printReleaseNotes(previousVersions, version)
+          rmSync(checkpoint, { force: true })
+        } else {
+          progress.clear()
+          if (quiet) {
+            print('Update incomplete; resolve the reported issues and run prumo update again')
+            print(`Prumo v${globalCliState(packageRoot).version ?? version}`)
+            printReleaseNotes(previousVersions, version)
+          }
+        }
+      } finally {
+        if (stopped.stopped && !dashboardRestored) {
+          try {
+            const globalPackage = globalCliState(packageRoot).packageRoot ?? packageRoot
+            const restored = await reconcileDashboardUpdate({ before: dashboardBefore, dashboardOptions: { packageRoot: globalPackage } })
+            if (!restored.ok) throw new Error(restored.status.error ?? restored.status.process)
+          } catch (error) {
+            console.error(`[prumo] ${t('Dashboard restart failed: {0}', t(error.message))}`)
+            process.exitCode = 2
+          }
         }
       }
     }
   } else if (positionals[0] === 'migrate') {
-    if (positionals.length !== 1 || ['claude', 'kiro', 'codex', 'dsh', 'all'].some(name => values[name]) || values.lang || values['dry-run'] || values.project?.length) throw new Error('Migrate accepts only --check and --run <name>')
+    if (positionals.length !== 1) throw new Error('Migrate accepts only --check and --run <name>')
     const engineArgs = [fileURLToPath(new URL('../scripts/engine.mjs', import.meta.url)), 'migrate']
     if (values.check) engineArgs.push('--check')
     if (values.run) engineArgs.push('--run', values.run)
@@ -333,11 +354,12 @@ try {
       if (dryRun) print(t('Would install global Prumo CLI {0}', version))
       else {
         progress.update(30, t('Installing Prumo CLI'))
-        if (await updateGlobalCli(version) !== 0) {
+        try {
+          global = await updateGlobalCliFromPackage(packageRoot, { lang: language() })
+        } catch (error) {
           progress.clear()
-          throw new Error('Global Prumo CLI installation failed')
+          throw new Error(`Global Prumo CLI installation failed: ${error.message}`, { cause: error })
         }
-        global = globalCliState(packageRoot)
       }
     }
     if (command === 'install' && !lifecycleInstall) {
@@ -391,7 +413,7 @@ try {
         const identities = [...new Set(sameLanguage.map(report => report.contentId))]
         if (identities.some(identity => !identity)) print(t('Some registered {0} installations have unknown content IDs', doctorLang))
         else if (identities.length > 1) print(t('Registered {0} installations have different contents: {1}', doctorLang,
-          sameLanguage.map(report => `${report.harness}=${report.contentId ?? t('unknown')}`).join(', ')))
+          sameLanguage.map(report => `${report.harness}=${report.contentId}`).join(', ')))
         else if (identities.length === 1) print(t('Registered {0} installations share content {1}', doctorLang, identities[0]))
       }
       if (dashboardNeedsRepair(dashboard)) process.exitCode = 2

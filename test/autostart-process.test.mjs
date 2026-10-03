@@ -4,10 +4,10 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { createServer } from 'node:net'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { setTimeout } from 'node:timers/promises'
-import { enableDashboard, restartDashboard, disableDashboard } from '../lib/autostart.mjs'
+import { enableDashboard, restartDashboard, disableDashboard, stopDashboardForUpdate } from '../lib/autostart.mjs'
 import { createTranslator, messages } from '../scripts/i18n.mjs'
 
 test('Windows Startup launches and restarts a real isolated dashboard process', { skip: process.platform !== 'win32', timeout: 60000 }, async t => {
@@ -20,7 +20,8 @@ test('Windows Startup launches and restarts a real isolated dashboard process', 
   // Keep the production command line for ownership checks, but serve on an isolated port.
   writeFileSync(script, `process.argv[process.argv.indexOf('--port') + 1] = '${port}';\nawait import(${JSON.stringify(new URL('../scripts/serve.mjs', import.meta.url).href)});\n`)
   const env = { ...process.env, HOME: home, USERPROFILE: home, PRUMO_HOME: join(home, 'data'),
-    APPDATA: join(home, 'AppData/Roaming'), PRUMO_ROOT: '', GRAPH_ROOT: '', GRAPH_FOREMAN_HOME: '', PRUMO_LANG: 'en' }
+    APPDATA: join(home, 'AppData/Roaming'), CODEX_HOME: join(home, '.codex'), DSH_HOME: join(home, '.dsh'),
+    CLAUDE_CONFIG_DIR: join(home, '.claude'), KIRO_HOME: join(home, '.kiro'), PRUMO_ROOT: '', GRAPH_ROOT: '', GRAPH_FOREMAN_HOME: '', PRUMO_LANG: 'en' }
   // Exercise the default launcher with an existing fallback registration, no injected exec.
   const preferencePath = join(home, '.local/share/prumo/dashboard.json')
   mkdirSync(join(home, '.local/share/prumo'), { recursive: true })
@@ -132,7 +133,8 @@ async function isolatedDashboard(t) {
     `await import(pathToFileURL(readFileSync(${JSON.stringify(target)}, 'utf8').trim()).href)`, ''].join('\n'))
   writeFileSync(target, join(repo, 'scripts/serve.mjs'))
   const env = { ...process.env, HOME: home, USERPROFILE: home, PRUMO_HOME: join(home, 'data'),
-    APPDATA: join(home, 'AppData/Roaming'), PRUMO_ROOT: '', GRAPH_ROOT: '', GRAPH_FOREMAN_HOME: '', PRUMO_LANG: 'en' }
+    APPDATA: join(home, 'AppData/Roaming'), CODEX_HOME: join(home, '.codex'), DSH_HOME: join(home, '.dsh'),
+    CLAUDE_CONFIG_DIR: join(home, '.claude'), KIRO_HOME: join(home, '.kiro'), PRUMO_ROOT: '', GRAPH_ROOT: '', GRAPH_FOREMAN_HOME: '', PRUMO_LANG: 'en' }
   const pids = new Set(), killed = [], children = []
   const redirect = async (url, init) => {
     const response = await fetch(String(url).replace(':4949/', `:${port}/`), init)
@@ -175,7 +177,7 @@ function previousRelease(home) {
   return extract.status === 0 ? join(home, 'previous') : null
 }
 
-for (const recorded of ['missing', 'stale']) {
+for (const recorded of ['missing', 'stale', 'missing identity']) {
   test(`update restart replaces the running Prumo dashboard when the recorded pid is ${recorded}`, { skip: process.platform !== 'win32', timeout: 120000 }, async t => {
     const f = await isolatedDashboard(t)
     const previous = previousRelease(f.home)
@@ -186,7 +188,14 @@ for (const recorded of ['missing', 'stale']) {
     if (previous) assert.equal(before.version, '2.0.0')
     // A stale pid that now belongs to an unrelated live process must not be stopped either.
     const unrelated = f.start(['-e', 'setInterval(() => {}, 1000)'])
-    f.write({ enabled: true, mechanism: 'windows-startup', ...(recorded === 'stale' && { pid: unrelated.pid }), node: process.execPath, script: f.script })
+    f.write({ enabled: true, mechanism: 'windows-startup', ...(recorded === 'stale' && { pid: unrelated.pid }),
+      ...(recorded !== 'missing identity' && { node: process.execPath, script: f.script }) })
+    const savedPreference = f.preference()
+    const paused = await stopDashboardForUpdate(f.options)
+    assert.equal(paused.ok, true, JSON.stringify(paused))
+    assert.equal(await waitFor(() => !alive(old.pid)), true)
+    assert.equal(await f.health(), null, 'a porta esta livre antes de substituir a instalacao')
+    assert.deepEqual(f.preference(), savedPreference, 'parar nao desabilita o dashboard escolhido pelo usuario')
     writeFileSync(f.target, join(repo, 'scripts/serve.mjs'))
     const restarted = await restartDashboard(f.options)
     assert.equal(restarted.ok, true, JSON.stringify(restarted))
@@ -200,6 +209,49 @@ for (const recorded of ['missing', 'stale']) {
     assert.equal(alive(unrelated.pid), true, 'an unrelated process is never stopped')
   })
 }
+
+for (const command of ['update', '_update']) test(`${command} para antes do npm e restaura o dashboard quando a instalacao falha`, { skip: process.platform !== 'win32', timeout: 120000 }, async t => {
+  const f = await isolatedDashboard(t)
+  const old = f.start(null, true)
+  assert.ok(await waitFor(async () => (await f.health())?.pid === old.pid))
+  f.write({ enabled: true, mechanism: 'windows-startup', node: process.execPath, script: f.script })
+  const attempt = join(f.home, 'npm-attempt.json')
+  const npm = join(f.home, 'fake-npm')
+  mkdirSync(npm)
+  const helper = join(npm, 'install.mjs')
+  writeFileSync(helper, `import { writeFileSync } from 'node:fs';
+let running = false;
+try { running = (await fetch('http://127.0.0.1:${f.port}/api/health')).ok } catch {}
+writeFileSync(${JSON.stringify(attempt)}, JSON.stringify({ running }));
+process.exit(1);
+`)
+  const version = JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8')).version
+  const cli = process.env.PRUMO_TEST_UPDATE_CLI ?? join(repo, 'bin/prumo.mjs')
+  writeFileSync(join(npm, 'npm.cmd'), `@echo off\r\nif "%~1"=="root" (\r\n echo ${join(f.home, 'node_modules')}\r\n exit /b 0\r\n)\r\nif "%~1"=="view" (\r\n echo "${version}"\r\n exit /b 0\r\n)\r\nif "%~1"=="exec" (\r\n "${process.execPath}" "${cli}" _update\r\n exit /b 1\r\n)\r\n"${process.execPath}" "${helper}"\r\nexit /b 1\r\n`)
+  const env = { ...f.options.env }
+  const pathKey = Object.keys(env).find(key => key.toLowerCase() === 'path')
+  const path = env[pathKey] ?? ''
+  for (const key of Object.keys(env)) if (key.toLowerCase() === 'path') delete env[key]
+  env.PATH = `${npm};${path}`
+  env.NODE_OPTIONS = `${env.NODE_OPTIONS ?? ''} --import="${pathToFileURL(join(repo, 'test/fixtures/dashboard-port.mjs')).href}"`.trim()
+  env.PRUMO_TEST_DASHBOARD_PORT = String(f.port)
+  env.PRUMO_UPDATE_REQUEST = JSON.stringify({ dryRun: false, cwd: f.home, projects: [], updateCli: true,
+    sourceVersion: JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8')).version })
+  const child = spawn(process.execPath, [cli, command], { env, cwd: f.home, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+  let output = ''
+  child.stdout.on('data', chunk => { output += chunk })
+  child.stderr.on('data', chunk => { output += chunk })
+  const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve) })
+  assert.notEqual(code, 0, output)
+  assert.match(output, /Global Prumo CLI update failed/)
+  assert.deepEqual(JSON.parse(readFileSync(attempt, 'utf8')), { running: false }, 'o instalador nao pode receber o dashboard ainda rodando')
+  const restored = await f.health()
+  assert.ok(restored?.pid && restored.pid !== old.pid, output)
+  assert.equal(f.preference().enabled, true)
+  assert.equal(f.preference().pid, restored.pid)
+  assert.equal(alive(old.pid), false)
+  assert.equal(existsSync(join(f.home, '.local/share/prumo/update-pending.json')), true, 'a falha continua pendente para a proxima tentativa')
+})
 
 test('update restart never stops a port occupant that is not the managed Prumo dashboard', { skip: process.platform !== 'win32', timeout: 120000 }, async t => {
   const f = await isolatedDashboard(t)
@@ -229,4 +281,19 @@ test('update restart never stops a port occupant that is not the managed Prumo d
   assert.deepEqual(f.killed, [])
   assert.equal(alive(impostor.pid), true)
   assert.deepEqual(f.preference(), recordedPreference, 'a refused restart keeps the recorded pid and command')
+  const env = { ...f.options.env,
+    NODE_OPTIONS: `${f.options.env.NODE_OPTIONS ?? ''} --import="${pathToFileURL(join(repo, 'test/fixtures/dashboard-port.mjs')).href}"`.trim(),
+    PRUMO_TEST_DASHBOARD_PORT: String(f.port),
+    PRUMO_UPDATE_REQUEST: JSON.stringify({ dryRun: false, cwd: f.home, projects: [], updateCli: false }),
+  }
+  const updater = spawn(process.execPath, [join(repo, 'bin/prumo.mjs'), '_update'], { env, cwd: f.home, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+  let output = ''
+  updater.stdout.on('data', chunk => { output += chunk })
+  updater.stderr.on('data', chunk => { output += chunk })
+  const code = await new Promise((resolve, reject) => { updater.once('error', reject); updater.once('close', resolve) })
+  assert.notEqual(code, 0, output)
+  assert.match(output, /ownership verification failed/)
+  assert.equal(alive(impostor.pid), true)
+  assert.equal(existsSync(join(f.home, '.local/share/prumo/update-pending.json')), false, 'a recusa acontece antes de gravar a atualizacao')
+  assert.deepEqual(f.preference(), recordedPreference)
 })

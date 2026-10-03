@@ -41,7 +41,10 @@ let dashboardPort = await freePort()
 env.PRUMO_TEST_DASHBOARD_PORT = String(dashboardPort)
 const dashboardShutdownToken = randomBytes(16).toString('hex')
 env.PRUMO_TEST_DASHBOARD_SHUTDOWN_TOKEN = dashboardShutdownToken
-env.NODE_OPTIONS = `--import="${pathToFileURL(join(repo, 'test/fixtures/dashboard-port.mjs')).href}"`
+// A coleta conserva somente o preload aprovado; opções arbitrárias não atravessam a instalação histórica.
+const coverageOptions = process.env.NODE_V8_COVERAGE && process.env.PRUMO_TEST_COVERAGE_FLUSH === '1'
+  ? `--import="${new URL('../test/fixtures/coverage-flush.mjs', import.meta.url).href}"` : ''
+env.NODE_OPTIONS = `${coverageOptions} --import="${pathToFileURL(join(repo, 'test/fixtures/dashboard-port.mjs')).href}"`.trim()
 const dashboardPreference = join(home, '.local/share/prumo/dashboard.json')
 env.PRUMO_TEST_DASHBOARD_DIAGNOSTICS = join(home, 'dashboard-process.ndjson')
 async function dashboardHealth() {

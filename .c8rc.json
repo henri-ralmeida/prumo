@@ -1,0 +1,15 @@
+{
+  "all": true,
+  "include": ["bin/**/*.mjs", "lib/**/*.mjs", "scripts/**/*.mjs", "tools/**/*.mjs", ".test-output/coverage-sources/dashboard-inline.mjs"],
+  "exclude": ["**/*.test.mjs", "scripts/*-smoke.mjs"],
+  "extension": [".mjs"],
+  "reports-dir": ".test-output/coverage",
+  "temp-directory": ".test-output/coverage/tmp",
+  "reporter": ["text-summary", "json", "json-summary", "html"],
+  "check-coverage": true,
+  "per-file": true,
+  "lines": 100,
+  "functions": 100,
+  "branches": 100,
+  "statements": 100
+}

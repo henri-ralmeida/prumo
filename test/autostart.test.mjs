@@ -5,7 +5,7 @@ import { EventEmitter } from 'node:events'
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, rmdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { dashboardHealth, dashboardNeedsRepair, dashboardStatus, disableDashboard, enableDashboard, readDashboardEvents, restartDashboard, runDashboardForeground } from '../lib/autostart.mjs'
+import { dashboardHealth, dashboardNeedsRepair, dashboardStatus, disableDashboard, enableDashboard, readDashboardEvents, restartDashboard, runDashboardForeground, stopDashboardForUpdate } from '../lib/autostart.mjs'
 
 test('readiness never reserves the startup port and protects occupied or uncertain ports', async t => {
   for (const [event, code, expected] of [['error', 'ECONNREFUSED', 'stopped'], ['connect', null, 'conflict'], ['error', 'ETIMEDOUT', 'conflict']]) {
@@ -74,6 +74,66 @@ function fixture(t, platform, extra = {}) {
 }
 
 const preference = home => JSON.parse(readFileSync(join(home, '.local', 'share', 'prumo', 'dashboard.json'), 'utf8'))
+
+for (const outcome of ['stopped', 'unverified', 'kill-failed', 'still-running']) {
+  test(`update para somente o dashboard comprovado e preserva preferencias: ${outcome}`, async t => {
+    let running = true
+    const killed = []
+    const f = fixture(t, 'win32', {
+      fetch: async () => {
+        if (!running) throw new Error('stopped')
+        return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, pid: 777 }) }
+      },
+      readProcessCommand: () => outcome === 'unverified' ? ['other'] : [f.node, f.script, '--global', '--port', '4949'],
+      kill: pid => {
+        killed.push(pid)
+        if (outcome === 'kill-failed') throw new Error('denied')
+        if (outcome !== 'still-running') running = false
+      },
+    })
+    const path = join(f.home, '.local/share/prumo/dashboard.json')
+    mkdirSync(join(f.home, '.local/share/prumo'), { recursive: true })
+    const before = { enabled: true, mechanism: 'windows-startup', node: f.node, script: f.script }
+    writeFileSync(path, JSON.stringify(before))
+    const result = await stopDashboardForUpdate(f.options)
+    assert.equal(result.ok, outcome === 'stopped')
+    assert.deepEqual(killed, outcome === 'unverified' ? [] : [777])
+    assert.deepEqual(preference(f.home), before)
+    assert.deepEqual(f.calls, [], 'parar para atualizar nao altera o registro de login')
+  })
+}
+
+test('update preserva programa alheio e aceita dashboard ja parado', async t => {
+  const f = fixture(t, 'win32', {
+    fetch: async () => ({ ok: true, json: async () => ({ product: 'other' }) }),
+    kill: () => { throw new Error('nao deve encerrar') },
+  })
+  assert.equal((await stopDashboardForUpdate(f.options)).ok, false)
+  assert.deepEqual(await stopDashboardForUpdate({ ...f.options, fetch: async () => { throw new Error('stopped') } }), { ok: true, stopped: false })
+  assert.deepEqual(f.calls, [])
+})
+
+for (const [platform, mechanism] of [['linux', 'systemd'], ['darwin', 'launchd']]) {
+  test(`update suspende ${mechanism} sem desabilitar o registro`, async t => {
+    let running = true
+    const f = fixture(t, platform, {
+      exec: (file, args) => { f.calls.push([file, args]); running = false; return { status: 0 } },
+      fetch: async () => {
+        if (!running) throw new Error('stopped')
+        return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true }) }
+      },
+      kill: () => { throw new Error('o servico usa seu gerenciador') },
+    })
+    const path = join(f.home, '.local/share/prumo/dashboard.json')
+    mkdirSync(join(f.home, '.local/share/prumo'), { recursive: true })
+    const before = { enabled: true, mechanism, node: f.node, script: f.script }
+    writeFileSync(path, JSON.stringify(before))
+    assert.deepEqual(await stopDashboardForUpdate(f.options), { ok: true, stopped: true })
+    assert.deepEqual(preference(f.home), before)
+    assert.equal(f.calls.length, 1)
+    assert.ok(f.calls[0][1].includes(platform === 'linux' ? 'stop' : 'bootout'))
+  })
+}
 
 test('porta ocupada com consulta temporariamente indisponível confirma o dashboard antes de agir', async t => {
   let probes = 0, delays = 0

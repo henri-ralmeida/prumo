@@ -1,11 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { createContext, runInContext } from 'node:vm'
-import { localizeDashboard } from '../scripts/i18n.mjs'
 import { createGuideDemoData } from '../scripts/dashboard-guide-demo.mjs'
+import { disableDashboardBoot, extractDashboardScript, injectDashboardLanguage, runDashboardScript } from './fixtures/dashboard-vm.mjs'
 
 const html = readFileSync(new URL('../scripts/dashboard.html', import.meta.url), 'utf8').replaceAll('\r\n', '\n')
+const canonicalScript = extractDashboardScript(html)
 const instant = (seconds) => new Date(Date.UTC(2026, 0, 1) + seconds * 1000).toISOString()
 const task = (id, state = 'pending', fields = {}) => ({
   id, title: `Task ${id}`, phase: 'P1', state, deps: [], attempts: [], validations: [], notes: [], ...fields,
@@ -27,7 +27,461 @@ const discovery = {
   executionBoundary: { deferredToExecutor: ['T'], prematureTaskWork: [] },
 }
 
-function dashboard(lang = 'en', width = 1000, session = new Map(), navigation = { state: null, urls: [] }) {
+test('contagem dos filtros permanece visível nos controles e distingue resultados do contexto', () => {
+  for (const width of [330, 1400]) {
+    const ui = dashboard('pt-BR', width)
+    const tasks = Object.fromEntries(Array.from({ length: 29 }, (_, index) => {
+      const id = `T${index + 1}`
+      return [id, task(id, index < 4 ? 'pending' : 'done')]
+    }))
+    const state = { run: 'filtros', plan: {}, tasks,
+      derived: Object.fromEntries(Object.keys(tasks).map((id, index) => [id, { effective: index < 4 ? 'waiting' : 'done' }])) }
+    const before = JSON.stringify(state)
+    ui.render(state)
+    for (const selector of ['#filterCount', '#compactFilterCount']) assert.equal(ui.nodes.get(selector).textContent, '29/29')
+    ui.run("setFilter('waiting')")
+    for (const selector of ['#filterCount', '#compactFilterCount']) assert.equal(ui.nodes.get(selector).textContent, '04/29')
+    ui.run("setFilter('reviewing')")
+    assert.equal(ui.nodes.get('#filterCount').textContent, '00/29')
+    ui.run("setFilter('all')")
+    assert.equal(ui.nodes.get('#compactFilterCount').textContent, '29/29')
+    assert.equal(JSON.stringify(state), before)
+  }
+  const ui = dashboard()
+  ui.run('updateFilterCount(4, 129)')
+  assert.equal(ui.nodes.get('#filterCount').textContent, '004/129')
+  assert.match(html, /id="filterToggle"[^>]*>[\s\S]*?id="filterCount"[\s\S]*?class="filter-eye"/)
+  assert.match(html, /<summary><span data-i18n="Filters">[\s\S]*?id="compactFilterCount"/)
+  assert.doesNotMatch(html, /tr\('filter results \{0\}\/\{1\}'/)
+})
+
+test('abrir planos e filtros alternadamente mantém apenas um dropdown aberto', () => {
+  for (const width of [330, 1400]) {
+    const ui = dashboard('pt-BR', width)
+    ui.render({ run: 'filtros', plan: {}, tasks: { T1: task('T1', 'done') }, derived: {} })
+    const runMenu = ui.nodes.get('#runMenu')
+    const header = ui.nodes.get('#headerMenu')
+    const openFilters = () => {
+      if (width <= 1100) { header.open = true; ui.dispatchElement('#headerMenu', 'toggle') }
+      else ui.run('toggleFilterMenu(true)')
+    }
+    for (let index = 0; index < 2; index++) {
+      openFilters()
+      assert.equal(runMenu.open, false)
+      assert.equal(ui.nodes.get('#filterPanel').hidden, false)
+      runMenu.open = true
+      ui.dispatchElement('#runMenu', 'toggle')
+      assert.equal(ui.nodes.get('#filterPanel').hidden, true)
+      assert.equal(ui.nodes.get('#filterToggle').getAttribute('aria-expanded'), 'false')
+      if (width <= 1100) { assert.equal(header.open, false); ui.dispatchElement('#headerMenu', 'toggle') }
+      openFilters()
+      assert.equal(runMenu.open, false)
+      ui.dispatchElement('#runMenu', 'toggle')
+      assert.equal(ui.nodes.get('#filterPanel').hidden, false, 'o toggle atrasado do menu fechado não fecha o filtro recém-aberto')
+    }
+    ui.run("setFilter('done')")
+    assert.equal(ui.run('FILTER'), 'done')
+    assert.equal(ui.nodes.get('#filterPanel').hidden, true)
+  }
+})
+
+test('indicadores dos planos mostram texto antes da bolinha e usam o relógio compartilhado', () => {
+  const ui = dashboard('pt-BR')
+  const existing = { animationName: 'activity-spin', startTime: 70 }
+  const inserted = { animationName: 'activity-spin', startTime: 300 }
+  ui.run('document.getAnimations = () => animations; syncActivitySpinners()', { animations: [existing] })
+  existing.startTime = 40
+  const catalog = { currentRoot: 'root', current: 'ativo', runs: [
+    { root: 'root', run: 'ativo', plan: 'Plano ativo', complete: false, activity: 'working', taskCount: 2, doneCount: 1 },
+    { root: 'root', run: 'feito', plan: 'Plano entregue', complete: true, taskCount: 2, doneCount: 2 },
+  ] }
+  const before = JSON.stringify(catalog)
+  ui.run('document.getAnimations = () => animations; updateRunSelect(input)', { animations: [existing, inserted], input: catalog })
+  assert.equal(existing.startTime, 40, 'o menu não reinicia o spinner já sincronizado')
+  assert.equal(inserted.startTime, 0)
+  assert.match(ui.nodes.get('#runOptions').innerHTML, /class="run-state working">em andamento<i aria-hidden="true"><\/i>/)
+  ui.run("toggleRunFilter('complete')")
+  assert.match(ui.nodes.get('#runOptions').innerHTML, /class="run-state complete">no prumo<i aria-hidden="true"><\/i>/)
+  assert.doesNotMatch(ui.nodes.get('#runOptions').innerHTML, /✓/)
+  assert.equal(JSON.stringify(catalog), before)
+})
+
+test('API legada sem deps mantém card e dados acessíveis sem aceitar tipo inválido', async () => {
+  const ui = dashboard()
+  const state = JSON.parse(JSON.stringify({run:'legado',plan:{},tasks:{T1:task('T1','done',{phase:''})},derived:{}}))
+  delete state.tasks.T1.deps
+  const original = JSON.stringify(state)
+  await ui.run('fetch = async url => String(url).includes("/api/runs") ? {ok:false} : String(url).includes("/api/events") ? {ok:true,json:async()=>({events:[],complete:true,total:0})} : {ok:true,json:async()=>input}; tick()', {input:state})
+  assert.match(ui.nodes.get('#nodes').innerHTML, /data-id="T1"/)
+  assert.doesNotThrow(() => ui.run('openTask("T1"); togglePopExpand(true)'))
+  assert.equal(ui.run('POP.id'), 'T1')
+  assert.match(ui.nodes.get('#popBody').innerHTML, /Task T1/)
+  assert.equal(Object.hasOwn(state.tasks.T1, 'deps'), false)
+  assert.equal(JSON.stringify(state), original)
+  const invalid = JSON.parse(original)
+  invalid.tasks.T1.deps = 'T2'
+  assert.throws(() => ui.run('analyse(input, [], true)', {input:invalid}), /map/)
+  assert.equal(invalid.tasks.T1.deps, 'T2')
+})
+
+test('card ignora dependência ausente no foco sem modificar referência registrada', () => {
+  const ui = dashboard()
+  const state = graphState(2, 1)
+  state.tasks.T002.deps = ['T001', 'ausente']
+  ui.render(state)
+  assert.doesNotThrow(() => ui.run('openTask("T002")'))
+  assert.equal(ui.run('POP.id'), 'T002')
+  assert.deepEqual(ui.run('Array.from(lineage("T002").up)'), ['T001'])
+  assert.deepEqual(state.tasks.T002.deps, ['T001', 'ausente'])
+  assert.match(ui.nodes.get('#popBody').innerHTML, /ausente/)
+})
+
+test('armazenamento privado mantém filtros e barra lateral operáveis sem persistência', () => {
+  const ui = dashboard('pt-BR', 1000, new Map(), { state: 'legado', urls: [] })
+  ui.render(graphState(1,1))
+  ui.run('localStorage.setItem = () => {throw new Error("privado")}; sessionStorage.setItem = () => {throw new Error("privado")}; setFilter("done"); toggleSidebar()')
+  assert.equal(ui.run('FILTER'), 'done')
+  assert.equal(typeof ui.run('history.state.graphSidebarCollapsed'), 'boolean')
+  assert.equal(ui.run('tr("[prumo] idle")'), '[prumo] inativo')
+  assert.equal(ui.run('tr("{0} não catalogado", 2)'), '2 não catalogado')
+  ui.run('STATE.tasks.T001.deps = undefined')
+  assert.equal(ui.run('filterSets(STATE.tasks, "running").matches.size'), 1)
+})
+
+test('estado legado com chave diferente do ID conserva dados e mantém análise e card acessíveis', () => {
+  const ui = dashboard()
+  const state = JSON.parse(JSON.stringify({ run: 'legado', plan: {}, tasks: {
+    chaveLegada: task('T1', 'pending', { title: 'Título legado preservado', phase: '' }),
+  }, derived: {} }))
+  const original = JSON.stringify(state)
+  const result = ui.run('analyse(input, [], true)', { input: state })
+  assert.equal(result.per[0].id, 'T1')
+  assert.equal(result.cpLen, 0)
+  ui.run('STATE = input; EVENTS_COMPLETE = true; fillPop("chaveLegada")', { input: state })
+  assert.equal(ui.nodes.get('#popTitle').textContent, 'T1')
+  assert.match(ui.nodes.get('#popBody').innerHTML, /Título legado preservado/)
+  assert.equal(JSON.stringify(state), original)
+})
+
+test('card conserva dispensa de fase e relógio encerrado sem marcar atividade parcial', () => {
+  const ui = dashboard()
+  const state = graphState(1,1)
+  state.tasks.T001.attempts = [{ startedAt: instant(0), endedAt: instant(2) }]
+  state.tasks.T001.deps = ['T002']
+  state.tasks.T002 = task('T002', 'pending', { phase: 'P1' })
+  state.derived.T002 = { effective: 'unknown' }
+  state.phaseWorkflows = { P1: { id: 'P1', state: 'discussing', discussionAttempts: [], planningAttempts: [], discussionSkips: [{ reason: 'fora do alvo' }, { targets: ['T001'], reason: 'dispensa aprovada' }] } }
+  const events = [{ task: 'T001', type: 'task_start', at: instant(0) }, { task: 'T001', type: 'task_progress', at: instant(2) }]
+  ui.run('EVENTS_COMPLETE = true')
+  ui.render(state, events)
+  assert.match(ui.nodes.get('#parallel').innerHTML, /2s/)
+  assert.doesNotMatch(ui.nodes.get('#parallel').innerHTML, /not measured/)
+  ui.run('openTask("T001"); togglePopExpand(true)')
+  assert.match(ui.nodes.get('#popBody').innerHTML, /dispensa aprovada/)
+  ui.dispatchElement('#viewport', 'pointerdown', { button: 0, clientX: 0, clientY: 0, pointerId: 1 })
+  ui.run('openTask("T001")')
+  assert.equal(ui.run('POP'), null)
+  ui.dispatchElement('#viewport', 'pointerup', {})
+})
+
+test('histórico resolve papel do recibo e conserva identidade do plano e bloqueio sem resposta', () => {
+  const ui = dashboard('pt-BR')
+  assert.equal(ui.run('tr("[prumo] ERROR: idle")'), '[prumo] ERRO: inativo')
+  ui.run('STATE = null; selectHistoryEvent("orphan", "T1", "F1")')
+  assert.equal(ui.run('SELECTED_EVENT'), 'orphan')
+  assert.equal(ui.run('phaseColour("F1")'), 'var(--waiting)')
+  ui.run('STATE = {tasks:{T1:input}}', { input: task('T1', 'pending', { validations: [{ token: 'receipt', by: 'review' }] }) })
+  assert.equal(ui.run('eventColour({type:"task_validation_started",task:"T1",token:"receipt"})'), 'var(--review)')
+  assert.match(ui.run('eventSentence({type:"task_validation_started",task:"T1",token:"receipt"})'), /Revisor/)
+  assert.match(ui.run('eventSentence({type:"task_check",task:"T1",kind:"manual",status:"started"})'), /Executor/)
+  assert.match(ui.run('eventSentence({type:"task_start",task:"T1",planDigest:"abcd"})'), /abcd/)
+  assert.match(ui.run('fmtTaskPlan({openQuestions:[{question:"decidir?",blocking:true}]})'), /bloqueante/)
+  ui.run('updateRunDescription({run:"A",plan:{description:" Descrição "}})')
+  assert.equal(ui.nodes.get('#runLabel').textContent, 'Descrição')
+  const state = graphState(1,1)
+  ui.render(state, [{ type: 'task_start', task: 'T001', at: instant(1) }])
+  ui.render(state, [{ type: 'task_note', task: 'T001', at: instant(2), text: 'nota sem transição' }])
+  assert.equal(ui.cards[0].classList.contains('flash-bad'), false)
+  assert.equal(ui.cards[0].classList.contains('flash-start'), false)
+})
+
+test('atividade explícita aberta mede apenas o papel ativo e histórico legado de planejamento fica não aferido', () => {
+  const ui = dashboard()
+  const state = { run: 'active', plan: {}, tasks: {
+    T1: task('T1', 'running', { attempts: [{ activityTiming: 'explicit', activityIntervals: [{ role: 'execution', startedAt: instant(90) }] }] }),
+    T2: task('T2', 'pending', { planningHistory: [{}] }),
+  } }
+  const result = ui.run('analyse(input, [], true)', { input: state })
+  assert.equal(result.execTotal, 10000)
+  assert.equal(result.planningMeasured, false)
+  assert.equal(result.per.find(item => item.id === 'T1').unmeasured, true)
+})
+
+test('polling cancela catálogo e histórico obsoletos e atualiza card aberto somente no plano atual', async () => {
+  const ui = dashboard()
+  const state = graphState(1,1)
+  state.run = 'atual'
+  ui.render(state)
+  await ui.run('fetch = async url => String(url).includes("/api/runs") ? {ok:true,json:async()=>{TICK_GENERATION++;return {}}} : {ok:true,json:async()=>({run:"obsoleto"})}; tick()')
+  assert.equal(ui.run('STATE.run'), 'atual')
+  await ui.run('SELECTED_ROOT = "root"; SELECTED_RUN = null; CURRENT_ROOT = CURRENT_RUN = null; fetch = async url => String(url).includes("/api/runs") ? {ok:false} : String(url).includes("/api/events") ? {ok:true,json:async()=>({events:[],complete:true,total:0})} : {ok:true,json:async()=>input}; tick()', { input: state })
+  assert.equal(ui.run('STATE_RUN_KEY'), 'root\0atual')
+  await ui.run('fetch = async () => {TICK_GENERATION++;return {ok:false}}; tick()')
+  assert.equal(ui.run('STATE.run'), 'atual')
+  await ui.run('SELECTED_ROOT = "root"; SELECTED_RUN = "atual"; fetch = async url => String(url).includes("/api/runs") ? {ok:false} : String(url).includes("/api/events") ? {ok:true,json:async()=>{TICK_GENERATION++;return {events:[],complete:true,total:0}}} : {ok:true,json:async()=>input}; tick()', { input: state })
+  assert.equal(ui.run('STATE.run'), 'atual')
+  ui.run('SELECTED_ROOT = SELECTED_RUN = CURRENT_ROOT = CURRENT_RUN = null; closePop(); openTask("T001")')
+  await ui.run('fetch = async url => String(url).includes("/api/runs") ? {ok:false} : String(url).includes("/api/events") ? {ok:true,json:async()=>({events:[],complete:true,total:0})} : {ok:true,json:async()=>input}; tick()', { input: { ...state, tasks: { T001: { ...state.tasks.T001, title: 'Título atualizado' } } } })
+  assert.match(ui.nodes.get('#popBody').innerHTML, /Título atualizado/)
+})
+
+test('acesso negado ao armazenamento inicia sem filtro e mantém guia e atalhos utilizáveis', () => {
+  const ui = dashboard('pt-BR', 1000, new Map(), { state: null, urls: [] }, {
+    localStorage: { getItem() { throw new Error('acesso negado') }, setItem() { throw new Error('acesso negado') } },
+  })
+  assert.equal(ui.run('FILTER'), 'all')
+  ui.render(graphState(1,1))
+  assert.equal(ui.cards[0].classList.contains('filtered-out'), false)
+  ui.run('toggleFilterMenu(true)')
+  assert.equal(ui.nodes.get('#filterPanel').hidden, false)
+  ui.dispatchDocument('keydown', { key: 'R' })
+  assert.equal(ui.run('RESULTS_OPEN'), true)
+  ui.dispatchDocument('keydown', { key: 'Escape' })
+  assert.equal(ui.run('RESULTS_OPEN'), false)
+  ui.run('requestAnimationFrame = () => 1')
+  ui.resize(900)
+  ui.resize(800)
+  assert.equal(ui.run('viewportWidth'), 800)
+  ui.resize(800)
+  assert.equal(ui.run('viewportWidth'), 800)
+})
+
+test('renderização diferencia falha, múltiplos executores, fase por alias e histórico selecionado', () => {
+  const ui = dashboard()
+  const state = graphState(4, 1)
+  state.tasks.T001.state = 'failed'; state.derived.T001.effective = 'failed'
+  state.tasks.T002.deps = ['T001', 'ausente']
+  state.tasks.T002.state = state.tasks.T003.state = 'running'
+  state.derived.T002.effective = state.derived.T003.effective = 'running'
+  state.tasks.T004.state = 'planning'; state.derived.T004.effective = 'planning'
+  state.phaseWorkflows = { P1: { id: 'P1', state: 'discussing', discussionAttempts: [{}], planningAttempts: [{ targets: ['alias', 'ausente'] }] } }
+  state.taskIdAliases = { alias: 'T004' }
+  ui.run('matchMedia = () => ({matches:true}); SELECTED_EVENT = "selected"')
+  ui.render(state, [{ id: 'selected', at: instant(1), type: 'task_note', task: 'T002', text: 'nota' }])
+  assert.equal(ui.nodes.get('#execCount').textContent, '×2')
+  assert.match(ui.nodes.get('#edgePaths').innerHTML, /e-failed/)
+  assert.match(ui.nodes.get('#orchSub').textContent, /phase discussion P1: 1 tasks/)
+  assert.match(ui.nodes.get('#events').innerHTML, /class="ev selected"/)
+  ui.render(state, [{ id: 'failed', at: instant(2), type: 'task_fail', task: 'T001' }])
+  assert.ok(ui.cards.find(card => card.dataset.id === 'T001').classList.contains('flash-bad'))
+  state.tasks.T002.deps = ['T001']
+  ui.run('selectHistoryEvent("selected", "T002", "")')
+  assert.equal(ui.run('POP.id'), 'T002')
+  const focused = ui.paths.find(path => path.dataset.from === 'T001' && path.dataset.to === 'T002')
+  focused.classList.remove('filter-hidden')
+  delete focused.dataset.members
+  ui.run('applyFocus()')
+  assert.equal(focused.classList.contains('lit'), true)
+  state.derived.T004.inputStatus = 'validated_input'
+  focused.dataset.members = 'T001,T002'
+  ui.run('applyFocus()')
+  assert.equal(focused.classList.contains('lit'), true)
+  ui.run('POP = {id:"T004"}; fillPop("T004"); togglePopExpand(true)')
+  assert.match(ui.nodes.get('#popBody').innerHTML, /Phase plan/)
+})
+
+test('seleção de resultados exige identidade consistente e ganho completo usa coordenação opcional zero', async () => {
+  const ui = dashboard()
+  await ui.run('loadResults()')
+  const state = { run: 'A' }
+  ui.run('SELECTED_ROOT = "root"; SELECTED_RUN = null; CURRENT_ROOT = null; CURRENT_RUN = null')
+  assert.equal(ui.run('resultsStateMatchesSelection(input, "root\\0A", "root\\0A")', { input: state }), true)
+  ui.run('SELECTED_ROOT = null; CURRENT_RUN = "A"')
+  assert.equal(ui.run('resultsStateMatchesSelection(input, null, null)', { input: state }), false)
+  assert.equal(ui.run('resultsStateMatchesSelection(input, "\\0B", "\\0B")', { input: state }), false)
+  ui.run('CURRENT_ROOT = "root"')
+  assert.equal(ui.run('resultsStateMatchesSelection(input, "other\\0A", "other\\0A")', { input: state }), false)
+  const gain = { oneAtATimeMs: 2000, withPrumoMs: 1000, savingsMs: 1000, factor: 2, criticalPathMs: 1000, historyComplete: true, partial: false }
+  const summary = ui.run('completedRunGainSummary({anyLive:false,criticalPathMeasured:true}, input, {T1:{state:"done"}}, true, true)', { input: gain })
+  assert.equal(summary.measurementComplete, true)
+  assert.equal(summary.figures.withoutPrumo, '2s')
+  assert.equal(ui.run('completedRunGainSummary(null, null, null, false, false).completed'), false)
+})
+
+test('relógio descarta marcos sem timestamp, fora do intervalo e atividade totalmente pausada', () => {
+  const ui = dashboard()
+  const events = [{ type: 'task_progress', task: 'T1' }, { type: 'task_progress', task: 'T1', at: instant(-1) }, { type: 'task_progress', task: 'T1', at: instant(3) }]
+  assert.deepEqual(ui.run('activityTimes("T1", 1, input, ["task_progress"], Date.parse(inputStart), Date.parse(inputEnd))', { input: events, inputStart: instant(0), inputEnd: instant(2) }), [])
+  assert.equal(ui.run('latestReviewReceipt(input, 1, Date.parse(inputStart), Date.parse(inputEnd))', { input: { validations: [{ by: 'review' }, { by: 'review', at: instant(-1) }, { by: 'review', at: instant(3) }] }, inputStart: instant(0), inputEnd: instant(2) }), null)
+  assert.equal(ui.run('latestReviewActivity({id:"T1"}, 1, Date.parse(inputStart), Date.parse(inputEnd), input)', { input: events.map(e => ({ ...e, type: 'task_review_progress' })), inputStart: instant(0), inputEnd: instant(2) }), null)
+  const item = task('T1', 'running', { attempts: [{ startedAt: instant(0) }] })
+  const paused = [{ type: 'task_block', task: 'T1', at: instant(0) }, { type: 'task_progress', task: 'T1', at: instant(1) }]
+  assert.equal(ui.run('EVENTS_COMPLETE = true; taskClock(input, "running", inputEvents)', { input: item, inputEvents: paused }), null)
+  assert.equal(ui.run('jsq(null)'), '')
+  assert.equal(ui.run('taskText(null)'), '')
+  assert.match(ui.run('taskText("F1a")'), /F1a/)
+  assert.match(ui.run('taskReference("T1")'), /T1/)
+})
+
+test('layout tolera referência ausente e ciclo sem esconder tarefas e usa largura mínima quando necessário', () => {
+  const ui = dashboard('en', 0)
+  const state = graphState(2, 1)
+  state.tasks.T001.deps = ['T002', 'ausente']
+  state.tasks.T002.deps = ['T001']
+  ui.run('STATE = input; innerWidth = 0', { input: state })
+  const arranged = ui.run('layout(STATE.tasks)')
+  assert.equal(Object.keys(arranged.pos).length, 2)
+  assert.ok(arranged.w > 0)
+  assert.ok(Object.values(arranged.pos).every(p => Number.isFinite(p.x) && Number.isFinite(p.y)))
+})
+
+test('catálogo vazio e entradas sem progresso conservam identidade e não fabricam descrição', () => {
+  const ui = dashboard()
+  ui.run('updateRunDescription(null); selectRun("sem-raiz"); selectRun("/sem-raiz")')
+  ui.run('SELECTED_ROOT = "root"; SELECTED_RUN = "run"; selectRun("root/run"); SELECTED_ROOT = SELECTED_RUN = null')
+  ui.run('CURRENT_ROOT = "root"; CURRENT_RUN = "run"; updateRunSelect(input)', { input: { currentRoot: 'root', current: 'run', runs: [{ root: 'root', run: 'run', plan: 'run', taskCount: 1 }] } })
+  assert.equal(ui.nodes.get('#runLabel').textContent, '')
+  assert.match(ui.nodes.get('#runOptions').innerHTML, /0 of 1 tasks/)
+  ui.run('STATE = {run:"run", plan:{name:"run"}}; updateRunDescription()')
+  assert.equal(ui.nodes.get('#runLabel').textContent, '')
+  assert.equal(ui.run('phaseTaskLabel(input)', { input: { id: 'T1', state: 'pending' } }), '')
+  ui.run('STATE.derived = {T1:{inputStatus:"future_status"}}')
+  assert.equal(ui.run('phaseTaskLabel(input)', { input: { id: 'T1', state: 'pending' } }), 'future_status')
+})
+
+test('atividade explícita inválida ou incompleta nunca vira tempo aferido', () => {
+  const ui = dashboard()
+  const variants = [undefined, [], [{ role: 'execution', startedAt: instant(1), endedAt: instant(0) }],
+    [{ role: 'execution', startedAt: 'inválido', endedAt: instant(3) }],
+    [{ role: 'execution', startedAt: instant(1) }]]
+  for (const intervals of variants) {
+    const state = { run: 'sem-medida', createdAt: instant(0), plan: {}, derived: {}, tasks: {
+      T1: task('T1', 'done', { phase: '', attempts: [{ activityTiming: 'explicit', activityIntervals: intervals, endedAt: instant(4) }] }),
+    }, phaseWorkflows: { F1: { id: 'F1', state: 'pending', planningAttempts: [{ startedAt: instant(1) }] } } }
+    const result = ui.run('analyse(input, [], true)', { input: state })
+    assert.equal(result.agentTotal, 0)
+    assert.equal(result.activeElapsed, 0)
+    assert.equal(result.phasePlanning.length, 0)
+  }
+  const state = { run: 'discussão', plan: {}, derived: {}, tasks: {
+    T1: task('T1', 'pending', { discussionAttempts: [{ activityTiming: 'explicit' }] }),
+    T2: task('T2', 'pending', { planningAttempts: [{ activityTiming: 'explicit', startedAt: instant(0) }] }),
+    T3: task('T3', 'pending', { attempts: [{ startedAt: instant(0), reviewStartedAt: instant(10) }] }),
+  }, phaseWorkflows: { F1: { id: 'F1', state: 'pending' } } }
+  const result = ui.run('analyse(input, [], false)', { input: state })
+  assert.ok(result.per.every(item => item.agentTime === 0 && item.unmeasured))
+})
+
+test('navegação ignora gestos incompletos e alvos ausentes e mantém o card dentro da tela', () => {
+  const ui = dashboard()
+  ui.run('togglePopExpand(); renderAvailable(); focusTask("ausente"); jumpTo("ausente"); openPop("ausente", false); backToGraph()')
+  assert.equal(ui.run('POP'), null)
+  ui.dispatchElement('#viewport', 'pointermove', { clientX: 1, clientY: 1 })
+  ui.dispatchElement('#viewport', 'pointerdown', { button: 2 })
+  assert.equal(ui.run('drag'), null)
+  ui.dispatchElement('#viewport', 'pointerdown', { button: 0, clientX: 0, clientY: 0, pointerId: 1 })
+  ui.dispatchElement('#viewport', 'pointermove', { clientX: 1, clientY: 1 })
+  assert.equal(ui.run('drag.moved'), false)
+  ui.dispatchElement('#viewport', 'pointermove', { clientX: 20, clientY: 20 })
+  ui.run('openPop("ausente", true)')
+  assert.equal(ui.run('POP'), null)
+  ui.dispatchElement('#viewport', 'pointerup', {})
+  ui.render(graphState(2, 1))
+  ui.run('suppressClick = false; openPop("T001", false); openPop("T001", false)')
+  assert.equal(Boolean(ui.run('POP.pinned')), false)
+  ui.run('POP.pinned = true; openPop("T001", false)')
+  assert.equal(ui.run('POP.pinned'), true)
+  ui.run('innerWidth = 300; positionPop()')
+  assert.equal(ui.nodes.get('#pop').style.left, '12px')
+  ui.run('POP = {id:"ausente"}; positionPop(); FILTER = "done"; POP = {id:"T001"}; applyFocus()')
+  assert.equal(ui.nodes.get('#canvas').classList.contains('focus'), false)
+  ui.run('closePop()')
+  ui.dispatchDocument('keydown', { key: 'r', target: { tagName: 'INPUT' } })
+  ui.dispatchDocument('keydown', { key: 'r', target: { closest: () => ({}) } })
+  ui.dispatchDocument('keydown', { key: 'x' })
+  assert.equal(ui.run('RESULTS_OPEN'), false)
+})
+
+test('polling mantém a última pintura quando catálogo, estado ou histórico estão indisponíveis', async () => {
+  const ui = dashboard()
+  const state = graphState(1, 1)
+  ui.render(state)
+  await ui.run('fetch = async () => ({ok:false}); tick()')
+  assert.equal(ui.run('STATE.run'), state.run)
+  await ui.run('fetch = async () => {throw new Error("offline")}; syncEventHistory(TICK_GENERATION, "offline")')
+  assert.equal(ui.run('EVENTS_COMPLETE'), false)
+  assert.equal(ui.run('EVENT_SYNCING'), null)
+  let finish
+  const pending = new Promise(resolve => { finish = resolve })
+  ui.run('fetch = () => input', { input: pending })
+  const a = ui.run('syncEventHistory(TICK_GENERATION, "same")')
+  const b = ui.run('syncEventHistory(TICK_GENERATION, "same")')
+  finish({ ok: true, json: async () => ({ events: [], complete: true, total: 0 }) })
+  assert.deepEqual(await Promise.all([a,b]), [true,true])
+  await ui.run('fetch = async () => ({ok:false}); loadIdentity()')
+  assert.match(ui.nodes.get('#identity').textContent, /Package identity unavailable/)
+})
+
+test('formatadores preservam contratos estruturados, decisões de fase e recibos sem metadados', () => {
+  const ui = dashboard()
+  assert.equal(ui.run('contractText(null)'), '')
+  assert.equal(ui.run('contractText(input)', { input: { run: 'verificar' } }), 'verificar')
+  assert.equal(ui.run('contractText(input)', { input: [{ run: 'verificar', expect: 'ok' }, { kind: 'manual' }] }), 'verificar → ok\n{"kind":"manual"}')
+  assert.equal(ui.run('fmtContract(input)', { input: { kind: '<manual>' } }), '{&quot;kind&quot;:&quot;&lt;manual&gt;&quot;}')
+  assert.equal(ui.run('fmtContract(input)', { input: { run: 'verificar' } }), '<code>verificar</code>')
+  assert.equal(ui.run('firstLines(null)'), '')
+  assert.equal(ui.run('validationHistory()'), '<span class="empty">—</span>')
+  assert.match(ui.run('validationHistory(input)', { input: [{ ok: true }, { ok: false, agent: '<revisor>' }] }), /Approved.*Rejected.*@&lt;revisor&gt;/s)
+  assert.equal(ui.run('attemptReview(input, attempt)', { input: {}, attempt: { startedAt: instant(0) } }), undefined)
+  assert.match(ui.run('fmtDiscovery(input)', { input: {} }), /Task discovery/)
+  ui.run('STATE = {questionResolutions: input}', { input: [{ questionRef: 'Q', answer: 'preservar', byPhase: 'F2' }] })
+  const questions = [
+    { questionRef: 'Q', question: 'fase?', decideBy: { beforePhase: 'F3' } },
+    { question: 'sem responsável?', decideBy: {} },
+    { question: 'pendente?', blocking: false },
+  ]
+  const markup = ui.run('fmtTaskPlan(input, resources)', { input: { openQuestions: questions }, resources: ['arquivo externo'] })
+  assert.match(markup, /before phase F3.*resolved by F2/s)
+  assert.match(markup, /sem responsável\? \(non-blocking · due executor\)/)
+  assert.match(markup, /arquivo externo/)
+})
+
+test('histórico usa executor quando recibo ou papel estão ausentes e conserva atualizações desconhecidas', () => {
+  const ui = dashboard()
+  ui.run('STATE = input', { input: { tasks: {} } })
+  assert.match(ui.run('eventSentence(input)', { input: { type: 'task_start', task: 'T1' } }), /started task/)
+  assert.match(ui.run('eventSentence(input)', { input: { type: 'task_check', task: 'T1', by: 'review', kind: 'manual', status: 'future' } }), /Reviewer.*updated the manual check/s)
+  assert.match(ui.run('eventSentence(input)', { input: { type: 'task_validation_started', task: 'T1', token: 'missing' } }), /Executor.*began validation/s)
+  assert.match(ui.run('eventSentence(input)', { input: { type: 'slot_freed', next: 'T1' } }), /freed an execution slot; next authorized:/)
+  assert.equal(ui.run('validationForEvent(input)', { input: { type: 'task_validate', task: 'T1', by: 'review', ok: true } }), undefined)
+  assert.equal(ui.run('eventDetail(input)', { input: { type: 'task_validate', ok: false, summary: { toJSON() {} } } }), '')
+  assert.match(ui.run('tr(input, 2)', { input: '{0} tasks' }), /2 tasks/)
+})
+
+test('card expandido conserva decisões, dispensas, bloqueios e dependências ausentes sem inventar dados', () => {
+  const ui = dashboard()
+  const state = graphState(2, 1)
+  state.tasks.T001 = task('T001', 'skipped', {
+    phase: '', deps: ['inexistente', 'T002'], skipReason: '<dispensa>', blockQuestion: 'Qual opção?',
+    discussionSkips: [{ reason: 'discussão dispensada' }], planningSkips: [{ reason: 'plano dispensado' }],
+    planningAttempts: [{ n: 1, startedAt: instant(0), agent: 'planejador' }, { n: 2, startedAt: instant(5), endedAt: instant(8), result: 'planned' }],
+    blockHistory: [{ at: instant(0) }, { at: instant(2), reason: 'aguardar', question: 'prosseguir?', answer: 'sim' }],
+  })
+  state.derived.T001.effective = 'skipped'
+  ui.run('STATE = input; fillPop("ausente"); fillPop("T001")', { input: state })
+  assert.match(ui.nodes.get('#popBody').innerHTML, /Qual opção\?.*&lt;dispensa&gt;/s)
+  ui.run('POP = {id:"T001"}; togglePopExpand(true)')
+  const markup = ui.nodes.get('#popBody').innerHTML
+  assert.match(markup, /discussão dispensada.*plano dispensado/s)
+  assert.match(markup, /Planning attempts.*#1.*planning.*#2/s)
+  assert.match(markup, /Block history.*prosseguir\?.*Answer: sim/s)
+  assert.match(markup, /inexistente/)
+  state.tasks.T001.blockOptions = ['sim', 'não']
+  ui.run('fillPop("T001")')
+  assert.match(ui.nodes.get('#popBody').innerHTML, /Options: sim \/ não/)
+})
+
+function dashboard(lang = 'en', width = 1000, session = new Map(), navigation = { state: null, urls: [] }, options = {}) {
   const nodes = new Map(), cards = [], paths = []
   const documentListeners = new Map(), windowListeners = new Map()
   let viewportWidth = width, viewportHeight = 700, animationFrame = null
@@ -56,7 +510,11 @@ function dashboard(lang = 'en', width = 1000, session = new Map(), navigation = 
         for (const listener of listeners.get(type) ?? []) listener(event)
       },
       setPointerCapture() {},
+      scrollIntoView() {},
+      querySelector() { return element() },
+      querySelectorAll() { return [] },
       setAttribute(name, value) { attributes.set(name, String(value)) },
+      removeAttribute(name) { attributes.delete(name) },
       getAttribute(name) { return attributes.get(name) ?? null },
       offsetWidth: 280, offsetHeight: 300,
       getBoundingClientRect: () => ({ width: 1000, height: 700, left: 0, right: 1000, top: 0 }),
@@ -113,8 +571,9 @@ function dashboard(lang = 'en', width = 1000, session = new Map(), navigation = 
     if (selector === '#edgePaths path.lit') return paths.filter((path) => path.classList.contains('lit'))
     return []
   }
-  const location = { search: '', origin: 'http://localhost', href: 'http://localhost/' }
-  const context = createContext({
+  const guideDemo = options.guideDemo ? `?guide-demo=${options.guideDemo}` : ''
+  const location = { search: guideDemo, origin: 'http://localhost', href: `http://localhost/${guideDemo}` }
+  const context = {
     document: {
       documentElement: element(),
       querySelector(selector) {
@@ -156,11 +615,13 @@ function dashboard(lang = 'en', width = 1000, session = new Map(), navigation = 
         }
       },
     },
-    localStorage: { getItem: () => null, setItem() {} },
+    localStorage: options.localStorage ?? { getItem: () => null, setItem() {} },
     sessionStorage: { getItem: (key) => session.get(key) ?? null, setItem: (key, value) => session.set(key, value) },
+    fetch: async () => ({ ok: true, json: async () => ({}) }),
     URL, URLSearchParams,
     innerWidth: width + 330, innerHeight: 800,
     performance: { now: () => 0 }, CSS: { escape: (text) => text },
+    matchMedia: undefined,
     addEventListener(name, listener) {
       if (!windowListeners.has(name)) windowListeners.set(name, [])
       windowListeners.get(name).push(listener)
@@ -168,14 +629,18 @@ function dashboard(lang = 'en', width = 1000, session = new Map(), navigation = 
     requestAnimationFrame(callback) { animationFrame = callback; return 1 },
     setTimeout() {}, clearTimeout() {},
     Date: class extends Date { static now() { return Date.parse(instant(100)) } },
-  })
-  // Run the shipped script, excluding its network polling boot; render/localize stay real.
-  const script = localizeDashboard(html, lang).match(/<script>([\s\S]*?)<\/script>/)[1].replaceAll('\r\n', '\n')
-  const renderOnly = script.replace(/\nconst GUIDE_FRAMES[\s\S]*$/, '')
-  runInContext(renderOnly, context)
+  }
+  context.globalThis = context
+  context.window = context
+  // Executa a fonte canônica com o idioma injetado sem alterar offsets; no modo
+  // renderOnly o boot fica em ramo impossível e continua descoberto até o
+  // cenário fullboot exercitar esse caminho real.
+  const script = injectDashboardLanguage(canonicalScript, lang)
+  const runtimeScript = options.full ? script : disableDashboardBoot(script)
+  const runtime = runDashboardScript(runtimeScript, context, { sourceScript: canonicalScript })
   return {
     nodes, labels, cards, paths, filterOptions,
-    run(code, values = {}) { Object.assign(context, values); return runInContext(code, context) },
+    run(code, values = {}) { return runtime.run(code, values) },
     dispatchDocument(type, event, inline = () => {}) {
       inline()
       for (const listener of documentListeners.get(type) ?? []) listener(event)
@@ -537,7 +1002,7 @@ test('status filters use effective state and always show only direct dependency 
   assert.equal(card('A').classList.contains('dependency-context'), true)
   assert.equal(card('B').classList.contains('dependency-context'), false)
   assert.equal(card('C').classList.contains('filtered-out'), true)
-  assert.equal(ui.nodes.get('#filterCount').textContent, 'filter results 1/12')
+  assert.equal(ui.nodes.get('#filterCount').textContent, '01/12')
   assert.equal(hidden('A', 'B'), false)
   assert.equal(edge('A', 'B').classList.contains('context-edge'), true)
   assert.equal(hidden('B', 'C'), true)
@@ -582,7 +1047,7 @@ test('filter controls expose every state and localize labels', () => {
     const ui = dashboard(lang)
     ui.render({ run: 'empty-filter', plan: { phases: [] }, tasks: {}, derived: {} })
     for (const label of labels) assert.ok(ui.labels.some((node) => node.textContent === label), `${lang}: ${label}`)
-    assert.equal(ui.nodes.get('#filterCount').textContent, lang === 'en' ? 'filter results 0/0' : 'resultado do filtro 0/0')
+    assert.equal(ui.nodes.get('#filterCount').textContent, '00/00')
   }
 })
 
@@ -768,7 +1233,7 @@ test('resize relayout preserves selected state and clamps manual pan at 100%', (
   assert.deepEqual(popPosition, { left: afterAnchor.right + 14, top: afterAnchor.top - 6 })
   assert.ok(beforeAnchor)
 })
-test('graph wheel and drag pan at fixed scale, honor bounds, and never zoom', () => {
+test('gestos da pipeline rolam apenas na vertical, respeitam limites e não aplicam zoom', () => {
   const ui = dashboard('en', 500)
   ui.render(graphState(48, 8))
   const bounds = JSON.parse(ui.run("JSON.stringify({ width: CANVAS_W, height: CANVAS_H, vw: $('#viewport').getBoundingClientRect().width, vh: $('#viewport').getBoundingClientRect().height })"))
@@ -783,13 +1248,13 @@ test('graph wheel and drag pan at fixed scale, honor bounds, and never zoom', ()
     return event
   }
   wheel(30, 40)
-  assert.deepEqual(JSON.parse(ui.run('JSON.stringify({ x: VIEW.x, y: VIEW.y })')), { x: -30, y: -40 })
+  assert.deepEqual(JSON.parse(ui.run('JSON.stringify({ x: VIEW.x, y: VIEW.y })')), { x: 0, y: -40 })
   wheel(0, 12, { shiftKey: true })
-  assert.deepEqual(JSON.parse(ui.run('JSON.stringify({ x: VIEW.x, y: VIEW.y })')), { x: -42, y: -40 },
-    'Shift plus wheel moves the board horizontally')
+  assert.deepEqual(JSON.parse(ui.run('JSON.stringify({ x: VIEW.x, y: VIEW.y })')), { x: 0, y: -52 },
+    'Shift não transforma a rolagem em deslocamento lateral')
   const pinch = wheel(0, 15, { ctrlKey: true })
   assert.equal(pinch.prevented, true, 'pinch wheel is prevented from zooming the page')
-  assert.deepEqual(JSON.parse(ui.run('JSON.stringify({ x: VIEW.x, y: VIEW.y, k: VIEW.k })')), { x: -42, y: -55, k: 1 })
+  assert.deepEqual(JSON.parse(ui.run('JSON.stringify({ x: VIEW.x, y: VIEW.y, k: VIEW.k })')), { x: 0, y: -67, k: 1 })
 
   const key = (value) => ui.dispatchDocument('keydown', {
     key: value, target: { tagName: 'BODY' }, preventDefault() {},
@@ -799,9 +1264,9 @@ test('graph wheel and drag pan at fixed scale, honor bounds, and never zoom', ()
   assert.equal(ui.run('JSON.stringify(VIEW)'), beforeKeys, 'legacy zoom keys do not move or scale the board')
   assert.doesNotMatch(html, /zoomAt|zoomLvl|VIEW\.k\s*=/)
 
-  const minX = bounds.vw - bounds.width, minY = bounds.vh - bounds.height
+  const minY = bounds.vh - bounds.height
   wheel(5000, 5000)
-  assert.deepEqual(JSON.parse(ui.run('JSON.stringify({ x: VIEW.x, y: VIEW.y })')), { x: minX, y: minY })
+  assert.deepEqual(JSON.parse(ui.run('JSON.stringify({ x: VIEW.x, y: VIEW.y })')), { x: 0, y: minY })
   wheel(-5000, -5000)
   assert.deepEqual(JSON.parse(ui.run('JSON.stringify({ x: VIEW.x, y: VIEW.y })')), { x: 0, y: 0 })
 
@@ -811,12 +1276,30 @@ test('graph wheel and drag pan at fixed scale, honor bounds, and never zoom', ()
     ui.dispatchElement('#viewport', 'pointerup', {})
   }
   drag(-2000, -2000)
-  assert.deepEqual(JSON.parse(ui.run('JSON.stringify({ x: VIEW.x, y: VIEW.y })')), { x: minX, y: minY },
+  assert.deepEqual(JSON.parse(ui.run('JSON.stringify({ x: VIEW.x, y: VIEW.y })')), { x: 0, y: minY },
     'drag cannot pan beyond the far edges')
   drag(2000, 2000)
   assert.deepEqual(JSON.parse(ui.run('JSON.stringify({ x: VIEW.x, y: VIEW.y })')), { x: 0, y: 0 },
     'drag cannot pan past the near edges')
 })
+test('gestos exclusivamente laterais não movem o quadro e não abrem um card por engano', () => {
+  const ui = dashboard('pt-BR', 500)
+  ui.render(graphState(48, 8))
+  const before = ui.run('JSON.stringify(VIEW)')
+  ui.dispatchElement('#viewport', 'wheel', { deltaX: 300, deltaY: 0, preventDefault() {} })
+  assert.equal(ui.run('JSON.stringify(VIEW)'), before)
+  ui.dispatchElement('#viewport', 'pointerdown', { button: 0, clientX: 300, clientY: 100, pointerId: 1 })
+  ui.dispatchElement('#viewport', 'pointermove', { clientX: 50, clientY: 100 })
+  ui.dispatchElement('#viewport', 'pointerup', {})
+  assert.equal(ui.run('JSON.stringify(VIEW)'), before)
+  assert.equal(ui.run('suppressClick'), true)
+  const wide = dashboard('pt-BR', 1600)
+  wide.render(graphState(1, 1))
+  const centered = wide.run('VIEW.x')
+  wide.run('VIEW.x = 0; applyView()')
+  assert.equal(wide.run('VIEW.x'), centered, 'um quadro que cabe na tela mantém o alinhamento central')
+})
+
 test('phase boards expand for their cards and open with the complete graph visible', () => {
   const ui = dashboard('en', 1000)
   ui.render(graphState(48, 8))
@@ -894,6 +1377,25 @@ test('historico continua mostrando acoes com suas cores sem legenda separada', (
     assert.match(log, /class="t-task_validate" data-ok="false"/)
     assert.doesNotMatch(visibleLog, /\b(?:phase|task)_[a-z_]+\b/)
   }
+})
+
+test('novos eventos destacam o card correto sem destacar eventos sem tarefa', () => {
+  const ui = dashboard()
+  const state = graphState(1, 1)
+  ui.render(state, [{ type: 'task_note', task: 'T001', at: instant(1), note: 'primeiro evento' }])
+  ui.render(state, [
+    { type: 'task_done', task: 'T001', at: instant(2) },
+    { type: 'task_validate', task: 'T001', ok: true, at: instant(3) },
+    { type: 'task_validate', task: 'T001', ok: false, at: instant(4) },
+    { type: 'task_start', task: 'T001', at: instant(5) },
+    { type: 'task_fail', task: 'T001', at: instant(6) },
+    { type: 'task_note', at: instant(7), note: 'sem alvo' },
+  ])
+  const card = ui.cards.find(item => item.dataset.id === 'T001')
+  assert.equal(card.classList.contains('flash-done'), true)
+  assert.equal(card.classList.contains('flash-val'), true)
+  assert.equal(card.classList.contains('flash-bad'), true)
+  assert.equal(card.classList.contains('flash-start'), true)
 })
 
 test('review rejection history prefers its validation summary and truncates evidence as fallback', () => {
@@ -1159,7 +1661,7 @@ test('o seletor separa planos em andamento dos concluidos', () => {
   let options = ui.nodes.get('#runOptions').innerHTML
   assert.match(options, /em andamento/)
   assert.match(options, /data-run="root\/active" aria-current="true"/)
-  assert.match(options, /em execução/)
+  assert.match(options, /class="run-state working">em andamento<i/)
   assert.match(options, /parado/)
   assert.doesNotMatch(options, /data-run="root\/finished"/)
 
@@ -1177,7 +1679,7 @@ test('o seletor separa planos em andamento dos concluidos', () => {
   assert.ok(options.includes('data-run="root/finished"'))
   assert.equal(options.includes('data-run="root/active"'), false)
   assert.equal(options.includes('data-run="root/paused"'), false)
-  assert.match(options, /✓ no prumo/)
+  assert.match(options, /no prumo<i aria-hidden="true"/)
 
   ui.run("toggleRunFilter('progress')")
   options = ui.nodes.get('#runOptions').innerHTML
@@ -1199,6 +1701,9 @@ test('o seletor separa planos em andamento dos concluidos', () => {
   assert.equal(pressed(options, 'progress'), 'false')
   assert.equal(pressed(options, 'complete'), 'true')
 
+  ui.dispatchElement('#runOptions', 'click', { target: { closest: selector => selector === '.run-option'
+    ? { dataset: { run: 'root/finished' } } : null } })
+
   ui.run("updateRunSelect({ currentRoot: null, current: null, runs: [] })")
   assert.doesNotMatch(ui.nodes.get('#runOptions').innerHTML, /placeholder-01|data-run-demo/)
 })
@@ -1216,7 +1721,7 @@ test('um plano com todas as tarefas concluidas conta como no prumo mesmo sem os 
   assert.match(options, /aria-label="no prumo: 1"[^>]*>no prumo<small>1<\/small>/)
   assert.match(options, /aria-label="em andamento: 2"/)
   assert.match(options, /data-run="root\/finished" aria-current="true" aria-label="finished · Plano entregue · no prumo · 6 de 6 tarefas no prumo"/)
-  assert.match(options, /<span class="run-state complete"><i aria-hidden="true"><\/i>✓ no prumo<\/span>/)
+  assert.match(options, /<span class="run-state complete">no prumo<i aria-hidden="true"><\/i><\/span>/)
   assert.doesNotMatch(options, /parado|data-run="root\/halfway"/, 'the selected completed run opens its own group, without a paused badge')
 
   ui.run("toggleRunFilter('progress')")
@@ -1233,11 +1738,11 @@ test('um plano com todas as tarefas concluidas conta como no prumo mesmo sem os 
   ] })})`)
   ui.run("toggleRunFilter('complete')")
   options = ui.nodes.get('#runOptions').innerHTML
-  assert.match(option('finished'), /✓ no prumo/)
+  assert.match(option('finished'), /no prumo<i aria-hidden="true"/)
   assert.doesNotMatch(option('finished'), /parado/)
   ui.run("toggleRunFilter('progress')")
   options = ui.nodes.get('#runOptions').innerHTML
-  assert.match(option('halfway'), /<span class="run-state idle"><i aria-hidden="true"><\/i>parado<\/span>/)
+  assert.match(option('halfway'), /<span class="run-state idle">parado<i aria-hidden="true"><\/i><\/span>/)
 })
 
 test('um plano com tarefas puladas e as demais concluidas fica em no prumo e nomeia as puladas', () => {
@@ -1254,12 +1759,12 @@ test('um plano com tarefas puladas e as demais concluidas fica em no prumo e nom
   const option = (run) => options.slice(options.indexOf(`data-run="root/${run}"`), options.indexOf('</button>', options.indexOf(`data-run="root/${run}"`)))
   assert.match(options, /aria-label="no prumo: 2"/)
   assert.match(options, /aria-label="em andamento: 2"/)
-  assert.match(option('sonar'), /✓ no prumo/)
+  assert.match(option('sonar'), /no prumo<i aria-hidden="true"/)
   assert.match(option('sonar'), /13 de 14 tarefas no prumo · 1 pulada/)
   assert.doesNotMatch(option('sonar'), /parado/)
-  assert.match(option('legacy-skip'), /✓ no prumo[\s\S]*2 de 3 tarefas no prumo · 1 pulada/)
+  assert.match(option('legacy-skip'), /no prumo[\s\S]*2 de 3 tarefas no prumo · 1 pulada/)
   assert.doesNotMatch(option('legacy-open'), /run-state complete/,'without skippedCount an old server needs every task done')
-  assert.doesNotMatch(option('only-skipped'), /✓ no prumo/, 'nothing done means nothing delivered')
+  assert.doesNotMatch(option('only-skipped'), /no prumo<i aria-hidden="true"/, 'nothing done means nothing delivered')
 
   ui.run("toggleRunFilter('progress')")
   options = ui.nodes.get('#runOptions').innerHTML
@@ -1990,6 +2495,251 @@ test('the gain card opens the results tab and shows a human estimate only from m
   assert.match(card, /Human estimate: 1h30/)
   assert.match(card, /estimate · not measured/)
   assert.match(card, /for 1 of 3 tasks/, 'invalid or missing estimates are ignored silently and the coverage is stated')
+
+  const measuredBars = ui.run('renderGainPanel(input, tr, fmtMs, esc)', {
+    input: { factor: 2, historyComplete: true, oneAtATimeMs: 5000, partial: false,
+      criticalPathMs: 4000, humanEstimateMs: 90000, humanComparedMs: 60000,
+      humanEstimateTasks: 2, countedTasks: 3, withPrumoMs: 3000, savingsMs: 2000 },
+    tr: value => value, fmtMs: value => String(value), esc: value => String(value),
+  })
+  assert.match(measuredBars, /class="gain-bars"/)
+  assert.match(measuredBars, /class="gbar-track"/)
+})
+
+test('a matriz de vinte cenarios de ganho executa os helpers reais no VM do dashboard', () => {
+  const ui = dashboard('pt-BR')
+  const call = (code, values = {}) => ui.run(code, values)
+  const metrics = (tasks = {}, options = {}) => call('commandMetricsForRun(inputTasks, inputOptions)', {
+    inputTasks: tasks, inputOptions: options,
+  })
+  const gain = (analysis, tasks = {}, complete = false, options = {}) => call(
+    'calculateGain(inputAnalysis, inputTasks, inputComplete, inputOptions)',
+    { inputAnalysis: analysis, inputTasks: tasks, inputComplete: complete, inputOptions: options },
+  )
+  const tr = (key, ...values) => String(key).replace(/\{(\d+)\}/g, (_match, index) => String(values[Number(index)] ?? ''))
+  const fmt = (value) => value == null ? '—' : `${value}ms`
+  const escValue = (value) => String(value).replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+  const panel = (value, locale = 'pt-BR') => call(
+    'renderGainPanel(inputGain, inputTr, inputFmt, inputEsc, inputLocale)',
+    { inputGain: value, inputTr: tr, inputFmt: fmt, inputEsc: escValue, inputLocale: locale },
+  )
+  const manual = (value) => call(
+    'renderManualCoordination(inputGain, inputTr, inputFmt, inputEsc)',
+    { inputGain: value, inputTr: tr, inputFmt: fmt, inputEsc: escValue },
+  )
+  const span = (kind, from, to) => [kind, from, to]
+
+  // 1. Valores válidos, inválidos e ausentes seguem a mesma regra de estimativa manual.
+  assert.equal(call('taskManualEstimateMinutes(input)', { input: { manualEstimate: 45 } }), 45)
+  assert.equal(call('taskManualEstimateMinutes(input)', { input: { manualEstimate: '30' } }), 30)
+  for (const value of [undefined, null, -5, 'PT4H', '4h', NaN, Infinity, {}, []]) {
+    assert.equal(call('taskManualEstimateMinutes(input)', { input: { manualEstimate: value } }), null)
+  }
+  assert.equal(call('taskManualEstimateMinutes(input)', { input: null }), null)
+
+  // 2. Um ledger completo preserva só disparos elegíveis para a estimativa.
+  const ledger = metrics({}, { commandMetrics: {
+    complete: true,
+    byCommand: { start: 33, review: 27, 'plan-task': 4, 'plan-phase': 3, retry: 8, status: 162, 'begin-discussion': 8, bad_name: 99, Bad: 99, note: 0 },
+  } })
+  assert.equal(ledger.total, 245)
+  assert.deepEqual(JSON.parse(JSON.stringify(ledger.counts)), { execution: 33, review: 27, planning: 7, discussion: 8, retry: 8, technical: 162 })
+  const ledgerGain = gain({ per: [{ spans: [span('exec', 0, 60_000)] }, { spans: [span('review', 0, 60_000)] }] }, {}, true, {
+    commandMetrics: ledger.complete ? { complete: true, byCommand: ledger.byCommand } : {},
+  })
+  assert.deepEqual(JSON.parse(JSON.stringify(ledgerGain.commandCounts)), { planning: 7, execution: 33, review: 27 })
+  assert.equal(ledgerGain.manualCoordinationMs, 201 * 60_000)
+
+  // 3. Eventos anteriores ao cutoff contam; eventos posteriores, inválidos e desconhecidos não contam.
+  const before = '2026-01-01T00:00:00Z'
+  const eventTypes = [
+    'run_init', 'plan_sync', 'run_authorized', 'phase_discussion', 'phase_discussion_skipped', 'phase_discussed',
+    'phase_planning', 'phase_planning_skipped', 'phase_planned', 'task_discussion', 'task_discussion_skipped',
+    'task_discussed', 'task_planning', 'task_planning_skipped', 'task_planned', 'task_start', 'task_progress',
+    'task_review', 'task_review_progress', 'activity_start', 'activity_stop', 'task_contract_refreshed', 'task_validate',
+    'task_done', 'task_fail', 'task_retry', 'task_block', 'task_block_updated', 'task_unblock', 'task_skip', 'task_note',
+  ]
+  const events = eventTypes.map((type, index) => ({ type, at: `2025-12-31T23:${String(index).padStart(2, '0')}:00Z` }))
+  events.push({ type: 'task_start', at: before }, { type: 'task_start', at: 'not-a-date' }, { type: 'unknown', at: '2025-12-31T23:59:00Z' })
+  const eventMetrics = metrics({}, { commandMetrics: { startedAt: before }, events })
+  assert.equal(eventMetrics.byCommand.start, 1)
+  assert.equal(eventMetrics.byCommand.note, 1)
+  assert.equal(eventMetrics.byCommand['sync-plan'], 1)
+  assert.equal(eventMetrics.byCommand.fail, 1)
+  assert.equal(eventMetrics.byCommand['skip-phase-discussion'], 1)
+  assert.equal(eventMetrics.byCommand['skip-discussion'], 1)
+  assert.equal(eventMetrics.byCommand['skip-planning'], 1)
+
+  // 4. Sem eventos e sem ledger, a compatibilidade usa tentativas mínimas; com eventos vazios, não usa fallback.
+  const legacyTasks = {
+    A: { attempts: [{}, { reviewStartedAt: 'legacy' }], validations: [{ by: 'review' }, { by: 'executor' }], planningAttempts: [{}], discussionAttempts: [{}, {}] },
+    B: { attempts: [], validations: [], planningAttempts: [], discussionAttempts: [] },
+  }
+  const legacy = metrics(legacyTasks, { phaseWorkflows: { P1: { planningAttempts: [{}], discussionAttempts: [{}, {}] }, P2: {} } })
+  assert.equal(legacy.byCommand.start, 1)
+  assert.equal(legacy.byCommand.retry, 1)
+  assert.equal(legacy.byCommand.review, 1, 'validações e reviewStartedAt usam a maior contagem, sem duplicar disparos')
+  assert.equal(legacy.byCommand['plan-phase'], 1)
+  assert.equal(legacy.byCommand['begin-phase-discussion'], 2)
+  assert.equal(metrics(legacyTasks, { events: [] }).total, 0)
+
+  // O contrato público de prontidão rejeita estados incompletos e aceita apenas
+  // um intervalo de execução explícito, encerrado e cronologicamente válido.
+  assert.equal(call('isReadyForReview(input, inputPlan)', { input: null, inputPlan: {} }), false)
+  assert.equal(call('isReadyForReview(input, inputPlan)', { input: { state: 'pending' }, inputPlan: {} }), false)
+  assert.equal(call('isReadyForReview(input, inputPlan)', { input: { state: 'running', requireReview: false }, inputPlan: {} }), false)
+  assert.equal(call('isReadyForReview(input, inputPlan)', { input: { state: 'running', attempts: [{}] }, inputPlan: {} }), false)
+  assert.equal(call('isReadyForReview(input, inputPlan)', { input: { state: 'running', attempts: [{ activityTiming: 'explicit', reviewStartedAt: 'done' }] }, inputPlan: {} }), false)
+  assert.equal(call('isReadyForReview(input, inputPlan)', { input: { state: 'running', attempts: [{ activityTiming: 'explicit' }] }, inputPlan: {} }), false)
+  assert.equal(call('isReadyForReview(input, inputPlan)', { input: { state: 'running', attempts: [{ activityTiming: 'explicit', activityIntervals: [{ role: 'execution', startedAt: '2026-01-01T00:00:00Z' }] }] }, inputPlan: {} }), false)
+  assert.equal(call('isReadyForReview(input, inputPlan)', { input: { state: 'running', attempts: [{ activityTiming: 'explicit', activityIntervals: [{ role: 'execution', startedAt: 'bad', endedAt: 'bad' }] }] }, inputPlan: {} }), false)
+  assert.equal(call('isReadyForReview(input, inputPlan)', { input: { state: 'running', attempts: [{ activityTiming: 'explicit', activityIntervals: [{ role: 'execution', startedAt: '2026-01-01T00:01:00Z', endedAt: '2026-01-01T00:00:00Z' }] }] }, inputPlan: {} }), false)
+  assert.equal(call('isReadyForReview(input, inputPlan)', { input: { state: 'running', attempts: [{ activityTiming: 'explicit', activityIntervals: [{ role: 'execution', startedAt: '2026-01-01T00:00:00Z', endedAt: '2026-01-01T00:01:00Z' }] }] }, inputPlan: {} }), true)
+
+  // 5. Intervalos ativos filtram dados inválidos, somam cada tarefa e unem sobreposições.
+  const intervalGain = gain({
+    per: [
+      { id: 'A', spans: [span('exec', 0, 10_000), span('exec', 5_000, 20_000), span('review', 20_000, 30_000), span('noise', 0, 99_000), span('exec', 40_000, 40_000), span('exec', NaN, 50_000)] },
+      { id: 'B', spans: [span('plan', 0, 100_000), span('discussion', 0, 5_000)] },
+    ],
+    sharedSpans: [span('planning', 20_000, 40_000), span('exec', 30_000, 50_000), span('noise', 0, 100_000)],
+    cpLen: 90_000, criticalPathMeasured: true,
+  }, {}, true)
+  assert.equal(intervalGain.oneAtATimeMs, 75_000)
+  assert.equal(intervalGain.withPrumoMs, 50_000)
+  assert.equal(intervalGain.savingsMs, 25_000)
+  assert.equal(intervalGain.criticalPathMs, null, 'planejamento sem telemetria não contamina o caminho crítico')
+  assert.equal(intervalGain.partial, true)
+  const sparseGain = gain(null, null, true, { commandMetrics: {} })
+  assert.equal(sparseGain.oneAtATimeMs, null)
+  assert.equal(sparseGain.countedTasks, 0)
+  const missingSpanGain = gain({ per: [{ id: 'A' }, { id: 'B', spans: [] }] }, null, true, { commandMetrics: {} })
+  assert.equal(missingSpanGain.oneAtATimeMs, null)
+  assert.equal(missingSpanGain.partial, false)
+
+  // 6. A união pode ser medida sem economia quando as tarefas são sequenciais.
+  const sequential = gain({
+    per: [{ id: 'A', spans: [span('discussion', 0, 10_000), span('exec', 20_000, 30_000)] }, { id: 'B', spans: [span('review', 30_000, 40_000)] }],
+    sharedSpans: [span('planning', 10_000, 20_000)], cpLen: 40_000, criticalPathMeasured: true,
+  }, {}, true, { commandMetrics: { complete: true, byCommand: { start: 1 } } })
+  assert.equal(sequential.oneAtATimeMs, 40_000)
+  assert.equal(sequential.withPrumoMs, 40_000)
+  assert.equal(sequential.savingsMs, 0)
+  assert.equal(sequential.factor, 1)
+  assert.equal(sequential.criticalPathMs, 40_000)
+
+  // 7. Um histórico incompleto nunca apresenta ganho aferido, mesmo com intervalos.
+  const incomplete = gain({ per: [{ id: 'T', spans: [span('exec', 1_000, 691_000)] }], cpLen: 690_000 }, { T: { attempts: [{}] } })
+  assert.equal(incomplete.historyComplete, false)
+  assert.equal(incomplete.oneAtATimeMs, null)
+  assert.equal(incomplete.withPrumoMs, null)
+  assert.equal(incomplete.savingsMs, null)
+  assert.equal(incomplete.criticalPathMs, null)
+
+  // 8. Envelopes de planejamento e caminho crítico contaminado permanecem não aferidos.
+  const unmeasured = gain({
+    per: [{ id: 'A', spans: [span('exec', 1_000, 21_000), span('plan', 0, 115 * 60 * 60_000)] }],
+    phasePlanning: [{ duration: 115 * 60 * 60_000 }], cpLen: 115 * 60 * 60_000, criticalPathMeasured: true, unmeasuredActivity: true,
+  }, { A: { planningAttempts: [{ startedAt: 1_000, endedAt: 115 * 60 * 60_000 }] } }, true)
+  assert.equal(unmeasured.oneAtATimeMs, 20_000)
+  assert.equal(unmeasured.withPrumoMs, 20_000)
+  assert.equal(unmeasured.criticalPathMs, null)
+  assert.equal(unmeasured.partial, true)
+
+  // 9. Sem atividade suficiente não se fabrica uma economia ou um fator.
+  const emptyGain = gain({ per: [{ id: 'T', spans: [], unmeasured: true }], anyLive: true }, { T: { attempts: [{}] } }, true)
+  assert.equal(emptyGain.oneAtATimeMs, null)
+  assert.equal(emptyGain.withPrumoMs, null)
+  assert.equal(emptyGain.factor, null)
+  assert.equal(emptyGain.runActive, true)
+
+  // 10. Estimativas aceitam número/string válidos, ignoram inválidos e excluem tarefas skipped.
+  const estimated = gain({ per: [{ id: 'A', spans: [span('exec', 0, 60_000)] }, { id: 'B', spans: [span('exec', 0, 60_000)] }] }, {
+    A: { state: 'done', manualEstimate: 120 }, B: { state: 'done', manualEstimate: '30' }, C: { state: 'done', manualEstimate: 'oops' }, S: { state: 'skipped', manualEstimate: 999 },
+  }, true)
+  assert.equal(estimated.humanEstimateMs, 150 * 60_000)
+  assert.equal(estimated.humanEstimateTasks, 2)
+  assert.equal(estimated.countedTasks, 3)
+  assert.equal(estimated.humanComparedMs, 120_000)
+
+  // 11. A comparação humana exige tempo aferido de todas as tarefas estimadas.
+  const partialEstimated = gain({ per: [{ id: 'A', spans: [span('exec', 0, 600_000)] }, { id: 'B', spans: [] }] }, {
+    A: { state: 'done', manualEstimate: 30 }, B: { state: 'done', manualEstimate: 30 },
+  }, true)
+  assert.equal(partialEstimated.humanEstimateMs, 3_600_000)
+  assert.equal(partialEstimated.humanComparedMs, null)
+
+  // 12. Planejamento, execução e revisão são a única base da coordenação manual.
+  const commandGain = gain({ per: [{ spans: [span('exec', 0, 60_000)] }] }, {}, true, {
+    events: [
+      { type: 'task_start', at: '2026-01-01T00:00:00Z' }, { type: 'task_validation_started', at: '2026-01-01T00:01:00Z' },
+      { type: 'task_validate', at: '2026-01-01T00:01:01Z' }, { type: 'phase_eligible', at: '2026-01-01T00:01:02Z' },
+      { type: 'task_retry', at: '2026-01-01T00:02:00Z' }, { type: 'task_note', at: '2026-01-01T00:03:01Z' },
+    ],
+    commandMetrics: { startedAt: '2026-01-01T00:03:00Z', complete: false, byCommand: { note: 1, status: 2, 'plan-phase': 1, 'begin-discussion': 1, validate: 1 } },
+  })
+  assert.equal(commandGain.commandTotal, 2)
+  assert.deepEqual(JSON.parse(JSON.stringify(commandGain.commandCounts)), { planning: 1, execution: 1, review: 0 })
+  assert.equal(commandGain.manualCoordinationMs, 6 * 60_000)
+  assert.equal(commandGain.commandsComplete, false)
+
+  // 13. Tentativas, validações e campos de retry formam a contagem legada mínima.
+  const retryGain = gain({ per: [{ spans: [span('exec', 0, 60_000)] }, { spans: [span('exec', 0, 60_000)] }] }, {
+    A: { attempts: [{ reviewStartedAt: 'x' }, { reviewStartedAt: 'y' }, {}], validations: [{ by: 'review' }] },
+    B: { attempts: [{}], validations: [{ by: 'review' }, { by: 'executor' }] },
+  }, true)
+  assert.deepEqual(JSON.parse(JSON.stringify(retryGain.commandCounts)), { planning: 0, execution: 2, review: 3 })
+  assert.equal(retryGain.commandTotal, 5)
+  assert.equal(retryGain.savingsMs, 60_000)
+
+  // 14. A estimativa combinada inclui a coordenação, sem alterar a economia medida.
+  const phaseCommandGain = gain({ per: [{ spans: [span('exec', 0, 60_000)] }, { spans: [span('exec', 0, 60_000)] }] }, {}, true, {
+    events: [{ type: 'phase_planning', at: '2026-01-01T00:00:00Z' }, { type: 'task_note', at: '2026-01-01T00:01:00Z' }],
+  })
+  assert.equal(phaseCommandGain.commandTotal, 1)
+  assert.equal(phaseCommandGain.savingsMs, 60_000)
+  assert.equal(phaseCommandGain.combinedEstimateMs, 240_000)
+
+  // 15. Renderização distingue histórico incompleto, ausência de atividade, parcial e medida completa.
+  assert.match(panel(incomplete), /Event history is incomplete/)
+  assert.match(panel(emptyGain), /No recorded agent activity/)
+  assert.match(panel(unmeasured), /unmeasured periods are omitted/)
+  assert.match(panel(sequential), /waiting time is excluded/)
+
+  // 16. Barras e caminho crítico aparecem somente quando a escala e o dado existem.
+  assert.match(panel(sequential), /gain-bars/)
+  assert.match(panel({ ...sequential, oneAtATimeMs: null, withPrumoMs: null, savingsMs: null, combinedEstimateMs: null,
+    factor: null, criticalPathMs: null, humanComparedMs: null, humanEstimateMs: null }), /Not measured/)
+  const humanPanel = panel({ ...estimated, criticalPathMs: 120_000 })
+  assert.match(humanPanel, /gain-human/)
+  assert.match(humanPanel, /Agents on the same tasks/)
+  assert.match(humanPanel, /gain-critical/)
+
+  // 17. O painel humano usa os mesmos dados e escapa textos fornecidos pelo catálogo.
+  const hostile = { ...estimated, commandsByName: { '<bad>': 1 }, commandTotal: 1, manualCoordinationMs: 180_000 }
+  const hostileMarkup = manual(hostile)
+  assert.match(hostileMarkup, /&lt;bad&gt;/)
+  assert.doesNotMatch(hostileMarkup, /<bad>/)
+
+  // 18. A coordenação manual cobre total zero, singular, plural, defaults e histórico parcial.
+  assert.match(manual({}), /No command recorded yet/)
+  assert.match(manual({ commandCounts: { planning: 1, execution: 0, review: 0 }, commandTotal: 1, manualCoordinationMs: 180_000 }), /1 command/)
+  assert.match(manual({ commandCounts: { planning: 1, execution: 1, review: 1 }, commandTotal: 3, manualCoordinationMs: 540_000, minutesPerCommand: 3, commandsComplete: false }), /3 commands/)
+  assert.match(manual({ commandCounts: { planning: 0, execution: 0, review: 0 }, commandTotal: 0, commandsByName: {}, commandsComplete: true }), /Fixed assumption/)
+  const missingCountsMarkup = manual({ commandCounts: {}, commandTotal: 0, commandsByName: {}, commandsComplete: true })
+  assert.equal((missingCountsMarkup.match(/0 commands/g) ?? []).length, 3)
+
+  // 19. O detalhamento ordena comandos e preserva apenas os nomes elegíveis.
+  const detailMarkup = manual({ commandCounts: { planning: 2, execution: 1, review: 1 }, commandTotal: 4, manualCoordinationMs: 720_000, minutesPerCommand: 3, commandsByName: { review: 1, start: 1, 'plan-task': 1, 'plan-phase': 1 }, commandsComplete: true })
+  assert.ok(detailMarkup.indexOf('<td>plan-phase</td>') < detailMarkup.indexOf('<td>review</td>'))
+  assert.match(detailMarkup, /Only planning, execution and review dispatches count/)
+  assert.doesNotMatch(detailMarkup, /Partial dispatch history/)
+
+  // 20. Fator e escalas mantêm limite de 100% e suportam os dois idiomas do produto.
+  const bounded = { ...sequential, factor: 4 / 3, oneAtATimeMs: 40_000, withPrumoMs: 80_000, savingsMs: 0, manualCoordinationMs: 0, humanEstimateMs: 120_000, humanComparedMs: 0, humanEstimateTasks: 1, countedTasks: 1 }
+  assert.match(panel(bounded, 'pt-BR'), /1,33×/)
+  const english = call('renderGainPanel(inputGain, inputTr, inputFmt, inputEsc, "en")', { inputGain: bounded, inputTr: tr, inputFmt: fmt, inputEsc: escValue })
+  assert.match(english, /1\.33×/)
 })
 
 test('o trilho diferencia fases concluidas, ativas e aguardando', () => {
@@ -2233,6 +2983,396 @@ test('guide button is labeled with one word in English and Brazilian Portuguese'
     assert.match(html, /id="guideButton"[^>]*data-i18n="Open guide">Open guide<\/button>/)
     assert.equal(dashboard(lang).run("tr('Open guide')"), label)
   }
+})
+
+test('boot do guia inline usa o dashboard real e seus alvos de filtro e card', () => {
+  const ui = dashboard('en', 1000, new Map(), { state: null, urls: [] }, { full: true, guideDemo: 'board' })
+  assert.equal(ui.run('GUIDE_DEMO'), 'board')
+  assert.equal(ui.run('STATE.run'), 'checkout')
+  assert.match(ui.nodes.get('#nodes').innerHTML, /data-id="T8"/)
+  assert.equal(ui.run('typeof window.prumoGuideDemo.focus'), 'function')
+  ui.run("window.prumoGuideDemo.focus('filters')")
+  assert.equal(ui.nodes.get('#filterPanel').hidden, false)
+  ui.run("window.prumoGuideDemo.focus('card')")
+  assert.equal(ui.run('POP.id'), 'T8')
+  ui.run('window.prumoGuideDemo.pause(true); window.prumoGuideDemo.pause(false); showGuideDemo("board", "filters"); stopGuideDemos({ dispose: true })')
+  ui.run('RESULTS_OPEN = true; window.prumoGuideDemo.focus("board")')
+  assert.equal(ui.run('RESULTS_OPEN'), false)
+  ui.dispatchDocument('visibilitychange', {})
+  assert.equal(ui.run('TICK_GENERATION'), 0)
+  ui.run('loadResults()')
+  ui.run('RESULTS_OPEN = true; jumpToPhase("F1")')
+  assert.equal(ui.run('RESULTS_OPEN'), false)
+  ui.run('openTask("T8"); openTask("T8")')
+  assert.equal(ui.run('POP'), null)
+  ui.run('STATE.tasks.T8.attempts = [{startedAt:"2026-01-01T00:00:00Z",endedAt:"2026-01-01T00:00:10Z"}]; STATE.tasks.T8.validations = [{by:"review",ok:true,at:"2026-01-01T00:00:10Z"}]; fillPop("T8")')
+  assert.match(ui.nodes.get('#popBody').innerHTML, /✓ Prumo/)
+  const calls = []
+  const child = { contentWindow: { prumoGuideDemo: { pause(value) { calls.push(value) } } } }
+  const panel = ui.nodes.get('#guideExamplePanel')
+  const loading = { hidden: true, textContent: '' }
+  panel.querySelector = selector => selector === 'iframe' ? child : loading
+  ui.run('showGuideDemo("board", "filters"); $("#guideBoardFrame").onload()')
+  assert.equal(panel.dataset.guideState, 'error')
+  assert.match(loading.textContent, /Unable to show this step/)
+  assert.ok(calls.includes(true))
+})
+
+test('boot completo do guia de resultados usa a aba real e o foco de atividade', () => {
+  const ui = dashboard('pt-BR', 1000, new Map(), { state: null, urls: [] }, { full: true, guideDemo: 'results' })
+  assert.equal(ui.run('GUIDE_DEMO'), 'results')
+  assert.equal(ui.run('RESULTS_OPEN'), true)
+  assert.match(ui.nodes.get('#results').innerHTML, /id="gainPanel"/)
+  ui.run('matchMedia = () => ({ matches: false })')
+  ui.run('window.prumoGuideDemo.focus("gain"); matchMedia = () => ({matches:true}); window.prumoGuideDemo.focus("times")')
+  assert.equal(ui.nodes.get('#results .agent-activity').classList.contains('prumo-guide-target'), true)
+  ui.run("window.prumoGuideDemo.focus('times')")
+  assert.ok(ui.nodes.get('#results').innerHTML.includes('agent-activity'))
+  assert.ok(ui.nodes.get('#results').classList.contains('open'))
+})
+
+test('boot completo normal inicializa onboarding, polling e identidade sem rede real', async () => {
+  const ui = dashboard('en', 1000, new Map(), { state: null, urls: [] }, { full: true })
+  assert.equal(ui.run('typeof ONBOARDING'), 'object')
+  ui.run('refreshOnboarding()')
+  await Promise.resolve()
+  await Promise.resolve()
+})
+
+test('metricas inline sem eventos derivam disparos das tentativas e dos fluxos de fase', () => {
+  const ui = dashboard()
+  const input = {
+    A: { attempts: [{ reviewStartedAt: instant(4) }, {}], validations: [{ by: 'review' }], planningAttempts: [{}], discussionAttempts: [{}] },
+    B: { attempts: [], validations: [], planningAttempts: [{}, {}], discussionAttempts: [] },
+  }
+  const options = { phaseWorkflows: { F1: { planningAttempts: [{}], discussionAttempts: [{}] } } }
+  const result = ui.run('commandMetricsForRun(input, options)', { input, options })
+  assert.deepEqual(result.counts, { execution: 1, review: 1, planning: 4, discussion: 2, retry: 1, technical: 0 })
+  assert.equal(result.byCommand.start, 1)
+  assert.equal(result.byCommand.retry, 1)
+  assert.equal(result.byCommand['plan-task'], 3)
+  assert.equal(result.byCommand['begin-phase-discussion'], 1)
+})
+
+test('historico inline escolhe o recibo de revisao mais recente dentro do intervalo', () => {
+  const ui = dashboard()
+  const input = { validations: [
+    { by: 'review', attempt: 1, at: instant(10) },
+    { by: 'review', attempt: 2, at: instant(20) },
+    { by: 'review', at: instant(30) },
+    { by: 'review', attempt: 2, at: 'data inválida' },
+  ] }
+  const receipt = ui.run('latestReviewReceipt(input, 2, Date.parse(start), Date.parse(end))', {
+    input, start: instant(15), end: instant(25),
+  })
+  assert.equal(receipt, Date.parse(instant(20)))
+})
+
+test('historico inline cobre validacao iniciada, recibo sem ocorrencia e plano antes da fase', () => {
+  const ui = dashboard()
+  const state = { tasks: { T1: task('T1', 'pending', { validations: [
+    { by: 'review', ok: false, token: 'v1', at: instant(1) },
+  ] }) } }
+  ui.run('STATE = input', { input: state })
+  const sentence = ui.run('eventSentence(input)', { input: {
+    type: 'task_validation_started', task: 'T1', token: 'v1', by: 'review', at: instant(2),
+  } })
+  assert.match(sentence, /began validation for task[\s\S]*T1/)
+
+  const nearest = ui.run('validationForEvent(input, [])', { input: {
+    type: 'task_validate', task: 'T1', by: 'review', ok: false, at: instant(2),
+  } })
+  assert.equal(nearest.at, instant(1))
+  const fallback = ui.run('eventDetail(input, [])', { input: {
+    type: 'task_validate', task: 'T1', by: 'review', ok: false, summary: '   ', evidence: 'evidence fallback', at: instant(2),
+  } })
+  assert.equal(fallback, 'evidence fallback')
+
+  const planMarkup = ui.run('fmtTaskPlan(input)', { input: {
+    verification: [{ criterion: 'plain check', check: 1 }],
+    openQuestions: [
+      { question: 'Now?', blocking: false, decideBy: 'user-now' },
+      { question: 'Executor?', blocking: false, decideBy: 'executor' },
+      { question: 'Default?', blocking: false },
+      { question: 'Task?', blocking: false, decideBy: { beforeTask: 'T2' } },
+      { question: 'Which phase?', blocking: false, decideBy: { beforePhase: 'F2' } },
+    ],
+  } })
+  assert.match(planMarkup, /before phase F2/)
+  const contractMarkup = ui.run('fmtContract(input)', { input: [{ run: 'bun test', expect: 'all pass' }, { run: 'bun lint' }] })
+  assert.match(contractMarkup, /<code>bun test<\/code> → all pass/)
+
+  const objectSummary = ui.run('eventDetail(input, [])', { input: {
+    type: 'task_validate', task: 'T1', by: 'review', ok: false, summary: { reason: 'missing evidence' }, at: instant(2),
+  } })
+  assert.match(objectSummary, /missing evidence/)
+})
+
+test('historico inline traduz as transicoes de plano, fase e tarefa', () => {
+  const ui = dashboard()
+  ui.run("STATE = { tasks: { T1: { validations: [] } }, phaseWorkflows: {} }")
+  const events = [
+    { type: 'schema_migrate' },
+    { type: 'plan_sync_audit' },
+    { type: 'plan_sync' },
+    { type: 'phase_discussion', phase: 'F1' },
+    { type: 'phase_discussion_skipped', phase: 'F1' },
+    { type: 'phase_discussed', phase: 'F1' },
+    { type: 'phase_planning_skipped', phase: 'F1' },
+    { type: 'phase_planned', phase: 'F1' },
+    { type: 'task_discussion', task: 'T1' },
+    { type: 'task_discussion_skipped', task: 'T1' },
+    { type: 'task_discussed', task: 'T1' },
+    { type: 'task_planning', task: 'T1' },
+    { type: 'task_planning_skipped', task: 'T1' },
+    { type: 'task_planned', task: 'T1' },
+    { type: 'task_contract_refreshed', task: 'T1' },
+    { type: 'task_block_updated', task: 'T1' },
+    { type: 'task_skip', task: 'T1' },
+  ]
+  for (const input of events) assert.ok(ui.run('eventSentence(input)', { input }))
+  ui.render({ run: 'transitions', plan: { phases: [{ id: 'F1', title: 'Phase 1' }] },
+    tasks: { T1: task('T1', 'pending') }, derived: { T1: { effective: 'pending' } } },
+  events.map((event, index) => ({ ...event, at: instant(index + 1) })))
+  assert.ok(ui.nodes.get('#events').innerHTML.includes('schema_migrate'))
+  assert.match(ui.run("eventRole('unknown')"), /var\(--accent\)/)
+  ui.run("STATE = { plan: { phases: [{ id: 'F1' }] }, tasks: { T1: input }, derived: { T1: { effective: 'done' } } }", { input: task('T1', 'done', { phase: 'F1' }) })
+  assert.equal(ui.run("phaseColour('F1')"), 'var(--done)')
+  assert.equal(ui.run("eventColour({ type: 'task_validation_started', task: 'T1', by: 'executor' })"), 'var(--running)')
+  assert.equal(ui.run("eventColour({ type: 'task_review_progress' })"), 'var(--review)')
+  assert.equal(ui.run("eventColour({ type: 'task_start' })"), 'var(--running)')
+  assert.equal(ui.run("eventColour({ type: 'phase_planning' })"), 'var(--planning)')
+  assert.equal(ui.run("eventColour({ type: 'phase_discussion' })"), 'var(--discussion)')
+  assert.equal(ui.run("eventColour({ type: 'legacy', state: 'waiting' })"), 'var(--waiting)')
+  assert.match(ui.run("taskReference('T1', true)"), /href="#task-T1"/)
+  assert.match(ui.run("taskReference('T99', false)"), /<b class="task-ref/)
+  assert.match(ui.run("taskText('T1 depends on F1')"), /task-ref[\s\S]*F1/)
+})
+
+test('navegacao inline conclui a chegada e limpa resultados pendentes', () => {
+  const ui = dashboard()
+  ui.run(`setTimeout = (callback) => { callback(); return 1 }; clearTimeout = () => {}; matchMedia = () => ({ matches: false }); animateNavigation($('#viewport')); backToGraph(); clearResultsForPendingRun()`)
+  assert.equal(ui.nodes.get('#viewport').classList.contains('navigating'), false)
+  assert.equal(ui.nodes.get('#results').getAttribute('aria-busy'), 'true')
+})
+
+test('controlador inline de quadros carrega, foca, invalida e descarta demos', () => {
+  const ui = dashboard()
+  const frame = () => ({
+    dataset: {}, src: '', onload: null,
+    removeAttribute(name) { if (name === 'src') this.src = '' },
+    contentWindow: { prumoGuideDemo: { calls: [], focus(target) { this.calls.push(target) } } },
+  })
+  const frames = { board: frame(), results: frame() }, states = []
+  const output = (mode, state) => states.push([mode, state])
+  const controller = ui.run('createGuideDemoFrameController(input, output)', { input: frames, output })
+  controller.show('ausente', 'board')
+  assert.deepEqual(states, [])
+  controller.show('board', 'filters')
+  assert.deepEqual(states.at(-1), ['board', 'loading'])
+  frames.board.onload()
+  assert.deepEqual(frames.board.contentWindow.prumoGuideDemo.calls, ['filters'])
+  controller.show('board', 'card')
+  assert.deepEqual(frames.board.contentWindow.prumoGuideDemo.calls, ['filters', 'card'])
+  controller.show('results', 'gain')
+  const staleResultsLoad = frames.results.onload
+  controller.show('board', 'stale-results')
+  staleResultsLoad()
+  assert.deepEqual(states.at(-1), ['results', 'idle'])
+  frames.board.contentWindow.prumoGuideDemo.focus = undefined
+  controller.show('board', 'missing-focus')
+  assert.deepEqual(states.at(-1), ['board', 'error'])
+  frames.board.contentWindow.prumoGuideDemo.focus = () => { throw new Error('frame indisponivel') }
+  controller.show('board', 'throwing-focus')
+  controller.show('board', 'duplicate-load')
+  frames.board.onload()
+  assert.deepEqual(states.at(-1), ['board', 'error'])
+  controller.show('results', 'gain')
+  const lateLoad = frames.results.onload
+  controller.stop()
+  controller.stop({ dispose: true })
+  lateLoad()
+  assert.equal(frames.results.src, '')
+  assert.equal(frames.board.src, '')
+  assert.deepEqual(states.at(-1), ['results', 'idle'])
+
+  const quietFrame = frame()
+  const quietController = ui.run('createGuideDemoFrameController(input)', { input: { board: quietFrame } })
+  quietController.show('board', 'board')
+  quietFrame.onload()
+})
+
+test('controlador inline cancela o foco em cache se o guia fechar durante a leitura do frame', () => {
+  const ui = dashboard()
+  const calls = []
+  const frame = {
+    dataset: {}, src: '', onload: null,
+    removeAttribute(name) { if (name === 'src') this.src = '' },
+    contentWindow: { prumoGuideDemo: { focus(target) { calls.push(target) } } },
+  }
+  let accesses = 0
+  let controller
+  const frames = { results: { dataset: {}, src: '', onload: null, removeAttribute() {} } }
+  Object.defineProperty(frames, 'board', {
+    enumerable: true,
+    get() {
+      accesses += 1
+      if (accesses === 5) controller.stop()
+      return frame
+    },
+  })
+  const states = []
+  const output = (mode, state) => states.push([mode, state])
+  controller = ui.run('createGuideDemoFrameController(input, output)', { input: frames, output })
+  controller.show('board', 'filters')
+  frame.onload()
+  assert.deepEqual(calls, ['filters'])
+
+  controller.show('board', 'card')
+
+  assert.equal(accesses, 5)
+  assert.deepEqual(calls, ['filters'])
+  assert.deepEqual(states, [['board', 'loading'], ['board', 'ready'], ['board', 'idle']])
+})
+
+test('onboarding inline abre, percorre um papel e fecha o guia', async () => {
+  const makeNode = () => {
+    const listeners = new Map(), classes = new Set()
+    return {
+      hidden: true, disabled: false, textContent: '', dataset: {}, style: {}, scrollTop: 0,
+      classList: { add: name => classes.add(name), remove: name => classes.delete(name), toggle: (name, on) => on ? classes.add(name) : classes.delete(name) },
+      addEventListener(type, callback) { listeners.set(type, callback) },
+      emit(type, event = {}) { listeners.get(type)?.(event) },
+      setAttribute() {}, focus() {}, getBoundingClientRect: () => ({ bottom: 10 }),
+      contains: () => false, querySelector: () => null, querySelectorAll: () => [],
+    }
+  }
+  const ids = ['#guideTitle', '#guideDescription', '#guideCount', '#guideStepTitle', '#guideAnnouncement', '#guidePrevious', '#guideNext', '#guideSkip', '#guideIntroPanel', '#guideMockRoles', '#guideExamplePanel', '#guideGainPanel', '#guideCommandPanel']
+  const children = new Map(ids.map(id => [id, makeNode()])), roles = ['orchestrator', 'planner', 'executor', 'reviewer'].map(role => {
+    const node = makeNode(); node.dataset.guideRole = role; return node
+  })
+  children.get('#guideMockRoles').querySelectorAll = () => roles
+  const root = makeNode(); root.hidden = true; root.querySelector = id => children.get(id) ?? null
+  const launcher = makeNode(); launcher.hidden = false
+  const invitation = makeNode(), invitationOpen = makeNode(), invitationDismiss = makeNode()
+  const document = { fullscreenElement: null, documentElement: makeNode(), listeners: new Map(), querySelector: id => ({ '#guideInvitation': invitation, '#guideInvitationOpen': invitationOpen, '#guideInvitationDismiss': invitationDismiss }[id] ?? null), addEventListener(type, callback) { this.listeners.set(type, callback) }, exitFullscreen() { this.fullscreenElement = null } }
+  const storage = new Map(), window = { location: { search: '' }, localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) }, listeners: new Map(), addEventListener(type, callback) { this.listeners.set(type, callback) }, requestAnimationFrame: callback => (callback(), 1), cancelAnimationFrame() {} }
+  root.requestFullscreen = () => { document.fullscreenElement = root; document.listeners.get('fullscreenchange')?.(); return Promise.resolve() }
+  const input = { root, launcher, document, window, translate: (value, ...args) => value.replace(/\{(\d+)\}/g, (_, index) => args[Number(index)] ?? '') }
+  const ui = dashboard()
+  const onboarding = ui.run('createPrumoOnboarding(input)', { input })
+  launcher.emit('click')
+  await Promise.resolve()
+  assert.equal(document.fullscreenElement, root)
+  assert.equal(root.hidden, false)
+  assert.equal(children.get('#guideStepTitle').textContent, 'Overview')
+  children.get('#guideNext').emit('click')
+  roles[2].emit('click')
+  assert.equal(children.get('#guideTitle').textContent, 'The executor')
+  children.get('#guideNext').emit('click')
+  children.get('#guideNext').emit('click')
+  const keydown = document.listeners.get('keydown')
+  keydown({ key: 'ArrowLeft', target: root, preventDefault() {} })
+  keydown({ key: 'ArrowRight', target: root, preventDefault() {} })
+  keydown({ key: 'Escape', target: root, preventDefault() {} })
+  assert.equal(root.hidden, true)
+  assert.equal(storage.get('prumoOnboardingDismissed'), 'true')
+  keydown({ key: 'ArrowRight', target: root, preventDefault() {} })
+  onboarding.open()
+  await Promise.resolve()
+  document.fullscreenElement = root
+  document.listeners.get('fullscreenchange')?.()
+  document.fullscreenElement = null
+  document.listeners.get('fullscreenchange')?.()
+  assert.equal(root.hidden, true)
+
+  const defaultRoot = makeNode(), defaultLauncher = makeNode()
+  defaultRoot.hidden = true
+  defaultRoot.querySelector = id => children.get(id) ?? null
+  const defaultTranslateInput = { ...input, root: defaultRoot, launcher: defaultLauncher }
+  delete defaultTranslateInput.translate
+  const defaultTranslate = ui.run('createPrumoOnboarding(input)', { input: defaultTranslateInput })
+  defaultTranslate.open()
+  assert.equal(typeof defaultTranslate.open, 'function')
+
+  const delayedRoot = makeNode(), delayedLauncher = makeNode()
+  delayedRoot.hidden = true
+  delayedRoot.querySelector = id => children.get(id) ?? null
+  let resolveFullscreen
+  delayedRoot.requestFullscreen = () => {
+    document.fullscreenElement = delayedRoot
+    return new Promise(resolve => { resolveFullscreen = resolve })
+  }
+  const delayedApi = ui.run('createPrumoOnboarding(input)', {
+    input: { ...input, root: delayedRoot, launcher: delayedLauncher },
+  })
+  delayedLauncher.emit('click')
+  delayedApi.close()
+  resolveFullscreen()
+  await Promise.resolve()
+  assert.equal(delayedRoot.hidden, true)
+
+  for (let step = 0; step < 13; step += 1) children.get('#guideNext').emit('click')
+  assert.equal(root.hidden, true)
+  assert.equal(typeof onboarding.open, 'function')
+  await Promise.resolve()
+
+  assert.equal(ui.run('createPrumoOnboarding({ root: null, launcher: null, document: null })'), null)
+  window.localStorage.getItem = () => { throw new Error('storage indisponivel') }
+  window.localStorage.setItem = () => { throw new Error('storage indisponivel') }
+  window.location = { get search() { throw new Error('URL indisponivel') } }
+  document.querySelector = () => null
+  children.get('#guideMockRoles').querySelectorAll = () => null
+  const edgeOnboarding = ui.run('createPrumoOnboarding(input)', { input })
+  edgeOnboarding.open()
+  edgeOnboarding.close()
+
+  document.querySelector = id => ({ '#guideInvitation': invitation, '#guideInvitationOpen': invitationOpen, '#guideInvitationDismiss': invitationDismiss }[id] ?? null)
+  children.get('#guideMockRoles').querySelectorAll = () => roles
+  window.listeners.get('resize')?.()
+  root.requestFullscreen = () => { document.fullscreenElement = root; document.listeners.get('fullscreenchange')?.(); return Promise.resolve() }
+  const pendingFrames = []
+  window.requestAnimationFrame = callback => { pendingFrames.push(callback); return pendingFrames.length }
+  window.cancelAnimationFrame = () => {}
+  const queuedOnboarding = ui.run('createPrumoOnboarding(input)', { input })
+  queuedOnboarding.open()
+  for (let step = 0; step < 5; step += 1) children.get('#guideNext').emit('click')
+  pendingFrames.shift()?.()
+  children.get('#guideNext').emit('click')
+  children.get('#guidePrevious').emit('click')
+  pendingFrames.shift()?.()
+  children.get('#guidePrevious').emit('click')
+  for (let step = 0; step < 4; step += 1) children.get('#guidePrevious').emit('click')
+  root.contains = () => true
+  const queuedKeydown = document.listeners.get('keydown')
+  queuedKeydown({ key: 'ArrowRight', target: { closest: () => null, tagName: 'DIV' }, preventDefault() {} })
+  queuedKeydown({ key: 'ArrowRight', target: { closest: () => null, tagName: 'INPUT' }, preventDefault() {} })
+  const contains = root.contains
+  root.contains = undefined
+  queuedKeydown({ key: 'ArrowRight', target: {}, preventDefault() {} })
+  root.contains = contains
+  await Promise.resolve()
+  await Promise.resolve()
+  await new Promise(resolve => setImmediate(resolve))
+  document.exitFullscreen = () => { throw new Error('saída bloqueada') }
+  queuedOnboarding.close()
+  document.fullscreenElement = null
+  let resolveDelayedFullscreen
+  root.requestFullscreen = () => {
+    document.fullscreenElement = root
+    return new Promise(resolve => { resolveDelayedFullscreen = resolve })
+  }
+  const delayedOnboarding = ui.run('createPrumoOnboarding(input)', { input })
+  delayedOnboarding.open()
+  delayedOnboarding.close()
+  resolveDelayedFullscreen()
+  await new Promise(resolve => setImmediate(resolve))
+  window.location = null
+  ui.run('createPrumoOnboarding(input)', { input })
+  root.requestFullscreen = () => { throw new Error('sem gesto') }
+  document.fullscreenElement = null
+  ui.run('createPrumoOnboarding(input).open()', { input })
+  assert.equal(root.hidden, false)
 })
 
 test('results and back-to-graph are one CTA whose label alternates', async () => {
@@ -2950,6 +4090,23 @@ test('opening results while the selected run state is still loading never shows 
   assert.equal(ui.nodes.get('#results').getAttribute('aria-busy'), 'false')
 })
 
+test('resultados limpam quando a selecao muda durante a sincronizacao do historico', async () => {
+  const ui = dashboard()
+  let reads = 0
+  const state = new Proxy({}, {
+    get(target, property, receiver) {
+      if (property === 'run') return reads++ === 0 ? 'run-a' : 'run-b'
+      return Reflect.get(target, property, receiver)
+    },
+  })
+  ui.run('fetch = inputFetch', { inputFetch: async () => ({ ok: true, json: async () => ({ events: [], next: 0, total: 0, complete: true, revision: 'rev-a' }) }) })
+  ui.run("STATE = input; SELECTED_ROOT = 'root-a'; SELECTED_RUN = 'run-a'; CURRENT_ROOT = 'root-a'; CURRENT_RUN = 'run-a'; TICK_GENERATION = 1; STATE_RUN_KEY = 'root-a\\0run-a'; EVENT_HISTORY_KEY = STATE_RUN_KEY; RESULTS_OPEN = true", { input: state })
+  await ui.run('loadResults()')
+  assert.equal(ui.nodes.get('#results').getAttribute('aria-busy'), 'true')
+  assert.equal(ui.nodes.get('#results').innerHTML, '')
+  assert.equal(reads, 2)
+})
+
 test('tick repinta o ganho sem campos editáveis; ao trocar de run, limpa A e exibe B', async () => {
   const ui = dashboard()
   const makeRun = (run, id) => ({
@@ -3067,6 +4224,135 @@ test('a changed event revision replaces the cached browser history from its firs
   assert.deepEqual(JSON.parse(ui.run('JSON.stringify(FULL_EVENTS)')), [{ id: 'new-run-1' }])
   assert.equal(await ui.run("syncEventHistory(1, 'root/run-a')"), true)
   assert.deepEqual(JSON.parse(ui.run('JSON.stringify(FULL_EVENTS)')), [{ id: 'new-run-1' }, { id: 'new-run-2' }])
+})
+
+test('historico interrompe apos o limite de paginas sem fingir que terminou', async () => {
+  const ui = dashboard()
+  const responses = Array.from({ length: 10 }, (_, index) => ({
+    events: [{ id: `page-${index}` }], next: index + 1, total: 20, complete: false, revision: 'long-history',
+  }))
+  ui.run('fetch = inputFetch', { inputFetch: async () => ({ ok: true, json: async () => responses.shift() }) })
+  ui.run("TICK_GENERATION = 1; resetEventHistory('root/run-long')")
+  assert.equal(await ui.run("syncEventHistory(1, 'root/run-long')"), false)
+  assert.equal(ui.run('EVENT_OFFSET'), 10)
+  assert.equal(ui.run('FULL_EVENTS.length'), 10)
+})
+
+test('relogio de tarefa preserva planejamento nao aferido e mede discussoes execucao e revisao', () => {
+  const ui = dashboard()
+  const planning = task('P', 'planning', { planningAttempts: [{ startedAt: instant(1), endedAt: instant(2) }] })
+  const discussing = task('D', 'discussing', { discussionAttempts: [{ attempt: 1, startedAt: instant(1) }] })
+  const running = task('R', 'running', { attempts: [{ n: 1, startedAt: instant(1), endedAt: instant(3) }] })
+  const reviewing = task('V', 'reviewing', { attempts: [{ n: 1, startedAt: instant(1), reviewStartedAt: instant(1), endedAt: instant(3) }] })
+  const events = [
+    { type: 'task_discussion', task: 'D', attempt: 1, at: instant(1) },
+    { type: 'task_discussed', task: 'D', attempt: 1, at: instant(2) },
+    { type: 'task_start', task: 'R', attempt: 1, at: instant(1) },
+    { type: 'task_progress', task: 'R', attempt: 1, at: instant(2) },
+    { type: 'task_review_progress', task: 'V', attempt: 1, at: instant(2) },
+  ]
+  ui.run('EVENTS_COMPLETE = true')
+  assert.equal(ui.run('taskClock(input, "planning", inputEvents)', { input: planning, inputEvents: events }), null)
+  assert.equal(ui.run('taskClock(input, "discussing", inputEvents)', { input: discussing, inputEvents: events }), 1000)
+  assert.equal(ui.run('taskClock(input, "running", inputEvents)', { input: running, inputEvents: events }), 1000)
+  assert.equal(ui.run('taskClock(input, "reviewing", inputEvents)', { input: reviewing, inputEvents: events }), 1000)
+})
+
+test('helpers do relogio inline somam apenas atividade comprovada e excluem pausas e lacunas', () => {
+  const ui = dashboard()
+  const call = (code, values = {}) => ui.run(code, values)
+  const start = Date.parse(instant(0)), end = start + 2000
+  assert.deepEqual(call('activeSegments(NaN, 10)'), [])
+  assert.deepEqual(call('activeSegments(0, 10, null)'), [[0, 10]])
+  assert.deepEqual(call('activeSegments(0, 50, inputPauses)', { inputPauses: [
+    [10, 20], [15, 30], [0, 5], [40, 60], [NaN, 44], [7, 7],
+  ] }), [[5, 10], [30, 40]])
+  assert.deepEqual(call('splitMeasuredActivity(0, MAX_ACTIVITY_GAP_MS + 1, null, null)'), {
+    measured: [], unknown: [[0, 1_800_001]],
+  })
+  assert.deepEqual(call('splitMeasuredActivity(0, MAX_ACTIVITY_GAP_MS * 2, [MAX_ACTIVITY_GAP_MS], [])'), {
+    measured: [[0, 1_800_000], [1_800_000, 3_600_000]], unknown: [],
+  })
+
+  const activityEvents = [
+    { task: 'T', type: 'task_start', at: instant(0) },
+    { task: 'T', type: 'task_start', attempt: 1, at: instant(0) },
+    { task: 'T', type: 'task_start', attempt: 2, at: instant(1) },
+    { task: 'other', type: 'task_start', at: instant(1) },
+    { task: 'T', type: 'task_unblock', state: 'running', at: instant(2) },
+    { task: 'T', type: 'task_unblock', state: 'pending', at: instant(1) },
+    { task: 'T', type: 'task_start', at: 'invalid' },
+  ]
+  assert.deepEqual(call('activityTimes("T", 1, null, ["task_start"], inputStart, inputEnd)', { inputStart: start, inputEnd: end }), [])
+  assert.deepEqual(call('activityTimes("T", 1, inputEvents, ["task_start", "task_unblock"], inputStart, inputEnd)', {
+    inputEvents: activityEvents, inputStart: start, inputEnd: end,
+  }), [start, end])
+
+  const pauseEvents = [
+    { task: 'other', type: 'task_block', at: instant(0) },
+    { task: 'T', type: 'task_block', at: 'invalid' },
+    { task: 'T', type: 'task_block', at: instant(0) },
+    { task: 'T', type: 'task_block', at: instant(1) },
+    { task: 'T', type: 'task_unblock', at: instant(5) },
+    { task: 'T', type: 'task_planned', state: 'blocked', at: instant(10) },
+    { task: 'T', type: 'task_done', at: instant(10) },
+    { task: 'T', type: 'task_block', at: instant(20) },
+  ]
+  assert.deepEqual(call('taskPauses("T", null, inputNow)', { inputNow: end }), [])
+  assert.deepEqual(call('taskPauses("T", inputEvents, inputNow)', {
+    inputEvents: pauseEvents, inputNow: Date.parse(instant(30)),
+  }), [[start, Date.parse(instant(5))], [Date.parse(instant(20)), Date.parse(instant(30))]])
+
+  const taskEvents = [
+    { task: 'other', type: 'task_start', at: instant(1) },
+    { task: 'T', type: 'task_start', attempt: 2, at: instant(1) },
+    { task: 'T', type: 'task_unblock', state: 'pending', at: instant(1) },
+    { task: 'T', type: 'task_start', at: 'invalid' },
+    { task: 'T', type: 'task_start', at: instant(2) },
+    { task: 'T', type: 'task_start', attempt: 1, at: instant(1) },
+  ]
+  assert.equal(call('latestTaskActivity("T", 1, "unknown", null)'), null)
+  assert.equal(call('latestTaskActivity("T", 1, "running", inputEvents)', { inputEvents: taskEvents }), Date.parse(instant(2)))
+  assert.equal(call('latestReviewReceipt(inputTask, 1, inputStart, inputEnd)', {
+    inputTask: { validations: null }, inputStart: start, inputEnd: end,
+  }), null)
+  assert.equal(call('latestReviewReceipt(inputTask, 1, inputStart, inputEnd)', {
+    inputTask: { validations: [
+      { by: 'executor', at: instant(2) }, { by: 'review', attempt: 2, at: instant(2) },
+      { by: 'review', at: 'invalid' }, { by: 'review', at: instant(0) }, { by: 'review', attempt: 1, at: instant(2) },
+    ] }, inputStart: start, inputEnd: end,
+  }), end)
+  assert.equal(call('latestReviewActivity(inputTask, 1, inputStart, inputEnd, null)', {
+    inputTask: { id: 'T' }, inputStart: start, inputEnd: end,
+  }), null)
+  assert.equal(call('latestReviewActivity(inputTask, 1, inputStart, inputEnd, inputEvents)', {
+    inputTask: { id: 'T' }, inputStart: start, inputEnd: end,
+    inputEvents: [
+      { task: 'other', type: 'task_review_progress', at: instant(1) },
+      { task: 'T', type: 'task_review_progress', attempt: 2, at: instant(1) },
+      { task: 'T', type: 'task_review_progress', at: 'invalid' },
+      { task: 'T', type: 'task_review_progress', at: instant(2) },
+    ],
+  }), end)
+
+  const running = task('R', 'running', { attempts: [{ n: 1, startedAt: instant(0), endedAt: instant(1) }] })
+  const discussion = task('D', 'discussing', { discussionAttempts: [{ startedAt: instant(0) }] })
+  assert.equal(call('taskClock(inputTask, "unknown", [])', { inputTask: task('U') }), null)
+  assert.equal(call('taskClock(inputTask, "running", inputEvents)', {
+    inputTask: running, inputEvents: [{ task: 'R', type: 'task_start', at: instant(0) }],
+  }), null)
+  assert.equal(call('taskClock(inputTask, "discussing", inputEvents)', {
+    inputTask: discussion, inputEvents: [
+      { task: 'D', type: 'task_discussion', attempt: 1, at: instant(0) },
+      { task: 'D', type: 'task_discussed', attempt: 1, at: instant(1) },
+    ],
+  }), 1000)
+  assert.equal(call('subState(inputTask)', { inputTask: task('R', 'running', { attempts: [{}], validations: [{ attempt: 1, ok: true }] }) }), 'validated')
+  assert.equal(call('subState(inputTask)', { inputTask: task('R', 'running', { attempts: [{}], validations: [{ attempt: 1, ok: false }] }) }), 'valfail')
+  assert.equal(call('fmtMs(input)', { input: null }), '—')
+  assert.equal(call('fmtMs(input)', { input: 30_000 }), '30s')
+  assert.equal(call('fmtMs(input)', { input: 60_000 }), '1m00')
+  assert.equal(call('fmtMs(input)', { input: 3_600_000 }), '1h00')
 })
 
 test('115h task planning envelopes stay unmeasured and cannot inflate the critical path', () => {

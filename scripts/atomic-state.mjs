@@ -13,6 +13,7 @@ export function writeAtomicState(file, contents) {
         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25 * 2 ** attempt)
       }
     }
+  /* c8 ignore next -- O laço sempre retorna ou lança; esta passagem até finally não é executável. */
   } finally {
     // Best effort: preserve the original error if Windows also locks the temporary file.
     try { fs.rmSync(temporary, { force: true }) } catch {}

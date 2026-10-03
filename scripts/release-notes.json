@@ -1,4 +1,44 @@
 {
+  "2.4.0": {
+    "en": [
+      {
+        "title": "Fixed — Dashboard shutdown before update",
+        "items": [
+          "Stop the verified dashboard and wait for its port to become free before replacing the CLI or harness files",
+          "Restore the dashboard after a failed installation while keeping the update pending and preserving unrelated processes",
+          "Recognize equivalent Windows argument quoting while verifying the executable, script and options before stopping the dashboard"
+        ]
+      },
+      {
+        "title": "Fixed — Installation and task identity",
+        "items": [
+          "Install the verified local CLI package offline and restore the previous package if replacement fails",
+          "Restore managed Windows links without changing either destination",
+          "Reject inherited task and phase identifiers while preserving legitimate identifiers and stored data",
+          "Preserve legitimate task identifiers in dashboard responses without treating inherited properties as tasks",
+          "Reject malformed version values in installation markers and backup recovery without changing the original files",
+          "Validate synchronized plans using the run's existing planning mode and preserve state and history when the source is incompatible",
+          "Prioritize an explicit sync-plan source for legacy plans with human-readable names and no stored source path"
+        ]
+      },
+      {
+        "title": "Improved — Behavioral verification",
+        "items": [
+          "Measure eligible CLI and dashboard code with c8 and require matching source manifests across platforms",
+          "Verify historical reinstalls, update failures and recovery using isolated data and processes",
+          "Reject empty coverage files and preserve source identity when combining subprocess measurements"
+        ]
+      },
+      {
+        "title": "Improved — Dashboard filters and guide",
+        "items": [
+          "Keep plan status indicators on the right with synchronized animation and consistent spacing",
+          "Show visible and total tasks inside the filters control and keep the plan and filter menus mutually exclusive",
+          "Keep manual pipeline navigation vertical and share the same controls and visuals with the guide"
+        ]
+      }
+    ]
+  },
   "2.3.1": {
     "en": [
       {"title":"Fixed — Dashboard summary placement","items":["Return the valid-task summary to the board footer in the dashboard and guide while excluding skipped tasks"]},

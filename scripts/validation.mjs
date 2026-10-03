@@ -546,7 +546,7 @@ export async function runValidation(task, cwd, previousReceipt = null, onCheck =
       run: step.run, expect: step.expect, kind: step.kind ?? 'static', cwd: directories[index],
       shell, timeoutMs, expectedExitCodes: expectedExitCodes(step),
       exitCode: result.status, signal: result.signal, error: result.error?.message ?? null,
-      stdout: result.stdout ?? '', stderr: result.stderr ?? '', at: new Date().toISOString(),
+      stdout: result.stdout, stderr: result.stderr, at: new Date().toISOString(),
       workspaceRevision: revision,
     }
     checks.push(check)

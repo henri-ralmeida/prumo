@@ -290,6 +290,623 @@ function printedPhasePlanFragments(output) {
     .map(([, id, json]) => [id, JSON.parse(json)])
 }
 
+test('discussões de tarefa e fase recusam decisões ausentes e perguntas sem vínculo sem gravar resultado', t => {
+  const task = fixture(t)
+  task.ok('begin-discussion', 'T1')
+  const taskState = task.state(), taskRound = taskState.tasks.T1.discussionAttempts.at(-1)
+  const taskDiscovery = structuredClone(taskState.tasks.T1.discovery)
+  taskDiscovery.roundId = taskRound.roundId
+  taskDiscovery.nonce = taskRound.nonce
+  taskDiscovery.questions = taskDiscovery.questions.map(question => ({ ...question, roundId: taskRound.roundId }))
+  const phase = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }])
+  phase.ok('begin-phase-discussion', 'F1')
+  const phaseDiscovery = JSON.parse(readFileSync(phase.discovery('F1'), 'utf8'))
+  for (const [f, id, command, valid] of [
+    [task, 'T1', 'finish-discussion', taskDiscovery],
+    [phase, 'F1', 'finish-phase-discussion', phaseDiscovery],
+  ]) {
+    const statePath = join(dirname(f.planPath), '.specs', 'graph', id === 'T1' ? 'retry' : 'phase-negative', 'state.json')
+    const eventsPath = join(dirname(statePath), 'events.ndjson')
+    const before = [readFileSync(statePath, 'utf8'), readFileSync(eventsPath, 'utf8')]
+    for (const missing of ['decisions', 'roundId']) {
+      const invalid = structuredClone(valid)
+      if (missing === 'decisions') delete invalid.decisions
+      else invalid.questions.forEach(question => delete question.roundId)
+      const path = join(dirname(f.planPath), `invalid-discovery-${id}-${missing}.json`)
+      writeFileSync(path, JSON.stringify(invalid))
+      f.rejects(missing === 'decisions' ? /decisions/ : /fresh answered question/, command, id, '--context', path)
+      assert.deepEqual([readFileSync(statePath, 'utf8'), readFileSync(eventsPath, 'utf8')], before)
+    }
+  }
+})
+
+test('discussão de fase aberta pode concluir enquanto a migração estrutural aguarda essa rodada', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }])
+  f.ok('begin-phase-discussion', 'F1')
+  const context = f.discovery('F1')
+  const state = f.state()
+  delete state.phaseWorkflows.F2
+  f.save(state)
+  const original = structuredClone(state.phaseWorkflows.F1.discussionAttempts.at(-1))
+  const result = f.ok('finish-phase-discussion', 'F1', '--context', context)
+  assert.match(result.stdout + result.stderr, /Migration deferred/)
+  const current = f.state()
+  assert.equal(current.phaseWorkflows.F1.discussionAttempts.at(-1).roundId, original.roundId)
+  assert.equal(current.phaseWorkflows.F1.discussionAttempts.at(-1).result, 'discussed')
+  assert.equal(current.phaseWorkflows.F2, undefined)
+})
+
+test('planejamento de fase aberto pode concluir enquanto outra fase exige migração', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }])
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('plan-phase', 'F1', '--agent', 'planner')
+  f.writeArtifacts('F1')
+  const state = f.state()
+  delete state.phaseWorkflows.F2
+  f.save(state)
+  const original = structuredClone(state.phaseWorkflows.F1.planningAttempts.at(-1))
+  const result = f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  assert.match(result.stdout + result.stderr, /Migration deferred/)
+  const current = f.state()
+  assert.equal(current.phaseWorkflows.F1.planningAttempts.at(-1).n, original.n)
+  assert.equal(current.phaseWorkflows.F1.planningAttempts.at(-1).result, 'planned')
+  assert.equal(current.phaseWorkflows.F2, undefined)
+  assert.equal(current.tasks.A.taskPlan.phaseId, 'F1')
+})
+
+test('discussão de tarefa aberta preserva seu vínculo quando a migração foi adiada', t => {
+  const f = fixture(t)
+  f.ok('begin-discussion', 'T1')
+  const state = f.state(), round = state.tasks.T1.discussionAttempts.at(-1)
+  const discovery = structuredClone(state.tasks.T1.discovery)
+  discovery.roundId = round.roundId
+  discovery.nonce = round.nonce
+  discovery.questions = discovery.questions.map(question => ({ ...question, roundId: round.roundId }))
+  const path = join(dirname(f.planPath), 'continued-discovery.json')
+  writeFileSync(path, JSON.stringify(discovery))
+  delete state.plan.planningMode
+  f.save(state)
+  const result = f.ok('finish-discussion', 'T1', '--context', path)
+  assert.match(result.stdout + result.stderr, /Migration deferred/)
+  const current = f.state()
+  assert.equal(current.tasks.T1.discussionAttempts.at(-1).roundId, round.roundId)
+  assert.equal(current.tasks.T1.discussionAttempts.at(-1).result, 'discussed')
+  assert.equal(current.plan.planningMode, undefined)
+})
+
+test('replanejamento de execução histórica usa a mesma tentativa ao importar descoberta explícita', t => {
+  const f = fixture(t)
+  f.ok('start', 'T1', '--agent', 'executor')
+  f.ok('block', 'T1', '--reason', 'É necessário revisar a implementação')
+  const state = f.state(), task = state.tasks.T1
+  task.discussionRequired = false
+  const context = join(dirname(f.planPath), 'legacy-replanning-discovery.json')
+  writeFileSync(context, JSON.stringify(task.discovery))
+  f.save(state)
+  const original = structuredClone(task.attempts.at(-1))
+  f.ok('plan-task', 'T1', '--agent', 'planner', '--context', context)
+  const current = f.state().tasks.T1
+  assert.equal(current.state, 'planning')
+  assert.equal(current.discovery.attempt, 1)
+  assert.equal(current.planningReturn.stateBeforeBlock, 'running')
+  assert.deepEqual(current.attempts, [original])
+})
+
+test('artefato de fase aceita ID com ponto e recusa identificador adulterado antes de consumir arquivos', t => {
+  const f = phaseFixture(t, [{ id: 'A.1', phase: 'F1', title: 'Entrega' }])
+  assert.equal(resolve(f.root), f.root)
+  assert.equal(resolve(f.plans), f.plans)
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('plan-phase', 'F1', '--agent', 'planner')
+  f.writeArtifacts('F1')
+  const baseline = f.state(), statePath = join(f.root, '.specs', 'graph', 'phase-negative', 'state.json')
+  for (const id of ['../outside', 'A/../outside', 'A\\..\\outside']) {
+    const state = structuredClone(baseline)
+    state.tasks['A.1'].id = id
+    f.save(state)
+    const before = readFileSync(statePath, 'utf8'), events = f.events()
+    f.rejects(/planning is stale|invalid task id/, 'finish-phase-planning', 'F1', '--plan-dir', f.plans)
+    assert.equal(readFileSync(statePath, 'utf8'), before)
+    assert.equal(f.events(), events)
+  }
+  f.save(baseline)
+  f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  assert.equal(f.state().tasks['A.1'].taskPlan.phaseId, 'F1')
+})
+
+test('fase sem entregas não recebe autorização e planejamento não dispensa discussão anterior', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }])
+  const path = join(f.root, '.specs', 'graph', 'phase-negative', 'state.json')
+  const before = readFileSync(path, 'utf8'), events = f.events()
+  f.rejects(/no tasks/, 'authorize', '--scope', 'phase:F2', '--confirmed-by-user')
+  f.rejects(/needs a completed current phase discussion/, 'skip-phase-planning', 'F1', '--reason', 'Decisão explícita', '--confirmed-by-user')
+  assert.equal(readFileSync(path, 'utf8'), before)
+  assert.equal(f.events(), events)
+})
+
+test('adoção de fase mantém dependência externa sem fase como impedimento pelo seu ID', t => {
+  const f = phaseFixture(t, [
+    { id: 'T1', phase: 'F1', title: 'Entrega da fase', deps: ['T2'] },
+    { id: 'T2', title: 'Dependência externa' },
+  ], { planningMode: 'task' })
+  const path = join(f.root, '.specs', 'graph', 'phase-negative', 'state.json')
+  const before = readFileSync(path, 'utf8'), events = f.events()
+  f.rejects(/waits for external dependencies: T2/, 'begin-phase-discussion', 'F1', '--adopt-legacy')
+  f.rejects(/still waiting on: T2/, 'skip-discussion', 'T1', '--reason', 'Decisão explícita', '--confirmed-by-user')
+  assert.equal(readFileSync(path, 'utf8'), before)
+  assert.equal(f.events(), events)
+})
+
+test('fase legada ainda não adotada exige escolha explícita antes de abrir discussão', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }])
+  const state = f.state()
+  state.legacyPhaseAdoption = true
+  f.save(state)
+  const path = join(f.root, '.specs', 'graph', 'phase-negative', 'state.json')
+  const before = readFileSync(path, 'utf8'), events = f.events()
+  f.rejects(/is not adopted yet/, 'begin-phase-discussion', 'F1')
+  assert.equal(readFileSync(path, 'utf8'), before)
+  assert.equal(f.events(), events)
+  f.ok('begin-phase-discussion', 'F1', '--adopt-legacy')
+  assert.equal(f.state().phaseWorkflows.F1.adoptedLegacy, true)
+})
+
+test('execução no modo de tarefa exige adoção explícita para mudar à discussão de fase', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }], { planningMode: 'task' })
+  const state = f.state(), events = f.events()
+  f.rejects(/legacy run uses task planning/, 'begin-phase-discussion', 'F1')
+  assert.deepEqual(f.state(), state)
+  assert.equal(f.events(), events)
+})
+
+test('dispensa explícita de tarefa em planejamento encerra a rodada e preserva o contrato anterior', t => {
+  const f = fixture(t)
+  const oldPlan = structuredClone(f.state().tasks.T1.taskPlan)
+  f.ok('plan-task', 'T1', '--agent', 'planner')
+  f.ok('skip', 'T1', '--reason', 'Entrega dispensada explicitamente')
+  const task = f.state().tasks.T1
+  assert.equal(task.state, 'skipped')
+  assert.equal(task.planningAttempts.at(-1).result, 'skipped')
+  assert.ok(task.planningAttempts.at(-1).endedAt)
+  assert.deepEqual(task.taskPlan, oldPlan)
+  assert.equal(task.attempts.length, 0)
+})
+
+test('estado importado sem lista de dependências não abre rodada nem grava reparo', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }])
+  const state = f.state()
+  delete state.tasks.A.deps
+  f.save(state)
+  const path = join(f.root, '.specs', 'graph', 'phase-negative', 'state.json')
+  const before = readFileSync(path, 'utf8'), events = f.events()
+  f.rejects(/TypeError/, 'begin-phase-discussion', 'F1')
+  const current = f.state()
+  assert.equal(current.tasks.A.deps, undefined)
+  assert.equal(current.tasks.A.state, 'pending')
+  assert.equal(current.phaseWorkflows.F1.discussionAttempts.length, 0)
+  assert.equal(readFileSync(path, 'utf8'), before)
+  assert.equal(f.events(), events)
+})
+
+test('rodada de fase histórica com alvos incompletos exige nova discussão e conserva a rodada antiga', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }])
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('plan-phase', 'F1', '--agent', 'planner')
+  const baseline = f.state(), path = join(f.root, '.specs', 'graph', 'phase-negative', 'state.json')
+  for (const missingTargets of [false, true]) {
+    const state = structuredClone(baseline), round = state.phaseWorkflows.F1.planningAttempts.at(-1)
+    delete round.contextTargets
+    if (missingTargets) delete round.targets
+    round.context = 'Contexto histórico incompleto'
+    f.save(state)
+    const before = readFileSync(path, 'utf8'), events = f.events()
+    f.rejects(/stale open planning round/, 'plan-phase', 'F1', '--agent', 'planner')
+    f.rejects(/planning is stale/, 'finish-phase-planning', 'F1', '--plan-dir', f.plans)
+    assert.equal(readFileSync(path, 'utf8'), before)
+    assert.equal(f.events(), events)
+    f.ok('begin-phase-discussion', 'F1')
+    const current = f.state().phaseWorkflows.F1
+    assert.equal(current.planningAttempts.at(-1).result, 'superseded')
+    assert.equal(current.planningAttempts.at(-1).n, round.n)
+    assert.deepEqual(current.discussionAttempts.at(-1).targets, ['A'])
+    assert.equal(f.state().tasks.A.taskPlan, undefined)
+  }
+})
+
+test('planejamento de fase histórico sem registro de entradas aceita somente artefato sem entradas pendentes', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }])
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('plan-phase', 'F1', '--agent', 'planner')
+  f.writeArtifacts('F1')
+  const state = f.state()
+  delete state.phaseWorkflows.F1.planningAttempts.at(-1).requiredInputs
+  f.save(state)
+  const artifact = join(f.plans, 'task-plan-A.json'), valid = JSON.parse(readFileSync(artifact, 'utf8'))
+  const invalid = structuredClone(valid)
+  invalid.unresolvedInputs = [{ task: 'B', phase: 'F2', requiredEvidence: 'Evidência não capturada' }]
+  writeFileSync(artifact, JSON.stringify(invalid))
+  const statePath = join(f.root, '.specs', 'graph', 'phase-negative', 'state.json')
+  const before = readFileSync(statePath, 'utf8'), events = f.events()
+  f.rejects(/unresolvedInputs differ/, 'finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  assert.equal(readFileSync(statePath, 'utf8'), before)
+  assert.equal(f.events(), events)
+  writeFileSync(artifact, JSON.stringify(valid))
+  f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  const current = f.state()
+  assert.equal(current.phaseWorkflows.F1.planningAttempts.at(-1).requiredInputs, undefined)
+  assert.deepEqual(current.tasks.A.taskPlan.unresolvedInputs, [])
+  assert.equal(current.tasks.A.state, 'pending')
+})
+
+test('confirmação exigida sem lista de contratos não aceita declaração arbitrária na discussão', t => {
+  const task = fixture(t)
+  task.ok('begin-discussion', 'T1')
+  const taskState = task.state(), taskRound = taskState.tasks.T1.discussionAttempts.at(-1)
+  const taskDiscovery = structuredClone(taskState.tasks.T1.discovery)
+  taskDiscovery.roundId = taskRound.roundId
+  taskDiscovery.nonce = taskRound.nonce
+  taskDiscovery.questions = taskDiscovery.questions.map(question => ({ ...question, roundId: taskRound.roundId,
+    confirmsContract: [{ task: 'T1', digest: 'a'.repeat(64) }] }))
+  taskRound.requiresContractConfirmation = true
+  delete taskRound.confirmsContract
+  task.save(taskState)
+  const phase = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }])
+  phase.ok('begin-phase-discussion', 'F1')
+  const phasePath = phase.discovery('F1'), phaseDiscovery = JSON.parse(readFileSync(phasePath, 'utf8'))
+  phaseDiscovery.questions[0].confirmsContract = [{ task: 'A', digest: 'a'.repeat(64) }]
+  const phaseState = phase.state(), phaseRound = phaseState.phaseWorkflows.F1.discussionAttempts.at(-1)
+  phaseRound.requiresContractConfirmation = true
+  delete phaseRound.confirmsContract
+  phase.save(phaseState)
+  for (const [f, id, command, discovery] of [
+    [task, 'T1', 'finish-discussion', taskDiscovery],
+    [phase, 'F1', 'finish-phase-discussion', phaseDiscovery],
+  ]) {
+    const statePath = join(dirname(f.planPath), '.specs', 'graph', id === 'T1' ? 'retry' : 'phase-negative', 'state.json')
+    const eventsPath = join(dirname(statePath), 'events.ndjson')
+    const before = [readFileSync(statePath, 'utf8'), readFileSync(eventsPath, 'utf8')]
+    const path = join(dirname(f.planPath), `unbound-contract-${id}.json`)
+    writeFileSync(path, JSON.stringify(discovery))
+    f.rejects(/confirmsContract matching every current task and digest/, command, id, '--context', path)
+    assert.deepEqual([readFileSync(statePath, 'utf8'), readFileSync(eventsPath, 'utf8')], before)
+  }
+})
+
+test('nova discussão de execução pausada mantém a tentativa e recusa duplicação da rodada', t => {
+  const f = fixture(t)
+  f.ok('start', 'T1', '--agent', 'executor')
+  f.ok('block', 'T1', '--reason', 'Contrato precisa de nova discussão')
+  const original = structuredClone(f.state().tasks.T1.attempts)
+  f.ok('begin-discussion', 'T1')
+  const state = f.state(), statePath = join(dirname(f.planPath), '.specs', 'graph', 'retry', 'state.json')
+  const eventsPath = join(dirname(statePath), 'events.ndjson')
+  const before = [readFileSync(statePath, 'utf8'), readFileSync(eventsPath, 'utf8')]
+  f.rejects(/already has an open discussion round/, 'begin-discussion', 'T1')
+  assert.deepEqual(f.state(), state)
+  assert.deepEqual([readFileSync(statePath, 'utf8'), readFileSync(eventsPath, 'utf8')], before)
+  assert.deepEqual(f.state().tasks.T1.attempts, original)
+  assert.equal(f.state().tasks.T1.discussionAttempts.at(-1).attempt, 1)
+})
+
+test('ações de fase recusam alvo, agente e artefato ausentes sem mudar contratos ou históricos', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }])
+  const before = f.state(), events = f.events()
+  for (const args of [
+    ['begin-phase-discussion', 'inexistente'],
+    ['plan-phase', 'F1'],
+    ['plan-phase', 'inexistente', '--agent', 'planejador'],
+    ['finish-phase-discussion', 'F1'],
+    ['finish-phase-planning', 'F1'],
+    ['finish-phase-planning', 'F1', '--plan-dir', f.plans],
+    ['finish-phase-discussion', 'F1', '--context', f.planPath],
+    ['skip-phase-discussion', 'inexistente', '--reason', 'Fora do escopo', '--confirmed-by-user'],
+    ['skip-phase-planning', 'inexistente', '--reason', 'Fora do escopo', '--confirmed-by-user'],
+    ['skip-phase-discussion', 'F1', '--confirmed-by-user'],
+  ]) {
+    const result = f.rejects(/ERROR/, ...args)
+    assert.equal(result.status, 1)
+    assert.deepEqual(f.state(), before)
+    assert.equal(f.events(), events)
+  }
+})
+
+test('gate de fase não pode ser dispensado enquanto sua discussão ou planejamento está ativo', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }])
+  f.ok('begin-phase-discussion', 'F1')
+  let before = f.state(), events = f.events()
+  for (const args of [
+    ['begin-phase-discussion', 'F1'],
+    ['skip-phase-discussion', 'F1', '--reason', 'Dispensa', '--confirmed-by-user'],
+    ['skip-phase-planning', 'F1', '--reason', 'Dispensa', '--confirmed-by-user'],
+  ]) {
+    f.rejects(/open discussion|active discussing/, ...args)
+    assert.deepEqual(f.state(), before)
+    assert.equal(f.events(), events)
+  }
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.rejects(/must name a directory/, 'plan-phase', 'F1', '--agent', 'planejador', '--plan-dir', ' ')
+  f.ok('plan-phase', 'F1', '--agent', 'planejador')
+  before = f.state(); events = f.events()
+  for (const command of ['skip-phase-discussion', 'skip-phase-planning']) {
+    f.rejects(/active planning/, command, 'F1', '--reason', 'Dispensa', '--confirmed-by-user')
+    assert.deepEqual(f.state(), before)
+    assert.equal(f.events(), events)
+  }
+})
+
+test('plano de fase valida prazos e decisões antes de substituir uma pergunta pendente', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }])
+  const imported = f.state()
+  imported.tasks.A.taskPlan = { openQuestions: [null, { question: 1 }, {
+    question: 'Qual regra deve valer?', blocking: false, decideBy: 'user-now', questionRef: 'A:plan:regra',
+  }] }
+  f.save(imported)
+  f.ok('skip-phase-discussion', 'F1', '--reason', 'Contrato aceito', '--confirmed-by-user')
+  f.ok('plan-phase', 'F1', '--agent', 'planejador')
+  f.writeArtifacts('F1')
+  const path = join(f.plans, 'task-plan-A.json'), original = JSON.parse(readFileSync(path, 'utf8'))
+  const decision = { question: 'Qual regra deve valer?', answer: 'Preservar a regra aprovada', resolvesQuestion: 'A:plan:regra' }
+  for (const [changes, pattern] of [
+    [{ openQuestions: [{ question: 'Regra futura?', blocking: false, decideBy: { beforeTask: 'inexistente' } }] }, /unknown task/],
+    [{ openQuestions: [{ question: 'Regra futura?', blocking: false, decideBy: { beforePhase: 'inexistente' } }] }, /unknown phase/],
+    [{ decisions: [{ ...decision, resolvesQuestion: 'inexistente' }] }, /unknown open question/],
+    [{ decisions: [decision, decision] }, /same open question more than once/],
+  ]) {
+    writeFileSync(path, JSON.stringify({ ...original, ...changes }))
+    const before = f.state(), events = f.events()
+    f.rejects(pattern, 'finish-phase-planning', 'F1', '--plan-dir', f.plans)
+    assert.deepEqual(f.state(), before)
+    assert.equal(f.events(), events)
+  }
+  const resolved = f.state()
+  resolved.questionResolutions = [{ questionRef: decision.resolvesQuestion, answer: decision.answer }]
+  f.save(resolved)
+  writeFileSync(path, JSON.stringify({ ...original, decisions: [decision] }))
+  f.rejects(/already resolved/, 'finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  resolved.questionResolutions = []
+  f.save(resolved)
+  f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  assert.deepEqual(f.state().questionResolutions.map(item => [item.questionRef, item.byTask, item.byPhase, item.answer]),
+    [['A:plan:regra', 'A', 'F1', decision.answer]])
+  assert.deepEqual(f.state().tasks.A.taskPlan.openQuestions, [])
+  assert.equal(f.state().phaseWorkflows.F1.planningAttempts.length, 1)
+})
+
+test('discussão de fase registra resposta pendente sem atribuí-la a uma tarefa executora', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }])
+  const state = f.state()
+  state.tasks.A.taskPlan = { openQuestions: [{ question: 'Qual regra deve valer?', blocking: false,
+    decideBy: 'user-now', questionRef: 'A:plan:regra' }] }
+  f.save(state)
+  f.ok('begin-phase-discussion', 'F1')
+  const path = f.discovery('F1'), context = JSON.parse(readFileSync(path, 'utf8'))
+  context.decisions = [{ question: 'Qual regra deve valer?', answer: 'Preservar a regra aprovada', resolvesQuestion: 'A:plan:regra' }]
+  writeFileSync(path, JSON.stringify(context))
+  f.ok('finish-phase-discussion', 'F1', '--context', path)
+  const resolution = f.state().questionResolutions[0]
+  assert.equal(resolution.questionRef, 'A:plan:regra')
+  assert.equal(resolution.byPhase, 'F1')
+  assert.equal(resolution.byTask, undefined)
+  assert.equal(f.state().tasks.A.state, 'pending')
+  assert.equal(f.state().tasks.A.attempts.length, 0)
+})
+
+test('rodadas históricas sem contagem exibem somente artefatos vinculados à rodada concluída', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }])
+  f.ok('skip-phase-discussion', 'F1', '--reason', 'Contrato aceito', '--confirmed-by-user')
+  f.ok('plan-phase', 'F1', '--agent', 'planejador')
+  f.writeArtifacts('F1')
+  f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  const state = f.state()
+  delete state.phaseWorkflows.F1.planningAttempts.at(-1).artifactCount
+  f.save(state)
+  const before = f.state(), events = f.events()
+  assert.match(f.ok('status').stdout, /planning round F1.*artifacts 1\/1/)
+  assert.deepEqual(f.state(), before)
+  assert.equal(f.events(), events)
+  state.tasks.A.taskPlan.phaseBinding.plannerRound = 0
+  f.save(state)
+  assert.match(f.ok('status').stdout, /planning round F1.*artifacts 0\/1/)
+})
+
+test('projeção distingue entrada dispensada de entrega concluída sem iniciar a consumidora', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Consumidora' }, { id: 'B', phase: 'F2', title: 'Produtora' }])
+  const state = f.state()
+  state.tasks.A.taskPlan = { phaseId: 'F1', unresolvedInputs: [{ task: 'B', phase: 'F2' }] }
+  for (const [status, label] of [['pending', 'unresolved_later_phase_input'], ['skipped', 'waived_input'], ['done', 'validated_input']]) {
+    state.tasks.B.state = status
+    state.tasks.B.skipReason = status === 'skipped' ? 'Entrada dispensada explicitamente' : undefined
+    f.save(state)
+    const before = f.state(), events = f.events()
+    const derived = JSON.parse(f.ok('graph').stdout).derived.A
+    assert.equal(derived.inputStatus, label)
+    assert.equal(f.state().tasks.A.state, 'pending')
+    assert.deepEqual(f.state(), before)
+    assert.equal(f.events(), events)
+  }
+})
+
+test('estado terminal sem recibo não libera consumidora e não valida progresso de tentativa aberta', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Consumidora', deps: ['B'] }, { id: 'B', phase: 'F1', title: 'Produtora' }])
+  f.ok('skip-phase-discussion', 'F1', '--reason', 'Contrato aceito', '--confirmed-by-user')
+  f.ok('plan-phase', 'F1', '--agent', 'planejador')
+  f.writeArtifacts('F1')
+  f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  f.ok('skip', 'B', '--reason', 'Entrada dispensada explicitamente')
+  const waived = f.state()
+  const invalid = structuredClone(waived)
+  invalid.tasks.B.state = 'done'
+  delete invalid.tasks.B.skipReason
+  f.save(invalid)
+  let before = f.state(), events = f.events()
+  f.rejects(/passing validation|current attempt|finished attempt|validated receipt/, 'start', 'A', '--agent', 'executor')
+  assert.deepEqual(f.state(), before)
+  assert.equal(f.events(), events)
+  f.save(waived)
+  f.ok('start', 'A', '--agent', 'executor')
+  const active = f.state()
+  active.tasks.B.state = 'done'
+  delete active.tasks.B.skipReason
+  f.save(active)
+  before = f.state(); events = f.events()
+  f.rejects(/passing validation|current attempt|finished attempt|validated receipt/, 'progress', 'A', '--step', '1', '--agent', 'executor')
+  assert.deepEqual(f.state(), before)
+  assert.equal(f.events(), events)
+  assert.equal(f.state().tasks.A.attempts.length, 1)
+})
+
+test('force não ultrapassa capacidade de planejamento atual nem toma agente do planejador', async t => {
+  await t.test('tarefa atual conserva o limite mesmo com force', t => {
+    const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega atual' }, { id: 'B', phase: 'F2', title: 'Entrega legada' }])
+    const legacy = f.state()
+    legacy.tasks.B.planningRequired = false
+    legacy.tasks.B.discussionRequired = false
+    legacy.tasks.B.discoveryRequired = false
+    f.save(legacy)
+    f.ok('start', 'B', '--agent', 'ocupado')
+    f.ok('skip-phase-discussion', 'F1', '--reason', 'Contrato aceito', '--confirmed-by-user')
+    f.ok('skip-phase-planning', 'F1', '--reason', 'Execução direta', '--confirmed-by-user')
+    const state = f.state()
+    state.plan.maxParallel = 1
+    f.save(state)
+    const before = f.state(), events = f.events()
+    f.rejects(/agents busy/, 'start', 'A', '--agent', 'executor', '--force')
+    assert.deepEqual(f.state(), before)
+    assert.equal(f.events(), events)
+  })
+  await t.test('legado não ocupa a capacidade nem o agente de uma fase em planejamento', t => {
+    const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega legada' }, { id: 'B', phase: 'F2', title: 'Entrega atual' }])
+    const legacy = f.state()
+    legacy.tasks.A.planningRequired = false
+    legacy.tasks.A.discussionRequired = false
+    legacy.tasks.A.discoveryRequired = false
+    f.save(legacy)
+    f.ok('skip-phase-discussion', 'F2', '--reason', 'Contrato aceito', '--confirmed-by-user')
+    f.ok('plan-phase', 'F2', '--agent', 'planejador')
+    const state = f.state()
+    state.plan.maxParallel = 1
+    f.save(state)
+    let before = f.state(), events = f.events()
+    f.rejects(/agents busy/, 'start', 'A', '--agent', 'executor', '--force')
+    assert.deepEqual(f.state(), before)
+    assert.equal(f.events(), events)
+    state.plan.maxParallel = 4
+    f.save(state)
+    before = f.state(); events = f.events()
+    f.rejects(/already on F2/, 'start', 'A', '--agent', 'planejador', '--force')
+    assert.deepEqual(f.state(), before)
+    assert.equal(f.events(), events)
+  })
+})
+
+test('sync conserva planos entregues quando uma rodada importada continua aberta por engano', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }])
+  f.ok('skip-phase-discussion', 'F1', '--reason', 'Contrato aceito', '--confirmed-by-user')
+  f.ok('plan-phase', 'F1', '--agent', 'planejador')
+  f.writeArtifacts('F1')
+  f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  const state = f.state(), plan = structuredClone(state.tasks.A.taskPlan)
+  const phase = state.phaseWorkflows.F1
+  const open = { ...structuredClone(phase.planningAttempts[0]), n: 2 }
+  delete open.endedAt
+  delete open.result
+  phase.planningAttempts.push(open)
+  phase.state = 'planning'
+  f.save(state)
+  f.plan.maxParallel = 3
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.ok('sync-plan', '--plan', f.planPath)
+  assert.deepEqual(f.state().tasks.A.taskPlan, plan)
+  assert.deepEqual(f.state().phaseWorkflows.F1.contractConfirmationRequired.tasks, ['A'])
+  assert.equal(f.state().phaseWorkflows.F1.planningAttempts.length, 2)
+  assert.equal(f.state().phaseWorkflows.F1.planningAttempts[0].result, 'planned')
+})
+
+test('despacho de fase respeita agente ocupado e capacidade sem tomar a execução legada', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega atual' }, { id: 'B', phase: 'F2', title: 'Entrega legada' }])
+  const legacy = f.state()
+  legacy.tasks.B.planningRequired = false
+  legacy.tasks.B.discussionRequired = false
+  legacy.tasks.B.discoveryRequired = false
+  f.save(legacy)
+  f.ok('start', 'B', '--agent', 'ocupado')
+  f.ok('skip-phase-discussion', 'F1', '--reason', 'Contrato aceito', '--confirmed-by-user')
+  let before = f.state(), events = f.events()
+  f.rejects(/already on B/, 'plan-phase', 'F1', '--agent', 'ocupado')
+  assert.deepEqual(f.state(), before)
+  assert.equal(f.events(), events)
+  before.plan.maxParallel = 1
+  f.save(before)
+  before = f.state(); events = f.events()
+  f.rejects(/agents busy/, 'plan-phase', 'F1', '--agent', 'disponivel')
+  assert.deepEqual(f.state(), before)
+  assert.equal(f.events(), events)
+  assert.equal(f.state().tasks.B.agent, 'ocupado')
+  assert.equal(f.state().tasks.B.attempts.length, 1)
+})
+
+test('fase sem trabalho e fase já planejada não criam rodadas sem necessidade', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }])
+  f.rejects(/has no tasks/, 'begin-phase-discussion', 'F2')
+  f.ok('skip-phase-discussion', 'F1', '--reason', 'Contrato aceito', '--confirmed-by-user')
+  f.ok('plan-phase', 'F1', '--agent', 'planejador')
+  f.writeArtifacts('F1')
+  f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  const before = f.state(), events = f.events()
+  for (const args of [
+    ['plan-phase', 'F1', '--agent', 'planejador'],
+    ['skip-phase-discussion', 'F1', '--reason', 'Dispensa', '--confirmed-by-user'],
+    ['skip-phase-planning', 'F1', '--reason', 'Dispensa', '--confirmed-by-user'],
+  ]) {
+    f.rejects(/has no task requiring/, ...args)
+    assert.deepEqual(f.state(), before)
+    assert.equal(f.events(), events)
+  }
+  f.ok('skip', 'A', '--reason', 'Entrega dispensada explicitamente')
+  const terminal = f.state(), terminalEvents = f.events()
+  f.rejects(/no nonterminal tasks/, 'begin-phase-discussion', 'F1')
+  assert.deepEqual(f.state(), terminal)
+  assert.equal(f.events(), terminalEvents)
+})
+
+test('pergunta sem resposta para decidir agora aparece no plano e impede execução prematura', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }])
+  f.ok('skip-phase-discussion', 'F1', '--reason', 'Contrato aceito', '--confirmed-by-user')
+  f.ok('plan-phase', 'F1', '--agent', 'planejador')
+  f.writeArtifacts('F1')
+  const path = join(f.plans, 'task-plan-A.json'), artifact = JSON.parse(readFileSync(path, 'utf8'))
+  artifact.openQuestions = [{ question: 'Qual regra deverá valer?', blocking: false, decideBy: 'user-now' }]
+  writeFileSync(path, JSON.stringify(artifact))
+  const planned = f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  assert.match(planned.stdout, /open questions for the user now/)
+  assert.match(planned.stdout, /Qual regra deverá valer/)
+  assert.doesNotMatch(planned.stdout, /proposed answer/)
+  const before = f.state(), events = f.events()
+  f.rejects(/unresolved questions due before it starts/, 'start', 'A', '--agent', 'executor')
+  assert.deepEqual(f.state(), before)
+  assert.equal(f.events(), events)
+})
+
+test('consulta mostra rodada histórica sem alvos como zero artefatos sem fabricar tarefas', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }])
+  for (const open of [false, true]) {
+    const state = f.state()
+    state.phaseWorkflows.F1.state = open ? 'planning' : 'planned'
+    state.phaseWorkflows.F1.planningAttempts = [{ n: 1, startedAt: '2026-01-01T00:00:00Z',
+      ...(open ? { planDir: f.plans } : { endedAt: '2026-01-01T01:00:00Z', result: 'planned' }) }]
+    f.save(state)
+    const before = f.state(), events = f.events(), result = f.ok('status')
+    assert.match(result.stdout, /planning round F1.*artifacts 0\/0/)
+    assert.deepEqual(f.state(), before)
+    assert.equal(f.events(), events)
+    assert.deepEqual(Object.keys(f.state().tasks), ['A'])
+  }
+})
+
 test('plan-phase prints the persisted copyable contract on first dispatch and no-op, including skipped discussion IDs', async t => {
   await t.test('first dispatch and active-round no-op repeat the same fragments', t => {
     const f = phaseFixture(t, [
@@ -825,6 +1442,21 @@ test('material sync invalidates a completed phase discussion before planner disp
   f.rejects(/completed current phase discussion/, 'plan-phase', 'F1', '--agent', 'stale-planner')
   assert.equal(readFileSync(join(f.root, '.specs/graph/phase-negative/state.json'), 'utf8'), before)
   assert.equal(f.events(), events)
+})
+
+test('rodada importada com contexto obsoleto não pode ser redisparada nem substituir histórico', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }])
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('plan-phase', 'F1', '--agent', 'planejador')
+  const state = f.state()
+  state.phaseWorkflows.F1.planningAttempts.at(-1).context = 'contexto de uma versão anterior'
+  f.save(state)
+  const before = f.state(), events = f.events()
+  f.rejects(/stale open planning round/, 'plan-phase', 'F1', '--agent', 'planejador')
+  assert.deepEqual(f.state(), before)
+  assert.equal(f.events(), events)
+  assert.equal(f.state().tasks.A.taskPlan, undefined)
 })
 
 test('stale phase planning is superseded before a fresh discussion without partial plans', t => {

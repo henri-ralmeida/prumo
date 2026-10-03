@@ -40,6 +40,38 @@ test('67 disparos elegiveis estimam 3h21 e comandos excluidos nao alteram barras
   for (const anyLive of [false, true]) assert.doesNotMatch(renderGainPanel({ ...gain, runActive: anyLive }, localizer('pt-BR'), fmtMs, esc), /gain-status|até agora|execução concluída/)
 })
 
+test('comandos sem eventos contam tentativas de fase e aceitam timestamp alternativo', () => {
+  const phase = commandMetricsForRun({}, {
+    phaseWorkflows: { F1: { planningAttempts: [{}], discussionAttempts: [{}, {}] }, F2: {} },
+    events: [{ type: 'task_start', ts: '2026-01-01T00:00:00Z' }],
+  })
+  assert.equal(phase.byCommand.start, 1)
+  assert.equal(phase.byCommand['plan-phase'], undefined, 'eventos presentes não usam a contagem legada de fases')
+
+  const legacy = commandMetricsForRun({}, {
+    phaseWorkflows: { F1: { planningAttempts: [{}], discussionAttempts: [{}, {}] }, F2: {} },
+  })
+  assert.equal(legacy.byCommand['plan-phase'], 1)
+  assert.equal(legacy.byCommand['begin-phase-discussion'], 2)
+})
+
+test('ganho mantém defaults quando a telemetria opcional está ausente', () => {
+  const sparse = calculateGain({ per: [{}], sharedSpans: null, phasePlanning: [{ activityTiming: 'explicit' }] }, null, true, { commandMetrics: {} })
+  assert.equal(sparse.oneAtATimeMs, null)
+  assert.equal(sparse.manualCoordinationMs, 0)
+  assert.equal(calculateGain(null, {}, false).oneAtATimeMs, null)
+
+  const gainMarkup = renderGainPanel({ historyComplete: true, oneAtATimeMs: 1000, withPrumoMs: 1000,
+    savingsMs: 0, factor: 1, combinedEstimateMs: null }, localizer('en'), fmtMs, esc)
+  assert.match(gainMarkup, /Fixed assumption of 3 minutes per command/)
+
+  const manualMarkup = renderManualCoordination({}, localizer('en'), fmtMs, esc)
+  assert.match(manualMarkup, /No command recorded yet/)
+  assert.match(manualMarkup, /0 commands/)
+  const partialManual = renderManualCoordination({ commandCounts: { planning: 1 }, commandTotal: 1 }, localizer('en'), fmtMs, esc)
+  assert.match(partialManual, /1 command/)
+})
+
 test('START e STOP incluem discussão e planejamento de fase uma vez e a barra base soma 100%', () => {
   const gain = calculateGain({ per: [{ id: 'A', spans: spans(['discussion', 0, 10000], ['exec', 20000, 30000]) }, { id: 'B', spans: spans(['review', 20000, 30000]) }],
     sharedSpans: spans(['planning', 10000, 20000]) }, {}, true, { commandMetrics: { byCommand: { start: 1 }, complete: true } })

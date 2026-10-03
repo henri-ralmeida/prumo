@@ -225,7 +225,6 @@ function migrationStatus(state) {
       // A 1.2 task-mode attempt also closed its own task plan before execution.
       const currentPlanning = !executionStarted && task.planningRequired !== false
       if (currentPlanning && !['pending', 'failed', 'blocked'].includes(task.state)) reasons.push(`state ${task.state}`)
-      if (currentPlanning && executionStarted) reasons.push(`${task.attempts.length} execution attempt(s)`)
       if (openDiscussion) reasons.push('open discussion')
       if (openPlanning) reasons.push('open planning')
       if (reasons.length) blockers.push(`${task.id}: ${reasons.join(', ')}`)
@@ -366,7 +365,8 @@ function emit(name, type, task, data = {}) {
 
 function getTask(state, id) {
   const aliases = state.taskIdAliases ?? {}
-  const t = state.tasks[Object.hasOwn(aliases, id) ? aliases[id] : id]
+  const taskId = Object.hasOwn(aliases, id) ? aliases[id] : id
+  const t = Object.hasOwn(state.tasks, taskId) ? state.tasks[taskId] : undefined
   if (!t) die(`unknown task "${id}"`)
   return t
 }
@@ -378,13 +378,11 @@ function reviewDenominator(task) {
   if (contract.mode === 'inspection' && Array.isArray(criteria) && criteria.length)
     return { total: criteria.length, basis: 'inspection', inspection: true }
   if (contract.steps.length) return { total: contract.steps.length, basis: 'checks', inspection: contract.mode === 'inspection' }
-  if (contract.mode !== 'inspection') return null
   return null
 }
 
 function reviewProgressRecord(task, agent, denominator) {
   const attempt = task.attempts.at(-1)
-  if (!attempt) return null
   if (!denominator) {
     delete attempt.reviewProgress
     return null
@@ -560,7 +558,7 @@ function warnPlanTouchPaths(plan) {
 function warnTaskPlan(task, plan) {
   if (!plan.writes?.length)
     log('[prumo] ' + tr('task plan warning: {0} declares no writes; confirm the executor stays within approved touches', task.id))
-  for (let index = 0; index < (plan.verification ?? []).length; index++) {
+  for (let index = 0; index < plan.verification.length; index++) {
     const item = plan.verification[index]
     for (const resource of new Set(item.requires ?? [])) {
       if (task.unavailable?.includes(resource))
@@ -663,7 +661,7 @@ function printPlanningRoundProgress(state) {
       }).length
     log('[prumo] ' + line(phase.id, round, recorded, total, phase))
   }
-  for (const task of Object.values(state.tasks ?? {})) {
+  for (const task of Object.values(state.tasks)) {
     if (task.phase || state.plan.planningMode === 'phase') continue
     const round = task.planningAttempts?.at(-1)
     if (!round || (round.endedAt && round.result !== 'planned')) continue
@@ -820,10 +818,10 @@ function printSyncPlanAudit(changes, diagnostics) {
   }
   for (const leaf of diagnostics.newLeaves) {
     if (leaf.severity === 'warning') {
-      const blocker = diagnostics.blockReasonContradictions.find(item => item.cited.includes(leaf.task))?.task
+      const blocker = diagnostics.blockReasonContradictions.find(item => item.cited.includes(leaf.task)).task
       log('[prumo] ' + tr(
         'sync-plan warning: new leaf task {0} is cited by blocked task {1}',
-        displayIdentifier(leaf.task), displayIdentifier(blocker ?? '?'),
+        displayIdentifier(leaf.task), displayIdentifier(blocker),
       ))
     } else {
       log('[prumo] ' + tr('sync-plan info: new leaf task {0} has no dependents', displayIdentifier(leaf.task)))
@@ -832,7 +830,7 @@ function printSyncPlanAudit(changes, diagnostics) {
   for (const finding of diagnostics.preDiscussionFunctionalContracts) {
     const unit = finding.count === 1 ? 'functional check' : 'functional checks'
     const indexLabel = finding.indices.length === 1 ? 'new index' : 'new indices'
-    const indices = finding.indices.join(', ') + (finding.truncated ? ', …' : '')
+    const indices = finding.indices.join(', ')
     log(`[prumo] sync-plan warning: ${displayIdentifier(finding.task)} is ${tr(finding.effective)}, but validation now has ${finding.count} ${unit} (${indexLabel} ${indices}); is this planning?`)
   }
   for (const invalidation of diagnostics.invalidatedWorkflows ?? []) {
@@ -937,7 +935,7 @@ function phaseMembers(state, phaseId) {
 }
 
 function getPhase(state, phaseId) {
-  const phase = state.phaseWorkflows?.[phaseId]
+  const phase = Object.hasOwn(state.phaseWorkflows ?? {}, phaseId) ? state.phaseWorkflows[phaseId] : undefined
   if (!phase) die(`unknown phase "${phaseId}"`)
   return phase
 }
@@ -996,7 +994,7 @@ function planQuestionRef(task, plan, index) {
 }
 
 function annotatePlanQuestions(task, questions, startedAt) {
-  return (questions ?? []).map((question, index) => ({ ...question,
+  return questions.map((question, index) => ({ ...question,
     questionRef: `${task.id}:plan:${digestValue([task.id, startedAt, index + 1, question.question]).slice(0, 12)}` }))
 }
 
@@ -1045,9 +1043,9 @@ function questionResolutionMap(state) {
 }
 
 function validateQuestionDeadlines(state, taskId, openQuestions) {
-  for (const [index, question] of (openQuestions ?? []).entries()) {
+  for (const [index, question] of openQuestions.entries()) {
     if (question.decideBy && typeof question.decideBy === 'object') {
-      if (question.decideBy.beforeTask && !state.tasks[question.decideBy.beforeTask])
+      if (question.decideBy.beforeTask && (!Object.hasOwn(state.tasks, question.decideBy.beforeTask) || !state.tasks[question.decideBy.beforeTask]))
         die(`task plan open question ${index + 1} references unknown task ${question.decideBy.beforeTask}`)
       if (question.decideBy.beforePhase && !(state.plan.phases ?? []).some(phase => phase.id === question.decideBy.beforePhase))
         die(`task plan open question ${index + 1} references unknown phase ${question.decideBy.beforePhase}`)
@@ -1060,7 +1058,7 @@ function validateQuestionDeadlines(state, taskId, openQuestions) {
 
 function validateQuestionResolutions(state, decisions) {
   const known = new Set(openQuestionRecords(state).map(item => item.ref))
-  const requested = (decisions ?? []).filter(item => item?.resolvesQuestion).map(item => item.resolvesQuestion)
+  const requested = decisions.filter(item => item?.resolvesQuestion).map(item => item.resolvesQuestion)
   if (new Set(requested).size !== requested.length)
     die(tr('decisions cannot resolve the same open question more than once'))
   for (const ref of requested) if (!known.has(ref))
@@ -1157,9 +1155,9 @@ function printQuestionsForTarget(state, taskId, phaseId) {
 function printPlannedQuestionSummary(tasks) {
   const now = [], later = [], unanswered = []
   for (const task of tasks) {
-    for (const question of task.taskPlan?.openQuestions ?? []) {
+    for (const question of task.taskPlan.openQuestions) {
       const decideBy = question.blocking ? 'user-now' : (question.decideBy ?? 'executor')
-      const item = { ref: question.questionRef ?? task.id, task: task.id, question }
+      const item = { ref: question.questionRef, task: task.id, question }
       if (decideBy === 'user-now') now.push(item)
       else if (decideBy && typeof decideBy === 'object') later.push({ ...item, decideBy })
       else if (question.decideBy === 'executor' && !question.answer) unanswered.push(item)
@@ -1207,7 +1205,7 @@ function taskAuthorization(task) { return task.executionAuthorization ?? null }
 // A run only restricts dispatch after the user's scope has been recorded at least once.
 // Runs created before authorization existed, or never authorized, keep the earlier behavior.
 function runHasAuthorizationScope(state) {
-  return (state.authorizations?.length ?? 0) > 0 || Object.values(state.tasks ?? {}).some(task =>
+  return (state.authorizations?.length ?? 0) > 0 || Object.values(state.tasks).some(task =>
     task.executionAuthorization || task.authorizationHistory?.length)
 }
 
@@ -1410,14 +1408,14 @@ function taskContextDigests(state, targets, { phasePlanning = false } = {}) {
     const task = state.tasks[id]
     if (!task) return { task: id, contextDigest: digestValue(null), inputDigest: digestValue(null), outputDigest: digestValue(null) }
     const taskDigest = phasePlanning ? phasePlanningContext(state, task) : planningContext(state, task)
-    const dependencyIds = [...(task.deps ?? [])].sort()
+    const dependencyIds = [...task.deps].sort()
     const input = dependencyIds.map(dependency => {
       const value = state.tasks[dependency]
       return phasePlanning
         ? [dependency, value ? phasePlanningContext(state, value) : null]
         : [dependency, value ? [phasePlanningContext(state, value), value.state, value.attempts, value.validations, value.skipReason] : null]
     })
-    const output = [task.id, task.phase ?? null, task.title, task.deps ?? [], task.validation ?? '',
+    const output = [task.id, task.phase ?? null, task.title, task.deps, task.validation ?? '',
       task.validationMode, task.inspectionReason, task.requireReview, task.maxAttempts, task.tags ?? [],
       task.touches ?? [], task.unavailable]
     return { task: id, contextDigest: taskDigest, inputDigest: digestValue(input), outputDigest: digestValue(output) }
@@ -1477,7 +1475,7 @@ function staleReason(name, round, currentSnapshot, currentContext) {
         changes.push(tr('plan {0} changed', field))
     }
     const previous = new Map((saved.tasks ?? []).map(task => [task.task, task]))
-    const current = new Map((currentSnapshot.tasks ?? []).map(task => [task.task, task]))
+    const current = new Map(currentSnapshot.tasks.map(task => [task.task, task]))
     const synced = syncChangedFieldsSince(name, round?.startedAt ?? round?.at)
     for (const id of [...new Set([...previous.keys(), ...current.keys()])].sort()) {
       const before = previous.get(id), after = current.get(id)
@@ -1490,7 +1488,7 @@ function staleReason(name, round, currentSnapshot, currentContext) {
         if (before[field] !== after[field]) {
           changedDigest = true
           changes.push(tr('task {0} {1} digest changed ({2} → {3})', displayIdentifier(id), field,
-            String(before[field] ?? 'missing').slice(0, 12), String(after[field] ?? 'missing').slice(0, 12)))
+            String(before[field] ?? 'missing').slice(0, 12), String(after[field]).slice(0, 12)))
         }
       }
       const fields = synced.get(displayIdentifier(id))
@@ -1500,12 +1498,12 @@ function staleReason(name, round, currentSnapshot, currentContext) {
   }
   if (!changes.length && round?.context !== currentContext)
     changes.push(tr('saved context digest {0} differs from current digest {1}',
-      String(round?.context ?? 'missing').slice(0, 12), String(currentContext ?? 'missing').slice(0, 12)))
+      String(round?.context ?? 'missing').slice(0, 12), String(currentContext).slice(0, 12)))
   if (!changes.length && round?.context === currentContext)
     changes.push(tr('discussion decision or attempt binding changed'))
   const auditAt = latestPlanSyncAuditAt(name)
   if (auditAt) changes.push(tr('last plan_sync_audit: {0}', auditAt))
-  return changes.length ? changes.join('; ') : tr('saved and current planning contexts differ')
+  return changes.join('; ')
 }
 
 function logSupersededRounds(owner, superseded) {
@@ -1553,28 +1551,27 @@ function invalidatedSyncWorkflows(name, before, after) {
     }
     const completedDiscussion = currentPhaseDiscussionDecision(before, oldPhase)
     if (completedDiscussion?.kind === 'discussed' && !currentPhaseDiscussionDecision(after, phase)) {
-      const targets = (completedDiscussion.targets ?? []).map(id => after.tasks[id]).filter(Boolean)
+      const targets = completedDiscussion.targets.map(id => after.tasks[id]).filter(Boolean)
       record('phase', 'discussion', phaseId, oldPhase.discussionAttempts?.find(round => round.roundId === completedDiscussion.id),
         oldPhase.discussionAttempts?.find(round => round.roundId === completedDiscussion.id)?.contextSnapshot,
         phaseContextSnapshot(after, targets), phaseContext(after, phaseId, targets))
     }
     const discussionSkip = currentPhaseDiscussionSkip(before, oldPhase)
     if (discussionSkip && !currentPhaseDiscussionSkip(after, phase)) {
-      const targets = (discussionSkip.targets ?? []).map(id => after.tasks[id]).filter(Boolean)
+      const targets = discussionSkip.targets.map(id => after.tasks[id]).filter(Boolean)
       record('phase', 'discussion skip', phaseId, discussionSkip, discussionSkip.contextSnapshot,
         phaseContextSnapshot(after, targets), phaseContext(after, phaseId, targets))
     }
     const planningSkip = currentPhasePlanningSkip(before, oldPhase)
     if (planningSkip && !currentPhasePlanningSkip(after, phase)) {
-      const targets = (planningSkip.targets ?? []).map(id => after.tasks[id]).filter(Boolean)
+      const targets = planningSkip.targets.map(id => after.tasks[id]).filter(Boolean)
       record('phase', 'planning skip', phaseId, planningSkip, planningSkip.contextSnapshot,
         phaseContextSnapshot(after, targets), phaseContext(after, phaseId, targets))
     }
   }
 
-  for (const [id, oldTask] of Object.entries(before.tasks ?? {})) {
-    const task = after.tasks?.[id]
-    if (!task) continue
+  for (const [id, oldTask] of Object.entries(before.tasks)) {
+    const task = after.tasks[id]
     const discussion = oldTask.discussionAttempts?.at(-1)
     if (discussion && !discussion.endedAt && discussion.context !== planningContext(after, task))
       record('task', 'discussion', id, discussion, discussion.contextSnapshot,
@@ -1803,7 +1800,7 @@ function progress(state) {
 const commands = {
   init() {
     const planPath = args.plan ?? die('init needs --plan <plan.json>')
-    const name = args.run ?? die('init needs --run <name>')
+    const name = args.run
     const { plan, source } = readPlan(planPath)
     warnPlanTouchPaths(plan)
     const dir = runDir(name)
@@ -1851,10 +1848,13 @@ const commands = {
     const name = runName()
     const state = loadState(name)
     const storedSource = state.plan.source
-    const centralSource = storedSource ? join(GRAPH_DIR, 'plans', basename(storedSource)) :
-      join(GRAPH_DIR, 'plans', `${safeId(state.plan.name, 'plan')}.plan.json`)
-    const planPath = args.plan ?? (storedSource && existsSync(storedSource) ? storedSource :
-      existsSync(centralSource) ? centralSource : die('sync-plan needs --plan <plan.json> once'))
+    let planPath = args.plan
+    if (planPath == null) {
+      const centralSource = storedSource ? join(GRAPH_DIR, 'plans', basename(storedSource)) :
+        join(GRAPH_DIR, 'plans', `${safeId(state.plan.name, 'plan')}.plan.json`)
+      planPath = storedSource && existsSync(storedSource) ? storedSource :
+        existsSync(centralSource) ? centralSource : die('sync-plan needs --plan <plan.json> once')
+    }
     const { plan, source } = readPlan(planPath, state)
     warnPlanTouchPaths(plan)
     const removed = Object.keys(state.tasks).filter((id) => !plan.tasks.some((t) => t.id === id))
@@ -1912,7 +1912,8 @@ const commands = {
     const effectiveTasks = derive({ ...state, tasks: persistedTasks })
     const diagnostics = auditSyncPlan({ stateTasks: persistedTasks, planTasks: plan.tasks, added, effectiveTasks })
 
-    const effectivePlan = { ...plan, tasks: Object.values(state.tasks).map(planTaskFromState) }
+    // O modo existente governa a sincronização; o arquivo não pode enfraquecer suas regras de fase.
+    const effectivePlan = { ...plan, planningMode: state.plan.planningMode ?? 'task', tasks: Object.values(state.tasks).map(planTaskFromState) }
     validatePlan(effectivePlan, args['allow-overlap'] === true, historicalTasks(state))
     const nextPlan = {
       name: plan.name,
@@ -1966,7 +1967,6 @@ const commands = {
     const historyAt = new Date().toISOString()
     for (const id of historyTaskIds) {
       const task = state.tasks[id]
-      if (!task || ['done', 'skipped'].includes(task.state)) continue
       const previous = beforeState.tasks[id]
       const taskFields = changes.find(change => change.task === id && change.applied)?.fields.map(change => change.field) ??
         (added.includes(id) ? ['task'] : [])
@@ -1991,7 +1991,7 @@ const commands = {
       for (const item of invalidatedWorkflows) {
         if (item.scope === 'phase') confirmationPhases.add(item.id)
         if (item.scope === 'task') {
-          const phaseId = state.tasks[item.task]?.phase ?? beforeState.tasks[item.task]?.phase
+          const phaseId = state.tasks[item.task].phase
           if (phaseId && state.phaseWorkflows?.[phaseId]) confirmationPhases.add(phaseId)
         }
       }
@@ -2004,7 +2004,7 @@ const commands = {
         phase.contractConfirmationRequired = { at: historyAt, source,
           tasks: targets.map(task => task.id),
           invalidated: invalidatedWorkflows.filter(item => item.id === phaseId || item.task &&
-            (state.tasks[item.task]?.phase ?? beforeState.tasks[item.task]?.phase) === phaseId) }
+            state.tasks[item.task].phase === phaseId) }
       }
     } else {
       const confirmationTasks = new Set(invalidatedWorkflows
@@ -2217,8 +2217,8 @@ const commands = {
     for (const t of list) {
       const auth = t.executionAuthorization ? tr('authorized {0}', t.executionAuthorization.mode) :
         tr(scoped ? 'authorization required' : 'no authorization scope recorded')
-      const action = actions.get(t.id) ?? ''
-      console.log(`${t.id}  ${t.title}  [${tr(t.effective)} · ${auth}]${action ? `  → ${action}` : ''}`)
+      const action = actions.get(t.id)
+      console.log(`${t.id}  ${t.title}  [${tr(t.effective)} · ${auth}]  → ${action}`)
     }
     log(
       `\n[prumo] ${occ.executors.length}/${occ.maxExec} executors, ${occ.reviewers.length} in review ` +
@@ -2259,7 +2259,7 @@ const commands = {
       if (state.plan.planningMode !== 'phase') {
         state.plan.planningMode = 'phase'
         state.legacyPhaseAdoption = true
-        state.phaseWorkflows = Object.fromEntries((state.plan.phases ?? []).map(phase => [phase.id,
+        state.phaseWorkflows = Object.fromEntries(state.plan.phases.map(phase => [phase.id,
           { id: phase.id, title: phase.title, state: 'pending', discussionAttempts: [], planningAttempts: [], planningHistory: [] }]))
       }
       for (const task of legacyMembers) {
@@ -2404,7 +2404,7 @@ const commands = {
       phase.contractConfirmationRequired = null
     }
     phase.state = 'pending'
-    recordQuestionResolutions(state, round.questionRefs ?? [], discovery.decisions, { phase: phaseId })
+    recordQuestionResolutions(state, round.questionRefs, discovery.decisions, { phase: phaseId })
     saveState(name, state)
     emit(name, 'phase_discussed', null, { phase: phaseId, roundId: round.roundId, questions: discovery.questions.length,
       members: round.targets, prematureTaskWork: discovery.executionBoundary.prematureTaskWork.length })
@@ -2515,7 +2515,6 @@ const commands = {
       try {
         safeId(task.id)
         const path = resolve(planDir, filename)
-        if (dirname(path) !== planDir) throw new Error(tr('task plan artifact path escapes --plan-dir'))
         const plan = readPlanningArtifact(path)
         assertPhaseTaskPlan(state, task, plan, binding, round.requiredInputs?.[task.id] ?? [])
         validateQuestionDeadlines(state, task.id, plan.openQuestions)
@@ -2713,7 +2712,7 @@ const commands = {
       t.contractConfirmationRequired = null
     }
     t.state = t.planningReturn ? 'blocked' : 'pending'
-    recordQuestionResolutions(state, round.questionRefs ?? [], discovery.decisions, { task: id })
+    recordQuestionResolutions(state, round.questionRefs, discovery.decisions, { task: id })
     saveState(name, state)
     emit(name, 'task_discussed', id, { roundId: round.roundId, questions: discovery.questions.length, state: t.state,
       prematureTaskWork: discovery.executionBoundary.prematureTaskWork.length })
@@ -3488,10 +3487,10 @@ const LEGACY_MIGRATION_CONTINUATIONS = new Set([
 ])
 function assertMigrationCommandAllowed(state, command) {
   if (READ_ONLY.has(command) || command === 'sync-plan' || command === 'note') return
-  const task = state.tasks[args._[0]]
+  const task = Object.hasOwn(state.tasks, args._[0]) ? state.tasks[args._[0]] : undefined
   if (command === 'finish-discussion' && task?.discussionAttempts?.some(round => !round.endedAt)) return
   if (command === 'finish-planning' && task?.planningAttempts?.some(round => !round.endedAt)) return
-  const phase = state.phaseWorkflows?.[args._[0]]
+  const phase = Object.hasOwn(state.phaseWorkflows ?? {}, args._[0]) ? state.phaseWorkflows[args._[0]] : undefined
   if (command === 'activity-start' || command === 'activity-stop') {
     if (args.scope === 'phase' && phase && (
       phase.state === 'discussing' && phase.discussionAttempts?.some(round => !round.endedAt) ||

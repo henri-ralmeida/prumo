@@ -13,7 +13,8 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         node: [22, 24]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    # A matriz histórica completa é serial no Windows para preservar a prontidão dos processos.
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && matrix.node == 24 && 180 || 90 }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -22,8 +23,12 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile --ignore-scripts
       # As integrações instalam e reiniciam processos; no Windows, evite disputar recursos durante a prontidão.
-      - run: node --test --test-concurrency=${{ runner.os == 'Windows' && 1 || 4 }} scripts/*.test.mjs test/*.test.mjs
+      - run: bun run test:coverage:collect
+        env:
+          PRUMO_TEST_CONCURRENCY: ${{ runner.os == 'Windows' && 1 || 4 }}
+          PRUMO_UPGRADE_TAGS: ${{ runner.os == 'Windows' && matrix.node == 24 && 'all' || '' }}
       - run: npm run check
       - run: npm pack
       - run: node scripts/package-smoke.mjs
@@ -31,7 +36,38 @@ jobs:
       - uses: actions/upload-artifact@v6
         if: always()
         with:
+          name: coverage-${{ matrix.os }}-node-${{ matrix.node }}
+          path: |
+            .test-output/coverage/coverage-final.json
+            .test-output/coverage/coverage-summary.json
+            .test-output/coverage/source-manifest.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
           name: verification-${{ matrix.os }}-node-${{ matrix.node }}
-          path: .test-output/
+          path: |
+            .test-output/
+            !.test-output/coverage/tmp/**
           include-hidden-files: true
           if-no-files-found: ignore
+  coverage:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - uses: actions/download-artifact@v6
+        with:
+          pattern: coverage-*
+          path: .test-output/coverage-artifacts
+      - run: bun run coverage:merge
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: consolidated-coverage
+          path: .test-output/coverage-merged/

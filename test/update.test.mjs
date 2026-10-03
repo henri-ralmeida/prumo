@@ -11,6 +11,7 @@ import { assertUpdateVersion, globalCliState, installationsCurrent, isGlobalCli,
 import { inside } from '../scripts/storage.mjs'
 
 const source = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const absentDashboardOptions = `${process.env.NODE_OPTIONS ?? ''} --import=${new URL('./fixtures/dashboard-absent.mjs', import.meta.url).href}`.trim()
 const read = path => readFileSync(path, 'utf8')
 const version = JSON.parse(read(join(source, 'package.json'))).version
 const put = (path, value) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, typeof value === 'string' ? value : JSON.stringify(value)) }
@@ -194,7 +195,7 @@ test('update detects installed harnesses and custom paths, preserves preferences
   assert.equal(installed.find(entry => entry.harness === 'dsh').config, customDsh)
   const markers = installed.flatMap(entry => entry.roots.map(root => join(root, 'prumo', '.prumo-install.json')))
   for (const marker of markers) { const value = JSON.parse(read(marker)); value.version = '0.0.9'; put(marker, value); put(join(dirname(marker), 'scripts', 'engine.mjs'), '// older installed engine\n') }
-  const env = { ...process.env, HOME: home, USERPROFILE: home, CODEX_HOME: join(home, '.codex'), DSH_HOME: join(home, '.dsh'), CLAUDE_CONFIG_DIR: join(home, '.claude'), PRUMO_HOME: join(home, 'data'), PRUMO_LANG: 'en' }
+  const env = { ...process.env, NODE_OPTIONS: absentDashboardOptions, HOME: home, USERPROFILE: home, CODEX_HOME: join(home, '.codex'), DSH_HOME: join(home, '.dsh'), CLAUDE_CONFIG_DIR: join(home, '.claude'), PRUMO_HOME: join(home, 'data'), PRUMO_LANG: 'en' }
   delete env.GRAPH_ROOT; delete env.PRUMO_ROOT; delete env.GRAPH_FOREMAN_HOME
   put(join(home, '.local', 'share', 'prumo', 'dashboard.json'), { enabled: false, mechanism: process.platform === 'win32' ? 'schtasks' : process.platform === 'darwin' ? 'launchd' : 'xdg' })
   const run = dryRun => spawnSync(process.execPath, [join(source, 'bin', 'prumo.mjs'), '_update'], { cwd, env: { ...env, PRUMO_UPDATE_REQUEST: JSON.stringify({ dryRun, cwd, projects: [], updateCli: false }) }, encoding: 'utf8', timeout: 120000, windowsHide: true })
@@ -235,7 +236,7 @@ test('update detects installed harnesses and custom paths, preserves preferences
 test('update recupera marcadores nulos dos quatro ambientes por meio de backups integros', t => {
   const home = mkdtempSync(join(realpathSync(tmpdir()), 'prumo-recover-update-'))
   t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
-  const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CONFIG_DIR: join(home, '.claude'),
+  const env = { ...process.env, NODE_OPTIONS: absentDashboardOptions, HOME: home, USERPROFILE: home, CLAUDE_CONFIG_DIR: join(home, '.claude'),
     KIRO_HOME: join(home, '.kiro'), CODEX_HOME: join(home, '.codex'), DSH_HOME: join(home, '.dsh'), PRUMO_HOME: join(home, 'data'),
     GRAPH_ROOT: '', PRUMO_ROOT: '', GRAPH_FOREMAN_HOME: '', PRUMO_LANG: 'en' }
   const markers = []
@@ -302,7 +303,7 @@ test('update refuses to replace a newer local candidate with npm latest', t => {
 test('update reports a corrupt harness marker and still updates the other installed harnesses', t => {
   const home = mkdtempSync(join(realpathSync(tmpdir()), 'prumo-partial-update-'))
   t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
-  const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CONFIG_DIR: join(home, '.claude'),
+  const env = { ...process.env, NODE_OPTIONS: absentDashboardOptions, HOME: home, USERPROFILE: home, CLAUDE_CONFIG_DIR: join(home, '.claude'),
     KIRO_HOME: join(home, '.kiro'), CODEX_HOME: join(home, '.codex'), DSH_HOME: join(home, '.dsh'), PRUMO_HOME: join(home, 'data'),
     GRAPH_ROOT: '', PRUMO_ROOT: '', GRAPH_FOREMAN_HOME: '', PRUMO_LANG: 'en' }
   const markers = []
