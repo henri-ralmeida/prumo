@@ -177,7 +177,7 @@ and a valid validation contract; phase planning refines each task's execution wi
 | `id`            | string                        | required  | Unique task id (`T1`, `T2`…) — referenced by `deps`                                           |
 | `title`         | string                        | required  | What this task delivers, one line                                                             |
 | `label`         | string                        | —         | Optional business label: 1–3 words, at most 24 characters; display only                      |
-| `summary`       | string                        | —         | Optional 1–2 sentences stating the expected result and why it matters; display only           |
+| `summary`       | string                        | —         | Required for new tasks added through `sync-plan`: 1–2 sentences stating the expected result and why it matters; optional in old stored tasks; display only |
 | `validationSummary` | string                     | —         | Optional acceptance sentence for concise task views; it does not replace `validation`       |
 | `manualEstimate` | number \| string            | —         | Optional estimate for doing the task by hand: whole minutes (`45`) or `4h`, `4h30`, `90m`, `45min`, `PT4H30M`; stored as whole minutes; metadata only |
 | `phase`         | string                        | —         | Id of a `phases[]` entry; groups the task in status and dashboard swimlanes                   |
@@ -203,7 +203,9 @@ state keeps it as whole minutes, and invalid values (zero, negative, fractional 
 Plan-level fields: `name` (required), `description`, `phases[]` (`{id, title}`),
 `maxParallel` (4), `maxExecutors` (3), `requireReview` (true).
 
-These optional text fields must be nonblank when present. A text-only update through `sync-plan`
+Display text must be nonblank when supplied. Before adding a task through `sync-plan`, the orchestrator
+must fill its `summary` from the approved scope; synchronization refuses new tasks without it and
+preserves the existing state. Existing stored tasks without summaries remain compatible. A text-only update through `sync-plan`
 does not change the task contract or invalidate planning. The dashboard keeps the full `title`
 in task details and tooltips; it shows `label` where a compact task name is useful and never
 generates or truncates a replacement label.

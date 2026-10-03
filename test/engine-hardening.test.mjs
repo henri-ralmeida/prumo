@@ -1679,7 +1679,7 @@ test('nova tarefa citada por bloqueio informa dependência ausente sem liberar a
   assert.equal(f.init().status, 0)
   assert.equal(f.cli('block', 'T1', '--reason', 'aguardando T1a').status, 0)
   const plan = JSON.parse(readFileSync(f.planPath, 'utf8'))
-  plan.tasks.push({ id: 'T1a', title: 'Entrega aguardada', deps: ['T1'], validation: plan.tasks[0].validation })
+  plan.tasks.push({ id: 'T1a', title: 'Entrega aguardada', summary: 'Verificar a entrega dependente conforme o aceite já aprovado.', deps: ['T1'], validation: plan.tasks[0].validation })
   f.writePlan(plan)
   const result = f.cli('sync-plan', '--plan', f.planPath)
   assert.equal(result.status, 0, f.output(result))

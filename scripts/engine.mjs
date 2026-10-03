@@ -1887,6 +1887,10 @@ const commands = {
     warnPlanTouchPaths(plan, cwd)
     const removed = Object.keys(state.tasks).filter((id) => !plan.tasks.some((t) => t.id === id))
     if (removed.length) die(`sync-plan is additive: plan removed ${removed.join(', ')}`)
+    const missingSummaries = plan.tasks.filter(task => !Object.hasOwn(state.tasks, task.id) && task.summary === undefined)
+    if (missingSummaries.length) die(tr(
+      'new tasks require summary before sync-plan: {0}; fill the expected result and its purpose from the approved scope, then run sync-plan again',
+      missingSummaries.map(task => displayIdentifier(task.id)).join(', ')))
 
     const contractFields = TASK_CONTRACT_FIELDS
     const beforeState = structuredClone(state)
@@ -2060,10 +2064,6 @@ const commands = {
         !state.tasks[id]?.executionAuthorization)),
     })
     printSyncPlanAudit(changes, diagnostics)
-    const withoutSummary = added.filter(id => state.tasks[id].summary === undefined)
-    if (withoutSummary.length) log('[prumo] ' + tr(
-      'sync-plan warning: new tasks without summary: {0}; add a short description of the expected result so task cards explain their purpose',
-      withoutSummary.map(displayIdentifier).join(', ')))
     log(
       `[prumo] run "${name}" synced: +${added.length}, updated ${updated.length}, metadata ${metadataUpdated.length}, ` +
         `preserved ${preserved.length}, total ${Object.keys(state.tasks).length}`,

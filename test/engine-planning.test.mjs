@@ -1108,7 +1108,7 @@ test('phase plan dependencies completed after dispatch remain bound to the round
   f.writeArtifacts('F1')
   f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
 
-  f.plan.tasks.push({ id: 'B', phase: 'F1', title: 'New consumer', deps: ['A'], validation })
+  f.plan.tasks.push({ id: 'B', phase: 'F1', title: 'New consumer', summary: 'Check the delivered producer behavior before consuming it.', deps: ['A'], validation })
   writeFileSync(f.planPath, JSON.stringify(f.plan))
   f.ok('sync-plan', '--plan', f.planPath)
   f.ok('begin-phase-discussion', 'F1')
@@ -1574,7 +1574,7 @@ test('sync-plan adding a phase member makes the previous discussion stale withou
   f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
   const existingPlan = structuredClone(f.state().tasks.A.taskPlan)
 
-  f.plan.tasks.push({ id: 'B', phase: 'F1', title: 'Added later', validation })
+  f.plan.tasks.push({ id: 'B', phase: 'F1', title: 'Added later', summary: 'Verify the newly approved delivery without reopening completed work.', validation })
   writeFileSync(f.planPath, JSON.stringify(f.plan))
   f.ok('sync-plan', '--plan', f.planPath)
 
@@ -1622,7 +1622,7 @@ test('sync-plan adding a phase member rejects an open plan batch atomically and 
   f.ok('plan-phase', 'F1', '--agent', 'first-planner')
   f.writeArtifacts('F1')
 
-  f.plan.tasks.push({ id: 'B', phase: 'F1', title: 'Added while planning', validation })
+  f.plan.tasks.push({ id: 'B', phase: 'F1', title: 'Added while planning', summary: 'Verify the approved additional delivery in the revised phase plan.', validation })
   writeFileSync(f.planPath, JSON.stringify(f.plan))
   f.ok('sync-plan', '--plan', f.planPath)
   const statePath = join(f.root, '.specs/graph/phase-negative/state.json')
@@ -2015,7 +2015,7 @@ test('an open phase round given its artifact directory counts task-plan files al
 test('sync-plan warns without blocking when it invalidates an open discussion or current skip', t => {
   const discussion = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Original' }])
   discussion.ok('begin-phase-discussion', 'F1')
-  discussion.plan.tasks.push({ id: 'B', phase: 'F1', title: 'Added while discussion is open', validation })
+  discussion.plan.tasks.push({ id: 'B', phase: 'F1', title: 'Added while discussion is open', summary: 'Verify the approved additional delivery after renewed phase discussion.', validation })
   writeFileSync(discussion.planPath, JSON.stringify(discussion.plan))
   const discussionSync = discussion.ok('sync-plan', '--plan', discussion.planPath).stdout
   assert.match(discussionSync, /sync-plan warning: F1 discussion was invalidated/)

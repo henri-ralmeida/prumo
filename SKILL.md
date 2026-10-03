@@ -70,15 +70,20 @@ Nunca crie esse vínculo nos dois sentidos, pois isso gera um ciclo. Tarefas já
 seu contrato; uma ampliação posterior precisa depender delas. Execuções antigas preservam seus
 identificadores existentes. O motor recusa novas numerações incrementais durante a sincronização.
 
-**Role-written summaries.** The approved task may carry a business `label` (1–3 words, at most 24
-characters), a 1–2 sentence `summary` of the expected result and why it matters, and a one-sentence
-`validationSummary` describing acceptance. Write only text the approved scope supports. They are display
+**Role-written summaries.** Before creating or synchronizing a new task, the orchestrator must write a
+nonblank `summary` of 1–2 sentences stating the expected result and why it matters, using the approved
+scope. If it is missing, fill it before `init` or `sync-plan`; a warning is not permission to leave it
+empty. `sync-plan` refuses newly added tasks without it. Do not invent scope or substitute a generic
+placeholder. An existing task being updated should also receive its missing summary through metadata
+synchronization without rewriting its historical contract. The approved task may additionally carry a
+business `label` (1–3 words, at most 24 characters) and a one-sentence `validationSummary` describing
+acceptance. Write only text the approved scope supports. They are display
 text: changing them alone changes neither the contract nor planning authorization. Do not invent, generate
 or truncate a label to fill a missing one. The planner writes `taskPlan.summary` (1–2 sentences: chosen
 approach and why it fits); the executor reports a 1–2 sentence outcome and why for `task.summary`, which the
 orchestrator may synchronize without changing the approved contract; the reviewer supplies a one-sentence
 PO First verdict through `validate --summary` and keeps `--evidence` as the complete behavioral
-observations. Summaries are optional in stored state, but when present they must contain nonblank text.
+observations. Old stored tasks without summaries remain readable; summaries supplied in a plan must be nonblank.
 
 **Traceability stays out of the product.** When the orchestrator writes or synchronizes a task contract,
 it keeps traceability there: task and round ids, process names, who decided and when belong in the

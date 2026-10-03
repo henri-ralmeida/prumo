@@ -842,7 +842,7 @@ test('legacy tasks retain their lifecycle and history while tasks added by sync-
   assert.equal(f.graph().derived.T1.effective, 'ready')
   f.ok('start', 'T1', '--agent', 'legacy-executor')
   const active = f.state().tasks.T1
-  f.plan.tasks.push({ id: 'T1a', title: 'New task', deps: ['T1'], validation: [check] })
+  f.plan.tasks.push({ id: 'T1a', title: 'New task', summary: 'Verify the approved delivery estimates after the original task.', deps: ['T1'], validation: [check] })
   f.writePlan()
   f.ok('sync-plan', '--plan', f.planPath)
   assert.deepEqual(f.state().tasks.T1, active)
@@ -1208,7 +1208,7 @@ function fixtureTempBase() {
   return tmpdir()
 }
 
-test('sync-plan avisa tarefas novas sem resumo sem bloquear ou repetir avisos de tarefas existentes', t => {
+test('sync-plan exige preencher o resumo de tarefas novas antes de gravar e preserva tarefas antigas', t => {
   for (const lang of ['en', 'pt-BR']) {
     const f = fixture(t, undefined, {}, { lang })
     f.plan.tasks.push(
@@ -1217,11 +1217,25 @@ test('sync-plan avisa tarefas novas sem resumo sem bloquear ou repetir avisos de
       { id: 'T1c', title: 'Terceiro complemento', deps: ['T1'], validation: [check] },
     )
     f.writePlan()
-    const added = f.ok('sync-plan', '--plan', f.planPath).stdout
-    const warning = lang === 'en' ? /sync-plan warning: new tasks without summary: T1a, T1c/ : /aviso de sync-plan: tarefas novas sem summary: T1a, T1c/
-    assert.match(added, warning)
+    const before = f.state(), events = f.events()
+    const error = lang === 'en' ? /new tasks require summary before sync-plan: T1a, T1c/ : /tarefas novas exigem summary antes de sync-plan: T1a, T1c/
+    f.rejected(error, 'sync-plan', '--plan', f.planPath)
+    assert.deepEqual(f.state(), before)
+    assert.equal(f.events(), events)
+    assert.equal(f.state().tasks.T1.summary, undefined, 'tarefas antigas continuam legíveis')
+    for (const invalid of ['', '   ', null]) {
+      f.plan.tasks[1].summary = invalid
+      f.writePlan()
+      f.rejected(/T1a.*summary/, 'sync-plan', '--plan', f.planPath)
+      assert.deepEqual(f.state(), before)
+      assert.equal(f.events(), events)
+    }
+    f.plan.tasks[1].summary = 'Verificar as estimativas aprovadas após a primeira entrega.'
+    f.plan.tasks[3].summary = 'Verificar que a terceira entrega preserva as estimativas aprovadas.'
+    f.writePlan()
+    f.ok('sync-plan', '--plan', f.planPath)
     assert.equal(Object.keys(f.state().tasks).length, 4)
-    assert.equal(f.state().tasks.T1a.summary, undefined, 'o motor não inventa um resumo')
+    assert.equal(f.state().tasks.T1a.summary, f.plan.tasks[1].summary, 'o motor usa o resumo escrito pelo agente')
     assert.equal(f.state().tasks.T1b.summary, 'Explicar o resultado esperado.')
     const repeated = f.ok('sync-plan', '--plan', f.planPath).stdout
     assert.doesNotMatch(repeated, /without summary|sem summary/)

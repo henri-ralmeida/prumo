@@ -177,7 +177,7 @@ e um contrato de validação válido; o planejamento da fase refina a execução
 | `id`            | string                        | obrigatório | ID único da tarefa (`T1`, `T2`…) — referenciado por `deps`                                  |
 | `title`         | string                        | obrigatório | O que esta tarefa entrega, em uma linha                                                     |
 | `label`         | string                        | —         | Rótulo de negócio opcional: 1–3 palavras, no máximo 24 caracteres; apenas exibição            |
-| `summary`       | string                        | —         | 1–2 frases opcionais com o resultado esperado e por que ele importa; apenas exibição          |
+| `summary`       | string                        | —         | Obrigatório para tarefas novas adicionadas por `sync-plan`: 1–2 frases com o resultado esperado e por que ele importa; opcional em tarefas antigas armazenadas; apenas exibição |
 | `validationSummary` | string                     | —         | Frase de aceite opcional para visões concisas da tarefa; não substitui `validation`         |
 | `manualEstimate` | number \| string            | —         | Estimativa opcional para fazer a tarefa à mão: minutos inteiros (`45`) ou `4h`, `4h30`, `90m`, `45min`, `PT4H30M`; guardada em minutos inteiros; apenas metadado |
 | `phase`         | string                        | —         | ID de uma entrada de `phases[]`; agrupa a tarefa no status e nas raias do dashboard           |
@@ -203,7 +203,10 @@ estado a guarda em minutos inteiros, e valores inválidos (zero, negativos, fra�
 Campos no nível do plano: `name` (obrigatório), `description`, `phases[]` (`{id, title}`),
 `maxParallel` (4), `maxExecutors` (3), `requireReview` (true).
 
-Esses campos de texto opcionais precisam estar preenchidos quando presentes. Uma atualização apenas de texto via `sync-plan`
+Textos de exibição precisam estar preenchidos quando informados. Antes de acrescentar uma tarefa por
+`sync-plan`, o orquestrador deve preencher seu `summary` com base no escopo aprovado; a sincronização
+recusa tarefas novas sem ele e preserva o estado existente. Tarefas antigas sem resumo continuam
+compatíveis. Uma atualização apenas de texto via `sync-plan`
 não muda o contrato da tarefa nem invalida o planejamento. O dashboard preserva o `title` completo
 nos detalhes da tarefa e nos tooltips; mostra `label` onde um nome compacto de tarefa é útil e nunca
 gera nem corta um rótulo substituto.
