@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, copyFileSync, existsSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, copyFileSync, existsSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -1091,7 +1091,8 @@ test('divergências concluídas ficam agrupadas sem recomendar comandos que não
 test('touches usa a pasta persistida ou explícita e evita avisos falsos na central', t => {
   const f = fixture(t, [{ id: 'T1', title: 'Arquivo existente', touches: ['delivery.cjs'] },
     { id: 'T2', title: 'Teste existente', touches: ['delivery.test.cjs'] }])
-  assert.equal(f.state().plan.cwd, f.project)
+  // O cwd automático usa a pasta real do processo, inclusive quando o diretório temporário tem um alias no macOS.
+  assert.equal(f.state().plan.cwd, realpathSync(f.project))
   const centralCli = (...args) => {
     const result = spawnSync(process.execPath, [engine, ...args], { cwd: f.root, encoding: 'utf8', windowsHide: true,
       env: { ...process.env, PRUMO_ROOT: f.root, PRUMO_HOME: dirname(f.root), PRUMO_LANG: 'en' }, timeout: 20000 })
