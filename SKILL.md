@@ -77,7 +77,10 @@ empty. `sync-plan` refuses newly added tasks without it. Do not invent scope or 
 placeholder. An existing task being updated should also receive its missing summary through metadata
 synchronization without rewriting its historical contract. The approved task may additionally carry a
 business `label` (1–3 words, at most 24 characters) and a one-sentence `validationSummary` describing
-acceptance. Write only text the approved scope supports. They are display
+acceptance. Write only text the approved scope supports. Use the label to identify the topic briefly
+and the summary to explain the result and purpose,
+including relevant effects or acceptance conditions rather than merely paraphrasing the title. Preserve
+approved titles and summaries; do not rewrite stored task text automatically to remove repetition. They are display
 text: changing them alone changes neither the contract nor planning authorization. Do not invent, generate
 or truncate a label to fill a missing one. The planner writes `taskPlan.summary` (1–2 sentences: chosen
 approach and why it fits); the executor reports a 1–2 sentence outcome and why for `task.summary`, which the
