@@ -53,6 +53,7 @@ async function startDashboard(t, script, args, env) {
   assert.ok(port && port !== '0', output)
   const request = path => fetch(`http://127.0.0.1:${port}${path}`, { signal: AbortSignal.timeout(10000) })
   request.pid = child.pid
+  request.readOutput = () => output
   return request
 }
 
@@ -129,6 +130,11 @@ test('sincronização opcional recupera plano inválido sem perder estado nem pa
   } while (state.tasks.T1.title !== 'Atualizado' && Date.now() < deadline)
   assert.equal(state.tasks.T1.title, 'Atualizado')
   assert.equal(state.tasks.T1.state, before.tasks.T1.state)
+  // O estado pode ficar visível antes do processo de sincronização encerrar; seu callback confirma a conclusão.
+  const finished = /run "sync" synced:.*updated 1,/
+  const finishDeadline = Date.now() + 10000
+  while (!finished.test(request.readOutput()) && Date.now() < finishDeadline) await setTimeout(50)
+  assert.match(request.readOutput(), finished, 'a limpeza aguarda o processo de sincronização concluir, sem interromper a gravação')
 })
 
 test('histórico vazio, parcial e muitos planos mantêm paginação consistente', { timeout: 30000 }, async t => {
