@@ -1314,6 +1314,21 @@ test('opening and closing the legend preserves fixed scale and manual pan', () =
     assertView()
   }
 })
+test('cards follow numeric and suffix order within their phases regardless of dependencies or insertion order', () => {
+  for (const width of [360, 1200]) {
+    const ui = dashboard('pt-BR', width)
+    const tasks = Object.fromEntries(['T12e', 'T11h', 'T2', 'T12a', 'T12', 'T11', 'T11b', 'T11a', 'T10'].map(id =>
+      [id, task(id, 'pending', { phase: 'P1', deps: id === 'T11' ? ['T11h'] : [] })]))
+    tasks.T1 = task('T1', 'pending', { phase: 'P2', deps: ['T12'] })
+    const state = { plan: { phases: [{id:'P1'}, {id:'P2'}] }, tasks }
+    const before = JSON.stringify(state)
+    const result = JSON.parse(ui.run('STATE = input; JSON.stringify(layout(STATE.tasks))', { input: state }))
+    const ordered = Object.entries(result.pos).sort((a,b) => a[1].y-b[1].y || a[1].x-b[1].x).map(([id])=>id)
+    assert.deepEqual(ordered, ['T2', 'T10', 'T11', 'T11a', 'T11b', 'T11h', 'T12', 'T12a', 'T12e', 'T1'])
+    assert.equal(JSON.stringify(state), before, 'layout preserves phases and dependency contracts')
+  }
+})
+
 test('responsive layout selects density and sizes phase lanes from their cards', () => {
   for (const [count, expected] of [[6, 'detailed'], [24, 'detailed'], [25, 'compact'], [48, 'compact'], [100, 'compact'], [101, 'dense'], [206, 'dense']]) {
     const ui = dashboard('en', 960)

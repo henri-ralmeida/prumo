@@ -2283,60 +2283,13 @@ function layout(tasks) {
   const w = Math.max(hubWidth, naturalWidth)
   const metrics = { ...layoutMetrics, nodeW }
   const slotX = nodeW + gapX
-  const depth = {}
-  const d = (id, seen = new Set()) => {
-    if (!tasks[id]) return 0
-    if (depth[id] !== undefined) return depth[id]
-    if (seen.has(id)) return 0
-    seen.add(id)
-    const t = tasks[id]
-    const deps = t.deps ?? []
-    depth[id] = deps.length ? 1 + Math.max(...deps.map((x) => d(x, seen))) : 0
-    return depth[id]
-  }
-  Object.keys(tasks).forEach((id) => d(id))
-
   const colOf = (t) => phaseIx[t.phase] ?? phases.length   // "column" in the graph sense = a phase band
-
-  const preds = {}, succs = {}
-  ids.forEach((id) => { preds[id] = []; succs[id] = [] })
-  for (const t of Object.values(tasks))
-    for (const dep of t.deps ?? []) {
-      if (!tasks[dep]) continue
-      preds[t.id].push(dep)
-      succs[dep].push(t.id)
-    }
-
   const byCol = {}
   for (const t of Object.values(tasks)) (byCol[colOf(t)] ??= []).push(t.id)
   const colKeys = Object.keys(byCol).map(Number).sort((a, b) => a - b)
+  // Cada fase segue a numeração e as letras dos cards para manter derivados junto da tarefa base.
   for (const c of colKeys)
-    byCol[c].sort((a, b) => depth[a] - depth[b] || a.localeCompare(b, undefined, { numeric: true }))
-
-  // seed left-packed, then relax: sweep forward pulling to preds, back pulling to succs
-  const x = {}
-  for (const c of colKeys) byCol[c].forEach((id, i) => { x[id] = PAD + i * slotX })
-  for (let pass = 0; pass < 8; pass++) {
-    const forward = pass % 2 === 0
-    const order = forward ? colKeys : [...colKeys].reverse()
-    for (const c of order) {
-      const col = byCol[c]
-      const want = {}
-      for (const id of col) {
-        const nb = (forward ? preds[id] : succs[id]).filter((n) => colOf(tasks[n]) !== c)
-        want[id] = nb.length ? nb.reduce((s, n) => s + x[n], 0) / nb.length : x[id]
-      }
-      col.sort((a, b) => want[a] - want[b] || a.localeCompare(b, undefined, { numeric: true }))
-      let last = -Infinity
-      for (const id of col) {
-        x[id] = Math.max(want[id], last + slotX)
-        last = x[id]
-      }
-      // re-centre the lane on what it wanted, or repeated passes drift rightward
-      const drift = col.reduce((s, id) => s + (x[id] - want[id]), 0) / col.length
-      for (const id of col) x[id] -= drift
-    }
-  }
+    byCol[c].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
   const pos = {}
   const groupKeys = Array.from({ length: Math.max(phases.length, (colKeys.at(-1) ?? -1) + 1) }, (_, i) => i)
   const lanes = []
