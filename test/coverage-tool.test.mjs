@@ -1,11 +1,66 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { mergeReports, readReports, runCoverageCommand, sourceManifest } from '../tools/coverage.mjs'
+
+test('merge incremental do c8 conserva contadores e arquivo nunca carregado dos mesmos perfis reais', t => {
+  const parent = realpathSync(tmpdir())
+  const root = mkdtempSync(join(parent, 'prumo-c8-merge-'))
+  t.after(() => {
+    assert.equal(dirname(realpathSync(root)), parent)
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  })
+  const sources = join(root, 'source'), profiles = join(root, 'profiles')
+  mkdirSync(sources)
+  mkdirSync(profiles)
+  writeFileSync(join(sources, 'app.mjs'), 'export function choose(value) {\n  if (value) return "sim"\n  return "não"\n}\n')
+  writeFileSync(join(sources, 'absent.mjs'), 'export function absent(value) {\n  if (value) return 1\n  return 0\n}\n')
+  const runner = join(root, 'runner.mjs')
+  writeFileSync(runner, 'import { choose } from "./source/app.mjs"; console.log(choose(process.argv[2] === "true"))\n')
+  const run = (args, coverageDirectory) => {
+    const result = spawnSync(process.execPath, args, {
+      cwd: root, env: { ...process.env, NODE_V8_COVERAGE: coverageDirectory },
+      encoding: 'utf8', windowsHide: true, timeout: 30000,
+    })
+    assert.ifError(result.error)
+    assert.equal(result.status, 0, result.stdout + result.stderr)
+    return result.stdout.trim()
+  }
+  assert.equal(run([runner, 'true'], profiles), 'sim')
+  assert.equal(run([runner, 'false'], profiles), 'não')
+  const profileNames = readdirSync(profiles).sort()
+  assert.equal(profileNames.length, 2)
+  const before = profileNames.map(name => readFileSync(join(profiles, name), 'utf8'))
+  const config = join(root, '.c8rc.json')
+  writeFileSync(config, JSON.stringify({ all: true, include: ['source/**/*.mjs'], exclude: [], extension: ['.mjs'],
+    'check-coverage': false, reporter: ['json', 'json-summary'], 'temp-directory': profiles }))
+  const c8 = fileURLToPath(new URL('../node_modules/c8/bin/c8.js', import.meta.url))
+  const reports = []
+  for (const asynchronous of [false, true]) {
+    const output = join(root, asynchronous ? 'incremental' : 'synchronous')
+    // O próprio reporter conserva os preloads, mas não pode acrescentar perfis ao conjunto comparado.
+    run([c8, 'report', '--config', config, `--merge-async=${asynchronous}`, '--reports-dir', output], join(root, `report-runtime-${asynchronous}`))
+    reports.push({ data: JSON.parse(readFileSync(join(output, 'coverage-final.json'), 'utf8')),
+      summary: JSON.parse(readFileSync(join(output, 'coverage-summary.json'), 'utf8')) })
+  }
+  assert.deepEqual(readdirSync(profiles).sort(), profileNames)
+  assert.deepEqual(profileNames.map(name => readFileSync(join(profiles, name), 'utf8')), before)
+  assert.deepEqual(reports[1], reports[0])
+  assert.deepEqual(Object.keys(reports[0].data).sort(), [join(sources, 'absent.mjs'), join(sources, 'app.mjs')].sort())
+  const loaded = reports[0].data[join(sources, 'app.mjs')]
+  assert.ok(Object.values(loaded.b).flat().every(count => count > 0), 'os subprocessos reais exercitam ramos complementares')
+  const absent = reports[0].data[join(sources, 'absent.mjs')]
+  for (const counts of [Object.values(absent.s), Object.values(absent.f), Object.values(absent.b).flat()]) {
+    assert.ok(counts.length > 0)
+    assert.ok(counts.every(count => count === 0), 'fonte nunca carregado permanece no denominador com cobertura zero')
+  }
+  assert.equal(reports[0].summary[join(sources, 'absent.mjs')].lines.pct, 0)
+  assert.equal(reports[0].summary[join(sources, 'app.mjs')].branches.pct, 100)
+})
 
 test('importar ferramentas sem argumentos não dispara coleta nem instalação', t => {
   const root = mkdtempSync(join(tmpdir(), 'prumo-tool-import-'))

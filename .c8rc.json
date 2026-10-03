@@ -1,5 +1,6 @@
 {
   "all": true,
+  "merge-async": true,
   "include": ["bin/**/*.mjs", "lib/**/*.mjs", "scripts/**/*.mjs", "tools/**/*.mjs", ".test-output/coverage-sources/dashboard-inline.mjs"],
   "exclude": ["**/*.test.mjs", "scripts/*-smoke.mjs"],
   "extension": [".mjs"],

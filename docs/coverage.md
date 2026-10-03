@@ -16,6 +16,10 @@ cobertura V8; seus comportamentos relevantes precisam de verificacao funcional.
 Codigo nao carregado deve continuar no relatorio com cobertura zero. Nao exclua um
 arquivo, ramo ou funcao apenas porque falta um teste.
 
+A agregação usa `merge-async` do c8 para ler os perfis de subprocessos de forma
+incremental, evitando manter toda a coleta simultaneamente na memória. Essa opção
+mantém os mesmos contadores e o mesmo denominador; não remove código da medição.
+
 ### Exclusoes pontuais comprovadas
 
 - `scripts/atomic-state.mjs`: o V8 cria um ramo para a passagem vazia entre o laco
