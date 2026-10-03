@@ -50,6 +50,18 @@ is fixed under the central Prumo workspace.
 
 Apply [PO First](references/po-first.md), also configured globally by the installer, in every role. Respond in the user's language. A functional check means evidence of the requested effect, whether the work concerns data, automation, migration, software, or another domain. Use the host's native subagent tools; if dedicated planning, execution or independent review are unavailable, report that limitation rather than inventing agent dispatch. The engine records transitions; it does not create agents. In Codex invoke this skill as `$prumo`; Claude Code, Kiro and DeepSeek Harness (DSH) use `/prumo`. DSH integration (`prumo install --dsh`, `prumo doctor --dsh`, `DSH_HOME`) is described in [runtime.md](references/runtime.md#dsh-integration).
 
+**Open the discussion before asking its questions.** When creating or updating tasks from an approved
+global plan, collect unresolved phase/task questions instead of starting discovery during graph authoring.
+Keep them with the plan context; after `init` or `sync-plan`, persist them with `note <task> --text`.
+Recommend discussion for the eligible phase, obtain the user's gate choice, and successfully run
+`begin-phase-discussion` (or `begin-discussion` for task-scoped runs) before asking its first question.
+General "confirm understanding before acting" guidance does not move phase discovery outside this round.
+Questions necessary to approve the global scope or authorize a contract change, gate choices and recorded
+execution blockers still belong in their respective flows. Reuse prior answers as settled context and
+record them in discovery `decisions`/`coverage`; do not repeat settled questions or attach the current
+`roundId` to an answer received before the round. The current round still needs its own freshly answered
+question. Read [discussion.md](references/discussion.md) for recording and skip rules.
+
 **Identificadores estáveis.** No plano inicial, use `T1`, `T2`, ... sem lacunas ou letras.
 Ao ampliar o plano por `sync-plan`, preserve os números originais: uma correção vinculada a `T9`
 usa `T9a`, a próxima `T9b`, até `T9z`. Registre a ligação nas dependências: se a correção

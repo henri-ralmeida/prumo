@@ -285,6 +285,31 @@ function phaseFixture(t, tasks, { planningMode = 'phase' } = {}) {
   return { root, project, plans, plan, planPath, ok, rejects, state, save, events, discovery, writeArtifacts }
 }
 
+test('discussão registra dúvidas pendentes e reaproveita respostas anteriores sem forjar vínculo da rodada', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }])
+  f.ok('note', 'A', '--text', 'Dúvida pendente: qual exceção permanece no escopo?')
+  assert.equal(f.state().phaseWorkflows.F1.discussionAttempts.length, 0)
+  f.ok('begin-phase-discussion', 'F1')
+  const path = f.discovery('F1')
+  const discovery = JSON.parse(readFileSync(path, 'utf8'))
+  const fresh = structuredClone(discovery.questions)
+  discovery.decisions.push({ question: 'Qual regra foi aprovada antes da rodada?', answer: 'Preservar o comportamento existente.' })
+  discovery.questions = [{ question: 'Qual regra foi aprovada antes da rodada?', answer: 'Preservar o comportamento existente.',
+    channel: 'chat-fallback', round: 1 }]
+  writeFileSync(path, JSON.stringify(discovery))
+  const before = f.state(), events = f.events()
+  f.rejects(/fresh answered question/, 'finish-phase-discussion', 'F1', '--context', path)
+  assert.deepEqual(f.state(), before)
+  assert.equal(f.events(), events)
+  discovery.questions = fresh
+  writeFileSync(path, JSON.stringify(discovery))
+  f.ok('finish-phase-discussion', 'F1', '--context', path)
+  const recorded = f.state().phaseWorkflows.F1.discovery
+  assert.deepEqual(recorded.decisions, discovery.decisions)
+  assert.deepEqual(recorded.questions, fresh)
+  assert.equal(recorded.roundId, before.phaseWorkflows.F1.discussionAttempts.at(-1).roundId)
+})
+
 function printedPhasePlanFragments(output) {
   return [...output.matchAll(/task-plan-([A-Za-z0-9._-]+)\.json:\r?\n```json\r?\n([\s\S]*?)\r?\n```/g)]
     .map(([, id, json]) => [id, JSON.parse(json)])

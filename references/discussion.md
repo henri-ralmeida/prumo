@@ -40,6 +40,23 @@ After `done`, `skip` or `sync-plan`, inspect any `phase_eligible` event and the 
 user which phase and tasks are ready for discussion, then recommend `begin-phase-discussion <phase>`. Wait
 for the user's choice before beginning it; eligibility alone never opens a phase.
 
+## Questions found while creating or updating tasks
+
+After global scope is approved, graph authoring is not an unrecorded discussion round. Collect phase/task
+questions as pending context without inventing answers or changing the approved contract. Keep them with
+the plan until a run exists, then persist them through `note <task> --text`; use `sync-plan` for an approved
+contract change before opening another round. Once the phase is eligible and the user chooses discussion,
+successfully run `begin-phase-discussion` before asking those questions. Task-scoped runs use
+`begin-discussion` in the same order. This does not defer questions needed to approve global scope or
+authorize a contract change, the choice of gates, or a recorded execution blocker.
+
+If an answer was already given outside a round, reuse it as settled context in discovery `decisions` and
+`coverage`, with its real origin, instead of asking the same question again. Never backdate the round or
+label that answer with its new `roundId`. Only a question actually answered after the round opened may
+satisfy its fresh-question requirement or confirm its current contract digests. If no consequential
+question remains, recommend the explicit discussion skip and wait for the user's choice; prior answers
+do not authorize a skip automatically.
+
 ## Running discovery
 
 When the user chooses discussion, the orchestrator runs an agnostic discovery protocol in the principal

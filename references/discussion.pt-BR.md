@@ -40,6 +40,24 @@ Depois de `done`, `skip` ou `sync-plan`, examine qualquer evento `phase_eligible
 usuário qual fase e quais tarefas estão prontas para discussão e então recomende `begin-phase-discussion <phase>`. Aguarde
 a escolha do usuário antes de iniciá-la; a elegibilidade, por si só, nunca abre uma fase.
 
+## Perguntas encontradas ao criar ou alterar tarefas
+
+Depois da aprovação do escopo global, montar o grafo não é uma rodada de discussão sem registro. Reúna
+as dúvidas da fase/tarefa como contexto pendente, sem inventar respostas nem alterar o contrato aprovado.
+Mantenha-as junto ao plano até existir uma execução e então registre-as por `note <task> --text`; use
+`sync-plan` para uma alteração aprovada do contrato antes de abrir outra rodada. Quando a fase estiver
+elegível e o usuário escolher discutir, execute `begin-phase-discussion` com sucesso antes de apresentar
+essas perguntas. Execuções por tarefa usam `begin-discussion` na mesma ordem. Isso não adia perguntas
+necessárias para aprovar o escopo global ou autorizar uma mudança de contrato, a escolha dos gates nem
+um bloqueio de execução registrado.
+
+Se uma resposta já foi dada fora de uma rodada, reaproveite-a como contexto resolvido em `decisions` e
+`coverage` da descoberta, com sua origem real, em vez de perguntar a mesma coisa novamente. Nunca
+retroaja a rodada nem atribua seu novo `roundId` àquela resposta. Somente uma pergunta realmente
+respondida depois da abertura pode satisfazer o requisito de resposta nova ou confirmar os digests
+atuais do contrato. Se não restar uma dúvida consequencial, recomende pular a discussão explicitamente
+e aguarde a escolha do usuário; respostas anteriores não autorizam pular automaticamente.
+
 ## Conduzindo a descoberta
 
 Quando o usuário escolhe a discussão, o orquestrador conduz um protocolo de descoberta agnóstico na conversa principal
