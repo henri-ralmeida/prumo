@@ -65,7 +65,7 @@
  */
 import {
   mkdirSync, readFileSync, writeFileSync, appendFileSync, existsSync, readdirSync,
-  rmSync, statSync, copyFileSync,
+  rmSync, statSync, copyFileSync, realpathSync,
 } from 'node:fs'
 import { randomUUID, createHash } from 'node:crypto'
 import { isReadyForReview } from './review-readiness.mjs'
@@ -481,9 +481,10 @@ function projectCwd(stored) {
     die(tr('project cwd is not an accessible directory: {0}', directory))
   }
   if (typeof stored === 'string' && stored.trim()) return resolve(stored)
-  const cwd = process.cwd()
-  const central = storageHome()
-  return cwd === central || (inside(central, ROOT) && inside(ROOT, cwd)) ? undefined : cwd
+  let cwd = process.cwd(), central = storageHome(), root = ROOT
+  // Caminhos equivalentes da central não podem ser confundidos com o repositório do projeto.
+  try { cwd = realpathSync(cwd); central = realpathSync(central); root = realpathSync(root) } catch { /* preserva a comparação lexical quando a pasta não está acessível */ }
+  return cwd === central || (inside(central, root) && inside(root, cwd)) ? undefined : process.cwd()
 }
 
 function validationRoots(task, cwd) {

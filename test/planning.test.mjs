@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, copyFileSync, existsSync, realpathSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, copyFileSync, existsSync, realpathSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -1111,6 +1111,17 @@ test('touches usa a pasta persistida ou explícita e evita avisos falsos na cent
   assert.equal(unknown.status, 0, unknown.output)
   assert.equal((unknown.output.match(/touches check skipped/g) ?? []).length, 1)
   assert.doesNotMatch(unknown.output, /was not found in validation/)
+  // Um atalho da central continua sendo armazenamento, não um repositório para procurar arquivos da tarefa.
+  const alias = join(dirname(f.root), 'workspace-alias')
+  symlinkSync(f.root, alias, process.platform === 'win32' ? 'junction' : 'dir')
+  const aliased = spawnSync(process.execPath, [engine, 'sync-plan', '--plan', f.planPath], {
+    cwd: alias, encoding: 'utf8', windowsHide: true, timeout: 20000,
+    env: { ...process.env, PRUMO_ROOT: f.root, PRUMO_HOME: dirname(f.root), PRUMO_LANG: 'en' },
+  })
+  assert.ifError(aliased.error)
+  assert.equal(aliased.status, 0, aliased.stdout + aliased.stderr)
+  assert.equal(((aliased.stdout + aliased.stderr).match(/touches check skipped/g) ?? []).length, 1)
+  assert.doesNotMatch(aliased.stdout + aliased.stderr, /was not found in validation/)
   const explicit = centralCli('sync-plan', '--plan', f.planPath, '--cwd', f.project)
   assert.equal(explicit.status, 0, explicit.output)
   assert.match(explicit.output, /path "novo.cjs" was not found/)

@@ -5,6 +5,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
+import { downloadPublishedFile } from '../test/fixtures/published-download.mjs'
 
 // Query npm instead of keeping a hand-picked list that misses published releases.
 const directory = new URL('../.test-output/npm-versions/', import.meta.url)
@@ -23,14 +24,10 @@ const candidates = readdirSync(candidateDirectory).filter(file => file.endsWith(
 assert.deepEqual(candidates, [`henri-ralmeida-prumo-${packageVersion}.tgz`])
 const candidate = resolve(candidateDirectory, candidates[0])
 const candidateSha256 = createHash('sha256').update(readFileSync(candidate)).digest('hex')
-const response = await fetch('https://registry.npmjs.org/@henri-ralmeida%2fprumo')
-assert.equal(response.status, 200)
-const metadata = await response.json()
+const metadata = JSON.parse((await downloadPublishedFile('https://registry.npmjs.org/@henri-ralmeida%2fprumo')).toString('utf8'))
 const results = []
 async function checkVersion([version, pkg]) {
-  const response = await fetch(pkg.dist.tarball)
-  assert.equal(response.status, 200)
-  const bytes = Buffer.from(await response.arrayBuffer())
+  const bytes = await downloadPublishedFile(pkg.dist.tarball)
   const [algorithm, expected] = pkg.dist.integrity.split('-')
   assert.equal(createHash(algorithm).update(bytes).digest('base64'), expected)
   const archive = new URL(`${version}.tgz`, directory)
