@@ -63,8 +63,9 @@ test('merge incremental do c8 conserva contadores e arquivo nunca carregado dos 
 })
 
 test('importar ferramentas sem argumentos não dispara coleta nem instalação', t => {
-  const root = mkdtempSync(join(tmpdir(), 'prumo-tool-import-'))
-  t.after(() => { assert.equal(dirname(root), tmpdir()); rmSync(root, { recursive: true, force: true }) })
+  const base = realpathSync(tmpdir())
+  const root = mkdtempSync(join(base, 'prumo-tool-import-'))
+  t.after(() => { assert.equal(dirname(root), base); rmSync(root, { recursive: true, force: true }) })
   const urls = ['../tools/coverage.mjs', '../tools/run-coverage.mjs', '../scripts/postinstall.mjs']
     .map(path => new URL(path, import.meta.url).href)
   const code = `for (const url of ${JSON.stringify(urls)}) await import(url); console.log('imports ready')`
@@ -78,8 +79,9 @@ test('importar ferramentas sem argumentos não dispara coleta nem instalação',
 })
 
 function fixture(t) {
-  const root = mkdtempSync(join(tmpdir(), 'prumo-coverage-'))
-  t.after(() => { assert.equal(dirname(root), tmpdir()); rmSync(root, { recursive: true, force: true }) })
+  const base = realpathSync(tmpdir())
+  const root = mkdtempSync(join(base, 'prumo-coverage-'))
+  t.after(() => { assert.equal(dirname(root), base); rmSync(root, { recursive: true, force: true }) })
   mkdirSync(join(root, 'lib/nested'), { recursive: true })
   writeFileSync(join(root, 'lib/nested/app.mjs'), 'export const valor = true\r\n')
   writeFileSync(join(root, 'lib/ignored.test.mjs'), '// teste')
@@ -205,4 +207,66 @@ test('manifesto recusa dashboard ligado antes de criar fontes derivados', t => {
   assert.throws(() => sourceManifest(root), /Fonte ligado.*dashboard\.html/)
   assert.equal(readFileSync(html, 'utf8'), '<script>globalThis.example = 1</script>')
   assert.equal(readdirSync(root).includes('.test-output'), false)
+})
+
+test('manifesto recusa HTML trocado por link após capturar o diretório e preserva o arquivo externo', t => {
+  const root = fixture(t), outside = fixture(t)
+  const scripts = join(root, 'scripts'), dashboard = join(scripts, 'dashboard.html')
+  const external = join(outside, 'dashboard.html')
+  mkdirSync(scripts)
+  writeFileSync(dashboard, '<script>globalThis.example = 1</script>')
+  const bytes = Buffer.from('<script>globalThis.externo = "preservar"</script>\r\n')
+  writeFileSync(external, bytes)
+  const tool = new URL('../tools/coverage.mjs', import.meta.url).href
+  const code = `
+    import fs from 'node:fs';
+    import assert from 'node:assert/strict';
+    import { syncBuiltinESMExports } from 'node:module';
+    const { sourceManifest } = await import(${JSON.stringify(tool)});
+    const scripts = ${JSON.stringify(scripts)}, dashboard = ${JSON.stringify(dashboard)};
+    const original = fs.readdirSync;
+    let capturedRegular = false, replacements = 0;
+    fs.readdirSync = function (directory, options) {
+      const entries = original.call(this, directory, options);
+      if (directory === scripts && options?.withFileTypes && replacements === 0) {
+        const entry = entries.find(item => item.name === 'dashboard.html');
+        assert.ok(entry.isFile());
+        assert.equal(entry.isSymbolicLink(), false);
+        capturedRegular = true;
+        fs.unlinkSync(dashboard);
+        fs.symlinkSync(${JSON.stringify(external)}, dashboard, 'file');
+        replacements++;
+      }
+      return entries;
+    };
+    syncBuiltinESMExports();
+    try {
+      let failure;
+      try { sourceManifest(${JSON.stringify(root)}); } catch (error) { failure = error; }
+      if (failure?.code === 'EPERM') throw failure;
+      assert.equal(failure?.message, 'Fonte ligado nao e aceito: scripts/dashboard.html');
+      assert.equal(capturedRegular, true);
+      assert.equal(replacements, 1);
+      assert.ok(fs.lstatSync(dashboard).isSymbolicLink());
+      console.log('corrida recusada');
+    } catch (error) {
+      if (process.platform === 'win32' && error.code === 'EPERM' && error.syscall === 'symlink') console.log('link exige privilégio');
+      else throw error;
+    } finally {
+      fs.readdirSync = original;
+      syncBuiltinESMExports();
+    }
+  `
+  const result = spawnSync(process.execPath, ['--input-type=module', '--eval', code], {
+    cwd: root, encoding: 'utf8', windowsHide: true, timeout: 10000,
+  })
+  assert.ifError(result.error)
+  assert.equal(result.status, 0, result.stdout + result.stderr)
+  assert.deepEqual(readFileSync(external), bytes)
+  assert.equal(readdirSync(root).includes('.test-output'), false)
+  if (process.platform === 'win32' && result.stdout.trim() === 'link exige privilégio') {
+    t.skip('A criação de link de arquivo exige privilégio neste Windows')
+    return
+  }
+  assert.equal(result.stdout.trim(), 'corrida recusada')
 })

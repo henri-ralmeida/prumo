@@ -375,6 +375,40 @@ test('discussão de tarefa aberta preserva seu vínculo quando a migração foi 
   assert.equal(current.plan.planningMode, undefined)
 })
 
+test('planejamento de tarefa aberto pode concluir durante migração adiada sem perder histórico', t => {
+  const f = fixture(t)
+  f.ok('plan-task', 'T1', '--agent', 'planner')
+  const state = f.state(), task = state.tasks.T1
+  const originalRound = structuredClone(task.planningAttempts.at(-1))
+  const history = structuredClone(task.planningHistory)
+  const attempts = structuredClone(task.attempts)
+  delete state.plan.planningMode
+  f.save(state)
+  const root = dirname(f.planPath), statePath = join(root, '.specs', 'graph', 'retry', 'state.json')
+  const eventsPath = join(dirname(statePath), 'events.ndjson')
+  const before = [readFileSync(statePath, 'utf8'), readFileSync(eventsPath, 'utf8')]
+  f.rejects(/migration is blocked by unsafe in-flight planning/, 'plan-task', 'T1', '--agent', 'another-planner')
+  const invalidPath = join(root, 'invalid-task-plan.json')
+  const invalid = JSON.parse(readFileSync(join(root, 'task-plan.json'), 'utf8'))
+  invalid.steps = []
+  writeFileSync(invalidPath, JSON.stringify(invalid))
+  f.rejects(/steps/, 'finish-planning', 'T1', '--plan', invalidPath)
+  assert.deepEqual([readFileSync(statePath, 'utf8'), readFileSync(eventsPath, 'utf8')], before)
+  const result = f.ok('finish-planning', 'T1', '--plan', join(root, 'task-plan.json'))
+  assert.match(result.stdout + result.stderr, /Migration deferred/)
+  const current = f.state(), completed = current.tasks.T1.planningAttempts.at(-1)
+  assert.equal(current.plan.planningMode, undefined)
+  assert.equal(current.tasks.T1.state, 'pending')
+  assert.equal(completed.n, originalRound.n)
+  assert.equal(completed.context, originalRound.context)
+  assert.equal(completed.discoveryDigest, originalRound.discoveryDigest)
+  assert.equal(completed.result, 'planned')
+  assert.ok(completed.endedAt)
+  assert.deepEqual(current.tasks.T1.attempts, attempts)
+  assert.deepEqual(current.tasks.T1.planningHistory.slice(0, history.length), history)
+  assert.equal(current.tasks.T1.planningHistory.length, history.length + 1)
+})
+
 test('replanejamento de execução histórica usa a mesma tentativa ao importar descoberta explícita', t => {
   const f = fixture(t)
   f.ok('start', 'T1', '--agent', 'executor')

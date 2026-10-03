@@ -79,6 +79,34 @@ test('restore recusa caminho original adulterado e backup ligado sem desfazer a 
   assert.equal(existsSync(f.settings), true)
 })
 
+test('atualização preserva link relativo interno e dados nas duas raízes Unix', { skip: process.platform === 'win32' }, t => {
+  const f = fixture(t, 'prumo-install-relative-internal-', false)
+  const marker = join(f.config, 'skills', 'prumo', '.prumo-install.json')
+  mkdirSync(dirname(marker), { recursive: true })
+  writeFileSync(marker, JSON.stringify({ product: 'prumo', version: '1.3.16', harness: 'claude', lang: 'en' }))
+  const source = join(f.home, '.local', 'share', 'graph-foreman', 'work', '.specs')
+  const state = join(source, 'graph', 'run', 'state.json')
+  const bytes = '{"estado":"preservar"}\n'
+  mkdirSync(dirname(state), { recursive: true })
+  writeFileSync(state, bytes)
+  const target = 'graph/run'
+  symlinkSync(target, join(source, 'current-run'), 'dir')
+  const result = applyInstall(planInstall({ harness: 'claude', home: f.home, cwd: f.cwd, env: f.env, lang: 'en' }))
+  assert.ok(result.backup, 'a atualização registra backup antes de copiar os dados')
+  assert.ok(result.groups.every(group => group.status !== 'conflict'), JSON.stringify(result.groups))
+  const manifest = JSON.parse(readFileSync(join(result.backup, 'manifest.json'), 'utf8'))
+  const relocation = manifest.relocations.find(entry => entry.source === source)
+  assert.ok(relocation)
+  assert.equal(relocation.preserveSource, true)
+  assert.notEqual(realpathSync(relocation.destination), realpathSync(source))
+  for (const root of [source, relocation.destination, join(result.backup, relocation.backup)]) {
+    assert.equal(readlinkSync(join(root, 'current-run')), target, 'o alvo interno conserva sua representação relativa')
+    assert.equal(realpathSync(join(root, 'current-run')), realpathSync(join(root, 'graph', 'run')))
+    assert.equal(readFileSync(join(root, 'current-run', 'state.json'), 'utf8'), bytes)
+    assert.equal(readFileSync(join(root, 'graph', 'run', 'state.json'), 'utf8'), bytes)
+  }
+})
+
 test('restore reconstitui relocação interrompida e remove origem vazia', t => {
   const f = fixture(t, 'prumo-install-relocation-recovery-', false)
   const marker = join(f.config, 'skills', 'prumo', '.prumo-install.json')
