@@ -13,6 +13,7 @@ test('padronização legada remapeia referências sem alterar provas assinadas o
     T01:{id:'T01',phase:'F0',deps:[],state:'done',taskPlan:proof},
     HO1:{id:'HO1',phase:'F1',deps:['T01'],state:'pending'},
   },phaseWorkflows:{F0:{id:'F0',planningAttempts:[{endedAt:'2026-01-01',targets:['T01'],context:'assinado'}]}}}
+  proof.scope = phasePlanningContext(state, state.tasks.T01)
   const plan = {phases:state.plan.phases,tasks:Object.values(state.tasks)}
   const events = [{task:'T01',phase:'F0',targets:['HO1'],text:'T01 é texto histórico',nested:{beforeTask:'HO1',beforePhase:'F1'}}]
   const before = structuredClone({state,plan,events})
@@ -31,6 +32,27 @@ test('padronização legada remapeia referências sem alterar provas assinadas o
   assert.deepEqual(result.events[0].nested,{beforeTask:'T2',beforePhase:'F2'})
   assert.deepEqual(result.state.taskIdAliases,{T01:'T1',HO1:'T2'})
   assert.deepEqual({state,plan,events},before)
+})
+
+test('renumeração na mesma fase preserva contratos válidos sem revalidar contratos antigos', () => {
+  const state = { plan: { phases: [{ id: 'F1' }] }, taskIdAliases: { T1: 'T2', antigo: 'T2' }, tasks: {
+    T2: { id: 'T2', phase: 'F1', deps: [], state: 'done', taskPlan: { phaseId: 'F1', summary: 'Entrega aprovada' } },
+    T3: { id: 'T3', phase: 'F1', deps: ['T2'], state: 'done', taskPlan: { phaseId: 'F1', scope: 'contrato-desatualizado' } },
+    T4: { id: 'T4', phase: 'F1', deps: ['T2'], state: 'blocked', blockReason: 'Aguarda decisão', attempts: [{ agent: 'executor', startedAt: '2026-01-01', inputReceipt: [{ task: 'T2', digest: 'prova-original' }] }] },
+  } }
+  state.tasks.T2.taskPlan.scope = phasePlanningContext(state, state.tasks.T2)
+  const plan = { phases: state.plan.phases, tasks: Object.values(state.tasks) }
+  const result = normalizeLegacyPlanIdentifiers(state, plan, [], { T2: 'T1', T3: 'T2', T4: 'T3' })
+  assert.equal(result.state.tasks.T1.taskPlan.scope, phasePlanningContext(result.state, result.state.tasks.T1))
+  assert.equal(taskPlanDigest(result.state.tasks.T1.taskPlan), taskPlanDigest(state.tasks.T2.taskPlan))
+  assert.equal(result.state.tasks.T2.taskPlan.scope, 'contrato-desatualizado')
+  assert.deepEqual(result.state.taskIdAliases, { antigo: 'T1', T4: 'T3' })
+  assert.deepEqual(result.state.tasks.T3, { ...state.tasks.T4, id: 'T3', deps: ['T1'] })
+  for (const field of ['taskPlan', 'executionAuthorization']) {
+    const signed = structuredClone(state)
+    signed.tasks.T4[field] = {}
+    assert.throws(() => normalizeLegacyPlanIdentifiers(signed, plan, [], { T4: 'T5' }), /contrato ativo/)
+  }
 })
 
 test('padronização recusa colisões, nomes inválidos e trabalho aberto sem mudar entradas', () => {

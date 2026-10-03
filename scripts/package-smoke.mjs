@@ -139,7 +139,11 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
       ? `--import="${new URL('../test/fixtures/coverage-flush.mjs', import.meta.url).href}"` : ''} --import=${pathToFileURL(preload).href}`.trim() }
   delete autoEnv.CLAUDE_CONFIG_DIR
   for (const key of Object.keys(autoEnv)) if (/^path$/i.test(key)) delete autoEnv[key]
-  autoEnv.PATH = [dirname(process.execPath), ...(process.platform === 'win32' ? [] : ['/usr/bin', '/bin'])].join(delimiter)
+  // O teste não herda o PATH inteiro; inclui as ferramentas necessárias mesmo quando npm e Node estão separados.
+  const npmDirectory = (env.PATH ?? env.Path ?? '').split(delimiter)
+    .find(directory => existsSync(join(directory, process.platform === 'win32' ? 'npm.cmd' : 'npm')))
+  autoEnv.PATH = [...new Set([dirname(process.execPath), ...(npmDirectory ? [npmDirectory] : []),
+    ...(process.platform === 'win32' ? [] : ['/usr/bin', '/bin'])])].join(delimiter)
   mkdirSync(autoPackage, { recursive: true })
   writeFileSync(join(autoPackage, 'package.json'), JSON.stringify({ name, version: '1.2.2' }))
   run('npm', ['install', '--global', '--force', '--offline', '--no-audit', '--no-fund', archive], true, autoEnv)

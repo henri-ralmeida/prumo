@@ -9,6 +9,7 @@ import { createServer } from 'node:http'
 import { setTimeout } from 'node:timers/promises'
 import { contentId } from '../lib/install.mjs'
 import { readDashboardEvents } from '../scripts/dashboard-diagnostics.mjs'
+import { initializeLegacyPlanFixture } from './fixtures/legacy-plan-init.mjs'
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
 /** The short commit git reports for this checkout, or undefined when git cannot answer. */
@@ -261,7 +262,10 @@ test('dashboard selects legacy and central data without writes or translation of
     inspectionReason: 'Server fixture contains no runtime changes', validation: 'Inspect fixture states',
   })) }))
   const command = (...args) => execFileSync(process.execPath, [engine, ...args], { cwd: root, env: environment, windowsHide: true, encoding: 'utf8' })
-  command('init', '--plan', source, '--run', 'planning-demo')
+  const initialized = initializeLegacyPlanFixture((...args) => spawnSync(process.execPath, [engine, ...args], {
+    cwd: root, env: environment, encoding: 'utf8', windowsHide: true,
+  }), source, root, 'planning-demo')
+  assert.equal(initialized.status, 0, initialized.stdout + initialized.stderr)
   const planningState = () => JSON.parse(readFileSync(join(root, '.specs', 'graph', 'planning-demo', 'state.json'), 'utf8'))
   const discuss = phaseId => {
     command('begin-phase-discussion', phaseId)
@@ -618,7 +622,7 @@ test('task planning mode exposes discussion readiness from the real persisted wo
     PRUMO_HOME: join(home, '.local', 'share', 'prumo'), PRUMO_ROOT: root,
     GRAPH_ROOT: '', GRAPH_FOREMAN_HOME: '', PRUMO_LANG: 'en' }
   writeFileSync(source, JSON.stringify({ name: 'task fixture', planningMode: 'task', tasks: [{
-    id: 'DISCUSS', title: 'Discuss', deps: [], validationMode: 'inspection',
+    id: 'T1', title: 'Discuss', deps: [], validationMode: 'inspection',
     inspectionReason: 'Server fixture has no runtime change', validation: 'Inspect discussion state',
   }] }))
   const engine = fileURLToPath(new URL('../scripts/engine.mjs', import.meta.url))
@@ -644,5 +648,5 @@ test('task planning mode exposes discussion readiness from the real persisted wo
   const port = output.match(/localhost:(\d+)/)?.[1]
   assert.ok(port, output)
   const payload = await (await fetch(`http://127.0.0.1:${port}/api/state`, { signal: AbortSignal.timeout(10000) })).json()
-  assert.equal(payload.derived.DISCUSS.effective, 'ready_for_discussion')
+  assert.equal(payload.derived.T1.effective, 'ready_for_discussion')
 })

@@ -16,11 +16,11 @@ test('o plano inicial exige T1..Tn sem lacunas, sufixos, zeros ou variantes de c
   assert.equal(issue([task('T3'), task('T1'), task('T2')]), null)
   for (const ids of [['T1', 'T3'], ['T2'], ['T1', 'T1a'], ['T01'], ['t1'], ['T1', 'T1']])
     assert.ok(issue(ids.map(id => task(id))), ids.join(', '))
-  assert.equal(issue([task('A1'), task('B2')]), null, 'outros padrões de ID continuam aceitos')
+  assert.ok(issue([task('A1'), task('B2')]), 'novos planos não aceitam formatos genéricos')
 })
 
 test('IDs genéricos permanecem compatíveis somente em planos legados inteiramente genéricos', () => {
-  assert.equal(issue([task('A1'), task('B2')]), null)
+  assert.ok(issue([task('A1'), task('B2')]))
   assert.ok(issue([task('T1'), task('A1')]), 'plano inicial T não mistura identificador genérico')
   assert.ok(issue([task('A1'), task('T1')]), 'a ordem não altera a regra de mistura')
   assert.equal(issue([task('A1'), task('B2')], ['A1']), null, 'sync legado A/B continua válido')
@@ -119,7 +119,7 @@ test('sync acrescenta correção filha sem renumerar nem reescrever histórico c
   assert.equal(skipped.status, 0, skipped.stdout + skipped.stderr)
   const before = JSON.parse(f.state())
   const eventsBefore = f.events()
-  f.write([...original, task('T1a', ['T1'])])
+  f.write([...original, { ...task('T1a', ['T1']), summary: 'Corrigir a entrega original preservando seu histórico e sua dependência.' }])
   const synced = f.run('sync-plan', '--plan', f.planPath)
   assert.equal(synced.status, 0, synced.stdout + synced.stderr)
   const after = JSON.parse(f.state())

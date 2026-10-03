@@ -19,7 +19,8 @@ export function normalizeLegacyPlanIdentifiers(originalState, originalPlan, orig
     assert.ok(![...(task.discussionAttempts ?? []), ...(task.planningAttempts ?? [])].some(round => !round.endedAt), 'Existe uma rodada de tarefa aberta')
     const affected = taskId(task.id) !== task.id || phaseId(task.phase) !== task.phase || (task.deps ?? []).some(id => taskId(id) !== id)
     if (affected && !['done', 'skipped'].includes(task.state))
-      assert.ok(task.state === 'pending' && !task.taskPlan && !task.executionAuthorization && !(task.attempts ?? []).length,
+      assert.ok(['pending', 'blocked'].includes(task.state) && !task.taskPlan && !task.executionAuthorization &&
+        (task.state === 'blocked' || !(task.attempts ?? []).length),
         `A tarefa ${task.id} já tem trabalho ou contrato ativo`)
   }
   for (const phase of Object.values(originalState.phaseWorkflows ?? {}))
@@ -27,7 +28,7 @@ export function normalizeLegacyPlanIdentifiers(originalState, originalPlan, orig
 
   const taskKeys = new Set(['task', 'taskId', 'tasks', 'targets', 'members', 'deps', 'blockedBy', 'planningBlockedBy', 'added', 'updated', 'preserved', 'metadataUpdated', 'revokedAuthorizationTasks', 'beforeTask'])
   const phaseKeys = new Set(['phase', 'phaseId', 'beforePhase'])
-  const proofs = new Set(['taskPlan', 'planningHistory', 'contextSnapshot', 'requiredInputs', 'taskDigests', 'discovery'])
+  const proofs = new Set(['taskPlan', 'planningHistory', 'contextSnapshot', 'requiredInputs', 'taskDigests', 'discovery', 'inputReceipt'])
   const references = (value, key = '') => {
     if (typeof value === 'string') return taskKeys.has(key) ? taskId(value) : phaseKeys.has(key) ? phaseId(value) : value
     if (Array.isArray(value)) return value.map(item => references(item, key))
@@ -41,14 +42,17 @@ export function normalizeLegacyPlanIdentifiers(originalState, originalPlan, orig
     [phaseId(id), { ...phase, id: phaseId(id) }]))
   for (const [id, original] of Object.entries(originalState.tasks)) {
     const task = state.tasks[taskId(id)]
-    if (task.taskPlan?.phaseId && phaseId(task.taskPlan.phaseId) !== task.taskPlan.phaseId) {
+    if (task.taskPlan?.phaseId) {
       // Só os metadados de localização mudam; binding, pesquisa, verificações e digest continuam intactos.
       task.taskPlan.phaseId = phaseId(task.taskPlan.phaseId)
-      task.taskPlan.scope = phasePlanningContext(state, task)
+      if (original.taskPlan.scope === phasePlanningContext(originalState, original))
+        task.taskPlan.scope = phasePlanningContext(state, task)
       assert.equal(taskPlanDigest(task.taskPlan), taskPlanDigest(original.taskPlan), 'O conteúdo assinado não pode mudar')
     }
   }
-  const aliases = Object.fromEntries(Object.entries(originalState.taskIdAliases ?? {}).map(([from, to]) => [from, taskId(to)]))
+  // Um número reutilizado passa a identificar a tarefa atual; o backup conserva o mapa histórico completo.
+  const aliases = Object.fromEntries(Object.entries(originalState.taskIdAliases ?? {})
+    .filter(([from]) => !Object.hasOwn(state.tasks, from)).map(([from, to]) => [from, taskId(to)]))
   for (const [from, to] of Object.entries(taskMapping)) if (!Object.hasOwn(state.tasks, from)) aliases[from] = to
   if (Object.keys(aliases).length) state.taskIdAliases = aliases
   const plan = references(originalPlan)
