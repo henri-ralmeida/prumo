@@ -1178,5 +1178,6 @@
   "project cwd is not an accessible directory: {0}": "a pasta do projeto não é um diretório acessível: {0}",
   "touches check skipped: project directory is unknown; use sync-plan --cwd <project> or declare validation step.cwd": "verificação de touches não realizada: pasta do projeto desconhecida; use sync-plan --cwd <projeto> ou declare validation step.cwd",
   "completed task contracts preserved: {0} — inspect with show-contract <task> --diff; create a follow-up task for approved changes": "contratos de tarefas concluídas preservados: {0} — consulte show-contract <tarefa> --diff; crie uma tarefa de acompanhamento para mudanças aprovadas",
-  "no state changes; plan differs for preserved tasks: {0}. Create a follow-up task; do not rewrite completed history.": "nenhum estado alterado; o plano difere nas tarefas concluídas preservadas: {0}. Crie uma tarefa de acompanhamento; não reescreva o histórico concluído."
+  "no state changes; plan differs for preserved tasks: {0}. Create a follow-up task; do not rewrite completed history.": "nenhum estado alterado; o plano difere nas tarefas concluídas preservadas: {0}. Crie uma tarefa de acompanhamento; não reescreva o histórico concluído.",
+  "sync-plan warning: new tasks without summary: {0}; add a short description of the expected result so task cards explain their purpose": "aviso de sync-plan: tarefas novas sem summary: {0}; acrescente uma descrição curta do resultado esperado para que os cards expliquem sua finalidade"
 }

@@ -2060,6 +2060,10 @@ const commands = {
         !state.tasks[id]?.executionAuthorization)),
     })
     printSyncPlanAudit(changes, diagnostics)
+    const withoutSummary = added.filter(id => state.tasks[id].summary === undefined)
+    if (withoutSummary.length) log('[prumo] ' + tr(
+      'sync-plan warning: new tasks without summary: {0}; add a short description of the expected result so task cards explain their purpose',
+      withoutSummary.map(displayIdentifier).join(', ')))
     log(
       `[prumo] run "${name}" synced: +${added.length}, updated ${updated.length}, metadata ${metadataUpdated.length}, ` +
         `preserved ${preserved.length}, total ${Object.keys(state.tasks).length}`,

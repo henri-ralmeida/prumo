@@ -1208,6 +1208,30 @@ function fixtureTempBase() {
   return tmpdir()
 }
 
+test('sync-plan avisa tarefas novas sem resumo sem bloquear ou repetir avisos de tarefas existentes', t => {
+  for (const lang of ['en', 'pt-BR']) {
+    const f = fixture(t, undefined, {}, { lang })
+    f.plan.tasks.push(
+      { id: 'T1a', title: 'Primeiro complemento', deps: ['T1'], validation: [check] },
+      { id: 'T1b', title: 'Segundo complemento', deps: ['T1'], validation: [check], summary: 'Explicar o resultado esperado.' },
+      { id: 'T1c', title: 'Terceiro complemento', deps: ['T1'], validation: [check] },
+    )
+    f.writePlan()
+    const added = f.ok('sync-plan', '--plan', f.planPath).stdout
+    const warning = lang === 'en' ? /sync-plan warning: new tasks without summary: T1a, T1c/ : /aviso de sync-plan: tarefas novas sem summary: T1a, T1c/
+    assert.match(added, warning)
+    assert.equal(Object.keys(f.state().tasks).length, 4)
+    assert.equal(f.state().tasks.T1a.summary, undefined, 'o motor não inventa um resumo')
+    assert.equal(f.state().tasks.T1b.summary, 'Explicar o resultado esperado.')
+    const repeated = f.ok('sync-plan', '--plan', f.planPath).stdout
+    assert.doesNotMatch(repeated, /without summary|sem summary/)
+    f.plan.tasks[1].summary = 'Complementar o resultado aprovado.'
+    f.writePlan()
+    assert.doesNotMatch(f.ok('sync-plan', '--plan', f.planPath).stdout, /without summary|sem summary/)
+    assert.equal(f.state().tasks.T1a.summary, 'Complementar o resultado aprovado.')
+  }
+})
+
 test('task labels and summaries persist while text-only sync leaves the approved plan current', t => {
   const f = fixture(t, [{ id: 'T1', title: 'Delivery estimate', label: 'a'.repeat(24),
     summary: 'Customers get the approved delivery estimate.', validationSummary: 'Both delivery cases pass.' }])
