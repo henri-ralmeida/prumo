@@ -30,7 +30,7 @@
  *
  * Usage (ENGINE = path to this file, wherever the skill is installed):
  *   node $ENGINE init --plan <plan.json> --run <name>
- *   node $ENGINE sync-plan --plan <plan.json> [--run <name>]
+ *   node $ENGINE sync-plan --plan <plan.json> [--run <name>] [--cwd <project>]
  *   node $ENGINE migrate [--check] [--run <name>]
  *   node $ENGINE status [--verify-install]|ready|graph [--run <name>]
  *   node $ENGINE show-contract <task> [--diff] [--run <name>]
@@ -79,7 +79,7 @@ import { runValidation, assertValidation, validationContract, validationDirector
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { findRoot } from './storage.mjs'
+import { findRoot, inside, storageHome } from './storage.mjs'
 import { log, errorLog, tr } from './i18n.mjs'
 import {
   auditSyncPlan, contractChanges, displayIdentifier, formatContractChange,
@@ -473,12 +473,25 @@ function touchPathSegments(value) {
   return normalized.split('/').filter(part => part && part !== '.')
 }
 
-function validationRoots(task) {
+function projectCwd(stored) {
+  if (args.cwd !== undefined) {
+    if (!args.cwd.trim()) die(tr('project cwd is not an accessible directory: {0}', args.cwd))
+    const directory = resolve(args.cwd)
+    try { if (statSync(directory).isDirectory()) return directory } catch { /* erro informado abaixo */ }
+    die(tr('project cwd is not an accessible directory: {0}', directory))
+  }
+  if (typeof stored === 'string' && stored.trim()) return resolve(stored)
+  const cwd = process.cwd()
+  const central = storageHome()
+  return cwd === central || (inside(central, ROOT) && inside(ROOT, cwd)) ? undefined : cwd
+}
+
+function validationRoots(task, cwd) {
   const steps = Array.isArray(task.validation) ? task.validation : []
   const roots = steps.length
-    ? steps.map(step => typeof step?.cwd === 'string' && step.cwd.trim() ? resolve(step.cwd) : process.cwd())
-    : [process.cwd()]
-  return [...new Set(roots)]
+    ? steps.map(step => typeof step?.cwd === 'string' && step.cwd.trim() ? resolve(step.cwd) : cwd)
+    : [cwd]
+  return [...new Set(roots.filter(Boolean))]
 }
 
 function pathDistance(left, right) {
@@ -523,10 +536,16 @@ function closestTouchPath(root, parts) {
   return null
 }
 
-function warnPlanTouchPaths(plan) {
+function warnPlanTouchPaths(plan, cwd) {
+  let unknownRootWarned = false
   for (const task of plan.tasks) {
     if (!Array.isArray(task.touches) || !task.touches.length) continue
-    const roots = validationRoots(task)
+    const roots = validationRoots(task, cwd)
+    if (!roots.length) {
+      if (!unknownRootWarned) log('[prumo] ' + tr('touches check skipped: project directory is unknown; use sync-plan --cwd <project> or declare validation step.cwd'))
+      unknownRootWarned = true
+      continue
+    }
     const accessible = roots.filter(root => {
       try { return statSync(root).isDirectory() } catch { return false }
     })
@@ -615,14 +634,20 @@ function printContractDriftWarnings(state) {
   }
   if (drift.planFields.length)
     log('[prumo] ' + tr('contract drift: approved plan fields: {0} — run sync-plan', drift.planFields.join(', ')))
+  const preserved = []
   for (const item of drift.tasks) {
     const task = displayIdentifier(item.task)
+    if (['done', 'skipped'].includes(state.tasks[item.task]?.state) && !item.fields.includes('missingFromApprovedPlan')) {
+      preserved.push(task)
+      continue
+    }
     if (item.fields.includes('notSynchronized'))
       log('[prumo] ' + tr('contract drift: task {0} is new in the approved plan and not synchronized — run sync-plan', task))
     else if (item.fields.includes('missingFromApprovedPlan'))
       log('[prumo] ' + tr('contract drift: task {0} is missing from the approved plan; sync-plan refuses task removal — restore it in the approved plan', task))
     else log('[prumo] ' + tr('contract drift: task {0} fields: {1} — run sync-plan', task, item.fields.join(', ')))
   }
+  if (preserved.length) log('[prumo] ' + tr('completed task contracts preserved: {0} — inspect with show-contract <task> --diff; create a follow-up task for approved changes', preserved.join(', ')))
 }
 
 function ageLabel(startedAt) {
@@ -1802,7 +1827,8 @@ const commands = {
     const planPath = args.plan ?? die('init needs --plan <plan.json>')
     const name = args.run
     const { plan, source } = readPlan(planPath)
-    warnPlanTouchPaths(plan)
+    const cwd = projectCwd()
+    warnPlanTouchPaths(plan, cwd)
     const dir = runDir(name)
     if (existsSync(join(dir, 'state.json')) && !args.force)
       die(`run "${name}" already exists (use --force to overwrite)`)
@@ -1819,6 +1845,7 @@ const commands = {
         requireReview: plan.requireReview !== false,
         planningMode: plan.planningMode ?? ((plan.phases?.length ?? 0) ? 'phase' : 'task'),
         source,
+        ...(cwd ? { cwd } : {}),
       },
       createdAt: new Date().toISOString(),
       authorizations: [],
@@ -1856,7 +1883,8 @@ const commands = {
         existsSync(centralSource) ? centralSource : die('sync-plan needs --plan <plan.json> once')
     }
     const { plan, source } = readPlan(planPath, state)
-    warnPlanTouchPaths(plan)
+    const cwd = projectCwd(state.plan.cwd)
+    warnPlanTouchPaths(plan, cwd)
     const removed = Object.keys(state.tasks).filter((id) => !plan.tasks.some((t) => t.id === id))
     if (removed.length) die(`sync-plan is additive: plan removed ${removed.join(', ')}`)
 
@@ -1924,6 +1952,7 @@ const commands = {
       requireReview: plan.requireReview !== false,
       ...(state.plan.planningMode ? { planningMode: state.plan.planningMode } : {}),
       source,
+      ...(cwd ? { cwd } : {}),
     }
     const planningChanged = ['name', 'description', 'requireReview'].some(field => state.plan[field] !== nextPlan[field])
     const changedPlanFields = GLOBAL_PLAN_FIELDS.filter(field =>
@@ -1947,7 +1976,7 @@ const commands = {
         printSyncPlanAudit(changes, diagnostics)
       }
       if (preserved.length)
-        log(`[prumo] no state changes; plan differs for preserved tasks: ${preserved.map(displayIdentifier).join(', ')}. Use refresh-contract for an approved validation change; do not fail/retry completed work to refresh a contract.`)
+        log('[prumo] ' + tr('no state changes; plan differs for preserved tasks: {0}. Create a follow-up task; do not rewrite completed history.', preserved.map(displayIdentifier).join(', ')))
       else log(`[prumo] run "${name}" already matches plan (${Object.keys(state.tasks).length} tasks)`)
       return
     }

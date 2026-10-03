@@ -1,7 +1,7 @@
 const definitions = {
-  init: [0, 'plan run', 'force allow-overlap'],
+  init: [0, 'plan run cwd', 'force allow-overlap'],
   migrate: [0, '', 'check'],
-  'sync-plan': [0, 'plan', 'allow-overlap'],
+  'sync-plan': [0, 'plan cwd', 'allow-overlap'],
   status: [0, '', 'verify-install'], ready: [0], graph: [0], runs: [0],
   'show-contract': [1, '', 'diff'], 'show-check': [1, 'check attempt'],
   authorize: [0, 'scope mode channel', 'confirmed-by-user'],

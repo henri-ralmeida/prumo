@@ -21,7 +21,7 @@ for (const command of [undefined, '', 'typo', 'constructor', 'toString', '__prot
   assert.throws(() => parseEngineArgs(command, []), /Unknown engine command/)
 })
 const stringOptions = {
-  init: ['plan'], 'sync-plan': ['plan'], 'show-check': ['check', 'attempt'], authorize: ['scope', 'mode', 'channel'],
+  init: ['plan', 'cwd'], 'sync-plan': ['plan', 'cwd'], 'show-check': ['check', 'attempt'], authorize: ['scope', 'mode', 'channel'],
   'finish-phase-discussion': ['context'], 'plan-phase': ['agent', 'plan-dir'], 'finish-phase-planning': ['plan-dir'],
   'finish-discussion': ['context'], 'plan-task': ['agent', 'context'], 'finish-planning': ['plan'],
   start: ['agent', 'executor'], progress: ['agent', 'step'], review: ['agent'], 'review-progress': ['agent', 'step'],

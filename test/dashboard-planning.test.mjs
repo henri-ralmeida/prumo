@@ -10,6 +10,25 @@ const instant = (seconds) => new Date(Date.UTC(2026, 0, 1) + seconds * 1000).toI
 const task = (id, state = 'pending', fields = {}) => ({
   id, title: `Task ${id}`, phase: 'P1', state, deps: [], attempts: [], validations: [], notes: [], ...fields,
 })
+test('resumo recolhido preserva contagens e recebe atualizações', () => {
+  assert.match(html, /<details id="summaryDetails" open>\s*<summary><h3><span data-i18n="Summary">Summary<\/span><\/h3><\/summary>/)
+  const ui = dashboard('pt-BR')
+  const state = { run: 'resumo', plan: { phases: [] }, tasks: { T1: task('T1', 'running') } }
+  ui.render(state)
+  const details = ui.run("$('#summaryDetails')")
+  details.open = false
+  ui.run("setFilter('done')")
+  state.tasks.T1.state = 'done'
+  ui.render(state)
+  assert.equal(details.open, false)
+  assert.match(ui.nodes.get('#counts').innerHTML, /No Prumo/)
+  assert.match(ui.nodes.get('#counts').innerHTML, /1\/1/)
+  details.open = true
+  ui.render(state)
+  assert.equal(details.open, true)
+  assert.match(ui.nodes.get('#counts').innerHTML, /1\/1/)
+})
+
 const plan = {
   planner: 'planner-1', startedAt: instant(0), completedAt: instant(20),
   research: [{ source: 'src/task.mjs', findings: 'Existing behavior verified' }],
@@ -1121,6 +1140,62 @@ test('filtros de estado usam os mesmos fundos dos cards e a seleção continua d
   const selected = rules.find(([, selector]) => selector.trim() === '.filter-option[aria-pressed="true"]')[2]
   assert.match(selected, /box-shadow:/, 'a seleção tem contorno adicional e não depende só da cor')
   assert.match(selected, /font-weight:\s*600/, 'o filtro ativo também tem peso de texto diferente')
+})
+
+test('entidades ativas abrem a primeira tarefa atual, inclusive oculta pelo filtro', () => {
+  const ui = dashboard('pt-BR')
+  const state = { run: 'entidades', plan: { phases: [] }, tasks: {
+    T1: task('T1', 'planning'), T2: task('T2', 'running'),
+    T3: task('T3', 'running'), T4: task('T4', 'reviewing'),
+  } }
+  ui.render(state)
+  for (const [selector, id] of [['#planNode', 'T1'], ['#execNode', 'T2'], ['#revNode', 'T4']]) {
+    const node = ui.nodes.get(selector)
+    assert.equal(node.getAttribute('role'), 'button')
+    assert.equal(node.getAttribute('tabindex'), '0')
+    ui.run("setFilter('done')")
+    node.onclick()
+    assert.equal(ui.run('POP.id'), id)
+    assert.equal(ui.run('FILTER'), 'all')
+    node.onclick()
+    assert.equal(ui.run('POP.id'), id, 'clicar novamente mantém a tarefa aberta')
+    ui.render(state)
+    node.onclick()
+    assert.equal(ui.run('POP.id'), id, 'renderizações não acumulam ações')
+  }
+  assert.equal(ui.nodes.get('#orchNode').getAttribute('role'), null)
+  assert.equal(ui.nodes.get('#orchNode').onclick, undefined)
+  let prevented = 0
+  ui.nodes.get('#execNode').onkeydown({ key: ' ', preventDefault() { prevented++ } })
+  assert.equal(ui.run('POP.id'), 'T2')
+  ui.nodes.get('#revNode').onkeydown({ key: 'Enter', preventDefault() { prevented++ } })
+  assert.equal(ui.run('POP.id'), 'T4')
+  ui.nodes.get('#planNode').onkeydown({ key: 'Escape', preventDefault() { prevented++ } })
+  assert.equal(ui.run('POP.id'), 'T4')
+  assert.equal(prevented, 2)
+  for (const task of Object.values(state.tasks)) task.state = 'done'
+  ui.render(state)
+  for (const selector of ['#planNode', '#execNode', '#revNode']) {
+    const node = ui.nodes.get(selector)
+    assert.equal(node.onclick, null)
+    assert.equal(node.onkeydown, null)
+    assert.equal(node.getAttribute('tabindex'), null)
+    assert.equal(node.getAttribute('role'), null)
+  }
+})
+
+test('planejador segue o primeiro alvo válido da fase e resolve identificadores antigos', () => {
+  const ui = dashboard()
+  ui.render({ run: 'fase', plan: { phases: [] }, tasks: {
+    T1: task('T1'), T2: task('T2'),
+  }, derived: { T1: { effective: 'planning' }, T2: { effective: 'planning' } },
+  taskIdAliases: { antigo: 'T2' }, phaseWorkflows: { F1: {
+    id: 'F1', state: 'planning', planningAttempts: [{ targets: ['ausente', 'antigo', 'T1'] }],
+  } } })
+  ui.nodes.get('#planNode').onclick()
+  assert.equal(ui.run('POP.id'), 'T2')
+  ui.run("showRunLoading('outro')")
+  assert.equal(ui.nodes.get('#planNode').onclick, null, 'trocar de plano limpa o alvo anterior')
 })
 
 test('somente clique seleciona cards; hover e arraste não mudam a seleção', () => {
@@ -2982,7 +3057,7 @@ test('o cabecalho compacto preserva ao vivo e abre todos os filtros sem os conta
   assert.doesNotMatch(menu, /<select/)
   assert.match(html, /\.filter-toggle \{ display: none; \}/)
   assert.doesNotMatch(header, /id="counts"/)
-  assert.match(html, /<section id="statusBox">\s*<h3>[\s\S]*?<div class="counts" id="counts"><\/div>/)
+  assert.match(html, /<section id="statusBox">\s*<details id="summaryDetails" open>\s*<summary><h3>[\s\S]*?<div class="counts" id="counts"><\/div>/)
   assert.match(menu, /<div class="filter-menu" id="filterMenu">/)
   assert.doesNotMatch(menu, /<details[^>]+class="filter-menu"/)
   small.nodes.get('#headerMenu').open = true

@@ -783,7 +783,7 @@ Resolva `scripts/engine.mjs` a partir da skill instalada. Acrescente `--run <nam
 
 | Comando após `node <ENGINE>` | Efeito |
 |---|---|
-| `init --plan <file> --run <name>` | Inicializa uma execução do plano aprovado |
+| `init --plan <file> --run <name> [--cwd <projeto>]` | Inicializa uma execução do plano aprovado e registra a pasta do projeto para os avisos de touches |
 | `migrate [--check]` | Migra com backup um schema legado seguro; `--check` apenas diagnostica |
 | `status`, `ready`, `graph`, `runs` | Estado, trabalho pronto agora, JSON completo ou a lista de execuções |
 | `status --verify-install` | Também compara os arquivos instalados com o marcador de instalação |
@@ -819,7 +819,7 @@ Resolva `scripts/engine.mjs` a partir da skill instalada. Acrescente `--run <nam
 | `skip <task> --reason <text>` | Pula uma vez por decisão explícita não vazia; uma tentativa ativa termina como skipped sem inventar recibo |
 | `note <task> --text <text>` | Acrescenta uma nota ao histórico |
 | `refresh-contract <task> --plan <approved-file>` | Atualiza somente validation, validationMode e inspectionReason |
-| `sync-plan --plan <approved-file>` | Acrescenta tarefas e reconcilia as alterações permitidas |
+| `sync-plan --plan <approved-file> [--cwd <projeto>]` | Acrescenta tarefas e reconcilia as alterações permitidas; usa a pasta registrada do projeto, salvo substituição explícita |
 
 `--force` nunca aprova lint como prova funcional nem conclui com recibo inválido ou
 autorrevisão. Exceções explícitas de agendamento (`--allow-overlap`) e a substituição de uma execução inicial exigem a

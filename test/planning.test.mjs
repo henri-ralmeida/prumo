@@ -1064,6 +1064,78 @@ test('touches existence check reports when a declared validation cwd is inaccess
   assert.match(output, /only repository-relative paths can be checked/)
 })
 
+test('divergências concluídas ficam agrupadas sem recomendar comandos que não as alteram', t => {
+  for (const lang of ['en', 'pt-BR']) {
+    const f = fixture(t, [{ id: 'T1', title: 'Primeira' }, { id: 'T2', title: 'Segunda' }], {}, { lang })
+    const state = f.state()
+    state.tasks.T1.state = 'done'
+    state.tasks.T2.state = 'skipped'
+    f.save(state)
+    const preserved = structuredClone(state.tasks)
+    for (const task of f.plan.tasks) task.inspectionReason = 'Contrato aprovado mudou'
+    f.writePlan()
+    for (const command of ['status', 'ready']) {
+      const output = f.ok(command).stdout
+      assert.match(output, lang === 'en' ? /completed task contracts preserved: T1, T2/ : /contratos de tarefas concluídas preservados: T1, T2/)
+      assert.match(output, /show-contract <(?:task|tarefa)> --diff/)
+      assert.doesNotMatch(output, /(?:run|rode) sync-plan|refresh-contract/)
+    }
+    const sync = f.ok('sync-plan', '--plan', f.planPath).stdout
+    assert.match(sync, lang === 'en' ? /Create a follow-up task/ : /Crie uma tarefa de acompanhamento/)
+    assert.doesNotMatch(sync, /refresh-contract/)
+    assert.deepEqual(f.state().tasks, preserved)
+    f.rejected(/completed task contracts are immutable|contratos de tarefas concluídas são imutáveis/, 'refresh-contract', 'T1', '--plan', f.planPath)
+  }
+})
+
+test('touches usa a pasta persistida ou explícita e evita avisos falsos na central', t => {
+  const f = fixture(t, [{ id: 'T1', title: 'Arquivo existente', touches: ['delivery.cjs'] },
+    { id: 'T2', title: 'Teste existente', touches: ['delivery.test.cjs'] }])
+  assert.equal(f.state().plan.cwd, f.project)
+  const centralCli = (...args) => {
+    const result = spawnSync(process.execPath, [engine, ...args], { cwd: f.root, encoding: 'utf8', windowsHide: true,
+      env: { ...process.env, PRUMO_ROOT: f.root, PRUMO_HOME: dirname(f.root), PRUMO_LANG: 'en' }, timeout: 20000 })
+    assert.ifError(result.error)
+    return { ...result, output: result.stdout + result.stderr }
+  }
+  const stored = centralCli('sync-plan', '--plan', f.planPath)
+  assert.equal(stored.status, 0, stored.output)
+  assert.doesNotMatch(stored.output, /touches warning|touches check skipped/)
+  const legacy = f.state()
+  delete legacy.plan.cwd
+  f.save(legacy)
+  f.plan.tasks[0].touches.push('novo.cjs', 'outro.cjs')
+  f.writePlan()
+  const unknown = centralCli('sync-plan', '--plan', f.planPath)
+  assert.equal(unknown.status, 0, unknown.output)
+  assert.equal((unknown.output.match(/touches check skipped/g) ?? []).length, 1)
+  assert.doesNotMatch(unknown.output, /was not found in validation/)
+  const explicit = centralCli('sync-plan', '--plan', f.planPath, '--cwd', f.project)
+  assert.equal(explicit.status, 0, explicit.output)
+  assert.match(explicit.output, /path "novo.cjs" was not found/)
+  assert.doesNotMatch(explicit.output, /path "delivery.cjs" was not found/)
+  assert.equal(f.state().plan.cwd, f.project)
+  const before = f.state()
+  const invalid = centralCli('sync-plan', '--plan', f.planPath, '--cwd', join(f.root, 'ausente'))
+  assert.notEqual(invalid.status, 0)
+  assert.match(invalid.output, /project cwd is not an accessible directory/)
+  assert.deepEqual(f.state(), before)
+  f.plan.tasks[0].validation[0] = { ...f.plan.tasks[0].validation[0], cwd: f.project }
+  f.writePlan()
+  const declared = centralCli('sync-plan', '--plan', f.planPath, '--cwd', f.root)
+  assert.equal(declared.status, 0, declared.output)
+  assert.doesNotMatch(declared.output, /path "delivery.cjs" was not found/)
+  const initialized = centralCli('init', '--plan', f.planPath, '--run', 'explicit', '--cwd', f.project)
+  assert.equal(initialized.status, 0, initialized.output)
+  assert.equal(JSON.parse(readFileSync(join(f.root, '.specs/graph/explicit/state.json'), 'utf8')).plan.cwd, f.project)
+  for (const cwd of ['', join(f.project, 'delivery.cjs')]) {
+    const rejected = centralCli('init', '--plan', f.planPath, '--run', 'invalid', '--cwd', cwd)
+    assert.notEqual(rejected.status, 0)
+    assert.match(rejected.output, /project cwd is not an accessible directory/)
+    assert.equal(existsSync(join(f.root, '.specs/graph/invalid/state.json')), false)
+  }
+})
+
 test('status and ready surface contract drift without blocking, and show-contract omits validation commands', t => {
   const f = fixture(t)
   assert.doesNotMatch(f.ok('status').stdout, /contract drift/)

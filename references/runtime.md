@@ -772,7 +772,7 @@ Resolve `scripts/engine.mjs` from the installed skill. Add `--run <name>` to sel
 
 | Command after `node <ENGINE>` | Effect |
 |---|---|
-| `init --plan <file> --run <name>` | Initializes a run of the approved plan |
+| `init --plan <file> --run <name> [--cwd <project>]` | Initializes a run of the approved plan and records its project directory for touches diagnostics |
 | `migrate [--check]` | Migrates a safe legacy schema with a backup; `--check` only diagnoses |
 | `status`, `ready`, `graph`, `runs` | State, work ready now, full JSON or the list of runs |
 | `status --verify-install` | Also compares the installed files with the installation marker |
@@ -806,7 +806,7 @@ Resolve `scripts/engine.mjs` from the installed skill. Add `--run <name>` to sel
 | `skip <task> --reason <text>` | Skips once by a nonempty explicit decision; an active attempt ends as skipped without a fabricated receipt |
 | `note <task> --text <text>` | Appends a note to history |
 | `refresh-contract <task> --plan <approved-file>` | Updates only validation, validationMode and inspectionReason |
-| `sync-plan --plan <approved-file>` | Adds tasks and reconciles the allowed changes |
+| `sync-plan --plan <approved-file> [--cwd <project>]` | Adds tasks and reconciles the allowed changes; uses the recorded project directory unless explicitly replaced |
 
 `--force` never approves lint as functional proof, never completes with an invalid receipt or a
 self-review. Explicit scheduling exceptions (`--allow-overlap`) and overwriting an initial run need the
