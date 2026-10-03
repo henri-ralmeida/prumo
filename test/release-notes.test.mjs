@@ -45,13 +45,13 @@ test('current release has concise English update highlights with descriptive sub
   assert.deepEqual(releaseNotes('0.0.0'), [])
 })
 
-test('update history includes every missed release from the oldest installation', () => {
+test('update history includes every missed release with the newest version first', () => {
   assert.deepEqual(releaseHistory(['1.0.2'], '1.0.9').map(release => release.version),
-    ['1.0.3', '1.0.4', '1.0.5', '1.0.6', '1.0.7', '1.0.8', '1.0.9'])
+    ['1.0.9', '1.0.8', '1.0.7', '1.0.6', '1.0.5', '1.0.4', '1.0.3'])
   const history = releaseHistory(['1.2.2', '1.0.8'], version)
-  assert.equal(history[0].version, '1.0.9')
-  assert.deepEqual(history.slice(0, 3).map(release => release.version), ['1.0.9', '1.0.10', '1.1.0'])
-  assert.equal(history.at(-1).version, version)
+  assert.equal(history[0].version, version)
+  assert.deepEqual(history.slice(-3).map(release => release.version), ['1.1.0', '1.0.10', '1.0.9'])
+  assert.equal(history.at(-1).version, '1.0.9')
   assert.deepEqual(releaseHistory([version], version), [])
   assert.deepEqual(releaseHistory([], version), [{ version, sections: releaseNotes(version) }])
 })

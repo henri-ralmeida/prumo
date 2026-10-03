@@ -27,6 +27,41 @@ const discovery = {
   executionBoundary: { deferredToExecutor: ['T'], prematureTaskWork: [] },
 }
 
+test('barra distingue conclusão e atividade sem contar tarefas puladas ou alterar a porcentagem ao filtrar', () => {
+  const ui = dashboard('pt-BR')
+  const states = ['done', 'discussing', 'planning', 'running', 'reviewing', 'waiting', 'blocked', 'failed', 'ready', 'skipped']
+  const tasks = Object.fromEntries(states.map((state, index) => [`T${index}`, task(`T${index}`, state)]))
+  const state = { run: 'atividade', plan: {}, tasks, derived: {} }
+  ui.render(state)
+  for (const status of ['done', 'discussing', 'planning', 'running', 'reviewing']) {
+    assert.equal(ui.nodes.get(`#bar .seg-${status}`).style.width, `${100 / 9}%`)
+    assert.match(ui.nodes.get(`#bar .seg-${status}`).title, /1\/9$/)
+  }
+  assert.equal(ui.nodes.get('#bar').getAttribute('aria-valuenow'), '11')
+  assert.match(ui.nodes.get('#bar').getAttribute('aria-valuetext'), /executando: 1\/9/)
+  ui.run("FILTER = 'waiting'")
+  ui.render(state)
+  assert.equal(ui.nodes.get('#bar .seg-done').style.width, `${100 / 9}%`)
+  assert.equal(ui.nodes.get('#bar .seg-running').style.width, `${100 / 9}%`)
+  for (const current of Object.values(tasks)) current.state = 'done'
+  ui.render(state)
+  assert.equal(ui.nodes.get('#bar .seg-done').style.width, '100%')
+  for (const status of ['discussing', 'planning', 'running', 'reviewing']) assert.equal(ui.nodes.get(`#bar .seg-${status}`).style.width, '0%')
+  ui.render({ run: 'vazio', plan: {}, tasks: {}, derived: {} })
+  assert.equal(ui.nodes.get('#bar .seg-done').style.width, '0%')
+  assert.equal(ui.nodes.get('#bar').getAttribute('aria-valuenow'), '0')
+})
+
+test('guia usa os mesmos segmentos e mantém atividade fora do percentual concluído', () => {
+  const ui = dashboard('pt-BR')
+  ui.render(createGuideDemoData('board'))
+  assert.equal(ui.nodes.get('#bar .seg-done').style.width, `${200 / 13}%`)
+  for (const status of ['discussing', 'planning', 'running', 'reviewing']) assert.equal(ui.nodes.get(`#bar .seg-${status}`).style.width, `${100 / 13}%`)
+  ui.render(createGuideDemoData('results'))
+  assert.equal(ui.nodes.get('#bar .seg-done').style.width, '100%')
+  for (const status of ['discussing', 'planning', 'running', 'reviewing']) assert.equal(ui.nodes.get(`#bar .seg-${status}`).style.width, '0%')
+})
+
 test('contagem dos filtros permanece visível nos controles e distingue resultados do contexto', () => {
   for (const width of [330, 1400]) {
     const ui = dashboard('pt-BR', width)
@@ -712,7 +747,7 @@ test('dashboard marks declared manual inspection as pending and displays plan wr
 })
 
 test('dashboard footer shows only the package version, with an unavailable fallback', async () => {
-  assert.match(html, /<footer>[\s\S]*<div id="bar"[^>]*><div class="seg-done"><\/div><\/div>/)
+  assert.match(html, /<footer>[\s\S]*<div id="bar"[^>]*><div class="seg-done"><\/div><div class="seg-discussing">/)
   assert.match(html, /footer \.n \{[^}]*font-size: 11\.5px/)
   assert.match(html, /footer #identity \{[^}]*font-size: 11\.5px[^}]*border-left: 1px solid var\(--line\)/)
   for (const lang of ['en', 'pt-BR']) {
@@ -801,7 +836,7 @@ test('dashboard renders separate planning queues, active planner hub and executi
     assert.equal(ui.nodes.get('#planNode').classList.contains('live'), true)
     assert.doesNotMatch(ui.nodes.get('#edgePaths').innerHTML, /data-from="__/, 'roles light up in the hub; only dependencies draw lines')
     assert.equal(ui.nodes.get('#bar .seg-done').style.width, `${100 / 9}%`)
-    assert.doesNotMatch(html, /class="seg-(?:plan|review)"/, 'o rodapé mostra só a parte concluída')
+    for (const status of ['planning', 'running', 'reviewing']) assert.equal(ui.nodes.get(`#bar .seg-${status}`).style.width, `${100 / 9}%`)
     assert.ok(Number.parseFloat(ui.nodes.get('#planNode').style.left) >= 0)
   }
 })

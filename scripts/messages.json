@@ -1100,7 +1100,7 @@
   "Try the filters. They change the visible cards; completed totals exclude skipped tasks and preserve the full plan.": "Teste os filtros. Eles destacam os cards; o total de concluídas exclui puladas e considera o plano inteiro.",
   "Click a task to read its summary, validation and dependencies. The expansion arrow opens the full details.": "Clique em uma tarefa para ler resumo, validação e dependências. A seta de expansão abre os detalhes completos.",
   "Progress and activity": "Progresso e atividade",
-  "The progress bar counts completed tasks. Active agents and their recorded START/STOP intervals show who is working.": "A barra mostra as tarefas concluídas. Os agentes ativos e seus intervalos START/STOP indicam quem está trabalhando.",
+  "Green counts completed tasks. The other colored segments show discussion, planning, execution and review in progress, without increasing completion.": "O verde representa as tarefas no prumo. As outras cores mostram discussão, planejamento, execução e revisão em andamento, sem aumentar o percentual concluído.",
   "Gain with Prumo": "Ganho com prumo e paralelismo",
   "Compare the full baseline with measured parallel activity and the separate manual coordination estimate.": "Compare a base completa com a atividade paralela aferida e a estimativa de coordenação manual.",
   "Discussion, Planning, Execution and Review count only evidenced activity. Waiting time is excluded.": "Discussão, Planejamento, Execução e Revisão contam apenas atividade registrada. A espera fica fora.",
