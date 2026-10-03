@@ -11,22 +11,40 @@ const task = (id, state = 'pending', fields = {}) => ({
   id, title: `Task ${id}`, phase: 'P1', state, deps: [], attempts: [], validations: [], notes: [], ...fields,
 })
 test('resumo recolhido preserva contagens e recebe atualizações', () => {
-  assert.match(html, /<details id="summaryDetails" open>\s*<summary><h3><span data-i18n="Summary">Summary<\/span><\/h3><\/summary>/)
+  assert.match(html, /id="summaryToggle"[^>]*aria-expanded="true"[^>]*aria-controls="summaryContent"/)
   const ui = dashboard('pt-BR')
   const state = { run: 'resumo', plan: { phases: [] }, tasks: { T1: task('T1', 'running') } }
   ui.render(state)
-  const details = ui.run("$('#summaryDetails')")
-  details.open = false
+  ui.run('toggleSummary()')
+  const content = ui.nodes.get('#summaryContent')
   ui.run("setFilter('done')")
   state.tasks.T1.state = 'done'
   ui.render(state)
-  assert.equal(details.open, false)
+  assert.equal(ui.nodes.get('#summaryToggle').getAttribute('aria-expanded'), 'false')
+  assert.equal(content.classList.contains('collapsed'), true)
+  assert.equal(content.getAttribute('aria-hidden'), 'true')
+  assert.equal(content.getAttribute('inert'), '')
   assert.match(ui.nodes.get('#counts').innerHTML, /No Prumo/)
   assert.match(ui.nodes.get('#counts').innerHTML, /1\/1/)
-  details.open = true
+  ui.run('toggleSummary()')
   ui.render(state)
-  assert.equal(details.open, true)
+  assert.equal(ui.nodes.get('#summaryToggle').getAttribute('aria-expanded'), 'true')
+  assert.equal(content.classList.contains('collapsed'), false)
+  assert.equal(content.getAttribute('inert'), null)
   assert.match(ui.nodes.get('#counts').innerHTML, /1\/1/)
+})
+
+test('último evento usa o mesmo tempo ao vivo sem crescer durante espera', () => {
+  const ui = dashboard()
+  const work = task('T1', 'running', { attempts: [{ n: 1, startedAt: instant(0), activityTiming: 'explicit',
+    activityIntervals: [{ role: 'execution', startedAt: instant(0), endedAt: instant(10) }] }] })
+  const state = { run: 'tempo', createdAt: instant(0), plan: { phases: [] }, tasks: { T1: work } }
+  ui.render(state, [{ type: 'task_note', task: 'T1', at: instant(20), text: 'Pausa' }])
+  assert.match(ui.nodes.get('#orch').innerHTML, />00:00:10<\/time>/)
+  assert.match(ui.nodes.get('#events').innerHTML, />00:00:10<\/time>/)
+  ui.render(state, [{ type: 'task_note', task: 'T1', at: instant(90), text: 'Ainda aguardando' }])
+  assert.match(ui.nodes.get('#events').innerHTML, />00:00:10<\/time>/)
+  assert.equal(ui.run('eventActivityClock(analyse(STATE, EVENTS, false))(at)', { at: instant(20) }), 'not measured')
 })
 
 const plan = {
@@ -71,26 +89,32 @@ test('barra distingue conclusão e atividade sem contar tarefas puladas ou alter
   assert.equal(ui.nodes.get('#bar').getAttribute('aria-valuenow'), '0')
 })
 
-test('horário dos eventos é relativo à criação do plano e preserva a data completa', () => {
+test('horário dos eventos acompanha atividade medida e preserva a data completa', () => {
   for (const language of ['en', 'pt-BR']) {
     const ui = dashboard(language)
     const createdAt = '2026-10-01T23:59:00Z'
-    for (const [at, start, expected] of [
-      [createdAt, createdAt, '00:00:00'],
-      ['2026-10-02T00:14:32Z', createdAt, '00:15:32'],
-      ['2026-10-03T03:59:10Z', createdAt, '28:00:10'],
-      ['2026-10-01T20:59:00-03:00', createdAt, '00:00:00'],
-      ['2026-10-01T23:58:00Z', createdAt, '00:00:00'],
-      ['invalid', createdAt, '—'], [undefined, createdAt, '—'],
-      [createdAt, undefined, '—'], [createdAt, 'invalid', '—'],
-    ]) assert.equal(ui.run('fmtEventElapsed(at, start)', { at, start }), expected)
+    const timing = { per: [{ spans: [['exec', Date.parse(createdAt), Date.parse('2026-10-02T00:00:00Z')],
+      ['review', Date.parse('2026-10-02T00:10:00Z'), Date.parse('2026-10-02T00:11:00Z')]] }],
+      sharedSpans: [['planning', Date.parse(createdAt), Date.parse('2026-10-02T00:00:00Z')]], unmeasuredActivity: false }
+    for (const [at, expected] of [
+      [createdAt, '00:00:00'], ['2026-10-01T23:59:30Z', '00:01:00'],
+      ['2026-10-02T00:00:00Z', '00:02:00'], ['2026-10-02T00:09:00Z', '00:02:00'],
+      ['2026-10-02T00:10:30Z', '00:02:30'], ['2026-10-03T03:59:10Z', '00:03:00'],
+      ['2026-10-01T20:59:00-03:00', '00:00:00'], ['2026-10-01T23:58:00Z', '00:00:00'],
+      ['invalid', '—'], [undefined, '—'],
+    ]) assert.equal(ui.run('eventActivityClock(timing)(at)', { timing, at }), expected)
+    for (const measured of [false, true]) {
+      const empty = { per: [], sharedSpans: [], unmeasuredActivity: measured }
+      assert.equal(ui.run('eventActivityClock(timing)(at)', { timing: empty, at: createdAt }), measured ? ui.run("tr('not measured')") : '00:00:00')
+    }
+    assert.equal(ui.run('eventActivityClock(timing)(at)', { timing: { per: [], sharedSpans: [['exec', 0, 28 * 3600000]], unmeasuredActivity: false }, at: new Date(28 * 3600000).toISOString() }), '28:00:00')
     assert.equal(ui.run('fmtEventDate(at)', { at: 'invalid' }), '—')
     const at = '2026-10-02T00:14:32Z'
     const fullDate = ui.run('fmtEventDate(at)', { at })
     assert.match(fullDate, /2026/)
     ui.render({ run: 'tempo', createdAt, plan: {}, tasks: { T1: task('T1', 'waiting') }, derived: {} }, [{ type: 'task_note', task: 'T1', at, text: 'Registro' }])
     assert.ok(ui.nodes.get('#events').innerHTML.includes(`datetime="${at}" title="${fullDate}"`))
-    assert.match(ui.nodes.get('#events').innerHTML, />00:15:32<\/time>/)
+    assert.match(ui.nodes.get('#events').innerHTML, />00:00:00<\/time>/)
   }
 })
 
@@ -660,6 +684,7 @@ function dashboard(lang = 'en', width = 1000, session = new Map(), navigation = 
           const node = element()
           if (selector === '#filterPanel') node.hidden = true
           if (selector === '#filterToggle') node.setAttribute('aria-expanded', 'false')
+          if (selector === '#summaryToggle') node.setAttribute('aria-expanded', 'true')
           if (selector === '#nodes' || selector === '#edgePaths') {
             const target = selector === '#nodes' ? cards : paths
             const tag = selector === '#nodes' ? 'div' : 'path'
@@ -1679,7 +1704,7 @@ test('Gravidade cards and agent panels show measured activity in the compact das
   assert.doesNotMatch(html, /<select[^>]+id="runSelect"/)
   assert.doesNotMatch(html, /<details class="legend-box" data-prumo-guide-anchor="legend">/)
   assert.match(html, /#eventsBox \{ display: flex; flex: 1 1 0;[^}]*min-height: 64px; \}/, 'the event log gives way when the legend opens')
-  assert.match(html, /#events \{ flex: 1 1 0; min-height: 40px; overflow-y: auto; \}/, 'and scrolls inside itself')
+  assert.match(html, /#events \{ flex: 1 1 0; min-height: 40px; overflow-y: scroll; scrollbar-gutter: stable; \}/, 'and scrolls inside itself')
   assert.match(html, /#pop \{[^}]*width: min\(472px, calc\(100vw - 24px\)\)/, '472px as designed, never wider than a phone')
   assert.match(html, /#pop \.pk \{[^}]*10px[^}]*var\(--font-mono\)/)
   assert.match(html, /#pop \.lead \{ font: 400 16px\/1\.45 var\(--font-display\)/)
@@ -3057,7 +3082,7 @@ test('o cabecalho compacto preserva ao vivo e abre todos os filtros sem os conta
   assert.doesNotMatch(menu, /<select/)
   assert.match(html, /\.filter-toggle \{ display: none; \}/)
   assert.doesNotMatch(header, /id="counts"/)
-  assert.match(html, /<section id="statusBox">\s*<details id="summaryDetails" open>\s*<summary><h3>[\s\S]*?<div class="counts" id="counts"><\/div>/)
+  assert.match(html, /<section id="statusBox">\s*<button id="summaryToggle"[\s\S]*?<div class="counts" id="counts"><\/div>/)
   assert.match(menu, /<div class="filter-menu" id="filterMenu">/)
   assert.doesNotMatch(menu, /<details[^>]+class="filter-menu"/)
   small.nodes.get('#headerMenu').open = true

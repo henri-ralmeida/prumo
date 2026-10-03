@@ -2,7 +2,7 @@
 
 **English** · [Português (Brasil)](README.pt-BR.md)
 
-Prumo combines the [graph-foreman](https://github.com/JrSantiaggo/graph-foreman) engine with PO First: approved plans, phase-wide research and planning, dependency-aware execution, independent review, validation evidence and a local dashboard. The same workflow supports software, data, automation, migrations and other domains.
+Prumo is an independent project inspired by [graph-foreman](https://github.com/JrSantiaggo/graph-foreman), by **JrSantiaggo**, and guided by PO First: approved plans, phase-wide research and planning, dependency-aware execution, independent review, validation evidence and a local dashboard. The same workflow supports software, data, automation, migrations and other domains.
 
 The plan defines the expected outcome; the engine enforces transitions and records evidence. Your AI harness performs the work and dispatches its agents.
 

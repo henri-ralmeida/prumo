@@ -195,13 +195,20 @@ SOFTWARE. -->
   .counts span { color: var(--dim); font-size: 11px; white-space: nowrap; }
   .counts b { color: inherit; font-weight: 600; }
   #statusBox .counts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; gap: 7px 18px; }
-  #statusBox summary { cursor: pointer; display: flex; align-items: center; justify-content: space-between; list-style: none; margin-bottom: 14px; }
-  #statusBox summary h3 { margin: 0; }
-  #statusBox summary::-webkit-details-marker { display: none; }
-  #statusBox summary::after { content: '⌄'; color: var(--dim); transition: transform .2s var(--ease); }
-  #statusBox details[open] > summary::after { transform: rotate(180deg); }
-  #statusBox summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 3px; }
-  #statusBox details:not([open]) > summary { margin-bottom: 0; }
+  #summaryToggle { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 5px 0; border: 0; background: transparent; color: var(--dim); cursor: pointer;
+    font: 500 10px var(--font-mono); text-transform: uppercase; letter-spacing: .14em; transition: color .18s var(--ease); }
+  #summaryToggle:hover { color: var(--text); }
+  #summaryToggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 3px; }
+  #summaryToggle .control-chevron { width: 12px; height: 12px; flex: none; transition: transform .22s var(--ease); }
+  #summaryToggle .control-chevron path { stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+  #summaryToggle[aria-expanded="true"] .control-chevron { transform: rotate(180deg); }
+  #summaryContent { display: grid; grid-template-rows: 1fr; opacity: 1;
+    transition: grid-template-rows .24s var(--ease), opacity .18s var(--ease); }
+  #summaryContent.collapsed { grid-template-rows: 0fr; opacity: 0; }
+  .summary-inner { min-height: 0; overflow: hidden; }
+  #statusBox .counts { padding-top: 9px; }
+  @media (prefers-reduced-motion: reduce) { #summaryContent, #summaryToggle .control-chevron { transition: none; } }
   #statusBox .counts > span { position: relative; display: flex; align-items: baseline; justify-content: space-between; gap: 6px; min-width: 0; white-space: normal; }
   #statusBox .counts > span:nth-child(even)::before { content: "|"; position: absolute; left: -11px; color: var(--faint); }
   #statusBox .count-label { flex: 1; min-width: 0; white-space: normal; color: inherit; overflow-wrap: anywhere; }
@@ -549,7 +556,7 @@ SOFTWARE. -->
 
   /* ---- right panel: run state + logs ONLY (task details live in the modal) */
   aside { display: flex; flex-direction: column; gap: 14px; border-left: 1px solid var(--line); background: var(--panel);
-          padding: 22px 20px; min-height: 0; overflow-x: hidden; overflow-y: auto; }
+          padding: 22px 20px; min-height: 0; overflow-x: hidden; overflow-y: auto; scrollbar-gutter: stable; }
   #sidebarToggle { position: absolute; z-index: 12; right: 360px; top: 12px; width: 24px; height: 34px;
                    padding: 0; margin: 0; border-radius: 8px 0 0 8px; background: var(--panel); }
   main.sidebar-collapsed #sidebarToggle { right: 0; }
@@ -584,9 +591,10 @@ SOFTWARE. -->
   .avail-more { color: var(--faint); font-size: 10.5px; padding: 0 2px; }
   aside h3 { font-size: 10px; font-weight: 500; color: var(--dim); margin: 0 0 8px; text-transform: uppercase; letter-spacing: .14em; }
   aside > section { flex: none; min-width: 0; }
+  #sidebar, #events, #available, #parallel { scrollbar-width: thin; scrollbar-color: var(--faint) transparent; }
   #available { max-height: 164px; overflow-y: auto; }
   /* O historico usa o espaco restante da lateral e mantem sua propria rolagem. */
-  #events { flex: 1 1 0; min-height: 40px; overflow-y: auto; }
+  #events { flex: 1 1 0; min-height: 40px; overflow-y: scroll; scrollbar-gutter: stable; }
   #eventsBox { display: flex; flex: 1 1 0; flex-direction: column; min-height: 64px; }
   #parallel { max-height: 150px; overflow-y: auto; }
   .ev { padding: 6px 8px; margin: 2px 0; border-left: 2px solid transparent; border-radius: 4px; font-size: 11px; line-height: 1.5; color: #bdb5a8; transition: background-color .15s var(--ease), border-color .15s var(--ease); }
@@ -1074,10 +1082,8 @@ SOFTWARE. -->
   <button class="lbtn" id="sidebarToggle" aria-controls="sidebar" aria-expanded="true" onclick="toggleSidebar()"></button>
   <aside id="sidebar">
     <section id="statusBox">
-    <details id="summaryDetails" open>
-    <summary><h3><span data-i18n="Summary">Summary</span></h3></summary>
-    <div class="counts" id="counts"></div>
-    </details>
+    <button id="summaryToggle" type="button" aria-expanded="true" aria-controls="summaryContent" onclick="toggleSummary()"><span data-i18n="Summary">Summary</span><svg class="control-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3"/></svg></button>
+    <div id="summaryContent"><div class="summary-inner"><div class="counts" id="counts"></div></div></div>
     </section>
     <section id="agentsBox">
     <h3><span data-i18n="Active agents">Active agents</span></h3>
@@ -2210,6 +2216,15 @@ function syncFilterOptions() {
   })
 }
 
+function toggleSummary(open = $('#summaryToggle').getAttribute('aria-expanded') !== 'true') {
+  $('#summaryToggle').setAttribute('aria-expanded', String(open))
+  const content = $('#summaryContent')
+  content.classList.toggle('collapsed', !open)
+  content.setAttribute('aria-hidden', String(!open))
+  if (open) content.removeAttribute('inert')
+  else content.setAttribute('inert', '')
+}
+
 function toggleFilterMenu(open = $('#filterToggle').getAttribute('aria-expanded') !== 'true') {
   const expanded = Boolean(open)
   if (expanded) $('#runMenu').open = false
@@ -2748,9 +2763,29 @@ const jsq = (v) => esc(String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'
 
 /* timestamps are stored in UTC (ISO); render them in the viewer's own timezone */
 function fmtTime(iso) { return iso ? new Date(iso).toLocaleTimeString(UI_LANG, { hour12: false }) : '' }
-function fmtEventElapsed(iso, createdAt) {
-  const at = Date.parse(iso), start = Date.parse(createdAt)
-  return Number.isFinite(at) && Number.isFinite(start) ? fmtClock((at - start) / 1000) : '—'
+function eventActivityClock(timing) {
+  const points = [...timing.per.flatMap(task => task.spans), ...timing.sharedSpans]
+    .flatMap(([, from, to]) => [[from, 1], [to, -1]]).sort((left, right) => left[0] - right[0])
+  let previous = points[0]?.[0] ?? 0, elapsed = 0, active = 0
+  const timeline = points.map(([at, change]) => {
+    elapsed += (at - previous) * active
+    active += change
+    previous = at
+    return { at, elapsed, active }
+  })
+  return iso => {
+    const at = Date.parse(iso)
+    if (!Number.isFinite(at)) return '—'
+    let low = 0, high = timeline.length
+    while (low < high) {
+      const middle = (low + high) >>> 1
+      if (timeline[middle].at <= at) low = middle + 1
+      else high = middle
+    }
+    const point = timeline[low - 1]
+    const measured = point ? point.elapsed + (at - point.at) * point.active : 0
+    return measured > 0 ? fmtClock(measured / 1000) : timing.unmeasuredActivity ? tr('not measured') : fmtClock(0)
+  }
 }
 function fmtEventDate(iso) {
   return Number.isFinite(Date.parse(iso)) ? new Date(iso).toLocaleString(UI_LANG, { hour12: false }) : '—'
@@ -3310,6 +3345,7 @@ function render(s, events = []) {
     : '<span class="empty"><span data-i18n="nothing running">nothing running</span></span>'
   paintStable('#parallel', parallelHtml)
   renderAvailable()
+  const eventClock = eventActivityClock(timing)
   const eventsHtml = events.slice().reverse().map((e, index) => {
     const taskId = Object.hasOwn(s.tasks, e.task) ? e.task : eventIds(e.task)
     const clickable = Object.hasOwn(s.tasks, taskId)
@@ -3321,7 +3357,7 @@ function render(s, events = []) {
     const key = eventIds(e.id ?? [e.at,e.type,e.task ?? '',e.phase ?? '',events.length-index].join('|'))
     const action = ` onclick="selectHistoryEvent('${jsq(key)}','${jsq(clickable ? taskId : '')}','${jsq(eventIds(e.phase))}')"`
     const opening = '<button class="ev-open" type="button">'
-    return '<div class="ev' + (SELECTED_EVENT === key ? ' selected' : '') + '" data-event-key="' + esc(key) + '"' + action + '>' + opening + '<span class="t-' + esc(e.type) + '"' + outcome + '><time datetime="' + esc(e.at ?? '') + '" title="' + esc(fmtEventDate(e.at)) + '">' + fmtEventElapsed(e.at, s.createdAt) +
+    return '<div class="ev' + (SELECTED_EVENT === key ? ' selected' : '') + '" data-event-key="' + esc(key) + '"' + action + '>' + opening + '<span class="t-' + esc(e.type) + '"' + outcome + '><time datetime="' + esc(e.at ?? '') + '" title="' + esc(fmtEventDate(e.at)) + '">' + eventClock(e.at) +
       '</time><span class="pipe" aria-hidden="true">|</span> <span class="ev-text">' + eventSentence(e) + fraction + '</span>' +
       '</span></button>' + (detail ? ' <span class="ev-detail">' + taskText(eventIds(detail)) + '</span>' : '') + '</div>'
   }).join('')

@@ -2,7 +2,7 @@
 
 [English](README.md) · **Português (Brasil)**
 
-Prumo reúne o motor do [graph-foreman](https://github.com/JrSantiaggo/graph-foreman) com PO First: planos aprovados, pesquisa e planejamento por fase, execução ordenada por dependências, revisão independente, evidências de validação e um dashboard local. O mesmo fluxo atende software, dados, automação, migrações e outras demandas.
+Prumo é um projeto independente inspirado no [graph-foreman](https://github.com/JrSantiaggo/graph-foreman), de **JrSantiaggo**, e orientado por PO First: planos aprovados, pesquisa e planejamento por fase, execução ordenada por dependências, revisão independente, evidências de validação e um dashboard local. O mesmo fluxo atende software, dados, automação, migrações e outras demandas.
 
 O plano define o resultado esperado; o motor controla estados e registros. O ambiente de IA executa o trabalho e dispara seus agentes.
 
