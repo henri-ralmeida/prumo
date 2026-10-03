@@ -87,7 +87,7 @@ import {
 } from './sync-plan-audit.mjs'
 import { businessContract, contractDrift, GLOBAL_PLAN_FIELDS, TASK_CONTRACT_FIELDS } from './contract-drift.mjs'
 import { parseEngineArgs } from './engine-args.mjs'
-import { taskIdentifierProblem } from './task-identifiers.mjs'
+import { taskIdentifierProblem, phaseIdentifierProblem } from './task-identifiers.mjs'
 import { newCommandRecord, recordCommand } from './command-metrics.mjs'
 
 let ROOT
@@ -875,6 +875,8 @@ function readPlan(planPath, state) {
     ? { ...task, deps: state.tasks[task.id].deps } : task) : plan.tasks
   const identifierProblem = taskIdentifierProblem(identifierTasks, state ? Object.keys(state.tasks) : undefined)
   if (identifierProblem) die(tr(identifierProblem.message, ...identifierProblem.values))
+  const phaseProblem = phaseIdentifierProblem(plan.phases ?? [], (state?.plan.phases ?? []).map(phase => phase.id))
+  if (phaseProblem) die(tr(phaseProblem.message, ...phaseProblem.values))
   return { plan, source }
 }
 

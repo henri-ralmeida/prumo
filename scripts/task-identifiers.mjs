@@ -7,7 +7,7 @@ export function taskIdentifierProblem(tasks, existingIds) {
   if (existingIds === undefined) {
     if (numbered.length && numbered.length !== tasks.length)
       return problem('Initial task identifiers cannot mix T1, T2, ... with other identifier formats')
-    for (const task of numbered)
+    for (const task of tasks)
       if (!/^T[1-9]\d*$/.test(task.id))
         return problem('Initial task {0} must use T1, T2, ... without suffixes or leading zeros', task.id)
     const numbers = numbered.map(task => Number(task.id.slice(1))).sort((a, b) => a - b)
@@ -23,7 +23,7 @@ export function taskIdentifierProblem(tasks, existingIds) {
   const groups = new Map()
   for (const task of added) {
     const match = taskId.exec(task.id)
-    if (!match || !/^T\d+[a-z]$/.test(task.id))
+    if (!match || !/^T[1-9]\d*[a-z]$/.test(task.id))
       return problem('New task {0} must extend an existing task with a lowercase suffix, such as T9a; original task numbers are preserved', task.id)
     const base = 'T' + match[1]
     const parent = roots.get(base)
@@ -51,6 +51,18 @@ export function taskIdentifierProblem(tasks, existingIds) {
       if (!reaches(group.parent, task.id) && !reaches(task.id, group.parent))
         return problem('Extension {0} must be linked to its parent {1} through dependencies', task.id, group.parent)
     }
+  }
+  return null
+}
+
+// Fases novas seguem a ordem do plano; fases legadas já persistidas continuam legíveis.
+export function phaseIdentifierProblem(phases, existingIds = []) {
+  const existing = new Set(existingIds)
+  let next = Math.max(0, ...existingIds.filter(id => /^F[1-9]\d*$/.test(id)).map(id => Number(id.slice(1)))) + 1
+  for (const phase of phases) {
+    if (existing.has(phase.id)) continue
+    const expected = 'F' + next++
+    if (phase.id !== expected) return problem('New phase {0} must use the next sequential identifier {1}', phase.id, expected)
   }
   return null
 }

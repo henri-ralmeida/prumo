@@ -1,4 +1,5 @@
 {
+  "New phase {0} must use the next sequential identifier {1}": "A nova fase {0} deve usar o próximo identificador sequencial {1}",
   "Improved — Update history and dashboard activity": "Melhorado — Histórico de atualização e atividade do dashboard",
   "Show missed release notes from the newest version to the oldest": "Mostre as notas das versões intermediárias da mais recente para a mais antiga",
   "Show discussion, planning, execution and review segments without counting active tasks as completed in the dashboard and guide": "Mostre segmentos de discussão, planejamento, execução e revisão sem contar tarefas ativas como concluídas no dashboard e no guia",

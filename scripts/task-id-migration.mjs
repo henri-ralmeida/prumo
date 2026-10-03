@@ -1,4 +1,72 @@
 import assert from 'node:assert/strict'
+import { phasePlanningContext, taskPlanDigest } from './validation.mjs'
+
+// A padronização explícita preserva as provas fechadas e recusa contratos ainda em execução.
+export function normalizeLegacyPlanIdentifiers(originalState, originalPlan, originalEvents, taskMapping = {}, phaseMapping = {}) {
+  const taskId = id => Object.hasOwn(taskMapping, id) ? taskMapping[id] : id
+  const phaseId = id => Object.hasOwn(phaseMapping, id) ? phaseMapping[id] : id
+  const taskIds = Object.keys(originalState.tasks)
+  const phaseIds = (originalState.plan.phases ?? []).map(phase => phase.id)
+  for (const [mapping, ids, pattern] of [[taskMapping, taskIds, /^T[1-9]\d*[a-z]?$/], [phaseMapping, phaseIds, /^F[1-9]\d*$/]]) {
+    for (const [from, to] of Object.entries(mapping)) {
+      assert.ok(ids.includes(from), `Identificador ausente: ${from}`)
+      assert.match(to, pattern)
+    }
+    const renamed = ids.map(id => Object.hasOwn(mapping, id) ? mapping[id] : id)
+    assert.equal(new Set(renamed).size, ids.length, 'A migração não pode unir identificadores')
+  }
+  for (const task of Object.values(originalState.tasks)) {
+    assert.ok(![...(task.discussionAttempts ?? []), ...(task.planningAttempts ?? [])].some(round => !round.endedAt), 'Existe uma rodada de tarefa aberta')
+    const affected = taskId(task.id) !== task.id || phaseId(task.phase) !== task.phase || (task.deps ?? []).some(id => taskId(id) !== id)
+    if (affected && !['done', 'skipped'].includes(task.state))
+      assert.ok(task.state === 'pending' && !task.taskPlan && !task.executionAuthorization && !(task.attempts ?? []).length,
+        `A tarefa ${task.id} já tem trabalho ou contrato ativo`)
+  }
+  for (const phase of Object.values(originalState.phaseWorkflows ?? {}))
+    assert.ok(![...(phase.discussionAttempts ?? []), ...(phase.planningAttempts ?? [])].some(round => !round.endedAt), 'Existe uma rodada de fase aberta')
+
+  const taskKeys = new Set(['task', 'taskId', 'tasks', 'targets', 'members', 'deps', 'blockedBy', 'planningBlockedBy', 'added', 'updated', 'preserved', 'metadataUpdated', 'revokedAuthorizationTasks', 'beforeTask'])
+  const phaseKeys = new Set(['phase', 'phaseId', 'beforePhase'])
+  const proofs = new Set(['taskPlan', 'planningHistory', 'contextSnapshot', 'requiredInputs', 'taskDigests', 'discovery'])
+  const references = (value, key = '') => {
+    if (typeof value === 'string') return taskKeys.has(key) ? taskId(value) : phaseKeys.has(key) ? phaseId(value) : value
+    if (Array.isArray(value)) return value.map(item => references(item, key))
+    if (!value || typeof value !== 'object') return value
+    return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, proofs.has(name) ? structuredClone(item) : references(item, name)]))
+  }
+  const state = references(originalState)
+  state.tasks = Object.fromEntries(Object.entries(state.tasks).map(([id, task]) => [taskId(id), { ...task, id: taskId(id) }]))
+  state.plan.phases = (state.plan.phases ?? []).map(phase => ({ ...phase, id: phaseId(phase.id) }))
+  if (state.phaseWorkflows) state.phaseWorkflows = Object.fromEntries(Object.entries(state.phaseWorkflows).map(([id, phase]) =>
+    [phaseId(id), { ...phase, id: phaseId(id) }]))
+  for (const [id, original] of Object.entries(originalState.tasks)) {
+    const task = state.tasks[taskId(id)]
+    if (task.taskPlan?.phaseId && phaseId(task.taskPlan.phaseId) !== task.taskPlan.phaseId) {
+      // Só os metadados de localização mudam; binding, pesquisa, verificações e digest continuam intactos.
+      task.taskPlan.phaseId = phaseId(task.taskPlan.phaseId)
+      task.taskPlan.scope = phasePlanningContext(state, task)
+      assert.equal(taskPlanDigest(task.taskPlan), taskPlanDigest(original.taskPlan), 'O conteúdo assinado não pode mudar')
+    }
+  }
+  const aliases = Object.fromEntries(Object.entries(originalState.taskIdAliases ?? {}).map(([from, to]) => [from, taskId(to)]))
+  for (const [from, to] of Object.entries(taskMapping)) if (!Object.hasOwn(state.tasks, from)) aliases[from] = to
+  if (Object.keys(aliases).length) state.taskIdAliases = aliases
+  const plan = references(originalPlan)
+  plan.tasks = plan.tasks.map(task => ({ ...task, id: taskId(task.id) }))
+  plan.phases = (plan.phases ?? []).map(phase => ({ ...phase, id: phaseId(phase.id) }))
+  const events = originalEvents.map(event => ({ ...references(event),
+    ...(event.task && taskId(event.task) !== event.task ? { originalTask: event.originalTask ?? event.task } : {}),
+    ...(event.phase && phaseId(event.phase) !== event.phase ? { originalPhase: event.originalPhase ?? event.phase } : {}) }))
+  for (const task of Object.values(state.tasks)) {
+    for (const dep of task.deps ?? []) assert.ok(state.tasks[dep], `Dependência ausente: ${dep}`)
+    if (task.phase) assert.ok(state.plan.phases.some(phase => phase.id === task.phase), `Fase ausente: ${task.phase}`)
+  }
+  for (const [from, to] of Object.entries(aliases)) {
+    assert.ok(!state.tasks[from], `Alias conflita com uma tarefa existente: ${from}`)
+    assert.ok(state.tasks[to], `Alias aponta para uma tarefa ausente: ${to}`)
+  }
+  return { state, plan, events }
+}
 
 // Renomear uma entrega concluída altera suas referências, mas não suas provas nem artefatos assinados.
 export function renameHistoricalTasks(originalState, originalPlan, originalEvents, mapping) {

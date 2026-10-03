@@ -6,6 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { spawn, spawnSync } from 'node:child_process'
 import { installationBundle } from '../scripts/installation-bundle.mjs'
+import { initializeLegacyPlanFixture } from './fixtures/legacy-plan-init.mjs'
 
 const engine = resolve(dirname(fileURLToPath(import.meta.url)), '../scripts/engine.mjs')
 
@@ -75,6 +76,34 @@ function makeLegacy(f) {
   state.authorizations = []
   f.save(state)
 }
+
+test('init recusa IDs novos fora do padrão e sync-plan preserva o registro ao recusar nova fase inválida', t => {
+  const f=fixture(t)
+  const original=JSON.parse(readFileSync(f.planPath,'utf8'))
+  for(const id of ['HO1','REL1','T01','T0','T1a']) {
+    f.writePlan({...original,tasks:[{...original.tasks[0],id}]})
+    const before=f.snapshot(),result=f.init()
+    assert.notEqual(result.status,0)
+    assert.match(f.output(result),/must use T1/)
+    assert.deepEqual(f.snapshot(),before)
+  }
+  for(const id of ['F0','F1B','P1','F2']) {
+    f.writePlan({...original,phases:[{id,title:'Fase'}]})
+    const before=f.snapshot(),result=f.init()
+    assert.notEqual(result.status,0)
+    assert.match(f.output(result),/next sequential identifier F1/)
+    assert.deepEqual(f.snapshot(),before)
+  }
+  const valid={...original,phases:[{id:'F1',title:'Fase'}]}
+  f.writePlan(valid);assert.equal(f.init().status,0)
+  f.writePlan({...valid,phases:[...valid.phases,{id:'F3',title:'Fase adicional'}]})
+  const before=f.snapshot(),rejected=f.cli('sync-plan','--plan',f.planPath,'--run','hardening')
+  assert.notEqual(rejected.status,0)
+  assert.match(f.output(rejected),/next sequential identifier F2/)
+  assert.deepEqual(f.snapshot(),before)
+  f.writePlan({...valid,phases:[...valid.phases,{id:'F2',title:'Fase adicional'}]})
+  assert.equal(f.cli('sync-plan','--plan',f.planPath,'--run','hardening').status,0)
+})
 
 test('comandos incompatíveis com tarefa pendente preservam contrato e histórico', t => {
   const f = fixture(t)
@@ -1201,7 +1230,7 @@ test('IDs herdados do protótipo são rejeitados sem criar estado', t => {
   }
 })
 
-test('lookup exige propriedade própria, mas preserva tarefas legítimas toString e constructor', t => {
+test('lookup exige propriedade própria, mas preserva tarefas legadas toString e constructor', t => {
   const f = fixture(t)
   f.writePlan({
     name: 'IDs especiais',
@@ -1212,7 +1241,7 @@ test('lookup exige propriedade própria, mas preserva tarefas legítimas toStrin
       { id: 'constructor', title: 'Construtor', validation: [{ kind: 'functional', run: 'node check.cjs', expect: 'passa' }] },
     ],
   })
-  const init = f.init()
+  const init = initializeLegacyPlanFixture(f.cli, f.planPath, f.root, 'hardening')
   assert.equal(init.status, 0, f.output(init))
   for (const id of ['toString', 'constructor']) {
     const result = f.cli('show-contract', id)
@@ -1235,7 +1264,7 @@ test('lookup de fase também ignora propriedades herdadas', t => {
     phases: [{ id: 'toString', title: 'Fase texto' }],
     tasks: [{ id: 'T1', title: 'Entrega', phase: 'toString', validation: [{ kind: 'functional', run: 'node check.cjs', expect: 'passa' }] }],
   })
-  const init = f.init()
+  const init = initializeLegacyPlanFixture(f.cli, f.planPath, f.root, 'hardening')
   assert.equal(init.status, 0, f.output(init))
   const begun = f.cli('begin-phase-discussion', 'toString')
   assert.equal(begun.status, 0, f.output(begun))

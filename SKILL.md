@@ -63,6 +63,10 @@ record them in discovery `decisions`/`coverage`; do not repeat settled questions
 question. Read [discussion.md](references/discussion.md) for recording and skip rules.
 
 **Identificadores estáveis.** No plano inicial, use `T1`, `T2`, ... sem lacunas ou letras.
+Declare as fases na ordem do plano com `F1`, `F2`, ...; novas fases usam o próximo número.
+Novos planos não podem usar `HO1`, `REL1`, `T01`, `F0`, `F1B` ou outros formatos legados.
+Nomes antigos persistidos permanecem legíveis; uma padronização deles exige uma migração explícita
+das referências, preservando o conteúdo das tarefas e as provas já registradas.
 Ao ampliar o plano por `sync-plan`, preserve os números originais: uma correção vinculada a `T9`
 usa `T9a`, a próxima `T9b`, até `T9z`. Registre a ligação nas dependências: se a correção
 destrava `T9`, `T9` depende de `T9a`; se é um complemento posterior, `T9a` depende de `T9`.
@@ -75,8 +79,8 @@ nonblank `summary` of 1–2 sentences stating the expected result and why it mat
 scope. If it is missing, fill it before `init` or `sync-plan`; a warning is not permission to leave it
 empty. `sync-plan` refuses newly added tasks without it. Do not invent scope or substitute a generic
 placeholder. An existing task being updated should also receive its missing summary through metadata
-synchronization without rewriting its historical contract. The approved task may additionally carry a
-business `label` (1–3 words, at most 24 characters) and a one-sentence `validationSummary` describing
+synchronization without rewriting its historical contract. For every new task, write an approved
+business `label` (1–3 words, at most 24 characters); a one-sentence `validationSummary` may describe
 acceptance. Write only text the approved scope supports. Use the label to identify the topic briefly
 and the summary to explain the result and purpose,
 including relevant effects or acceptance conditions rather than merely paraphrasing the title. Preserve

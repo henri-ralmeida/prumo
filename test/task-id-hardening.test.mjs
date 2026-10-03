@@ -1,14 +1,74 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { renameHistoricalTasks } from '../scripts/task-id-migration.mjs'
-import { taskIdentifierProblem } from '../scripts/task-identifiers.mjs'
+import { renameHistoricalTasks, normalizeLegacyPlanIdentifiers } from '../scripts/task-id-migration.mjs'
+import { taskIdentifierProblem, phaseIdentifierProblem } from '../scripts/task-identifiers.mjs'
+import { taskPlanDigest, phasePlanningContext } from '../scripts/validation.mjs'
 
 const task = (id, deps = []) => ({ id, deps })
 const issue = (tasks, existingIds) => taskIdentifierProblem(tasks, existingIds)?.message ?? null
 
+test('padronização legada remapeia referências sem alterar provas assinadas ou estados', () => {
+  const proof = { phaseBinding: { phaseId: 'F0' }, digest: 'prova-original', phaseId:'F0', scope:'escopo-original' }
+  const state = {plan:{phases:[{id:'F0'},{id:'F1'}]}, tasks:{
+    T01:{id:'T01',phase:'F0',deps:[],state:'done',taskPlan:proof},
+    HO1:{id:'HO1',phase:'F1',deps:['T01'],state:'pending'},
+  },phaseWorkflows:{F0:{id:'F0',planningAttempts:[{endedAt:'2026-01-01',targets:['T01'],context:'assinado'}]}}}
+  const plan = {phases:state.plan.phases,tasks:Object.values(state.tasks)}
+  const events = [{task:'T01',phase:'F0',targets:['HO1'],text:'T01 é texto histórico',nested:{beforeTask:'HO1',beforePhase:'F1'}}]
+  const before = structuredClone({state,plan,events})
+  const result=normalizeLegacyPlanIdentifiers(state,plan,events,{T01:'T1',HO1:'T2'},{F0:'F1',F1:'F2'})
+  assert.equal(taskPlanDigest(result.state.tasks.T1.taskPlan),taskPlanDigest(proof))
+  assert.equal(result.state.tasks.T1.taskPlan.phaseBinding.phaseId,'F0')
+  assert.equal(result.state.tasks.T1.taskPlan.phaseId,'F1')
+  assert.equal(result.state.tasks.T1.taskPlan.scope,phasePlanningContext(result.state,result.state.tasks.T1))
+  assert.equal(result.state.tasks.T1.state,'done')
+  assert.deepEqual(result.state.tasks.T2.deps,['T1'])
+  assert.equal(result.state.tasks.T2.phase,'F2')
+  assert.deepEqual(result.state.phaseWorkflows.F1.planningAttempts[0].targets,['T1'])
+  assert.equal(result.events[0].originalTask,'T01')
+  assert.equal(result.events[0].originalPhase,'F0')
+  assert.equal(result.events[0].text,events[0].text)
+  assert.deepEqual(result.events[0].nested,{beforeTask:'T2',beforePhase:'F2'})
+  assert.deepEqual(result.state.taskIdAliases,{T01:'T1',HO1:'T2'})
+  assert.deepEqual({state,plan,events},before)
+})
+
+test('padronização recusa colisões, nomes inválidos e trabalho aberto sem mudar entradas', () => {
+  const state={plan:{phases:[{id:'F0'}]},tasks:{A:{id:'A',state:'pending',phase:'F0',deps:[]},B:{id:'B',state:'pending',phase:'F0',deps:[]}}}
+  const plan={phases:state.plan.phases,tasks:Object.values(state.tasks)}
+  for(const mapping of [{A:'T1',B:'T1'},{A:'HO1'},{X:'T1'}]) assert.throws(()=>normalizeLegacyPlanIdentifiers(state,plan,[],mapping,{F0:'F1'}))
+  for(const fields of [{taskPlan:{digest:'assinado'}},{executionAuthorization:{}},{attempts:[{}]},{state:'running'},{discussionAttempts:[{}]},{planningAttempts:[{}]}]) {
+    const input=structuredClone(state);Object.assign(input.tasks.A,fields);const before=structuredClone(input)
+    assert.throws(()=>normalizeLegacyPlanIdentifiers(input,plan,[],{A:'T1',B:'T2'},{F0:'F1'}))
+    assert.deepEqual(input,before)
+  }
+  const open=structuredClone(state);open.phaseWorkflows={F0:{discussionAttempts:[{}]}}
+  assert.throws(()=>normalizeLegacyPlanIdentifiers(open,plan,[],{A:'T1',B:'T2'},{F0:'F1'}))
+})
+
+test('padronização mantém referências antigas resolvíveis e aceita planos sem fases', () => {
+  const state={plan:{},tasks:{A:{id:'A',state:'skipped',deps:[]},T2:{id:'T2',state:'pending',deps:['A']}},taskIdAliases:{legado:'A'},value:null,enabled:false}
+  const plan={tasks:Object.values(state.tasks)}
+  const events=[{task:'A',originalTask:'origem',phase:'F0',originalPhase:'fase-original',data:[null,3,false]},{}]
+  const result=normalizeLegacyPlanIdentifiers(state,plan,events,{A:'T1'})
+  assert.deepEqual(result.state.taskIdAliases,{legado:'T1',A:'T1'})
+  assert.deepEqual(result.state.tasks.T2.deps,['T1'])
+  assert.equal(result.events[0].originalTask,'origem')
+  assert.equal(result.events[0].originalPhase,'fase-original')
+  assert.deepEqual(result.events[0].data,[null,3,false])
+  assert.deepEqual(normalizeLegacyPlanIdentifiers({plan:{},tasks:{}},{tasks:[]},[]).plan.phases,[])
+  const unchanged={id:'T1',state:'pending'}
+  assert.equal(normalizeLegacyPlanIdentifiers({plan:{},tasks:{T1:unchanged}},{tasks:[unchanged]},[]).state.tasks.T1.state,'pending')
+  const phased={plan:{phases:[{id:'F0'}]},tasks:{T1:{id:'T1',state:'done',phase:'F0'}},phaseWorkflows:{F0:{planningAttempts:[{}]}}}
+  assert.throws(()=>normalizeLegacyPlanIdentifiers(phased,{phases:phased.plan.phases,tasks:Object.values(phased.tasks)},[],{},{F0:'F1'}))
+  phased.phaseWorkflows.F0.planningAttempts=[{endedAt:'2026-01-01'}]
+  const moved=normalizeLegacyPlanIdentifiers(phased,{phases:phased.plan.phases,tasks:Object.values(phased.tasks)},[{phase:'F0',originalPhase:'original'}],{},{F0:'F1'})
+  assert.equal(moved.events[0].originalPhase,'original')
+})
+
 test('identificadores iniciais distinguem plano sequencial, legado e entradas inválidas', () => {
   assert.equal(issue([]), null)
-  assert.equal(issue([task('A1'), task('B2')]), null)
+  assert.match(issue([task('A1'), task('B2')]), /must use T1/)
   assert.equal(issue([task('T2'), task('T1')]), null)
 
   assert.match(issue([task('T1'), task('A1')]), /cannot mix/)
@@ -16,6 +76,15 @@ test('identificadores iniciais distinguem plano sequencial, legado e entradas in
   assert.match(issue([task('t1')]), /without suffixes/)
   assert.match(issue([task('T1a')]), /without suffixes/)
   assert.match(issue([task('T1'), task('T3')]), /sequential/)
+})
+
+test('fases novas exigem F1, F2 e sequência; somente identificadores persistidos são legados', () => {
+  assert.equal(phaseIdentifierProblem([]),null)
+  assert.equal(phaseIdentifierProblem([{id:'F1'},{id:'F2'}]),null)
+  for(const id of ['F0','F01','F1B','P1','f1','F2'])assert.ok(phaseIdentifierProblem([{id}]))
+  assert.equal(phaseIdentifierProblem([{id:'F0'},{id:'F1B'},{id:'F1'}],['F0','F1B']),null)
+  assert.equal(phaseIdentifierProblem([{id:'F1'},{id:'F2'},{id:'F3'}],['F1','F2']),null)
+  assert.ok(phaseIdentifierProblem([{id:'F1'},{id:'F4'}],['F1']))
 })
 
 test('ampliações aceitas preservam a sequência, o pai e a ligação por dependências', () => {
@@ -35,6 +104,8 @@ test('ampliações aceitas preservam a sequência, o pai e a ligação por depen
 })
 
 test('a validação rejeita formato novo, ciclos desconectados e pais ausentes', () => {
+  assert.match(issue([task('T0'),task('T0a',['T0'])],['T0']),/must extend/)
+  assert.match(issue([task('T01'),task('T01a',['T01'])],['T01']),/must extend/)
   assert.match(issue([task('A1'), task('T1')], ['T1']), /must extend/)
   assert.match(issue([task('T1'), task('T1A')], ['T1']), /must extend/)
   assert.match(issue([task('T1'), task('T1a', ['MISSING'])], ['T1']), /linked to its parent/)

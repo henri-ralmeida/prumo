@@ -257,63 +257,63 @@ test('direct review after a block warns with the recorded unfinished step positi
 })
 
 test('structured inspection criteria must be traversed in order before a passing validation', t => {
-  const f = fixture(t, [{ id: 'DOC', title: 'Delivery policy docs', validationMode: 'inspection',
+  const f = fixture(t, [{ id: 'T1', title: 'Delivery policy docs', validationMode: 'inspection',
     inspectionReason: 'The task only updates documentation.', validation: 'Compare the documented policy with the implementation.' }])
-  f.beginPlan('DOC')
-  f.finish('DOC', { ...f.artifact('DOC'), verification: [
+  f.beginPlan('T1')
+  f.finish('T1', { ...f.artifact('T1'), verification: [
     { criterion: 'The documented express rate matches the code.', check: 'inspection' },
     { criterion: 'The documented normal rate matches the code.', check: 'inspection' },
   ] })
-  f.ok('start', 'DOC', '--agent', 'executor')
-  f.ok('review', 'DOC', '--agent', 'reviewer')
+  f.ok('start', 'T1', '--agent', 'executor')
+  f.ok('review', 'T1', '--agent', 'reviewer')
   const reviewEvent = f.events().trim().split('\n').map(JSON.parse).findLast(item => item.type === 'task_review')
   assert.deepEqual([reviewEvent.current, reviewEvent.total, reviewEvent.basis], [1, 2, 'inspection'])
 
   const before = f.state(), events = f.events()
-  f.rejected(/inspection criteria are not fully traversed/, 'validate', 'DOC', '--ok', '--evidence', 'Docs inspected')
+  f.rejected(/inspection criteria are not fully traversed/, 'validate', 'T1', '--ok', '--evidence', 'Docs inspected')
   assert.deepEqual(f.state(), before)
   assert.equal(f.events(), events)
-  f.rejected(/traverse the next criterion in order/, 'review-progress', 'DOC', '--step', '2', '--agent', 'reviewer')
+  f.rejected(/traverse the next criterion in order/, 'review-progress', 'T1', '--step', '2', '--agent', 'reviewer')
   assert.deepEqual(f.state(), before)
   assert.equal(f.events(), events)
 
-  assert.match(f.ok('review-progress', 'DOC', '--step', '1', '--agent', 'reviewer').output,
+  assert.match(f.ok('review-progress', 'T1', '--step', '1', '--agent', 'reviewer').output,
     /review progress reports 1\/2 criteria traversed; next criterion 2\/2; reviewer report is not proof of inspection/)
-  assert.match(f.ok('review-progress', 'DOC', '--step', '2', '--agent', 'reviewer').output,
+  assert.match(f.ok('review-progress', 'T1', '--step', '2', '--agent', 'reviewer').output,
     /review progress reports 2\/2 criteria traversed; reviewer report is not proof of inspection or approval/)
   const progressEvent = f.events().trim().split('\n').map(JSON.parse).findLast(item => item.type === 'task_review_progress')
   assert.deepEqual([progressEvent.reviewer, progressEvent.traversed, progressEvent.total, progressEvent.selfReported],
     ['reviewer', 2, 2, true])
-  f.ok('validate', 'DOC', '--ok', '--evidence', 'Both documented rates match the current implementation')
-  f.ok('done', 'DOC')
+  f.ok('validate', 'T1', '--ok', '--evidence', 'Both documented rates match the current implementation')
+  f.ok('done', 'T1')
 })
 
 test('inspection denominator counts criteria even when they share one static check', t => {
-  const f = fixture(t, [{ id: 'DOC', title: 'Delivery policy docs', validationMode: 'inspection',
+  const f = fixture(t, [{ id: 'T1', title: 'Delivery policy docs', validationMode: 'inspection',
     inspectionReason: 'The task only updates documentation.',
     validation: [{ kind: 'static', run: 'node --check delivery.cjs', expect: 'syntax valid' }] }])
-  f.beginPlan('DOC')
-  f.finish('DOC', { ...f.artifact('DOC'), verification: [
+  f.beginPlan('T1')
+  f.finish('T1', { ...f.artifact('T1'), verification: [
     { criterion: 'The documented express rate matches the code.', check: 1 },
     { criterion: 'The documented normal rate matches the code.', check: 1 },
   ] })
-  f.ok('start', 'DOC', '--agent', 'executor')
-  f.ok('review', 'DOC', '--agent', 'reviewer')
+  f.ok('start', 'T1', '--agent', 'executor')
+  f.ok('review', 'T1', '--agent', 'reviewer')
   const reviewEvent = f.events().trim().split('\n').map(JSON.parse).findLast(item => item.type === 'task_review')
   assert.deepEqual([reviewEvent.current, reviewEvent.total, reviewEvent.basis], [1, 2, 'inspection'])
 
   const before = f.state(), events = f.events()
-  f.rejected(/inspection criteria are not fully traversed/, 'validate', 'DOC', '--ok', '--evidence', 'Docs inspected', '--cwd', f.project)
+  f.rejected(/inspection criteria are not fully traversed/, 'validate', 'T1', '--ok', '--evidence', 'Docs inspected', '--cwd', f.project)
   assert.deepEqual(f.state(), before)
   assert.equal(f.events(), events)
-  f.ok('review-progress', 'DOC', '--step', '1', '--agent', 'reviewer')
+  f.ok('review-progress', 'T1', '--step', '1', '--agent', 'reviewer')
   const afterFirst = f.state(), afterFirstEvents = f.events()
-  f.rejected(/inspection criteria are not fully traversed/, 'validate', 'DOC', '--ok', '--evidence', 'Docs inspected', '--cwd', f.project)
+  f.rejected(/inspection criteria are not fully traversed/, 'validate', 'T1', '--ok', '--evidence', 'Docs inspected', '--cwd', f.project)
   assert.deepEqual(f.state(), afterFirst)
   assert.equal(f.events(), afterFirstEvents)
-  f.ok('review-progress', 'DOC', '--step', '2', '--agent', 'reviewer')
-  f.ok('validate', 'DOC', '--ok', '--evidence', 'Both documented rates match the current implementation', '--cwd', f.project)
-  f.ok('done', 'DOC')
+  f.ok('review-progress', 'T1', '--step', '2', '--agent', 'reviewer')
+  f.ok('validate', 'T1', '--ok', '--evidence', 'Both documented rates match the current implementation', '--cwd', f.project)
+  f.ok('done', 'T1')
 })
 
 test('corrective review reuses earlier path-scoped receipts through the engine', t => {

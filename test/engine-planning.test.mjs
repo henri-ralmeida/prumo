@@ -5,6 +5,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { initializeLegacyPlanFixture } from './fixtures/legacy-plan-init.mjs'
 
 const engine = resolve(dirname(fileURLToPath(import.meta.url)), '../scripts/engine.mjs')
 const validation = [{ kind: 'functional', run: 'node check.cjs', expect: 'delivery behavior passes' }]
@@ -281,7 +282,9 @@ function phaseFixture(t, tasks, { planningMode = 'phase' } = {}) {
       unresolvedInputs: round.requiredInputs[id],
     }))
   }
-  ok('init', '--plan', planPath, '--run', 'phase-negative')
+  const initialized = initializeLegacyPlanFixture(cli, planPath, root, 'phase-negative')
+  assert.equal(initialized.status, 0, initialized.stdout + initialized.stderr)
+  ok('authorize', '--scope', 'run', '--confirmed-by-user')
   return { root, project, plans, plan, planPath, ok, rejects, state, save, events, discovery, writeArtifacts }
 }
 
@@ -1838,7 +1841,9 @@ test('one phase discussion plans every member atomically while the DAG binds lat
     ok('finish-phase-planning', phaseId, '--plan-dir', plans)
   }
 
-  ok('init', '--plan', planPath, '--run', 'phase')
+  const initialized = initializeLegacyPlanFixture(cli, planPath, root, 'phase')
+  assert.equal(initialized.status, 0, initialized.stdout + initialized.stderr)
+  ok('authorize', '--scope', 'run', '--confirmed-by-user')
   assert.equal(state().plan.planningMode, 'phase')
   const blocked = JSON.parse(ok('graph').stdout).derived
   assert.equal(blocked.A.effective, 'waiting')

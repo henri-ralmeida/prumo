@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assertTaskPlan } from '../scripts/validation.mjs'
+import { initializeLegacyPlanFixture } from './fixtures/legacy-plan-init.mjs'
 
 const engine = resolve(dirname(fileURLToPath(import.meta.url)), '../scripts/engine.mjs')
 const validation = [{ kind: 'functional', run: 'node check.cjs', expect: 'behavior passes' }]
@@ -65,7 +66,8 @@ function fixture(t, { tasks = [{ id: 'A', title: 'Source' }, { id: 'B', title: '
     return discussion
   }
   const authorizeRun = () => ok('authorize', '--scope', 'run', '--confirmed-by-user')
-  ok('init', '--plan', planPath, '--run', run)
+  const initialized = initializeLegacyPlanFixture(cli, planPath, root, run)
+  assert.equal(initialized.status, 0, initialized.stdout + initialized.stderr)
   if (authorize) authorizeRun()
   return { root, project, plan, planPath, savePlan, cli, ok, rejects, state, stateBytes, saveState, eventBytes, events, basePlan,
     discoveryValue, discuss, planTaskAfterDiscussion, planTask, authorizeRun }
