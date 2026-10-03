@@ -1148,6 +1148,24 @@ test('touches usa a pasta persistida ou explícita e evita avisos falsos na cent
   }
 })
 
+test('touches continua verificando o projeto quando a pasta central ainda não existe', t => {
+  const f = fixture(t, [{ id: 'T1', title: 'Arquivo do projeto', touches: ['delivery.cjs', 'arquivo-novo.cjs'] }])
+  const state = f.state()
+  delete state.plan.cwd
+  f.save(state)
+  const missingCentral = join(dirname(f.root), 'central-ainda-inexistente')
+  const result = spawnSync(process.execPath, [engine, 'sync-plan', '--plan', f.planPath], {
+    cwd: f.project, encoding: 'utf8', windowsHide: true, timeout: 20000,
+    env: { ...process.env, PRUMO_ROOT: f.root, PRUMO_HOME: missingCentral, PRUMO_LANG: 'en' },
+  })
+  assert.ifError(result.error)
+  assert.equal(result.status, 0, result.stdout + result.stderr)
+  assert.equal(f.state().plan.cwd, realpathSync(f.project))
+  assert.match(result.stdout + result.stderr, /path "arquivo-novo.cjs" was not found/)
+  assert.doesNotMatch(result.stdout + result.stderr, /path "delivery.cjs" was not found|touches check skipped/)
+  assert.equal(existsSync(missingCentral), false)
+})
+
 test('status and ready surface contract drift without blocking, and show-contract omits validation commands', t => {
   const f = fixture(t)
   assert.doesNotMatch(f.ok('status').stdout, /contract drift/)
