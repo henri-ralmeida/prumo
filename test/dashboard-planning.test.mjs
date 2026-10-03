@@ -52,6 +52,29 @@ test('barra distingue conclusão e atividade sem contar tarefas puladas ou alter
   assert.equal(ui.nodes.get('#bar').getAttribute('aria-valuenow'), '0')
 })
 
+test('horário dos eventos é relativo à criação do plano e preserva a data completa', () => {
+  for (const language of ['en', 'pt-BR']) {
+    const ui = dashboard(language)
+    const createdAt = '2026-10-01T23:59:00Z'
+    for (const [at, start, expected] of [
+      [createdAt, createdAt, '00:00:00'],
+      ['2026-10-02T00:14:32Z', createdAt, '00:15:32'],
+      ['2026-10-03T03:59:10Z', createdAt, '28:00:10'],
+      ['2026-10-01T20:59:00-03:00', createdAt, '00:00:00'],
+      ['2026-10-01T23:58:00Z', createdAt, '00:00:00'],
+      ['invalid', createdAt, '—'], [undefined, createdAt, '—'],
+      [createdAt, undefined, '—'], [createdAt, 'invalid', '—'],
+    ]) assert.equal(ui.run('fmtEventElapsed(at, start)', { at, start }), expected)
+    assert.equal(ui.run('fmtEventDate(at)', { at: 'invalid' }), '—')
+    const at = '2026-10-02T00:14:32Z'
+    const fullDate = ui.run('fmtEventDate(at)', { at })
+    assert.match(fullDate, /2026/)
+    ui.render({ run: 'tempo', createdAt, plan: {}, tasks: { T1: task('T1', 'waiting') }, derived: {} }, [{ type: 'task_note', task: 'T1', at, text: 'Registro' }])
+    assert.ok(ui.nodes.get('#events').innerHTML.includes(`datetime="${at}" title="${fullDate}"`))
+    assert.match(ui.nodes.get('#events').innerHTML, />00:15:32<\/time>/)
+  }
+})
+
 test('guia usa os mesmos segmentos e mantém atividade fora do percentual concluído', () => {
   const ui = dashboard('pt-BR')
   ui.render(createGuideDemoData('board'))

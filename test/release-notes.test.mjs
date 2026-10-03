@@ -16,6 +16,9 @@ test('histórico ignora versões de tipos inválidos sem modificar os registros 
 test('current release has concise English update highlights with descriptive subtitles', () => {
   const notes = releaseNotes(version)
   assert.deepEqual(notes.map(section => section.title), [
+    'Improved — Update history and dashboard activity',
+  ])
+  assert.deepEqual(releaseNotes('2.4.0').map(section => section.title), [
     'Fixed — Dashboard shutdown before update',
     'Fixed — Installation and task identity',
     'Improved — Behavioral verification',

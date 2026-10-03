@@ -1,4 +1,16 @@
 {
+  "2.4.1": {
+    "en": [
+      {
+        "title": "Improved — Update history and dashboard activity",
+        "items": [
+          "Show missed release notes from the newest version to the oldest",
+          "Show discussion, planning, execution and review segments without counting active tasks as completed in the dashboard and guide",
+          "Show event time elapsed since plan creation while preserving the full date and time on hover, including runs longer than 24 hours"
+        ]
+      }
+    ]
+  },
   "2.4.0": {
     "en": [
       {

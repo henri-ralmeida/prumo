@@ -2,6 +2,12 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.4.1 — 2026-10-03
+
+- Mostre primeiro as notas da versão mais recente, mantendo todas as versões intermediárias da atualização em ordem decrescente.
+- Diferencie tarefas no prumo e tarefas em discussão, planejamento, execução ou revisão na barra do dashboard e do guia; atividade não aumenta o percentual concluído.
+- Mostre o tempo decorrido desde a criação do plano no histórico de eventos e preserve a data e a hora completas ao passar o mouse, incluindo execuções com mais de 24 horas.
+
 ## 2.4.0 — 2026-10-02
 
 - Pare o dashboard comprovadamente pertencente à instalação e aguarde a liberação da porta antes de substituir a CLI ou os arquivos dos harnesses, evitando atualizar com o serviço antigo em execução.

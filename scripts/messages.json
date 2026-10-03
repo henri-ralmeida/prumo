@@ -1,4 +1,8 @@
 {
+  "Improved — Update history and dashboard activity": "Melhorado — Histórico de atualização e atividade do dashboard",
+  "Show missed release notes from the newest version to the oldest": "Mostre as notas das versões intermediárias da mais recente para a mais antiga",
+  "Show discussion, planning, execution and review segments without counting active tasks as completed in the dashboard and guide": "Mostre segmentos de discussão, planejamento, execução e revisão sem contar tarefas ativas como concluídas no dashboard e no guia",
+  "Show event time elapsed since plan creation while preserving the full date and time on hover, including runs longer than 24 hours": "Mostre o tempo desde a criação do plano nos eventos e preserve data e hora completas ao passar o mouse, inclusive após 24 horas",
   "Discuss": "Discutir",
   "Execute": "Executar",
   "Plan": "Planejar",
