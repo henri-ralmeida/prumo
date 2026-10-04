@@ -1,4 +1,23 @@
 {
+  "2.4.3": {
+    "en": [
+      {
+        "title": "Improved — Dashboard sidebar",
+        "items": [
+          "Show every available task without a hidden overflow count",
+          "Use consistent chevrons and independently collapse summary, active agents, available tasks and event history",
+          "Redistribute sidebar space while preserving readable section heights, empty messages and visible scrolling"
+        ]
+      },
+      {
+        "title": "Fixed — Published update verification",
+        "items": [
+          "Prepare historical update fixtures through canonical identifiers while preserving legacy task data",
+          "Run the coverage artifact download action on Node.js 24"
+        ]
+      }
+    ]
+  },
   "2.4.2": {
     "en": [
       {

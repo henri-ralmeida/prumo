@@ -2,6 +2,13 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.4.3 — 2026-10-04
+
+- Mostre todas as tarefas disponíveis e padronize as setas dos controles da lateral.
+- Permita recolher as quatro seções independentemente e redistribua o espaço mantendo altura legível, mensagens vazias e rolagem visível.
+- Corrija a preparação dos cenários de atualização das versões publicadas com IDs canônicos, preservando os registros históricos.
+- Atualize a action de download dos relatórios de cobertura para Node.js 24.
+
 ## 2.4.2 — 2026-10-03
 
 - Organize os controles do guia com espaçamento entre navegação e saída; permita navegar da entidade ativa à primeira tarefa do planejador, executor ou revisor.
