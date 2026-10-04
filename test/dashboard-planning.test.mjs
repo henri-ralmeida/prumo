@@ -1956,16 +1956,24 @@ test('available tasks say who moves each one next and give way to the selected t
       blockOptions: ['v1', 'v2'], blockHistory: [{ at: instant(10), reason: 'Needs a decision',
         question: 'Which API version should ship?', answer: 'v2' }] }),
     E: task('E', 'pending', { validation: [{ run: 'bun test auth', expect: '12 tests pass' }] }),
+    E2: task('E2', 'pending'),
+    E3: task('E3', 'pending'),
+    R: task('R', 'pending'),
+    Q: task('Q', 'pending'),
+    W: task('W', 'pending'),
     P: task('P', 'pending', { planningRequired: true }),
     D: task('D', 'done'),
   }
   const derived = { K: { effective: 'blocked' }, E: { effective: 'ready' }, P: { effective: 'ready_to_plan' }, D: { effective: 'done' } }
+  Object.assign(derived, { E2: { effective: 'ready' }, E3: { effective: 'ready' }, R: { effective: 'ready_for_review' },
+    Q: { effective: 'ready_for_discussion' }, W: { effective: 'waiting' } })
   for (const lang of ['en', 'pt-BR']) {
     const ui = dashboard(lang)
     ui.render({ run: 'available', plan: { phases: [] }, tasks, derived })
     const list = ui.nodes.get('#available').innerHTML
     assert.equal(ui.nodes.get('#availableBox').hidden, false)
-    assert.deepEqual([...list.matchAll(/jumpTo\('(\w+)'\)/g)].map(m => m[1]), ['K', 'E', 'P'], 'needs-you first, then the next role in the flow')
+    assert.deepEqual([...list.matchAll(/jumpTo\('(\w+)'\)/g)].map(m => m[1]), ['K', 'R', 'E', 'E2', 'E3', 'P', 'Q'], 'todas as disponíveis aparecem, com decisões primeiro e a ordem dos próximos papéis preservada')
+    assert.doesNotMatch(list, /avail-more/)
     assert.match(list, /--role:var\(--blocked\)[\s\S]*pick &lt;the&gt; API version/)
     assert.match(list, lang === 'en' ? /Decision question: Which API version should ship\? · Options: v1 \/ v2/ :
       /Pergunta para decisão: Which API version should ship\? · Opções: v1 \/ v2/)

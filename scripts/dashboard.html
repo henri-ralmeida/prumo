@@ -588,7 +588,6 @@ SOFTWARE. -->
                 border: 1px solid color-mix(in srgb, var(--role) 25%, var(--line));
                 font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .avail .exp { color: var(--dim); } .avail .exp em { font-style: normal; color: var(--done); }
-  .avail-more { color: var(--faint); font-size: 10.5px; padding: 0 2px; }
   aside h3 { font-size: 10px; font-weight: 500; color: var(--dim); margin: 0 0 8px; text-transform: uppercase; letter-spacing: .14em; }
   aside > section { flex: none; min-width: 0; }
   #sidebar, #events, #available, #parallel { scrollbar-width: thin; scrollbar-color: var(--faint) transparent; }
@@ -3503,7 +3502,6 @@ const AVAILABLE = [
   ['ready_to_plan', 'planner', 'var(--planning)'],
   ['ready_for_discussion', 'orchestrator', 'var(--discussion)'],
 ]
-const AVAILABLE_MAX = 4
 function renderAvailable() {
   $('#availableBox').hidden = false
   const tasks = Object.values(STATE?.tasks ?? {})
@@ -3533,8 +3531,7 @@ function renderAvailable() {
       (state === 'ready' && acceptance ? '<span class="exp">' + esc(tr('expects')) + ': <em>' + taskText(acceptance) + '</em></span>' : '') +
       '</div>'
   }
-  paintStable('#available', list.slice(0, AVAILABLE_MAX).map(card).join('') +
-    (list.length > AVAILABLE_MAX ? '<span class="avail-more">' + esc(tr('+{0} more', list.length - AVAILABLE_MAX)) + '</span>' : ''))
+  paintStable('#available', list.map(card).join(''))
 }
 
 /* Plain text of a validation contract — the lean view clamps it when no summary was written. */
