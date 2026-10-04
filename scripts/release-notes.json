@@ -1,4 +1,16 @@
 {
+  "2.4.5": {
+    "en": [
+      {
+        "title": "Fixed — Plan readiness indicators",
+        "items": [
+          "Keep plans in progress when discussion, planning, execution or review is available, using the corresponding stage color",
+          "Distinguish blocked and failed plans from plans waiting on dependencies, and preserve unknown legacy status",
+          "Validate current release notes independently of older release titles while preserving historical checks"
+        ]
+      }
+    ]
+  },
   "2.4.4": {
     "en": [
       {

@@ -10,6 +10,27 @@ const instant = (seconds) => new Date(Date.UTC(2026, 0, 1) + seconds * 1000).toI
 const task = (id, state = 'pending', fields = {}) => ({
   id, title: `Task ${id}`, phase: 'P1', state, deps: [], attempts: [], validations: [], notes: [], ...fields,
 })
+
+test('status do plano acompanha a cor da etapa e atualiza mesmo sem mudar contagens', () => {
+  const ui = dashboard('pt-BR')
+  const entry = { root: 'root', run: 'example', complete: false, taskCount: 2, doneCount: 0, activity: 'working' }
+  const paint = fields => {
+    ui.run(`updateRunSelect(${JSON.stringify({ currentRoot: 'root', current: 'example', runs: [{ ...entry, ...fields }] })})`)
+    return ui.nodes.get('#runOptions').innerHTML
+  }
+  for (const activityState of ['ready_for_discussion', 'discussing', 'ready_to_plan', 'planning', 'ready', 'running', 'ready_for_review', 'reviewing']) {
+    const options = paint({ activityState })
+    assert.ok(options.includes(`class="run-state working" style="color:${ui.run(`ST_COLOR.${activityState}`)}"`), activityState)
+    assert.match(options, />em andamento<i aria-hidden="true"/)
+    assert.doesNotMatch(options, />parado<i/)
+  }
+  assert.match(paint({ activity: 'blocked', activityState: 'blocked' }), /class="run-state blocked">bloqueado<i/)
+  assert.match(paint({ activity: 'failed', activityState: 'failed' }), /class="run-state failed">falhou<i/)
+  assert.match(paint({ activity: 'idle', activityState: null }), /class="run-state idle">parado<i/)
+  assert.doesNotMatch(paint({ activity: null, activityState: null }), /class="run-state/)
+  assert.doesNotMatch(paint({ activityState: '__proto__' }), /style="color:/)
+  assert.match(paint({ complete: true, doneCount: 2, activityState: 'blocked' }), /class="run-state complete">no prumo<i/)
+})
 test('resumo recolhido preserva contagens e recebe atualizações', () => {
   assert.match(html, /id="summaryToggle"[^>]*aria-expanded="true"[^>]*aria-controls="summaryContent"/)
   const ui = dashboard('pt-BR')

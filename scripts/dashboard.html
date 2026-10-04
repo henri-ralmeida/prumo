@@ -189,6 +189,8 @@ SOFTWARE. -->
   header .run-state.idle i { color: var(--faint); }
   header .run-state.working { color: var(--running); }
   header .run-state.complete { color: var(--done); }
+  header .run-state.blocked { color: var(--blocked); }
+  header .run-state.failed { color: var(--failed); }
   header .run-empty { padding: 14px 10px; color: var(--dim); font: 11px/1.5 var(--font-display); }
   header .run-option:focus-visible, header .run-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .counts { display: flex; margin-left: auto; flex-wrap: wrap; gap: 4px 16px; }
@@ -1868,8 +1870,8 @@ function updateRunSelect(catalog) {
     select.dataset.selectedComplete = String(selectedComplete)
   }
   const filters = [RUN_FILTER]
-  const signature = `${value}\0${filters.join(',')}\0${runs.map(({ root, run, plan, complete, activity, doneCount, skippedCount, taskCount }) =>
-    `${root}\0${run}\0${plan}\0${complete}\0${activity}\0${doneCount}\0${skippedCount}\0${taskCount}`).join('\0')}`
+  const signature = `${value}\0${filters.join(',')}\0${runs.map(({ root, run, plan, complete, activity, activityState, doneCount, skippedCount, taskCount }) =>
+    `${root}\0${run}\0${plan}\0${complete}\0${activity}\0${activityState}\0${doneCount}\0${skippedCount}\0${taskCount}`).join('\0')}`
   if (select.dataset.signature !== signature) {
     const progress = runs.filter(run => !runComplete(run))
     const complete = runs.filter(run => runComplete(run))
@@ -1882,17 +1884,19 @@ function updateRunSelect(catalog) {
       ${tab('progress', 'in progress', progress.length)}
       ${tab('complete', 'in prumo', complete.length)}</div>`
     const items = visible.map((entry) => {
-      const { root, run, plan, activity, doneCount, skippedCount, taskCount } = entry
+      const { root, run, plan, activity, activityState, doneCount, skippedCount, taskCount } = entry
       const complete = runComplete(entry)
       const item = `${root}/${run}`
-      const state = complete ? 'complete' : activity === 'working' ? 'working' : 'idle'
-      const label = complete ? 'in prumo' : activity === 'working' ? 'in progress' : activity === 'idle' ? 'paused' : ''
+      const state = complete ? 'complete' : ['working', 'blocked', 'failed'].includes(activity) ? activity : 'idle'
+      const label = complete ? 'in prumo' : activity === 'working' ? 'in progress' : activity === 'idle' ? 'paused' :
+        activity === 'blocked' ? 'blocked' : activity === 'failed' ? 'failed' : ''
+      const colour = state === 'working' && Object.hasOwn(ST_COLOR, activityState) ? ` style="color:${ST_COLOR[activityState]}"` : ''
       // Skipped tasks never passed review, so they are not counted as in prumo; they are named instead.
       const skippedNote = skippedCount > 0 ? ' · ' + (skippedCount === 1 ? tr('1 skipped') : tr('{0} skipped', skippedCount)) : ''
       const taskProgress = taskCount > 0 ? tr('{0} of {1} tasks in prumo', doneCount ?? 0, taskCount) + skippedNote : ''
       const accessible = [run, plan !== run ? plan : '', label ? tr(label) : '', taskProgress].filter(Boolean).join(' · ')
       return `<button type="button" class="run-option" data-run="${esc(item)}" aria-current="${item === value}" aria-label="${esc(accessible)}">
-        <span class="run-option-head"><b>${esc(run)}</b>${label ? `<span class="run-state ${state}">${esc(tr(label))}<i aria-hidden="true"></i></span>` : ''}</span>
+        <span class="run-option-head"><b>${esc(run)}</b>${label ? `<span class="run-state ${state}"${colour}>${esc(tr(label))}<i aria-hidden="true"></i></span>` : ''}</span>
         ${plan && plan !== run ? `<span>${esc(plan)}</span>` : ''}
         ${taskProgress ? `<span>${esc(taskProgress)}</span>` : ''}</button>`
     }).join('')

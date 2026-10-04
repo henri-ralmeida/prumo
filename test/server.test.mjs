@@ -12,6 +12,55 @@ import { readDashboardEvents } from '../scripts/dashboard-diagnostics.mjs'
 import { initializeLegacyPlanFixture } from './fixtures/legacy-plan-init.mjs'
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
+
+test('catálogo usa ações efetivas, prioridades e bloqueios sem alterar planos', async t => {
+  const home = dashboardHome(t, 'prumo-catalog-status-')
+  const root = join(home, 'project'), graph = join(root, '.specs', 'graph')
+  const cases = [
+    ['execute', ['pending'], 'working', 'ready'],
+    ['plan', ['pending'], 'working', 'ready_to_plan'],
+    ['discuss', ['pending'], 'working', 'ready_for_discussion'],
+    ...['reviewing', 'running', 'planning', 'discussing', 'ready_for_review'].map(state => [state, [state], 'working', state]),
+    ['blocked', ['blocked', 'waiting'], 'blocked', 'blocked'],
+    ['failed', ['failed', 'waiting'], 'failed', 'failed'],
+    ['waiting', ['waiting', 'done'], 'idle', null],
+    ['available-blocked', ['blocked', 'ready'], 'working', 'ready'],
+    ['active-available', ['planning', 'ready_for_review'], 'working', 'planning'],
+    ['unknown', ['pending'], null, null],
+    ['unrecognized', ['unknown'], null, null],
+    ['empty', [], 'idle', null],
+    ['missing', [], 'idle', null],
+    ['missing-deps', ['pending'], 'working', 'ready'],
+  ]
+  const originals = []
+  for (const [name, states] of cases) {
+    const directory = join(graph, name)
+    mkdirSync(directory, { recursive: true })
+    const state = { plan: { name, planningMode: name === 'unknown' ? undefined : 'task' },
+      tasks: Object.fromEntries(states.map((status, index) => {
+        const id = `T${index + 1}`
+        return [id, { id, state: status, deps: [], phase: 'F1',
+          planningRequired: ['plan', 'discuss', 'unknown'].includes(name), discussionRequired: name === 'discuss' }]
+      })) }
+    if (name === 'missing') { delete state.plan; delete state.tasks }
+    if (name === 'missing-deps') delete state.tasks.T1.deps
+    const file = join(directory, 'state.json'), content = JSON.stringify(state)
+    writeFileSync(file, content)
+    originals.push([file, content])
+  }
+  writeFileSync(join(graph, 'CURRENT'), 'execute')
+  const request = await startDashboard(t, join(packageRoot, 'scripts/serve.mjs'), [], {
+    ...process.env, HOME: home, USERPROFILE: home, PRUMO_ROOT: root, PRUMO_HOME: join(home, 'central'),
+  })
+  const catalog = await (await request('/api/runs')).json()
+  for (const [name, , activity, activityState] of cases) {
+    const run = catalog.runs.find(run => run.run === name)
+    assert.equal(run.activity, activity, name)
+    assert.equal(run.activityState, activityState, name)
+  }
+  for (const [file, content] of originals) assert.equal(readFileSync(file, 'utf8'), content)
+  assert.equal((await request('/api/health')).status, 200, 'o servidor continua disponível após listar os planos')
+})
 /** The short commit git reports for this checkout, or undefined when git cannot answer. */
 function checkoutCommit(root = packageRoot) {
   try {
@@ -355,7 +404,7 @@ test('dashboard selects legacy and central data without writes or translation of
     const directory = join(graph, name)
     mkdirSync(directory)
     writeFileSync(join(directory, 'state.json'), JSON.stringify({ plan: { name }, tasks: Object.fromEntries(states.map((state, index) =>
-      [`T${index + 1}`, { id: `T${index + 1}`, state }])) }))
+      [`T${index + 1}`, { id: `T${index + 1}`, state, deps: [], planningRequired: false }])) }))
   }
   const refreshed = (await (await get('/api/runs')).json()).runs
   assert.equal(refreshed.find(run => run.run === 'complete-demo')?.complete, true)
@@ -367,7 +416,8 @@ test('dashboard selects legacy and central data without writes or translation of
   assert.equal(refreshed.find(run => run.run === 'all-skipped-demo')?.complete, false, 'sem nenhuma tarefa done nao ha plano entregue')
   assert.equal(refreshed.find(run => run.run === 'almost-demo')?.complete, false,
     'trabalho pendente mantem o plano em andamento')
-  assert.equal(refreshed.find(run => run.run === 'almost-demo')?.activity, 'idle')
+  assert.equal(refreshed.find(run => run.run === 'almost-demo')?.activity, 'working')
+  assert.equal(refreshed.find(run => run.run === 'almost-demo')?.activityState, 'ready')
   const selected = await (await get('/api/state?root=work&run=demo')).json()
   assert.equal(selected.tasks.T1.title, 'done')
   assert.equal(selected.derived.T1.effective, 'blocked')

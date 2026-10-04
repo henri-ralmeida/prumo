@@ -2,6 +2,12 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.4.5 — 2026-10-04
+
+- Mantenha planos em andamento quando houver discussão, planejamento, execução ou revisão disponível, usando a cor da etapa correspondente.
+- Diferencie bloqueios e falhas da espera por dependências e preserve a ausência de informação nos registros antigos.
+- Valide as notas da versão atual sem exigir títulos de uma versão anterior, mantendo as verificações históricas.
+
 ## 2.4.4 — 2026-10-04
 
 - Use os intervalos de atividade registrados nos relógios individuais, inclusive no planejamento de fase, preservando a indicação de tempo não aferido quando não houver registros.

@@ -170,12 +170,19 @@ function runProgress(state) {
   const tasks = Object.values(state.tasks ?? {})
   const done = tasks.filter(task => task.state === 'done').length
   const skipped = tasks.filter(task => task.state === 'skipped').length
-  const working = tasks.some(task => ['discussing', 'planning', 'running', 'reviewing'].includes(task.state)) ||
-    Object.values(state.phaseWorkflows ?? {}).some(phase => ['discussing', 'planning'].includes(phase.state))
+  const effective = Object.values(derive({ ...state, plan: state.plan ?? {},
+    tasks: Object.fromEntries(Object.entries(state.tasks ?? {}).map(([id, task]) => [id, { ...task, deps: task.deps ?? [] }]))
+  })).map(task => task.effective)
+  // Atividade em curso prevalece; depois, a próxima ação liberada define a cor do plano.
+  const activityState = ['reviewing', 'running', 'planning', 'discussing',
+    'ready_for_review', 'ready', 'ready_to_plan', 'ready_for_discussion', 'blocked', 'failed']
+    .find(status => effective.includes(status)) ?? null
+  const activity = activityState === 'blocked' || activityState === 'failed' ? activityState : activityState ? 'working' :
+    effective.filter(status => !['done', 'skipped'].includes(status)).every(status => status === 'waiting') ? 'idle' : null
   // Complete = every task settled (done, or skipped by the user's decision) and at least one done:
   // the same rule as the dashboard header and the gain card.
   return { taskCount: tasks.length, doneCount: done, skippedCount: skipped,
-    complete: done > 0 && done + skipped === tasks.length, activity: working ? 'working' : 'idle' }
+    complete: done > 0 && done + skipped === tasks.length, activity, activityState }
 }
 
 function catalog() {
