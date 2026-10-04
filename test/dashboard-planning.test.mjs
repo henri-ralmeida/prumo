@@ -34,17 +34,17 @@ test('resumo recolhido preserva contagens e recebe atualizações', () => {
   assert.match(ui.nodes.get('#counts').innerHTML, /1\/1/)
 })
 
-test('histórico inclui espera no tempo corrido enquanto ao vivo conserva somente atividade', () => {
+test('último evento usa o mesmo tempo ao vivo sem crescer durante espera', () => {
   const ui = dashboard()
   const work = task('T1', 'running', { attempts: [{ n: 1, startedAt: instant(0), activityTiming: 'explicit',
     activityIntervals: [{ role: 'execution', startedAt: instant(0), endedAt: instant(10) }] }] })
   const state = { run: 'tempo', createdAt: instant(0), plan: { phases: [] }, tasks: { T1: work } }
   ui.render(state, [{ type: 'task_note', task: 'T1', at: instant(20), text: 'Pausa' }])
   assert.match(ui.nodes.get('#orch').innerHTML, />00:00:10<\/time>/)
-  assert.match(ui.nodes.get('#events').innerHTML, />00:00:20<\/time>/)
+  assert.match(ui.nodes.get('#events').innerHTML, />00:00:10<\/time>/)
   ui.render(state, [{ type: 'task_note', task: 'T1', at: instant(90), text: 'Ainda aguardando' }])
-  assert.match(ui.nodes.get('#events').innerHTML, />00:01:30<\/time>/)
-  assert.match(ui.nodes.get('#orch').innerHTML, />00:00:10<\/time>/)
+  assert.match(ui.nodes.get('#events').innerHTML, />00:00:10<\/time>/)
+  assert.equal(ui.run('eventActivityClock(analyse(STATE, EVENTS, false))(at)', { at: instant(20) }), 'not measured')
 })
 
 const plan = {
@@ -89,30 +89,32 @@ test('barra distingue conclusão e atividade sem contar tarefas puladas ou alter
   assert.equal(ui.nodes.get('#bar').getAttribute('aria-valuenow'), '0')
 })
 
-test('horário dos eventos inclui noites e dias desde o início do plano e preserva a data completa', () => {
+test('horário dos eventos acompanha atividade medida e preserva a data completa', () => {
   for (const language of ['en', 'pt-BR']) {
     const ui = dashboard(language)
     const createdAt = '2026-10-01T23:59:00Z'
-    const state = { createdAt }
+    const timing = { per: [{ spans: [['exec', Date.parse(createdAt), Date.parse('2026-10-02T00:00:00Z')],
+      ['review', Date.parse('2026-10-02T00:10:00Z'), Date.parse('2026-10-02T00:11:00Z')]] }],
+      sharedSpans: [['planning', Date.parse(createdAt), Date.parse('2026-10-02T00:00:00Z')]], unmeasuredActivity: false }
     for (const [at, expected] of [
-      [createdAt, '00:00:00'], ['2026-10-01T23:59:30Z', '00:00:30'],
-      ['2026-10-02T00:00:00Z', '00:01:00'], ['2026-10-02T00:09:00Z', '00:10:00'],
-      ['2026-10-02T00:10:30Z', '00:11:30'], ['2026-10-03T03:59:10Z', '28:00:10'],
+      [createdAt, '00:00:00'], ['2026-10-01T23:59:30Z', '00:01:00'],
+      ['2026-10-02T00:00:00Z', '00:02:00'], ['2026-10-02T00:09:00Z', '00:02:00'],
+      ['2026-10-02T00:10:30Z', '00:02:30'], ['2026-10-03T03:59:10Z', '00:03:00'],
       ['2026-10-01T20:59:00-03:00', '00:00:00'], ['2026-10-01T23:58:00Z', '00:00:00'],
       ['invalid', '—'], [undefined, '—'],
-    ]) assert.equal(ui.run('eventProjectClock(state, [])(at)', { state, at }), expected)
-    assert.equal(ui.run('eventProjectClock({}, events)(at)', { events: [{ type: 'run_init', at: 'invalid' }, { type: 'run_init', at: createdAt }], at: '2026-10-02T00:09:00Z' }), '00:10:00')
-    assert.equal(ui.run('eventProjectClock({}, [])(at)', { at: createdAt }), '—')
-    assert.equal(ui.run('eventProjectClock({createdAt:"invalid"}, [])(at)', { at: createdAt }), '—')
+    ]) assert.equal(ui.run('eventActivityClock(timing)(at)', { timing, at }), expected)
+    for (const measured of [false, true]) {
+      const empty = { per: [], sharedSpans: [], unmeasuredActivity: measured }
+      assert.equal(ui.run('eventActivityClock(timing)(at)', { timing: empty, at: createdAt }), measured ? ui.run("tr('not measured')") : '00:00:00')
+    }
+    assert.equal(ui.run('eventActivityClock(timing)(at)', { timing: { per: [], sharedSpans: [['exec', 0, 28 * 3600000]], unmeasuredActivity: false }, at: new Date(28 * 3600000).toISOString() }), '28:00:00')
     assert.equal(ui.run('fmtEventDate(at)', { at: 'invalid' }), '—')
     const at = '2026-10-02T00:14:32Z'
     const fullDate = ui.run('fmtEventDate(at)', { at })
     assert.match(fullDate, /2026/)
     ui.render({ run: 'tempo', createdAt, plan: {}, tasks: { T1: task('T1', 'waiting') }, derived: {} }, [{ type: 'task_note', task: 'T1', at, text: 'Registro' }])
     assert.ok(ui.nodes.get('#events').innerHTML.includes(`datetime="${at}" title="${fullDate}"`))
-    assert.match(ui.nodes.get('#events').innerHTML, />00:15:32<\/time>/)
-    assert.match(html, /data-i18n="Time since plan start"/)
-    assert.equal(ui.run("tr('Time since plan start')"), language === 'pt-BR' ? 'Tempo desde o início do plano' : 'Time since plan start')
+    assert.match(ui.nodes.get('#events').innerHTML, />00:00:00<\/time>/)
   }
 })
 
