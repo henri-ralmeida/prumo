@@ -200,15 +200,15 @@ SOFTWARE. -->
     font: 500 10px var(--font-mono); text-transform: uppercase; letter-spacing: .14em; transition: color .18s var(--ease); }
   #summaryToggle:hover { color: var(--text); }
   #summaryToggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 3px; }
-  #summaryToggle .control-chevron { width: 12px; height: 12px; flex: none; transition: transform .22s var(--ease); }
-  #summaryToggle .control-chevron path { stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+  #summaryToggle .control-chevron, #sidebarToggle .control-chevron { width: 12px; height: 12px; flex: none; transition: transform .22s var(--ease); }
+  #summaryToggle .control-chevron path, #sidebarToggle .control-chevron path { stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; fill: none; }
   #summaryToggle[aria-expanded="true"] .control-chevron { transform: rotate(180deg); }
   #summaryContent { display: grid; grid-template-rows: 1fr; opacity: 1;
     transition: grid-template-rows .24s var(--ease), opacity .18s var(--ease); }
   #summaryContent.collapsed { grid-template-rows: 0fr; opacity: 0; }
   .summary-inner { min-height: 0; overflow: hidden; }
   #statusBox .counts { padding-top: 9px; }
-  @media (prefers-reduced-motion: reduce) { #summaryContent, #summaryToggle .control-chevron { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { #summaryContent, #summaryToggle .control-chevron, #sidebarToggle .control-chevron { transition: none; } }
   #statusBox .counts > span { position: relative; display: flex; align-items: baseline; justify-content: space-between; gap: 6px; min-width: 0; white-space: normal; }
   #statusBox .counts > span:nth-child(even)::before { content: "|"; position: absolute; left: -11px; color: var(--faint); }
   #statusBox .count-label { flex: 1; min-width: 0; white-space: normal; color: inherit; overflow-wrap: anywhere; }
@@ -559,6 +559,8 @@ SOFTWARE. -->
           padding: 22px 20px; min-height: 0; overflow-x: hidden; overflow-y: auto; scrollbar-gutter: stable; }
   #sidebarToggle { position: absolute; z-index: 12; right: 360px; top: 12px; width: 24px; height: 34px;
                    padding: 0; margin: 0; border-radius: 8px 0 0 8px; background: var(--panel); }
+  #sidebarToggle .control-chevron { transform: rotate(-90deg); }
+  #sidebarToggle[aria-expanded="false"] .control-chevron { transform: rotate(90deg); }
   main.sidebar-collapsed #sidebarToggle { right: 0; }
   /* aside sets display: flex, which would beat [hidden]: a collapsed sidebar leaves the layout */
   main > aside[hidden] { display: none; }
@@ -1774,7 +1776,7 @@ function applySidebar() {
   $('#main').classList.toggle('sidebar-collapsed', SIDEBAR_COLLAPSED)
   $('#sidebar').hidden = SIDEBAR_COLLAPSED
   const button = $('#sidebarToggle')
-  button.textContent = SIDEBAR_COLLAPSED ? '‹' : '›'
+  button.innerHTML = '<svg class="control-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3"/></svg>'
   button.setAttribute('aria-expanded', String(!SIDEBAR_COLLAPSED))
   button.setAttribute('aria-label', tr(SIDEBAR_COLLAPSED ? 'Open sidebar' : 'Collapse sidebar'))
   button.title = tr(SIDEBAR_COLLAPSED ? 'Open sidebar' : 'Collapse sidebar')
