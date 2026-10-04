@@ -60,6 +60,51 @@ test('seções da lateral recolhem independentemente e preservam conteúdo atual
   }
 })
 
+test('atividade explícita mantém relógios individuais e ao vivo sem multiplicar paralelismo', () => {
+  const ui = dashboard('pt-BR')
+  const measured = role => ({ n: 1, startedAt: instant(90), activityTiming: 'explicit',
+    activityIntervals: [{ role, startedAt: instant(90) }] })
+  const state = { run: 'paralelo', createdAt: instant(0), plan: { phases: [] }, tasks: {
+    T1: task('T1', 'running', { attempts: [measured('execution')] }),
+    T2: task('T2', 'reviewing', { attempts: [{ ...measured('review'), reviewStartedAt: instant(90) }] }),
+    T3: task('T3', 'planning', { planningAttempts: [measured('planning')] }),
+  } }
+  ui.render(state)
+  for (const item of Object.values(state.tasks)) {
+    assert.equal(ui.run('taskClock(item, item.state)', { item }), 10000)
+  }
+  assert.match(ui.nodes.get('#orch').innerHTML, />00:00:10<\/time>/)
+  assert.doesNotMatch(ui.nodes.get('#parallel').innerHTML, /não aferido/)
+  assert.equal(ui.run('analyse(STATE, [], true).agentTotal'), 30000)
+  for (const item of Object.values(state.tasks)) {
+    const round = item.planningAttempts?.[0] ?? item.attempts[0]
+    round.activityIntervals[0].endedAt = instant(95)
+  }
+  ui.render(state)
+  for (const item of Object.values(state.tasks)) assert.equal(ui.run('taskClock(item, item.state)', { item }), 5000)
+  assert.match(ui.nodes.get('#orch').innerHTML, />00:00:05<\/time>/)
+})
+
+test('relógio de planejamento acompanha a fase e não inventa tempo sem registro', () => {
+  const ui = dashboard()
+  const item = task('T1', 'planning', { phase: 'F1' })
+  const round = { startedAt: instant(90), activityTiming: 'explicit',
+    activityIntervals: [{ role: 'planning', startedAt: instant(90) }] }
+  ui.render({ run: 'fase', plan: { phases: [{ id: 'F1', title: 'Fase' }] },
+    phaseWorkflows: { F1: { state: 'planning', planningAttempts: [round] } }, tasks: { T1: item } })
+  assert.equal(ui.run('taskClock(item, "planning")', { item }), 10000)
+  round.endedAt = instant(95)
+  ui.render({ run: 'fase', plan: { phases: [] }, tasks: { T1: { ...item, planningAttempts: [round] } } })
+  assert.equal(ui.run('taskClock(item, "planning")', { item: { ...item, planningAttempts: [round] } }), 5000)
+  for (const intervals of [undefined, [], [{ role: 'execution', startedAt: instant(90) }]]) {
+    assert.equal(ui.run('taskClock(item, "planning")', { item: { ...item, planningAttempts: [{ ...round, activityIntervals: intervals }] } }), null)
+  }
+  for (const interval of [{ role: 'planning' }, { role: 'planning', startedAt: 'invalid' },
+    { role: 'planning', startedAt: instant(110), endedAt: instant(100) }]) {
+    assert.equal(ui.run('taskClock(item, "planning")', { item: { ...item, planningAttempts: [{ ...round, activityIntervals: [interval] }] } }), 0)
+  }
+})
+
 test('último evento usa o mesmo tempo ao vivo sem crescer durante espera', () => {
   const ui = dashboard()
   const work = task('T1', 'running', { attempts: [{ n: 1, startedAt: instant(0), activityTiming: 'explicit',
@@ -2283,6 +2328,29 @@ test('detail preserves every recorded line in summaries, plans and validations w
   assert.doesNotMatch(fallbackPreview, /Título original 4/)
   fallbackUi.run("POP_EXPANDED = true; fillPop('F')")
   assert.ok(fallbackUi.nodes.get('#popBody').innerHTML.includes('Título original 4 &lt;em&gt;completo&lt;/em&gt;'))
+})
+
+test('clicar no motivo da jornada revela o parecer e a evidência completos com texto seguro', () => {
+  const ui = dashboard('pt-BR')
+  const summary = 'Motivo resumido\nSegunda linha\nTerceira linha\nQuarta linha completa <script>'
+  const evidence = 'Evidência completa\nÚltima linha <img onerror="alert(1)">'
+  ui.render({ run: 'parecer', plan: {}, tasks: { T1: task('T1', 'failed', {
+    attempts: [{ n: 1, startedAt: instant(1), reviewStartedAt: instant(2), endedAt: instant(3) }],
+    validations: [{ attempt: 1, by: 'review', ok: false, at: instant(3), summary, evidence }],
+  }) } })
+  ui.run("POP = { id: 'T1', pinned: false }; fillPop('T1')")
+  const lean = ui.nodes.get('#popBody').innerHTML
+  const button = lean.match(/<button type="button" class="jwhy clamp1" onclick="([^"]+)"[^>]*>/)
+  assert.ok(button, 'o motivo oferece um controle acionável por mouse e teclado')
+  assert.doesNotMatch(lean, /Quarta linha completa/)
+  ui.run(button[1])
+  assert.equal(ui.run('POP_EXPANDED && POP.pinned'), true)
+  const full = ui.nodes.get('#popBody').innerHTML
+  assert.match(full, /Quarta linha completa &lt;script&gt;/)
+  assert.match(full, /Última linha &lt;img onerror=&quot;alert\(1\)&quot;&gt;/)
+  assert.doesNotMatch(full, /<script>|<img onerror=/)
+  ui.run("fillPop('T1')")
+  assert.match(ui.nodes.get('#popBody').innerHTML, /Quarta linha completa/)
 })
 
 test('expanding the popover pins it, switches to detail and closing resets it', () => {

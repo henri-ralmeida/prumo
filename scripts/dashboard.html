@@ -761,6 +761,9 @@ SOFTWARE. -->
   #pop .jhead { display: flex; justify-content: space-between; gap: 8px; color: var(--text); }
   #pop .jhead span { color: var(--dim); }
   #pop .jwhy { color: var(--dim); margin-top: 1px; }
+  #pop button.jwhy { display: block; width: 100%; border: 0; padding: 0; background: transparent; text-align: left; font: inherit; cursor: pointer; }
+  #pop button.jwhy:hover { text-decoration: underline; text-underline-offset: 3px; }
+  #pop button.jwhy:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
   #pop .jstep.ok .jwhy { color: color-mix(in srgb, var(--done) 80%, var(--text)); }
   #pop .jstep.bad .jwhy { color: color-mix(in srgb, var(--failed) 75%, var(--text)); }
   #pop .pfoot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
@@ -2424,6 +2427,21 @@ function phasePlanningTargets(state) {
 /** Measured active duration up to the latest activity event; an open envelope alone is unknown. */
 function taskClock(t, state, events = EVENTS) {
   if (!EVENTS_COMPLETE) return null
+  const role = { discussing: 'discussion', planning: 'planning', running: 'execution', reviewing: 'review' }[state]
+  const phase = STATE?.phaseWorkflows?.[t.phase]
+  const round = state === 'planning' || state === 'discussing'
+    ? t[`${role}Attempts`]?.at(-1) ?? phase?.[`${role}Attempts`]?.at(-1)
+    : t.attempts.at(-1)
+  if (round?.activityTiming === 'explicit') {
+    const intervals = (round.activityIntervals ?? []).filter(interval => interval.role === role)
+    if (!intervals.length) return null
+    return intervals.reduce((total, interval) => {
+      const start = Date.parse(interval.startedAt ?? '')
+      const end = Date.parse(interval.endedAt ?? round.endedAt ?? '')
+      const until = Number.isFinite(end) ? end : Date.now()
+      return total + (Number.isFinite(start) && until >= start ? until - start : 0)
+    }, 0)
+  }
   if (state === 'planning') return null
   const run = t.attempts.at(-1)
   let startValue, endValue, attemptNumber = t.attempts.length
@@ -3259,8 +3277,8 @@ function render(s, events = []) {
   $('#bar').setAttribute('aria-valuetext', progressDescription)
   $('#bar').setAttribute('aria-valuenow', String(Math.round(scale * done)))
   $('#doneFrac').textContent = `${done}/${total}`
-  const agentSeconds = Math.floor(timing.agentTotal / 1000)
-  const agentClock = timing.agentTotal > 0 ? fmtClock(agentSeconds) : timing.unmeasuredActivity ? tr('not measured') : fmtClock(0)
+  const agentSeconds = Math.floor(timing.activeElapsed / 1000)
+  const agentClock = timing.activeElapsed > 0 ? fmtClock(agentSeconds) : timing.unmeasuredActivity ? tr('not measured') : fmtClock(0)
   const settled = total > 0 && list.every((t) => ['done', 'skipped'].includes(eff(t.id)))
   const activeNow = list.some((t) => ['discussing', 'planning', 'running', 'reviewing'].includes(eff(t.id))) ||
     Object.values(s.phaseWorkflows ?? {}).some((phase) => ['discussing', 'planning'].includes(phase.state))
@@ -3298,7 +3316,10 @@ function render(s, events = []) {
   const agentRow = (cls, t, role, who) => {
     const state = eff(t.id)
     const clock = taskClock(t, state, events)
-    const partial = ['running', 'reviewing'].includes(state) && !t.attempts.at(-1)?.endedAt
+    const round = ['planning', 'discussing'].includes(state)
+      ? t[`${state === 'planning' ? 'planning' : 'discussion'}Attempts`]?.at(-1) ?? s.phaseWorkflows?.[t.phase]?.[`${state === 'planning' ? 'planning' : 'discussion'}Attempts`]?.at(-1)
+      : t.attempts.at(-1)
+    const partial = round?.activityTiming !== 'explicit' && ['running', 'reviewing'].includes(state) && !t.attempts.at(-1)?.endedAt
     const activity = clock == null ? tr('not measured') : `${fmtMs(clock)}${partial ? ` · ${tr('not measured')}` : ''}`
     return `<span class="${cls}" onclick="openTask('${jsq(t.id)}')"><i class="beat"></i><b>${esc(t.id)}</b><span class="who">${esc(tr(role))}</span><span class="at" title="${esc(tr('Measured time advances only when activity is recorded.'))}">${who ? `@${esc(who)}` : ''} · ${esc(activity)}</span><i class="rbar"></i></span>`
   }
@@ -3648,7 +3669,7 @@ function fillPop(id, swap = false) {
       const marker = verdict?.ok ? `<span class="prumo-mark">✓ ${esc(tr(GUIDE_DEMO ? 'Prumo' : 'in prumo'))}</span>` : ''
       const identity = planIdentity(a.planDigest, previous)
       if (a.planDigest) previous = a.planDigest
-      return `<div class="jstep ${tone}"><div class="jhead"><b>#${esc(a.n ?? '')}${a.agent ? ` · @${esc(a.agent)}` : ''}</b><span>${fmtTime(a.startedAt)}${a.endedAt ? ` → ${fmtTime(a.endedAt)}` : ''}</span></div><div class="jwhy">${esc(result)}${reviewAgent ? ` · @${esc(reviewAgent)}` : ''} ${marker}</div>${identity ? `<div class="jwhy">${esc(identity)}</div>` : ''}${reason ? `<div class="jwhy clamp1">${esc(reason)}</div>` : ''}</div>`
+      return `<div class="jstep ${tone}"><div class="jhead"><b>#${esc(a.n ?? '')}${a.agent ? ` · @${esc(a.agent)}` : ''}</b><span>${fmtTime(a.startedAt)}${a.endedAt ? ` → ${fmtTime(a.endedAt)}` : ''}</span></div><div class="jwhy">${esc(result)}${reviewAgent ? ` · @${esc(reviewAgent)}` : ''} ${marker}</div>${identity ? `<div class="jwhy">${esc(identity)}</div>` : ''}${reason ? `<button type="button" class="jwhy clamp1" onclick="togglePopExpand(true)" aria-label="${esc(tr('Expand'))}">${esc(reason)}</button>` : ''}</div>`
     }).join('')
   }
   const attemptTimeline = t.attempts.length ? `<div class="attempt-list">${(() => { let previous = ''; return t.attempts.map((a) => {
