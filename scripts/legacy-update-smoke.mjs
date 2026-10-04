@@ -6,6 +6,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { spawnSync, spawn, fork } from 'node:child_process'
 import { createConnection, createServer } from 'node:net'
+import { initializeLegacyPlanFixture } from '../test/fixtures/legacy-plan-init.mjs'
 
 // Exercise an actual published updater against a local registry serving the candidate.
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -252,7 +253,12 @@ try {
   mkdirSync(oldRoot, { recursive: true })
   const oldEnv = { PRUMO_ROOT: oldRoot, PRUMO_HOME: dirname(oldRoot) }
   const old = (...args) => run(process.execPath, [engine, ...args, '--run', 'legacy'], oldEnv)
-  old('init', '--plan', planPath)
+  // A versão atual cria apenas IDs canônicos; dados históricos continuam necessários para provar preservação.
+  if (since('2.4.2')) initializeLegacyPlanFixture((...args) => {
+    run(process.execPath, [engine, ...args], oldEnv)
+    return { status: 0 }
+  }, planPath, oldRoot, 'legacy')
+  else old('init', '--plan', planPath)
   // Versões com autorização explícita precisam registrar o aceite da execução simulada.
   if (readFileSync(engine, 'utf8').includes('  authorize() {')) old('authorize', '--scope', 'run', '--confirmed-by-user')
   if (phaseEra) {
