@@ -15,7 +15,17 @@ test('histórico ignora versões de tipos inválidos sem modificar os registros 
 
 test('current release has concise English update highlights with descriptive subtitles', () => {
   const notes = releaseNotes(version)
-  assert.deepEqual(notes.map(section => section.title), [
+  assert.ok(notes.length > 0, 'a versão atual precisa ter notas de atualização')
+  for (const section of notes) {
+    assert.match(section.title, /^(Added|Changed|Fixed|Improved) — \S.+$/)
+    assert.ok(Array.isArray(section.items) && section.items.length > 0)
+    assert.ok(section.items.every(item => typeof item === 'string' && item.trim().length > 0))
+  }
+  assert.deepEqual(releaseNotes('2.4.4').map(section => section.title), [
+    'Fixed — Dashboard activity clocks',
+    'Improved — Dashboard details and sidebar',
+  ])
+  assert.deepEqual(releaseNotes('2.4.3').map(section => section.title), [
     'Improved — Dashboard sidebar',
     'Fixed — Published update verification',
   ])
