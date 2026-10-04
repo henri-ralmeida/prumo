@@ -2,6 +2,17 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.4.2 — 2026-10-03
+
+- Organize os controles do guia com espaçamento entre navegação e saída; permita navegar da entidade ativa à primeira tarefa do planejador, executor ou revisor.
+- Recolha o resumo com animação, título e seta consistentes; destaque o resumo nos cards e use o tempo de atividade aferida no histórico de eventos.
+- Ordene tarefas numericamente dentro de cada fase, seguidas das correções com letras; exija identificadores sequenciais em novos planos e preserve a leitura dos antigos.
+- Preserve dependências, recibos históricos e a validade dos contratos ao padronizar explicitamente identificadores legados.
+- Exija resumos escritos para tarefas novas sincronizadas e diferencie o título curto do resultado esperado no resumo.
+- Explique contratos concluídos preservados sem sugerir uma sincronização que não os atualiza; verifique caminhos na pasta do projeto e reconheça caminhos equivalentes da central no macOS.
+- Encaminhe dúvidas à rodada de discussão registrada e preserve respostas fornecidas anteriormente pelo usuário.
+- Verifique os três sistemas operacionais com Node 22 e 24 e cobertura consolidada de 100% dos caminhos elegíveis; tolere falhas temporárias de download sem ocultar falhas de migração ou integridade.
+
 ## 2.4.1 — 2026-10-03
 
 - Mostre primeiro as notas da versão mais recente, mantendo todas as versões intermediárias da atualização em ordem decrescente.

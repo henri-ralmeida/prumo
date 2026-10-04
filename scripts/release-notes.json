@@ -1,4 +1,37 @@
 {
+  "2.4.2": {
+    "en": [
+      {
+        "title": "Improved — Dashboard navigation and presentation",
+        "items": [
+          "Keep guide navigation controls together with clear spacing from the exit button",
+          "Navigate from an active planner, executor or reviewer to its first task",
+          "Collapse the summary with a smooth transition and a consistent heading and chevron",
+          "Use the measured activity clock for event history and keep task summaries highlighted",
+          "Order phase cards by task number, followed by their lettered corrections"
+        ]
+      },
+      {
+        "title": "Fixed — Plan contracts and legacy compatibility",
+        "items": [
+          "Require sequential identifiers for new tasks and phases while keeping legacy plans readable",
+          "Preserve historical receipts, dependencies and valid planning scopes during explicit legacy identifier normalization",
+          "Require authored summaries for newly synchronized tasks and guide authors to separate concise labels from delivery summaries",
+          "Explain preserved completed contracts without directing users to a sync that cannot refresh them",
+          "Check task paths against the project directory and recognize equivalent central storage paths on macOS",
+          "Record open questions for the discussion round and retain answers already supplied by the user"
+        ]
+      },
+      {
+        "title": "Improved — Cross-platform verification",
+        "items": [
+          "Verify Node 22 and 24 on Windows, Linux and macOS with consolidated coverage of all eligible lines, statements, functions and branches",
+          "Retry temporary npm download failures with bounded attempts while preserving migration failures and package integrity checks",
+          "Keep packaged installation checks isolated when npm and Node are installed in different directories"
+        ]
+      }
+    ]
+  },
   "2.4.1": {
     "en": [
       {
