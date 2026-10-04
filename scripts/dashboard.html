@@ -195,20 +195,20 @@ SOFTWARE. -->
   .counts span { color: var(--dim); font-size: 11px; white-space: nowrap; }
   .counts b { color: inherit; font-weight: 600; }
   #statusBox .counts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; gap: 7px 18px; }
-  #summaryToggle { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  .section-toggle { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px;
     padding: 5px 0; border: 0; background: transparent; color: var(--dim); cursor: pointer;
     font: 500 10px var(--font-mono); text-transform: uppercase; letter-spacing: .14em; transition: color .18s var(--ease); }
-  #summaryToggle:hover { color: var(--text); }
-  #summaryToggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 3px; }
-  #summaryToggle .control-chevron, #sidebarToggle .control-chevron { width: 12px; height: 12px; flex: none; transition: transform .22s var(--ease); }
-  #summaryToggle .control-chevron path, #sidebarToggle .control-chevron path { stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; fill: none; }
-  #summaryToggle[aria-expanded="true"] .control-chevron { transform: rotate(180deg); }
-  #summaryContent { display: grid; grid-template-rows: 1fr; opacity: 1;
+  .section-toggle:hover { color: var(--text); }
+  .section-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 3px; }
+  .section-toggle .control-chevron, #sidebarToggle .control-chevron { width: 12px; height: 12px; flex: none; transition: transform .22s var(--ease); }
+  .section-toggle .control-chevron path, #sidebarToggle .control-chevron path { stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+  .section-toggle[aria-expanded="true"] .control-chevron { transform: rotate(180deg); }
+  .section-content { display: grid; grid-template-rows: 1fr; opacity: 1;
     transition: grid-template-rows .24s var(--ease), opacity .18s var(--ease); }
-  #summaryContent.collapsed { grid-template-rows: 0fr; opacity: 0; }
+  .section-content.collapsed { grid-template-rows: 0fr; opacity: 0; }
   .summary-inner { min-height: 0; overflow: hidden; }
   #statusBox .counts { padding-top: 9px; }
-  @media (prefers-reduced-motion: reduce) { #summaryContent, #summaryToggle .control-chevron, #sidebarToggle .control-chevron { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { .section-content, .section-toggle .control-chevron, #sidebarToggle .control-chevron, #eventsBox { transition: none; } }
   #statusBox .counts > span { position: relative; display: flex; align-items: baseline; justify-content: space-between; gap: 6px; min-width: 0; white-space: normal; }
   #statusBox .counts > span:nth-child(even)::before { content: "|"; position: absolute; left: -11px; color: var(--faint); }
   #statusBox .count-label { flex: 1; min-width: 0; white-space: normal; color: inherit; overflow-wrap: anywhere; }
@@ -596,7 +596,11 @@ SOFTWARE. -->
   #available { max-height: 164px; overflow-y: auto; }
   /* O historico usa o espaco restante da lateral e mantem sua propria rolagem. */
   #events { flex: 1 1 0; min-height: 40px; overflow-y: scroll; scrollbar-gutter: stable; }
-  #eventsBox { display: flex; flex: 1 1 0; flex-direction: column; min-height: 64px; }
+  #eventsBox { display: flex; flex: 1 1 0; flex-direction: column; min-height: 64px; transition: flex .24s var(--ease), min-height .24s var(--ease); }
+  #eventsBox:has(.collapsed) { flex: 0 0 auto; min-height: 0; }
+  .section-content:not(#summaryContent) > .summary-inner > :first-child { margin-top: 8px; }
+  #eventsContent { flex: 1; min-height: 0; }
+  #eventsContent .summary-inner { display: flex; flex-direction: column; }
   #parallel { max-height: 150px; overflow-y: auto; }
   .ev { padding: 6px 8px; margin: 2px 0; border-left: 2px solid transparent; border-radius: 4px; font-size: 11px; line-height: 1.5; color: #bdb5a8; transition: background-color .15s var(--ease), border-color .15s var(--ease); }
   .ev:has(.ev-open):hover, .ev:focus-within { background: color-mix(in srgb, var(--accent) 5%, var(--bg)); border-left-color: var(--accent); }
@@ -612,7 +616,7 @@ SOFTWARE. -->
   .par .empty [data-i18n] { text-transform: none; }
   #events .ev b { text-transform: none; }
   /* Gravidade labels are small caps-like headings: they inherit their own UPPERCASE */
-  aside h3 [data-i18n], #summaryToggle [data-i18n], .avail .ak [data-i18n],
+  aside h3 [data-i18n], .section-toggle [data-i18n], .avail .ak [data-i18n],
   #pop .pk [data-i18n], #pop dt [data-i18n] { text-transform: inherit; }
   .ev .t-task_done b { color: var(--done); } .ev .t-task_fail b { color: var(--failed); }
   .ev .t-task_start b { color: var(--running); } .ev .t-task_validate b { color: var(--validated); }
@@ -1083,20 +1087,20 @@ SOFTWARE. -->
   <button class="lbtn" id="sidebarToggle" aria-controls="sidebar" aria-expanded="true" onclick="toggleSidebar()"></button>
   <aside id="sidebar">
     <section id="statusBox">
-    <button id="summaryToggle" type="button" aria-expanded="true" aria-controls="summaryContent" onclick="toggleSummary()"><span data-i18n="Summary">Summary</span><svg class="control-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3"/></svg></button>
-    <div id="summaryContent"><div class="summary-inner"><div class="counts" id="counts"></div></div></div>
+    <button id="summaryToggle" class="section-toggle" type="button" aria-expanded="true" aria-controls="summaryContent" onclick="toggleSummary()"><span data-i18n="Summary">Summary</span><svg class="control-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3"/></svg></button>
+    <div id="summaryContent" class="section-content"><div class="summary-inner"><div class="counts" id="counts"></div></div></div>
     </section>
     <section id="agentsBox">
-    <h3><span data-i18n="Active agents">Active agents</span></h3>
-    <div class="par" id="parallel"><span class="empty"><span data-i18n="Nothing running">Nothing running</span></span></div>
+    <button id="agentsToggle" class="section-toggle" type="button" aria-expanded="true" aria-controls="agentsContent" onclick="toggleSection('agents')"><span data-i18n="Active agents">Active agents</span><svg class="control-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3"/></svg></button>
+    <div id="agentsContent" class="section-content"><div class="summary-inner"><div class="par" id="parallel"><span class="empty"><span data-i18n="Nothing running">Nothing running</span></span></div></div></div>
     </section>
     <section id="availableBox">
-    <h3><span data-i18n="Available tasks">Available tasks</span></h3>
-    <div id="available" data-prumo-guide-anchor="available"></div>
+    <button id="availableToggle" class="section-toggle" type="button" aria-expanded="true" aria-controls="availableContent" onclick="toggleSection('available')"><span data-i18n="Available tasks">Available tasks</span><svg class="control-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3"/></svg></button>
+    <div id="availableContent" class="section-content"><div class="summary-inner"><div id="available" data-prumo-guide-anchor="available"></div></div></div>
     </section>
     <section id="eventsBox">
-    <h3><span data-i18n="Event log">Event log</span></h3>
-    <div id="events"></div>
+    <button id="eventsToggle" class="section-toggle" type="button" aria-expanded="true" aria-controls="eventsContent" onclick="toggleSection('events')"><span data-i18n="Event log">Event log</span><svg class="control-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3"/></svg></button>
+    <div id="eventsContent" class="section-content"><div class="summary-inner"><div id="events"></div></div></div>
     </section>
   </aside>
 </main>
@@ -2217,9 +2221,13 @@ function syncFilterOptions() {
   })
 }
 
-function toggleSummary(open = $('#summaryToggle').getAttribute('aria-expanded') !== 'true') {
-  $('#summaryToggle').setAttribute('aria-expanded', String(open))
-  const content = $('#summaryContent')
+function toggleSummary(open) {
+  toggleSection('summary', open)
+}
+
+function toggleSection(section, open = $(`#${section}Toggle`).getAttribute('aria-expanded') !== 'true') {
+  $(`#${section}Toggle`).setAttribute('aria-expanded', String(open))
+  const content = $(`#${section}Content`)
   content.classList.toggle('collapsed', !open)
   content.setAttribute('aria-hidden', String(!open))
   if (open) content.removeAttribute('inert')

@@ -34,6 +34,32 @@ test('resumo recolhido preserva contagens e recebe atualizações', () => {
   assert.match(ui.nodes.get('#counts').innerHTML, /1\/1/)
 })
 
+test('seções da lateral recolhem independentemente e preservam conteúdo atualizado', () => {
+  const ui = dashboard('pt-BR')
+  const state = { run: 'lateral', plan: { phases: [] }, tasks: { T1: task('T1', 'ready') } }
+  ui.render(state)
+  for (const section of ['summary', 'agents', 'available', 'events']) {
+    assert.match(html, new RegExp(`id="${section}Toggle"[^>]*aria-controls="${section}Content"`))
+    ui.run(`toggleSection('${section}')`)
+    assert.equal(ui.nodes.get(`#${section}Toggle`).getAttribute('aria-expanded'), 'false')
+    assert.equal(ui.nodes.get(`#${section}Content`).getAttribute('inert'), '')
+  }
+  state.tasks.T1.state = 'running'
+  ui.render(state, [{ type: 'task_note', task: 'T1', at: instant(20), text: 'Atualização durante recolhimento' }])
+  assert.match(ui.nodes.get('#events').innerHTML, /Atualização durante recolhimento/)
+  for (const section of ['summary', 'agents', 'available', 'events']) {
+    ui.run(`toggleSection('${section}', true)`)
+    assert.equal(ui.nodes.get(`#${section}Toggle`).getAttribute('aria-expanded'), 'true')
+    assert.equal(ui.nodes.get(`#${section}Content`).classList.contains('collapsed'), false)
+    assert.equal(ui.nodes.get(`#${section}Content`).getAttribute('aria-hidden'), 'false')
+    assert.equal(ui.nodes.get(`#${section}Content`).getAttribute('inert'), null)
+    for (const other of ['summary', 'agents', 'available', 'events'].filter((value) => value !== section)) {
+      assert.equal(ui.nodes.get(`#${other}Toggle`).getAttribute('aria-expanded'), 'false')
+    }
+    ui.run(`toggleSection('${section}', false)`)
+  }
+})
+
 test('último evento usa o mesmo tempo ao vivo sem crescer durante espera', () => {
   const ui = dashboard()
   const work = task('T1', 'running', { attempts: [{ n: 1, startedAt: instant(0), activityTiming: 'explicit',
@@ -684,7 +710,7 @@ function dashboard(lang = 'en', width = 1000, session = new Map(), navigation = 
           const node = element()
           if (selector === '#filterPanel') node.hidden = true
           if (selector === '#filterToggle') node.setAttribute('aria-expanded', 'false')
-          if (selector === '#summaryToggle') node.setAttribute('aria-expanded', 'true')
+          if (['#summaryToggle', '#agentsToggle', '#availableToggle', '#eventsToggle'].includes(selector)) node.setAttribute('aria-expanded', 'true')
           if (selector === '#nodes' || selector === '#edgePaths') {
             const target = selector === '#nodes' ? cards : paths
             const tag = selector === '#nodes' ? 'div' : 'path'
@@ -1718,7 +1744,7 @@ test('Gravidade cards and agent panels show measured activity in the compact das
   assert.match(html, /<summary class="run-trigger"/)
   assert.doesNotMatch(html, /<select[^>]+id="runSelect"/)
   assert.doesNotMatch(html, /<details class="legend-box" data-prumo-guide-anchor="legend">/)
-  assert.match(html, /#eventsBox \{ display: flex; flex: 1 1 0;[^}]*min-height: 64px; \}/, 'the event log gives way when the legend opens')
+  assert.match(html, /#eventsBox \{ display: flex; flex: 1 1 0;[^}]*min-height: 64px;[^}]*\}/, 'the event log gives way when the legend opens')
   assert.match(html, /#events \{ flex: 1 1 0; min-height: 40px; overflow-y: scroll; scrollbar-gutter: stable; \}/, 'and scrolls inside itself')
   assert.match(html, /#pop \{[^}]*width: min\(472px, calc\(100vw - 24px\)\)/, '472px as designed, never wider than a phone')
   assert.match(html, /#pop \.pk \{[^}]*10px[^}]*var\(--font-mono\)/)
