@@ -2,6 +2,13 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.4.4 — 2026-10-04
+
+- Use os intervalos de atividade registrados nos relógios individuais, inclusive no planejamento de fase, preservando a indicação de tempo não aferido quando não houver registros.
+- Conte atividades simultâneas uma única vez no relógio ao vivo, preservando os totais individuais dos agentes.
+- Permita abrir o parecer e a evidência completos ao clicar no texto da jornada.
+- Distribua igualmente o espaço restante da lateral entre as listas com conteúdo, respeitando a altura mínima legível.
+
 ## 2.4.3 — 2026-10-04
 
 - Mostre todas as tarefas disponíveis e padronize as setas dos controles da lateral.

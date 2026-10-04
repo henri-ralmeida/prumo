@@ -1,4 +1,22 @@
 {
+  "2.4.4": {
+    "en": [
+      {
+        "title": "Fixed — Dashboard activity clocks",
+        "items": [
+          "Use recorded activity intervals for individual task clocks, including phase planning, and preserve unknown timing when records are missing",
+          "Count overlapping activity once in the live clock while preserving individual agent totals"
+        ]
+      },
+      {
+        "title": "Improved — Dashboard details and sidebar",
+        "items": [
+          "Open complete journey verdicts and evidence by clicking their preview",
+          "Share remaining sidebar space evenly between populated lists beyond their minimum readable height"
+        ]
+      }
+    ]
+  },
   "2.4.3": {
     "en": [
       {
