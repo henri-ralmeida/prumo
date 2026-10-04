@@ -591,9 +591,9 @@ SOFTWARE. -->
                 font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .avail .exp { color: var(--dim); } .avail .exp em { font-style: normal; color: var(--done); }
   aside h3 { font-size: 10px; font-weight: 500; color: var(--dim); margin: 0 0 8px; text-transform: uppercase; letter-spacing: .14em; }
-  aside > section { display: flex; flex-direction: column; flex: 1 0 auto; min-width: 0; min-height: clamp(180px, 25vh, 260px);
+  aside > section { display: flex; flex-direction: column; flex: 1 0 0; min-width: 0; min-height: 180px;
     transition: flex .24s var(--ease); }
-  aside > section:has(> .section-content.collapsed), #statusBox, #agentsBox:has(.empty) { flex: 0 0 auto; min-height: 0; }
+  aside > section:has(> .section-content.collapsed), #statusBox, aside > section:has(.empty) { flex: 0 0 auto; min-height: 0; }
   aside .section-toggle { flex: none; }
   aside .section-content { flex: 1; min-height: 0; }
   aside .summary-inner { display: flex; flex-direction: column; }
@@ -601,7 +601,7 @@ SOFTWARE. -->
   #sidebar, #events, #available, #parallel { scrollbar-width: thin; scrollbar-color: var(--faint) transparent; }
   #events, #available, #parallel { flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
   #available > .avail { flex: none; }
-  #agentsBox:has(.empty) .section-content, #parallel:has(.empty) { flex: 0 0 auto; }
+  aside > section:has(.empty) .section-content, #parallel:has(.empty), #available:has(.empty), #events:has(.empty) { flex: 0 0 auto; }
   #sidebar { scrollbar-width: auto; scrollbar-color: var(--dim) var(--panel); }
   #sidebar::-webkit-scrollbar { width: 10px; }
   #sidebar::-webkit-scrollbar-track { background: var(--panel); }
