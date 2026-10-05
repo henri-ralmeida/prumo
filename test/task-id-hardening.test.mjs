@@ -7,6 +7,31 @@ import { taskPlanDigest, phasePlanningContext } from '../scripts/validation.mjs'
 const task = (id, deps = []) => ({ id, deps })
 const issue = (tasks, existingIds) => taskIdentifierProblem(tasks, existingIds)?.message ?? null
 
+test('derivadas herdam a fase persistida sem permitir mover a base para contornar a regra', () => {
+  const parent = { ...task('T1'), phase: 'F1' }
+  const child = { ...task('T1a', ['T1']), phase: 'F1' }
+  const existing = { T1: parent }
+  const inspect = (tasks, source = existing) => taskIdentifierProblem(tasks, Object.keys(source), source)
+  assert.equal(inspect([parent, child]), null)
+  assert.equal(taskIdentifierProblem([parent, child], ['T1']), null)
+  assert.ok(inspect([parent, { ...child, phase: 'F2' }]))
+  assert.ok(inspect([{ ...parent, phase: 'F2' }, { ...child, phase: 'F2' }]))
+  assert.ok(inspect([{ ...parent, phase: 'F2' }, child]))
+  assert.ok(inspect([{ ...parent, phase: undefined }, child]), 'remover a fase da base não pode separar a derivada')
+  assert.ok(inspect([parent, { ...child, phase: undefined }]))
+  assert.ok(inspect([parent, { ...child, phase: 'F2' }], { T1: { ...parent, phase: undefined } }))
+  const recorded = { ...existing, T1a: child }
+  assert.ok(inspect([parent, { ...child, phase: 'F2' }], recorded))
+  const oldChild = { ...child, phase: 'F2' }, legacy = { ...existing, T1a: oldChild }
+  assert.equal(inspect([parent, oldChild], legacy), null, 'legado inalterado continua legível')
+  assert.equal(inspect([parent, child], legacy), null, 'corrigir a fase antiga é permitido')
+  assert.ok(inspect([parent, { ...oldChild, phase: 'F3' }], legacy))
+  assert.equal(inspect([parent, oldChild, { ...task('T1b', ['T1a']), phase: 'F1' }], legacy), null)
+  assert.equal(inspect([child]), null, 'a ausência da base no arquivo é rejeitada pela validação aditiva do motor')
+  const unphased = { T1: task('T1'), T1a: task('T1a', ['T1']) }
+  assert.equal(inspect(Object.values(unphased), unphased), null, 'ausência de fase legada é preservada para base e derivada')
+})
+
 test('padronização legada remapeia referências sem alterar provas assinadas ou estados', () => {
   const proof = { phaseBinding: { phaseId: 'F0' }, digest: 'prova-original', phaseId:'F0', scope:'escopo-original' }
   const state = {plan:{phases:[{id:'F0'},{id:'F1'}]}, tasks:{

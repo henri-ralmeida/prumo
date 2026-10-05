@@ -874,7 +874,7 @@ function readPlan(planPath, state) {
   validatePlan(validationPlan, args['allow-overlap'] === true, historicalTasks(state))
   const identifierTasks = state ? plan.tasks.map(task => ['done', 'skipped'].includes(state.tasks[task.id]?.state)
     ? { ...task, deps: state.tasks[task.id].deps } : task) : plan.tasks
-  const identifierProblem = taskIdentifierProblem(identifierTasks, state ? Object.keys(state.tasks) : undefined)
+  const identifierProblem = taskIdentifierProblem(identifierTasks, state ? Object.keys(state.tasks) : undefined, state?.tasks)
   if (identifierProblem) die(tr(identifierProblem.message, ...identifierProblem.values))
   const phaseProblem = phaseIdentifierProblem(plan.phases ?? [], (state?.plan.phases ?? []).map(phase => phase.id))
   if (phaseProblem) die(tr(phaseProblem.message, ...phaseProblem.values))

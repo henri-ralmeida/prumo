@@ -508,6 +508,7 @@
   "{0} of {1}": "{0} de {1}",
   "Approved": "Aprovado",
   "Rejected": "Reprovado",
+  "Extension {0} must remain in the same phase as its existing parent {1} ({2}); do not create a new phase for a task extension": "A tarefa derivada {0} deve permanecer na mesma fase da tarefa-base existente {1} ({2}); não crie uma fase nova para uma tarefa derivada",
   "Failed / Rejected": "Falhou / Reprovado",
   "Completed": "Concluída",
   "Phase": "Fase",

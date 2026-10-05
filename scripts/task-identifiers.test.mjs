@@ -59,7 +59,7 @@ function fixture(t) {
   const env = { ...process.env, PRUMO_HOME: home, PRUMO_ROOT: root, PRUMO_LANG: 'en' }
   return {
     planPath, runDir,
-    write: tasks => writeFileSync(planPath, JSON.stringify({ name: 'identifiers', tasks })),
+    write: (tasks, phases) => writeFileSync(planPath, JSON.stringify({ name: 'identifiers', tasks, ...(phases ? { phases } : {}) })),
     run: (...args) => {
       const result = spawnSync(process.execPath, [engine, ...args], {
         cwd: root, env, encoding: 'utf8', timeout: 20000,
@@ -71,6 +71,44 @@ function fixture(t) {
     events: () => readFileSync(join(runDir, 'events.ndjson'), 'utf8'),
   }
 }
+
+test('sync mantém derivadas na fase original e rejeita nova fase sem modificar estado ou eventos', t => {
+  const f = fixture(t)
+  const phases = [{ id: 'F1', title: 'Original' }]
+  const original = [{ ...task('T1'), phase: 'F1' }]
+  f.write(original, phases)
+  const initialized = f.run('init', '--plan', f.planPath, '--run', 'identifiers')
+  assert.equal(initialized.status, 0, initialized.stdout + initialized.stderr)
+  const rejectedPlans = [
+    [...original, { ...task('T1a', ['T1']), summary: 'Complemento da tarefa original.', phase: 'F2' }],
+    [{ ...original[0], phase: 'F2' }, { ...task('T1a', ['T1']), summary: 'Complemento da tarefa original.', phase: 'F2' }],
+  ]
+  for (const tasks of rejectedPlans) {
+    const beforeState = f.state(), beforeEvents = f.events()
+    f.write(tasks, [...phases, { id: 'F2', title: 'Fase criada para a derivada' }])
+    const rejected = f.run('sync-plan', '--plan', f.planPath)
+    assert.notEqual(rejected.status, 0)
+    assert.match(rejected.stdout + rejected.stderr, /same phase.*T1.*F1/)
+    assert.equal(f.state(), beforeState)
+    assert.equal(f.events(), beforeEvents)
+  }
+  const child = { ...task('T1a', ['T1']), summary: 'Complemento da tarefa original.', phase: 'F1' }
+  f.write([...original, child], phases)
+  const accepted = f.run('sync-plan', '--plan', f.planPath)
+  assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr)
+  assert.equal(JSON.parse(f.state()).tasks.T1a.phase, 'F1')
+  const beforeState = f.state(), beforeEvents = f.events()
+  f.write([...original, { ...child, phase: 'F2' }], [...phases, { id: 'F2', title: 'Outra' }])
+  const moved = f.run('sync-plan', '--plan', f.planPath)
+  assert.notEqual(moved.status, 0)
+  assert.equal(f.state(), beforeState)
+  assert.equal(f.events(), beforeEvents)
+  const translated = f.run('sync-plan', '--plan', f.planPath, '--lang', 'pt-BR')
+  assert.notEqual(translated.status, 0)
+  assert.match(translated.stdout + translated.stderr, /mesma fase.*T1.*F1/)
+  assert.equal(f.state(), beforeState)
+  assert.equal(f.events(), beforeEvents)
+})
 
 test('init rejeita numeração inválida antes de criar estado e eventos', t => {
   const f = fixture(t)

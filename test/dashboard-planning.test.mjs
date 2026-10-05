@@ -12,6 +12,18 @@ const task = (id, state = 'pending', fields = {}) => ({
   id, title: `Task ${id}`, phase: 'P1', state, deps: [], attempts: [], validations: [], notes: [], ...fields,
 })
 
+test('identificadores completos têm prioridade sobre o espaço do status do card', () => {
+  assert.match(html, /\.node \.id \{ flex: 0 0 auto;[^}]*white-space: nowrap;/)
+  assert.doesNotMatch(html, /\.node \.id \{[^}]*(?:text-overflow: ellipsis|overflow: hidden)/)
+  assert.doesNotMatch(html, /\.node \.tag\.(?:live|queued) \{[^}]*24px/)
+  const ui = dashboard('pt-BR')
+  for (const status of ['ready_for_discussion', 'ready_to_plan', 'planning', 'running', 'reviewing']) {
+    const tasks = Object.fromEntries(['T7a', 'T13a', 'T123a'].map(id => [id, task(id, status)]))
+    ui.render({ run: 'identificadores', plan: {}, tasks })
+    for (const id of Object.keys(tasks)) assert.ok(ui.nodes.get('#nodes').innerHTML.includes(`<span class="id">${id}`), id)
+  }
+})
+
 test('reprovação concluída sai da revisão ativa e entra no resumo vermelho sem mudar o estado persistido', () => {
   const ui = dashboard('pt-BR')
   for (const [input, expected] of rejectionCases()) {

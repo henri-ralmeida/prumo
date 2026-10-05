@@ -2,7 +2,7 @@ const taskId = /^T(\d+)([a-z]?)$/i
 const problem = (message, ...values) => ({ message, values })
 
 // O plano inicial fixa os números; ampliações vinculadas preservam esses números e o histórico.
-export function taskIdentifierProblem(tasks, existingIds) {
+export function taskIdentifierProblem(tasks, existingIds, existingTasks) {
   const numbered = tasks.filter(task => /^t\d/i.test(task.id))
   if (existingIds === undefined) {
     if (numbered.length && numbered.length !== tasks.length)
@@ -19,6 +19,24 @@ export function taskIdentifierProblem(tasks, existingIds) {
 
   const existing = new Set(existingIds)
   const roots = new Map(existingIds.filter(id => /^T\d+$/i.test(id)).map(id => [id.toUpperCase(), id]))
+  const byId = new Map(tasks.map(task => [task.id, task]))
+  const originalById = new Map(Object.entries(existingTasks ?? {}))
+  // Letras ampliam a tarefa na fase original; registros legados inalterados continuam legíveis.
+  for (const task of tasks) {
+    const match = /^T([1-9]\d*)[a-z]$/.exec(task.id)
+    if (!match) continue
+    const parent = roots.get('T' + match[1])
+    if (!parent) continue
+    const original = originalById.get(task.id), originalParent = originalById.get(parent)
+    const plannedParent = byId.get(parent)
+    const phase = (originalParent ?? plannedParent)?.phase ?? null
+    const plannedPhase = plannedParent ? plannedParent.phase ?? null : phase
+    const compatible = (task.phase ?? null) === phase && plannedPhase === phase
+    const unchangedLegacy = existing.has(task.id) && original && (task.phase ?? null) === (original.phase ?? null) &&
+      (plannedParent?.phase ?? null) === (originalParent?.phase ?? null)
+    if (!compatible && !unchangedLegacy)
+      return problem('Extension {0} must remain in the same phase as its existing parent {1} ({2}); do not create a new phase for a task extension', task.id, parent, phase ?? '—')
+  }
   const added = (roots.size ? tasks : numbered).filter(task => !existing.has(task.id))
   const groups = new Map()
   for (const task of added) {
@@ -33,7 +51,6 @@ export function taskIdentifierProblem(tasks, existingIds) {
     groups.set(base, group)
   }
 
-  const byId = new Map(tasks.map(task => [task.id, task]))
   const reaches = (from, to, seen = new Set()) => {
     if (from === to) return true
     if (seen.has(from)) return false

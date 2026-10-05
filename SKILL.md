@@ -68,7 +68,9 @@ Novos planos não podem usar `HO1`, `REL1`, `T01`, `F0`, `F1B` ou outros formato
 Nomes antigos persistidos permanecem legíveis; uma padronização deles exige uma migração explícita
 das referências, preservando o conteúdo das tarefas e as provas já registradas.
 Ao ampliar o plano por `sync-plan`, preserve os números originais: uma correção vinculada a `T9`
-usa `T9a`, a próxima `T9b`, até `T9z`. Registre a ligação nas dependências: se a correção
+usa `T9a`, a próxima `T9b`, até `T9z`. Toda derivada permanece na mesma fase original de `T9`;
+não crie uma fase nova para acomodar letras e não mova a tarefa-base para contornar essa regra.
+Registre a ligação nas dependências: se a correção
 destrava `T9`, `T9` depende de `T9a`; se é um complemento posterior, `T9a` depende de `T9`.
 Nunca crie esse vínculo nos dois sentidos, pois isso gera um ciclo. Tarefas já concluídas mantêm
 seu contrato; uma ampliação posterior precisa depender delas. Execuções antigas preservam seus
