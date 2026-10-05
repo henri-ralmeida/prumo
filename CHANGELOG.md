@@ -2,6 +2,13 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.4.7 — 2026-10-05
+
+- Exija que novas derivações com letras permaneçam na fase original da tarefa-base, sem permitir mover a base para contornar a regra.
+- Preserve registros históricos inalterados e permita corrigir a fase das derivações antigas.
+- Mantenha identificadores completos nos cards, inclusive quando o texto do status ocupa mais espaço.
+- Use a cor do estado da tarefa referenciada nos vínculos de dependência e liberação, sem símbolos adicionais e preservando navegação e acessibilidade.
+
 ## 2.4.6 — 2026-10-05
 
 - Estenda a aresta final da pipeline por toda a altura dos cards da última fase.
