@@ -7,6 +7,7 @@ Historical tag and commit corrections are documented in [Release history recover
 - Aguarde por até 30 segundos a prontidão de uma inicialização fria no Windows, sem aprovar um dashboard indisponível, e preserve diagnósticos de falhas da integração no CI.
 - Ilustre os READMEs com capturas do guia integrado usando um plano fictício.
 - Sincronize as barrinhas de atividade dos agentes, entidades e cards no mesmo ciclo, inclusive quando um novo agente aparece.
+- Liste planos em andamento antes dos parados, preservando a ordem dentro de cada grupo e a seleção atual.
 - Exija que novas derivações com letras permaneçam na fase original da tarefa-base, sem permitir mover a base para contornar a regra.
 - Preserve registros históricos inalterados e permita corrigir a fase das derivações antigas.
 - Mantenha identificadores completos nos cards, inclusive quando o texto do status ocupa mais espaço.

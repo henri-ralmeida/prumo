@@ -1890,7 +1890,8 @@ function updateRunSelect(catalog) {
   const signature = `${value}\0${filters.join(',')}\0${runs.map(({ root, run, plan, complete, activity, activityState, doneCount, skippedCount, taskCount }) =>
     `${root}\0${run}\0${plan}\0${complete}\0${activity}\0${activityState}\0${doneCount}\0${skippedCount}\0${taskCount}`).join('\0')}`
   if (select.dataset.signature !== signature) {
-    const progress = runs.filter(run => !runComplete(run))
+    const activityOrder = run => run.activity === 'working' ? 0 : run.activity === 'idle' ? 2 : 1
+    const progress = runs.filter(run => !runComplete(run)).sort((a, b) => activityOrder(a) - activityOrder(b))
     const complete = runs.filter(run => runComplete(run))
     const visible = RUN_FILTER === 'progress' ? progress : complete
     const tab = (group, label, count) => {

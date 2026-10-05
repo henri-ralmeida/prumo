@@ -1983,6 +1983,38 @@ test('the dashboard ships its own licensed fonts and the page policy allows only
   assert.match(serve, /font-src data:;/)
 })
 
+test('planos em andamento precedem os parados sem alterar o catalogo nem a selecao', () => {
+  const ui = dashboard('pt-BR')
+  const catalog = { currentRoot: 'root', current: 'parado-a', runs: [
+    { root: 'root', run: 'parado-a', complete: false, activity: 'idle' },
+    { root: 'root', run: 'executando', complete: false, activity: 'working', activityState: 'running' },
+    { root: 'root', run: 'bloqueado', complete: false, activity: 'blocked' },
+    { root: 'root', run: 'planejando', complete: false, activity: 'working', activityState: 'planning' },
+    { root: 'root', run: 'desconhecido', complete: false },
+    { root: 'root', run: 'parado-b', complete: false, activity: 'idle' },
+    { root: 'root', run: 'falhou', complete: false, activity: 'failed' },
+    { root: 'root', run: 'discutindo', complete: false, activity: 'working', activityState: 'discussing' },
+    { root: 'root', run: 'revisando', complete: false, activity: 'working', activityState: 'reviewing' },
+    { root: 'root', run: 'feito-b', complete: true },
+    { root: 'root', run: 'feito-a', complete: true },
+  ] }
+  const order = () => [...ui.nodes.get('#runOptions').innerHTML.matchAll(/data-run="root\/([^"]+)"/g)].map(match => match[1])
+  const before = JSON.stringify(catalog)
+  ui.run('updateRunSelect(catalog)', { catalog })
+  assert.deepEqual(order(), ['executando', 'planejando', 'discutindo', 'revisando', 'bloqueado', 'desconhecido', 'falhou', 'parado-a', 'parado-b'])
+  assert.match(ui.nodes.get('#runOptions').innerHTML, /data-run="root\/parado-a" aria-current="true"/)
+  assert.equal(JSON.stringify(catalog), before)
+  catalog.runs[0].activity = 'working'
+  catalog.runs[1].activity = 'idle'
+  ui.run('updateRunSelect(catalog)', { catalog })
+  assert.deepEqual(order(), ['parado-a', 'planejando', 'discutindo', 'revisando', 'bloqueado', 'desconhecido', 'falhou', 'executando', 'parado-b'])
+  ui.run("toggleRunFilter('complete')")
+  assert.deepEqual(order(), ['feito-b', 'feito-a'])
+  catalog.runs = []
+  ui.run('updateRunSelect(catalog)', { catalog })
+  assert.deepEqual(order(), [])
+})
+
 test('o seletor separa planos em andamento dos concluidos', () => {
   const ui = dashboard('pt-BR')
   const catalog = { currentRoot: 'root', current: 'active', runs: [
