@@ -601,7 +601,10 @@ SOFTWARE. -->
   aside .summary-inner { display: flex; flex-direction: column; }
   .section-content:not(#summaryContent) > .summary-inner > :first-child { margin-top: 8px; }
   #sidebar, #events, #available, #parallel { scrollbar-width: thin; scrollbar-color: var(--faint) transparent; }
-  #events, #available, #parallel { flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
+  #events, #available { flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
+  #agentsBox { flex: 0 0 auto; min-height: 0; }
+  #agentsContent { flex: 0 0 auto; }
+  #parallel { flex: 0 0 auto; min-height: 0; overflow-y: visible; scrollbar-gutter: auto; }
   #available > .avail { flex: none; }
   aside > section:has(.empty) .section-content, #parallel:has(.empty), #available:has(.empty), #events:has(.empty) { flex: 0 0 auto; }
   #sidebar { scrollbar-width: auto; scrollbar-color: var(--dim) var(--panel); }
@@ -3208,7 +3211,7 @@ function render(s, events = []) {
   const phaseRails = lanes.map((lane, i) => {
     const status = laneStatus(i)
     const start = i === 0 ? BASE_Y : lane.y + 12
-    const end = i + 1 < lanes.length ? lanes[i + 1].y + 12 : lane.y + 12
+    const end = i + 1 < lanes.length ? lanes[i + 1].y + 12 : bobY
     const color = status === 'done' ? 'var(--done)' : status === 'live' ? 'var(--accent)' : '#3a362f'
     return `<line class="s-rail ${status}" x1="${spineX}" y1="${start}" x2="${spineX}" y2="${end}" stroke="${color}"/>`
   })

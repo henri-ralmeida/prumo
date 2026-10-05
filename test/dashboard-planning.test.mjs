@@ -1812,7 +1812,9 @@ test('Gravidade cards and agent panels show measured activity in the compact das
   assert.doesNotMatch(html, /<details class="legend-box" data-prumo-guide-anchor="legend">/)
   assert.match(html, /aside > section \{[^}]*flex: 1 0 0;[^}]*min-height: 180px;/, 'open sections grow while retaining enough height to read their content')
   assert.match(html, /aside > section:has\(> \.section-content\.collapsed\)[^}]*flex: 0 0 auto;/, 'collapsed sections release their space')
-  assert.match(html, /#events, #available, #parallel \{[^}]*min-height: 0; overflow-y: auto;/, 'each list scrolls within its allocated space')
+  assert.match(html, /#events, #available \{[^}]*min-height: 0; overflow-y: auto;/, 'as listas extensas mantêm rolagem no espaço disponível')
+  assert.match(html, /#agentsBox \{ flex: 0 0 auto; min-height: 0;/, 'agentes ocupam apenas a altura do conteúdo')
+  assert.match(html, /#parallel \{ flex: 0 0 auto; min-height: 0; overflow-y: visible;/, 'agentes não ficam presos em uma área de altura mínima')
   assert.match(html, /#parallel:has\(\.empty\), #available:has\(\.empty\), #events:has\(\.empty\) \{ flex: 0 0 auto;/, 'the empty agent message retains its natural height')
   assert.match(html, /#sidebar \{ scrollbar-width: auto; scrollbar-color: var\(--dim\) var\(--panel\);/, 'the outer sidebar scrollbar remains legible')
   assert.doesNotMatch(html, /#(?:available|parallel) \{[^}]*max-height:/, 'lists do not retain a fixed height cap')
@@ -3040,6 +3042,48 @@ test('a matriz de vinte cenarios de ganho executa os helpers reais no VM do dash
   assert.match(panel(bounded, 'pt-BR'), /1,33×/)
   const english = call('renderGainPanel(inputGain, inputTr, inputFmt, inputEsc, "en")', { inputGain: bounded, inputTr: tr, inputFmt: fmt, inputEsc: escValue })
   assert.match(english, /1\.33×/)
+})
+
+test('agentes ativos acompanham somente as tarefas em atividade ao atualizar o painel', () => {
+  const ui = dashboard('pt-BR')
+  const tasks = { T1: task('T1', 'running'), T2: task('T2', 'ready'), T3: task('T3', 'waiting') }
+  const state = { run: 'agentes', plan: { phases: [] }, tasks }
+  ui.render(state)
+  const rows = () => ui.nodes.get('#parallel').innerHTML.match(/onclick="openTask\('/g)?.length ?? 0
+  assert.equal(rows(), 1)
+  tasks.T2.state = 'planning'
+  tasks.T3.state = 'reviewing'
+  ui.render(state)
+  assert.equal(rows(), 3)
+  tasks.T1.state = 'done'
+  tasks.T2.state = 'ready'
+  tasks.T3.state = 'waiting'
+  ui.render(state)
+  assert.equal(rows(), 0)
+  assert.match(ui.nodes.get('#parallel').innerHTML, /class="empty"[^]*data-i18n="Nothing running"/)
+})
+
+test('o trilho alcança o fim da última fase mesmo com várias linhas de cards', () => {
+  const ui = dashboard('pt-BR')
+  for (const count of [0, 1, 12]) {
+    for (const status of ['waiting', 'running', 'done']) {
+      const state = { run: 'fim-trilho', plan: { phases: [{ id: 'F1', title: 'Primeira' }, { id: 'F2', title: 'Última' }] },
+        tasks: Object.fromEntries(Array.from({ length: count }, (_, index) => {
+          const id = `T${index + 1}`
+          return [id, task(id, status, { phase: 'F2' })]
+        })) }
+      ui.render(state)
+      const rails = [...ui.nodes.get('#structPaths').innerHTML.matchAll(/<line class="s-rail [^"]+" x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"/g)]
+      const last = rails.at(-1)
+      const lane = ui.run('LAST_LANES.at(-1)')
+      assert.equal(Number(last[2]), lane.y + 12)
+      assert.equal(Number(last[4]), lane.y + lane.height + 8)
+      assert.equal(rails[0][4], last[2], 'os segmentos não deixam uma lacuna entre fases')
+      assert.ok(Number(last[4]) > Number(last[2]), 'a última aresta não pode ter comprimento zero')
+      const bottom = ui.run('Math.max(0, ...Object.values(LAST_POS).map(p => p.y + LAST_METRICS.nodeH))')
+      assert.ok(Number(last[4]) >= bottom, 'o trilho acompanha toda a altura dos cards')
+    }
+  }
 })
 
 test('o trilho diferencia fases concluidas, ativas e aguardando', () => {
