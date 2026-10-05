@@ -74,4 +74,6 @@ test('update history includes every missed release with the newest version first
   assert.equal(history.at(-1).version, '1.0.9')
   assert.deepEqual(releaseHistory([version], version), [])
   assert.deepEqual(releaseHistory([], version), [{ version, sections: releaseNotes(version) }])
+  assert.deepEqual(releaseHistory(null, version), releaseHistory([], version))
+  assert.deepEqual(releaseHistory(undefined, version), releaseHistory([], version))
 })

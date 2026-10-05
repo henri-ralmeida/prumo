@@ -2,6 +2,14 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.4.6 — 2026-10-05
+
+- Estenda a aresta final da pipeline por toda a altura dos cards da última fase.
+- Ajuste a altura de agentes ativos ao conteúdo exibido, sem reservar espaço vazio.
+- Permita abrir os detalhes completos por qualquer item da jornada, com mouse ou teclado, inclusive sem parecer ou motivo.
+- Mostre reprovações concluídas em vermelho e agrupe-as com falhas no resumo, sem confundir validações provisórias ou revisões retomadas com uma reprovação concluída.
+- Preserve o fluxo persistido de correção e nova validação na mesma tentativa.
+
 ## 2.4.5 — 2026-10-04
 
 - Mantenha planos em andamento quando houver discussão, planejamento, execução ou revisão disponível, usando a cor da etapa correspondente.

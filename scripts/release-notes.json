@@ -1,4 +1,23 @@
 {
+  "2.4.6": {
+    "en": [
+      {
+        "title": "Fixed — Dashboard phase rail and active agents",
+        "items": [
+          "Extend the final phase rail below every row of task cards",
+          "Size the active agents section to its displayed content instead of reserving unused space"
+        ]
+      },
+      {
+        "title": "Improved — Journey details and review outcomes",
+        "items": [
+          "Open complete task details from every journey entry using mouse or keyboard, including entries without a verdict or reason",
+          "Show completed negative review verdicts as rejected and group them with failures in the red summary counter",
+          "Keep provisional validations and resumed review activity distinct from completed rejections without changing the persisted task lifecycle"
+        ]
+      }
+    ]
+  },
   "2.4.5": {
     "en": [
       {
