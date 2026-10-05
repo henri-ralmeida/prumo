@@ -31,6 +31,8 @@ test('catálogo usa ações efetivas, prioridades e bloqueios sem alterar planos
     ['empty', [], 'idle', null],
     ['missing', [], 'idle', null],
     ['missing-deps', ['pending'], 'working', 'ready'],
+    ['review-rejected', ['reviewing'], 'failed', 'failed'],
+    ['review-validating', ['reviewing'], 'working', 'reviewing'],
   ]
   const originals = []
   for (const [name, states] of cases) {
@@ -44,6 +46,11 @@ test('catálogo usa ações efetivas, prioridades e bloqueios sem alterar planos
       })) }
     if (name === 'missing') { delete state.plan; delete state.tasks }
     if (name === 'missing-deps') delete state.tasks.T1.deps
+    if (name.startsWith('review-')) {
+      state.tasks.T1.attempts = [{ n: 1, startedAt: '2026-01-01T09:00:00Z' }]
+      state.tasks.T1.validations = [{ by: 'review', attempt: 1, ok: false, token: 'verdict', at: '2026-01-01T09:10:00Z',
+        ...(name === 'review-rejected' ? { error: null } : {}) }]
+    }
     const file = join(directory, 'state.json'), content = JSON.stringify(state)
     writeFileSync(file, content)
     originals.push([file, content])

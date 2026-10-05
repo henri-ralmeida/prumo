@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { createGuideDemoData } from '../scripts/dashboard-guide-demo.mjs'
+import { rejectionCases } from './fixtures/review-rejection.mjs'
 import { disableDashboardBoot, extractDashboardScript, injectDashboardLanguage, runDashboardScript } from './fixtures/dashboard-vm.mjs'
 
 const html = readFileSync(new URL('../scripts/dashboard.html', import.meta.url), 'utf8').replaceAll('\r\n', '\n')
@@ -9,6 +10,27 @@ const canonicalScript = extractDashboardScript(html)
 const instant = (seconds) => new Date(Date.UTC(2026, 0, 1) + seconds * 1000).toISOString()
 const task = (id, state = 'pending', fields = {}) => ({
   id, title: `Task ${id}`, phase: 'P1', state, deps: [], attempts: [], validations: [], notes: [], ...fields,
+})
+
+test('reprovação concluída sai da revisão ativa e entra no resumo vermelho sem mudar o estado persistido', () => {
+  const ui = dashboard('pt-BR')
+  for (const [input, expected] of rejectionCases()) {
+    assert.equal(ui.run('isReviewRejected(input)', { input }), expected)
+  }
+  const rejected = { ...rejectionCases()[0][0], id: 'T1', deps: [], title: 'Revisão', phase: 'F1' }
+  const state = { run: 'reprovado', plan: {}, tasks: { T1: rejected, T2: task('T2', 'failed') } }
+  ui.render(state)
+  assert.equal(ui.run("eff('T1')"), 'failed')
+  assert.equal(rejected.state, 'reviewing')
+  assert.match(ui.nodes.get('#nodes').innerHTML, /data-st="failed"[^]*aria-label="T1: Reprovado/)
+  ui.run("POP = { id: 'T1', pinned: false }; fillPop('T1')")
+  assert.equal(ui.nodes.get('#popStatus').textContent, 'Reprovado')
+  assert.match(ui.nodes.get('#counts').innerHTML, /data-state="failed"[^]*Falhou \/ Reprovado[^]*<b>2<\/b>/)
+  assert.doesNotMatch(ui.nodes.get('#parallel').innerHTML, /onclick="openTask\('T1'\)/)
+  delete rejected.validations[0].error
+  ui.render(state)
+  assert.equal(ui.run("eff('T1')"), 'reviewing', 'um resultado provisório não é uma reprovação concluída')
+  assert.match(ui.nodes.get('#parallel').innerHTML, /onclick="openTask\('T1'\)/)
 })
 
 test('status do plano acompanha a cor da etapa e atualiza mesmo sem mudar contagens', () => {

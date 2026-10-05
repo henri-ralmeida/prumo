@@ -6,6 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { spawn, spawnSync } from 'node:child_process'
 import { installationBundle } from '../scripts/installation-bundle.mjs'
+import { isReviewRejected } from '../scripts/review-readiness.mjs'
 import { initializeLegacyPlanFixture } from './fixtures/legacy-plan-init.mjs'
 
 const engine = resolve(dirname(fileURLToPath(import.meta.url)), '../scripts/engine.mjs')
@@ -1349,6 +1350,14 @@ test('validate --failed registra o veredito sem executar checagens e mantém a t
   const done = f.cli('done', 'T1')
   assert.equal(done.status, 1, f.output(done))
   assert.match(f.output(done), /no passing validation/)
+  const review = f.cli('review', 'T1', '--agent', 'reviewer')
+  assert.equal(review.status, 0, f.output(review))
+  assert.equal(isReviewRejected(f.state().tasks.T1), false)
+  const rejected = f.cli('validate', 'T1', '--failed', '--evidence', 'O revisor encontrou divergência')
+  assert.equal(rejected.status, 0, f.output(rejected))
+  const task = f.state().tasks.T1
+  assert.equal(task.state, 'reviewing', 'a correção continua possível na mesma tentativa')
+  assert.equal(isReviewRejected(task), true, 'o recibo real concluído é apresentado como reprovado')
 })
 
 test('show-check sem recibo é uma consulta somente leitura', t => {

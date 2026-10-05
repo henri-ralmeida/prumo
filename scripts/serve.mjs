@@ -14,6 +14,7 @@ import { execFile, execFileSync } from 'node:child_process'
 import { join, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readCommandMetrics } from './command-metrics.mjs'
+import { isReviewRejected } from './review-readiness.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ENGINE = join(HERE, 'engine.mjs')
@@ -172,7 +173,7 @@ function runProgress(state) {
   const skipped = tasks.filter(task => task.state === 'skipped').length
   const effective = Object.values(derive({ ...state, plan: state.plan ?? {},
     tasks: Object.fromEntries(Object.entries(state.tasks ?? {}).map(([id, task]) => [id, { ...task, deps: task.deps ?? [] }]))
-  })).map(task => task.effective)
+  })).map((task, index) => isReviewRejected(tasks[index]) ? 'failed' : task.effective)
   // Atividade em curso prevalece; depois, a próxima ação liberada define a cor do plano.
   const activityState = ['reviewing', 'running', 'planning', 'discussing',
     'ready_for_review', 'ready', 'ready_to_plan', 'ready_for_discussion', 'blocked', 'failed']

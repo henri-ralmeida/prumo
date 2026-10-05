@@ -508,6 +508,7 @@
   "{0} of {1}": "{0} de {1}",
   "Approved": "Aprovado",
   "Rejected": "Reprovado",
+  "Failed / Rejected": "Falhou / Reprovado",
   "Completed": "Concluída",
   "Phase": "Fase",
   "Depends on": "Depende de",
