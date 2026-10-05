@@ -765,10 +765,10 @@ SOFTWARE. -->
   #pop .jstep.live::before, #pop .attempt-row.live::before { background: var(--running); }
   #pop .jhead { display: flex; justify-content: space-between; gap: 8px; color: var(--text); }
   #pop .jhead span { color: var(--dim); }
-  #pop .jwhy { color: var(--dim); margin-top: 1px; }
-  #pop button.jwhy { display: block; width: 100%; border: 0; padding: 0; background: transparent; text-align: left; font: inherit; cursor: pointer; }
-  #pop button.jwhy:hover { text-decoration: underline; text-underline-offset: 3px; }
-  #pop button.jwhy:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  #pop .jwhy { display: block; color: var(--dim); margin-top: 1px; }
+  #pop button.jstep { display: block; width: 100%; border: 0; padding: 0; background: transparent; color: inherit; text-align: left; font-family: inherit; cursor: pointer; }
+  #pop button.jstep:hover .jhead b { text-decoration: underline; text-underline-offset: 3px; }
+  #pop button.jstep:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
   #pop .jstep.ok .jwhy { color: color-mix(in srgb, var(--done) 80%, var(--text)); }
   #pop .jstep.bad .jwhy { color: color-mix(in srgb, var(--failed) 75%, var(--text)); }
   #pop .pfoot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
@@ -3676,7 +3676,7 @@ function fillPop(id, swap = false) {
       const marker = verdict?.ok ? `<span class="prumo-mark">✓ ${esc(tr(GUIDE_DEMO ? 'Prumo' : 'in prumo'))}</span>` : ''
       const identity = planIdentity(a.planDigest, previous)
       if (a.planDigest) previous = a.planDigest
-      return `<div class="jstep ${tone}"><div class="jhead"><b>#${esc(a.n ?? '')}${a.agent ? ` · @${esc(a.agent)}` : ''}</b><span>${fmtTime(a.startedAt)}${a.endedAt ? ` → ${fmtTime(a.endedAt)}` : ''}</span></div><div class="jwhy">${esc(result)}${reviewAgent ? ` · @${esc(reviewAgent)}` : ''} ${marker}</div>${identity ? `<div class="jwhy">${esc(identity)}</div>` : ''}${reason ? `<button type="button" class="jwhy clamp1" onclick="togglePopExpand(true)" aria-label="${esc(tr('Expand'))}">${esc(reason)}</button>` : ''}</div>`
+      return `<button type="button" class="jstep ${tone}" onclick="togglePopExpand(true)" aria-label="${esc(tr('Expand'))}: #${esc(a.n ?? '')} · ${esc(result)}"><span class="jhead"><b>#${esc(a.n ?? '')}${a.agent ? ` · @${esc(a.agent)}` : ''}</b><span>${fmtTime(a.startedAt)}${a.endedAt ? ` → ${fmtTime(a.endedAt)}` : ''}</span></span><span class="jwhy">${esc(result)}${reviewAgent ? ` · @${esc(reviewAgent)}` : ''} ${marker}</span>${identity ? `<span class="jwhy">${esc(identity)}</span>` : ''}${reason ? `<span class="jwhy clamp1">${esc(reason)}</span>` : ''}</button>`
     }).join('')
   }
   const attemptTimeline = t.attempts.length ? `<div class="attempt-list">${(() => { let previous = ''; return t.attempts.map((a) => {

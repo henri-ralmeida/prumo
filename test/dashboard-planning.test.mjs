@@ -2363,8 +2363,8 @@ test('clicar no motivo da jornada revela o parecer e a evidência completos com 
   }) } })
   ui.run("POP = { id: 'T1', pinned: false }; fillPop('T1')")
   const lean = ui.nodes.get('#popBody').innerHTML
-  const button = lean.match(/<button type="button" class="jwhy clamp1" onclick="([^"]+)"[^>]*>/)
-  assert.ok(button, 'o motivo oferece um controle acionável por mouse e teclado')
+  const button = lean.match(/<button type="button" class="jstep bad" onclick="([^"]+)"[^>]*>/)
+  assert.ok(button, 'o item inteiro oferece um controle acionável por mouse e teclado')
   assert.doesNotMatch(lean, /Quarta linha completa/)
   ui.run(button[1])
   assert.equal(ui.run('POP_EXPANDED && POP.pinned'), true)
@@ -2374,6 +2374,30 @@ test('clicar no motivo da jornada revela o parecer e a evidência completos com 
   assert.doesNotMatch(full, /<script>|<img onerror=/)
   ui.run("fillPop('T1')")
   assert.match(ui.nodes.get('#popBody').innerHTML, /Quarta linha completa/)
+})
+
+test('todos os itens da jornada abrem os detalhes, inclusive sem parecer ou motivo', () => {
+  for (const result of ['cancelled', 'done', 'running', 'approved', 'rejected']) {
+    for (const reason of ['', 'Linha inicial\nLinha dois\nLinha três\nMotivo completo <script>']) {
+      const ui = dashboard('pt-BR')
+      const attempt = { n: 1, agent: 'executor', startedAt: instant(1), result, reason,
+        ...(result === 'running' ? {} : { endedAt: instant(3) }) }
+      const validations = ['approved', 'rejected'].includes(result)
+        ? [{ attempt: 1, by: 'review', ok: result === 'approved', at: instant(3), evidence: reason }] : []
+      ui.render({ run: 'jornada', plan: {}, tasks: { T1: task('T1', 'running', { attempts: [attempt], validations }) } })
+      ui.run("POP = { id: 'T1', pinned: false }; fillPop('T1')")
+      const lean = ui.nodes.get('#popBody').innerHTML
+      const button = lean.match(/<button type="button" class="jstep [^"]*" onclick="([^"]+)"[^>]*>([\s\S]*?)<\/button>/)
+      assert.ok(button, result)
+      assert.doesNotMatch(button[2], /<button/, 'o item não contém controles aninhados')
+      assert.doesNotMatch(lean, /Motivo completo/)
+      ui.run(button[1])
+      assert.equal(ui.run('POP_EXPANDED && POP.pinned'), true, result)
+      assert.match(ui.nodes.get('#popBody').innerHTML, /class="attempt-row/)
+      if (reason) assert.match(ui.nodes.get('#popBody').innerHTML, /Motivo completo &lt;script&gt;/)
+      assert.doesNotMatch(ui.nodes.get('#popBody').innerHTML, /<script>/)
+    }
+  }
 })
 
 test('expanding the popover pins it, switches to detail and closing resets it', () => {
