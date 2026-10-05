@@ -484,7 +484,23 @@ test('descoberta exige fronteira de discussão e só libera trabalho prematuro c
 
   const wrongTargets = structuredClone(context)
   wrongTargets.executionBoundary.deferredToExecutor = ['T2']
-  assert.throws(() => assertDiscussionBoundary(wrongTargets, ['T1']), /defer every discussion target/)
+  assert.throws(() => assertDiscussionBoundary(wrongTargets, ['T1']), /defer every discussion target.*expected targets: \[T1\]; received targets: \[T2\]/)
+})
+
+test('recusa da descoberta mostra alvos faltantes, extras e antigos sem modificar a entrada', () => {
+  for (const received of [[], ['T12e', 'T12f'], ['T13e'], ['T13e', 'T13f', 'T99']]) {
+    const context = discovery()
+    context.executionBoundary.deferredToExecutor = received
+    const before = JSON.stringify(context)
+    assert.throws(() => assertDiscussionBoundary(context, ['T13f', 'T13e']), error => {
+      assert.ok(error.message.endsWith(`expected targets: [T13e, T13f]; received targets: [${[...received].sort().join(', ')}]`))
+      return true
+    })
+    assert.equal(JSON.stringify(context), before)
+  }
+  const context = discovery()
+  context.executionBoundary.deferredToExecutor = ['T13f', 'T13e', 'T13f']
+  assert.doesNotThrow(() => assertDiscussionBoundary(context, ['T13e', 'T13f']))
 })
 
 test('planos de inspeção preservam perguntas, decisões e validação de conteúdo', () => {

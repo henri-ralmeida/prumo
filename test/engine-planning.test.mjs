@@ -288,6 +288,30 @@ function phaseFixture(t, tasks, { planningMode = 'phase' } = {}) {
   return { root, project, plans, plan, planPath, ok, rejects, state, save, events, discovery, writeArtifacts }
 }
 
+for (const lang of ['en', 'pt-BR']) test(`abertura e recusa da discussao mostram os IDs atuais em ${lang}`, t => {
+  const f = phaseFixture(t, [
+    { id: 'T1', phase: 'F1', title: 'Concluida' },
+    { id: 'T2', phase: 'F1', title: 'Primeiro alvo' },
+    { id: 'T3', phase: 'F1', title: 'Segundo alvo' },
+    { id: 'T4', phase: 'F2', title: 'Outra fase' },
+  ])
+  f.ok('skip', 'T1', '--reason', 'Fora do escopo aprovado')
+  const opened = f.ok('begin-phase-discussion', 'F1', '--lang', lang)
+  assert.match(opened.stdout, lang === 'en' ? /discussion targets: T2, T3/ : /alvos da discussão: T2, T3/)
+  const path = f.discovery('F1')
+  const context = JSON.parse(readFileSync(path, 'utf8'))
+  context.executionBoundary.deferredToExecutor = ['T12e', 'T12f']
+  writeFileSync(path, JSON.stringify(context))
+  const before = JSON.stringify(f.state())
+  const diagnostic = lang === 'en' ? /expected targets: \[T2, T3\]; received targets: \[T12e, T12f\]/
+    : /alvos esperados: \[T2, T3\]; alvos recebidos: \[T12e, T12f\]/
+  f.rejects(diagnostic, 'finish-phase-discussion', 'F1', '--context', path, '--lang', lang)
+  assert.equal(JSON.stringify(f.state()), before, 'uma descoberta com IDs antigos nao fecha a rodada nem altera tarefas')
+  context.executionBoundary.deferredToExecutor = ['T3', 'T2']
+  writeFileSync(path, JSON.stringify(context))
+  f.ok('finish-phase-discussion', 'F1', '--context', path, '--lang', lang)
+})
+
 test('discussão registra dúvidas pendentes e reaproveita respostas anteriores sem forjar vínculo da rodada', t => {
   const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }])
   f.ok('note', 'A', '--text', 'Dúvida pendente: qual exceção permanece no escopo?')

@@ -2359,6 +2359,7 @@ const commands = {
         confirmsContract: round.confirmsContract } : {}),
       ...(args['adopt-legacy'] === true ? { adoptedLegacy: true } : {}) })
     log(`[prumo] ${phaseId} discussing ${round.targets.length} task(s) (round ${round.roundId}, nonce ${round.nonce})`)
+    log('[prumo] ' + tr('discussion targets: {0}', round.targets.join(', ')))
     logSupersededRounds(phaseId, superseded)
     if (requiresContractConfirmation) {
       log('[prumo] ' + tr('contract confirmation required: inspect each task with show-contract, then ask the user to confirm the displayed contracts'))

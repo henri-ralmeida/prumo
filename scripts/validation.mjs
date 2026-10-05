@@ -93,7 +93,7 @@ export function assertDiscussionBoundary(context, targetIds, { acceptPremature =
   const deferred = [...new Set(context.executionBoundary.deferredToExecutor)].sort()
   const targets = [...new Set(targetIds)].sort()
   insist(JSON.stringify(deferred) === JSON.stringify(targets),
-    'discovery must defer every discussion target to its executor; planner research cannot deliver the task')
+    `discovery must defer every discussion target to its executor; planner research cannot deliver the task; expected targets: [${targets.join(', ')}]; received targets: [${deferred.join(', ')}]`)
   const premature = context.executionBoundary.prematureTaskWork
   insist(premature.every(item => targets.includes(item.task)),
     'premature task work must identify a current discussion target')

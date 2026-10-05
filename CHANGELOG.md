@@ -8,6 +8,7 @@ Historical tag and commit corrections are documented in [Release history recover
 - Ilustre os READMEs com capturas do guia integrado usando um plano fictício.
 - Sincronize as barrinhas de atividade dos agentes, entidades e cards no mesmo ciclo, inclusive quando um novo agente aparece.
 - Liste planos em andamento antes dos parados, preservando a ordem dentro de cada grupo e a seleção atual.
+- Mostre os IDs atuais ao abrir uma discussão de fase e liste os alvos esperados e recebidos ao recusar uma descoberta incompatível, sem alterar o estado da rodada.
 - Exija que novas derivações com letras permaneçam na fase original da tarefa-base, sem permitir mover a base para contornar a regra.
 - Preserve registros históricos inalterados e permita corrigir a fase das derivações antigas.
 - Mantenha identificadores completos nos cards, inclusive quando o texto do status ocupa mais espaço.

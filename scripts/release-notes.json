@@ -12,7 +12,8 @@
         "title": "Fixed — Task extension phase integrity",
         "items": [
           "Require new task extensions to remain in their original parent phase and reject moving the parent to bypass this rule",
-          "Preserve unchanged historical task extensions while allowing their phase assignment to be corrected"
+          "Preserve unchanged historical task extensions while allowing their phase assignment to be corrected",
+          "List current task IDs when opening phase discussion and include expected and received IDs when refusing incompatible discovery evidence"
         ]
       },
       {
