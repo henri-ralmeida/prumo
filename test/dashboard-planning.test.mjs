@@ -12,6 +12,34 @@ const task = (id, state = 'pending', fields = {}) => ({
   id, title: `Task ${id}`, phase: 'P1', state, deps: [], attempts: [], validations: [], notes: [], ...fields,
 })
 
+test('vinculos usam o estado da tarefa referenciada sem simbolos e preservam a navegacao', () => {
+  const ui = dashboard('pt-BR')
+  const states = ['done', 'blocked', 'planning', 'running', 'reviewing', 'discussing', 'waiting', 'pending', 'ready', 'ready_to_plan', 'ready_for_discussion', 'ready_for_review', 'failed', 'skipped']
+  const tasks = Object.fromEntries(states.map((state, i) => [`T${i + 2}`, task(`T${i + 2}`, state)]))
+  tasks.T1 = task('T1', 'blocked', { deps: [...Object.keys(tasks), 'missing'] })
+  tasks.T20 = task('T20', 'done', { deps: ['T1'] })
+  tasks.T21 = { ...rejectionCases()[0][0], id: 'T21', title: 'Revisao', phase: 'P1', deps: [] }
+  tasks.T1.deps.push('T21')
+  ui.render({ run: 'vinculos', plan: {}, tasks })
+  for (const expanded of [false, true]) {
+    ui.run("POP_EXPANDED = expanded; fillPop('T1')", { expanded })
+    const body = ui.nodes.get('#popBody').innerHTML
+    for (const [i, state] of states.entries())
+      assert.match(body, new RegExp(`class="dep" data-st="${state}"[^>]*onclick="jumpTo\\('T${i + 2}'\\)"[^>]*><span>[^<]+</span><b>T${i + 2}</b>`))
+    assert.match(body, /class="dep" data-st=""[^>]*><span>[^<]+<\/span><b>missing<\/b>/)
+    assert.match(body, /class="dep" data-st="failed"[^>]*aria-label="[^"]*Reprovado"[^>]*><span>[^<]+<\/span><b>T21<\/b>/)
+    assert.match(body, /class="dep" data-st="done"[^>]*><span>Libera<\/span><b>T20<\/b>/)
+    assert.doesNotMatch(body, /<b>T\d+(?: ✓| ·| ⛔)/)
+  }
+  tasks.T3.state = 'done'
+  ui.run("fillPop('T1')")
+  assert.match(ui.nodes.get('#popBody').innerHTML, /data-st="done"[^>]*onclick="jumpTo\('T3'\)"/)
+  ui.run("jumpTo('T3')")
+  assert.equal(ui.run('POP.id'), 'T3')
+  for (const [state, color] of [['done', '#323c21'], ['blocked', '#472a36'], ['planning', '#302e4d'], ['running', '#4a2b1f'], ['reviewing', '#183b4a'], ['failed', '#4b242b']])
+    assert.match(html, new RegExp(`#pop \\.dep[^\\n{]*\\[data-st="${state}"\\][^\\n{]*\\{ --ticket-bg: ${color}; \\}`))
+})
+
 test('identificadores completos têm prioridade sobre o espaço do status do card', () => {
   assert.match(html, /\.node \.id \{ flex: 0 0 auto;[^}]*white-space: nowrap;/)
   assert.doesNotMatch(html, /\.node \.id \{[^}]*(?:text-overflow: ellipsis|overflow: hidden)/)

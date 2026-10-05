@@ -683,14 +683,14 @@ SOFTWARE. -->
          transition: left .26s var(--ease), top .26s var(--ease), width .26s var(--ease),
                      max-height .26s var(--ease), border-color .2s; }
   /* A tarefa selecionada mantém sua cor de estado também nas superfícies internas. */
-  #pop:is([data-st="waiting"], [data-st="pending"]) { --ticket-bg: #27343c; }
-  #pop:is([data-st="ready_for_discussion"], [data-st="discussing"]) { --ticket-bg: #443517; }
-  #pop:is([data-st="ready_to_plan"], [data-st="planning"]) { --ticket-bg: #302e4d; }
-  #pop:is([data-st="ready"], [data-st="running"]) { --ticket-bg: #4a2b1f; }
-  #pop:is([data-st="ready_for_review"], [data-st="reviewing"]) { --ticket-bg: #183b4a; }
-  #pop[data-st="blocked"] { --ticket-bg: #472a36; }
-  #pop[data-st="failed"] { --ticket-bg: #4b242b; }
-  #pop[data-st="skipped"] { --ticket-bg: #30332d; }
+  #pop:is([data-st="waiting"], [data-st="pending"]), #pop .dep:is([data-st="waiting"], [data-st="pending"]) { --ticket-bg: #27343c; }
+  #pop:is([data-st="ready_for_discussion"], [data-st="discussing"]), #pop .dep:is([data-st="ready_for_discussion"], [data-st="discussing"]) { --ticket-bg: #443517; }
+  #pop:is([data-st="ready_to_plan"], [data-st="planning"]), #pop .dep:is([data-st="ready_to_plan"], [data-st="planning"]) { --ticket-bg: #302e4d; }
+  #pop:is([data-st="ready"], [data-st="running"]), #pop .dep:is([data-st="ready"], [data-st="running"]) { --ticket-bg: #4a2b1f; }
+  #pop:is([data-st="ready_for_review"], [data-st="reviewing"]), #pop .dep:is([data-st="ready_for_review"], [data-st="reviewing"]) { --ticket-bg: #183b4a; }
+  #pop[data-st="blocked"], #pop .dep[data-st="blocked"] { --ticket-bg: #472a36; }
+  #pop[data-st="failed"], #pop .dep[data-st="failed"] { --ticket-bg: #4b242b; }
+  #pop[data-st="skipped"], #pop .dep[data-st="skipped"] { --ticket-bg: #30332d; }
   #pop[data-st]:not([data-st="done"]) {
     --panel: var(--ticket-bg);
     --bg: color-mix(in srgb, var(--ticket-bg) 50%, #0b0b0b);
@@ -808,7 +808,8 @@ SOFTWARE. -->
              font: 400 11px/1.3 var(--font-mono); letter-spacing: 0; text-transform: lowercase; }
   #pop dt { color: var(--dim); font-size: 10px; text-transform: lowercase; margin-top: 12px; }
   #pop dd { margin: 3px 0 0; white-space: pre-wrap; font-size: 12px; }
-  #pop .dep { background: var(--bg); border-color: var(--line); color: var(--dim); text-transform: lowercase; cursor: pointer; }
+  #pop .dep { --ticket-bg: #27343c; background: var(--ticket-bg); border-color: color-mix(in srgb, var(--ticket-bg) 58%, var(--text)); color: var(--text); text-transform: lowercase; cursor: pointer; }
+  #pop .dep[data-st="done"] { --ticket-bg: #323c21; }
   #pop dd .dep { margin: 2px 4px 2px 0; }
   #pop .dep b { color: var(--text); text-transform: none; }
   #pop .dep:hover { border-color: var(--accent); }
@@ -3647,8 +3648,11 @@ function fillPop(id, swap = false) {
   const phasePlanningByTask = phasePlanningTargets(STATE)
   const pill = isReviewRejected(t) ? tr('Rejected') : cardStateLabel(e)
   const depChip = (taskId, relation) => {
-    const marker = STATE.tasks[taskId] ? DOT[eff(taskId)] ?? '' : ''
-    return `<button type="button" class="dep" onclick="jumpTo('${jsq(taskId)}')"><span>${esc(tr(relation))}</span><b>${esc(eventIds(taskId))}${marker ? ` ${marker}` : ''}</b></button>`
+    const linked = Object.hasOwn(STATE.tasks, taskId) ? STATE.tasks[taskId] : null
+    const state = linked ? eff(taskId) : ''
+    const label = linked ? (isReviewRejected(linked) ? tr('Rejected') : cardStateLabel(state)) : ''
+    const description = `${tr(relation)} ${eventIds(taskId)}${label ? `: ${label}` : ''}`
+    return `<button type="button" class="dep" data-st="${esc(state)}" title="${esc(description)}" aria-label="${esc(description)}" onclick="jumpTo('${jsq(taskId)}')"><span>${esc(tr(relation))}</span><b>${esc(eventIds(taskId))}</b></button>`
   }
   const phaseChip = t.phase ? `<button type="button" class="chip phase-link" style="color:${phaseColour(t.phase)};cursor:pointer" onclick="jumpToPhase('${jsq(t.phase)}')" aria-label="${esc(tr('Locate phase on board'))}: ${esc(eventIds(t.phase))}">${esc(eventIds(t.phase))}</button>` : ''
   const dependents = Object.values(STATE.tasks).filter((x) => (x.deps ?? []).includes(id)).map((x) => x.id)
