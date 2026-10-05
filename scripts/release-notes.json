@@ -20,7 +20,8 @@
         "items": [
           "Keep full task identifiers visible when status labels compete for card space",
           "Color dependency and unlock links by the referenced task status without trailing symbols, preserving navigation and accessible status descriptions",
-          "Illustrate both READMEs with screenshots of the built-in guide using a fictional plan"
+          "Illustrate both READMEs with screenshots of the built-in guide using a fictional plan",
+          "Synchronize activity bars across active agents, role entities and task cards, including agents that appear after the dashboard opens"
         ]
       }
     ]

@@ -307,7 +307,6 @@ SOFTWARE. -->
   .role.live .obeat { color: var(--role); }
   .role.live .obar { background: var(--role-track); }
   :is(.role.live .obar, .node .nbar, .par .rbar)::after { opacity: 1; animation: slide 1.8s ease-in-out infinite; }
-  #planNode.live .obar::after, .node[data-st="planning"] .nbar::after, .par .plan .rbar::after { animation-duration: 2.6s; }
   @keyframes slide { to { transform: translateX(260%); } }
   @keyframes glow { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
   /* the frame the roles hang from, and the plumb line the phases hang from */
@@ -3028,8 +3027,9 @@ const synchronizedSpinners = new WeakSet()
 // Um mesmo relogio mantem os indicadores ativos alinhados, mesmo apos atualizar os cards.
 function syncActivitySpinners() {
   for (const animation of document.getAnimations?.() ?? []) {
-    if (animation.animationName !== 'activity-spin' || synchronizedSpinners.has(animation)) continue
-    animation.startTime = -((performance.timeOrigin ?? 0) % 1200) || 0
+    const period = ({ 'activity-spin': 1200, slide: 1800 })[animation.animationName]
+    if (!period || synchronizedSpinners.has(animation)) continue
+    animation.startTime = -((performance.timeOrigin ?? 0) % period) || 0
     synchronizedSpinners.add(animation)
   }
 }

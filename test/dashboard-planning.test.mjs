@@ -3280,7 +3280,7 @@ test('fases paralelas mostram seus proprios papeis e cores sem reduzir a primeir
 test('spinners novos compartilham o relogio sem reiniciar os existentes', () => {
   const ui = dashboard('pt-BR')
   const first = { animationName: 'activity-spin', startTime: 75 }
-  const other = { animationName: 'slide', startTime: 100 }
+  const other = { animationName: 'glow', startTime: 100 }
   const animations = [first, other]
   ui.run('document.getAnimations = () => inputAnimations; syncActivitySpinners()', { inputAnimations: animations })
   assert.equal(first.startTime, 0)
@@ -3291,6 +3291,21 @@ test('spinners novos compartilham o relogio sem reiniciar os existentes', () => 
   ui.run('syncActivitySpinners()')
   assert.equal(first.startTime, 20, 'o indicador existente nao e reiniciado')
   assert.equal(added.startTime, 0, 'o novo indicador usa a mesma origem temporal')
+})
+
+test('barras ativas compartilham ciclo e origem mesmo quando um agente aparece depois', () => {
+  const ui = dashboard('pt-BR')
+  assert.match(html, /:is\(\.role\.live \.obar, \.node \.nbar, \.par \.rbar\)::after \{[^}]*animation: slide 1\.8s ease-in-out infinite;/)
+  assert.doesNotMatch(html, /animation-duration: 2\.6s/)
+  const bars = Array.from({ length: 4 }, (_, i) => ({ animationName: 'slide', startTime: i * 300 }))
+  ui.run('performance.timeOrigin = 5300; document.getAnimations = () => bars; syncActivitySpinners()', { bars })
+  assert.deepEqual(bars.map(bar => bar.startTime), [-1700, -1700, -1700, -1700])
+  bars[0].startTime = -1690
+  const added = { animationName: 'slide', startTime: 9000 }
+  bars.push(added)
+  ui.run('syncActivitySpinners()')
+  assert.equal(added.startTime, -1700)
+  assert.equal(bars[0].startTime, -1690, 'uma atualizacao nao reinicia a animacao ja sincronizada')
 })
 
 test('o spinner ativo cobre os trilhos, com e sem fases', () => {
