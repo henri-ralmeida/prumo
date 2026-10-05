@@ -34,6 +34,30 @@ function fixture(t, platform = 'win32') {
   return { home, node, script, options, command, killed }
 }
 
+test('inicializacao fria Windows aguarda prontidao tardia e mantem um prazo limitado', async t => {
+  for (const starts of [true, false]) {
+    const f = fixture(t)
+    delete f.options.readinessAttempts
+    let probes = 0, delays = 0, launched = false
+    f.options.delay = async ms => { assert.equal(ms, 100); delays += 1 }
+    f.options.spawn = () => { launched = true; return { pid: 555 } }
+    f.options.exec = () => ({ status: 0 })
+    f.options.readProcessCommand = () => [f.node, f.script, '--global', '--port', '4949']
+    f.options.fetch = async url => {
+      if (String(url).endsWith('/api/health')) probes += 1
+      if (!launched || !starts || probes < 170) throw new Error('ainda inicializando')
+      return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, pid: 555, version: f.options.version, contentId: 'fixture' }) }
+    }
+    const result = await enableDashboard(f.options)
+    assert.equal(result.ok, starts)
+    if (starts) assert.ok(delays >= 150, 'o processo lento precisa ficar pronto antes da aprovacao')
+    else {
+      assert.match(result.error, /Startup readiness failed: stopped/)
+      assert.equal(delays, 299, 'um processo que nunca fica pronto deve encerrar a espera')
+    }
+  }
+})
+
 for (const scenario of ['wsh', 'powershell', 'malformed-wsh', 'missing-wsh']) {
   test(`encerramento confirma o comando real via ${scenario} sem confiar apenas no PID`, async t => {
     const f = fixture(t)

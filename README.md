@@ -6,6 +6,22 @@ Prumo is an independent project inspired by [graph-foreman](https://github.com/J
 
 The plan defines the expected outcome; the engine enforces transitions and records evidence. Your AI harness performs the work and dispatches its agents.
 
+## See the dashboard
+
+These screenshots come from the built-in guide and use a fictional checkout plan. Open **Guide** in the dashboard to try the same controls without changing your plans.
+
+**Phases and tasks.** Follow the approved plan, dependencies and current task states.
+
+![Guide showing phases, task cards and active agents](https://raw.githubusercontent.com/henri-ralmeida/prumo/main/docs/images/guide-board.jpg)
+
+**Filters and counts.** Focus on a task state while preserving the full plan totals.
+
+![Guide showing the status filters and visible task counts](https://raw.githubusercontent.com/henri-ralmeida/prumo/main/docs/images/guide-filters.jpg)
+
+**Task details.** Read the summary, validation, linked dependencies and journey; expand the card for the complete evidence.
+
+![Guide showing an open task card with its summary, validation and dependency link](https://raw.githubusercontent.com/henri-ralmeida/prumo/main/docs/images/guide-task.jpg)
+
 ## Install
 
 Requires **Node.js 22 or newer** and the chosen harness. The installer does not install Claude Code, Kiro, Codex or `@deepseek-ai/dsh`, or expand their execution permissions.

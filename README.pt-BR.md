@@ -6,6 +6,22 @@ Prumo é um projeto independente inspirado no [graph-foreman](https://github.com
 
 O plano define o resultado esperado; o motor controla estados e registros. O ambiente de IA executa o trabalho e dispara seus agentes.
 
+## Conheça o dashboard
+
+Estas capturas vêm do guia integrado e usam um plano fictício de checkout. Abra **Guia** no dashboard para experimentar os mesmos controles sem alterar seus planos. As imagens mostram a interface em inglês.
+
+**Fases e tarefas.** Acompanhe o plano aprovado, as dependências e os estados atuais das tarefas.
+
+![Guia mostrando fases, cards de tarefas e agentes ativos](https://raw.githubusercontent.com/henri-ralmeida/prumo/main/docs/images/guide-board.jpg)
+
+**Filtros e contagens.** Foque em um estado de tarefa preservando os totais do plano completo.
+
+![Guia mostrando os filtros de estado e a contagem de tarefas visíveis](https://raw.githubusercontent.com/henri-ralmeida/prumo/main/docs/images/guide-filters.jpg)
+
+**Detalhes da tarefa.** Leia o resumo, a validação, as dependências vinculadas e a jornada; expanda o card para consultar as evidências completas.
+
+![Guia mostrando um card aberto com resumo, validação e vínculo de dependência](https://raw.githubusercontent.com/henri-ralmeida/prumo/main/docs/images/guide-task.jpg)
+
 ## Instalação
 
 Requer **Node.js 22 ou superior** e o ambiente escolhido. O instalador não instala Claude Code, Kiro, Codex ou `@deepseek-ai/dsh`, nem altera suas permissões de execução.

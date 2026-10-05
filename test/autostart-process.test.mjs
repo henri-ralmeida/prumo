@@ -10,7 +10,7 @@ import { setTimeout } from 'node:timers/promises'
 import { enableDashboard, restartDashboard, disableDashboard, stopDashboardForUpdate } from '../lib/autostart.mjs'
 import { createTranslator, messages } from '../scripts/i18n.mjs'
 
-test('Windows Startup launches and restarts a real isolated dashboard process', { skip: process.platform !== 'win32', timeout: 60000 }, async t => {
+test('Windows Startup launches and restarts a real isolated dashboard process', { skip: process.platform !== 'win32', timeout: 120000 }, async t => {
   const home = mkdtempSync(join(tmpdir(), 'prumo startup process-'))
   const reserve = createServer()
   await new Promise(resolve => reserve.listen(0, '127.0.0.1', resolve))
@@ -45,6 +45,15 @@ test('Windows Startup launches and restarts a real isolated dashboard process', 
   const preference = () => JSON.parse(readFileSync(join(home, '.local/share/prumo/dashboard.json'), 'utf8'))
   const first = await enableDashboard(options)
   if (preference().pid) pids.add(preference().pid)
+  if (!first.ok) {
+    const evidence = join(fileURLToPath(new URL('..', import.meta.url)), '.test-output')
+    mkdirSync(evidence, { recursive: true })
+    const diagnostics = join(home, '.local/share/prumo/dashboard-events.ndjson')
+    writeFileSync(join(evidence, 'autostart-process-failure.json'), JSON.stringify({
+      node: process.version, first, preference: preference(),
+      events: existsSync(diagnostics) ? readFileSync(diagnostics, 'utf8') : '',
+    }, null, 2))
+  }
   assert.equal(first.ok, true, JSON.stringify(first))
   assert.equal(first.mechanism, 'windows-startup')
   const runs = await (await fetch(`http://127.0.0.1:${port}/api/runs`)).json()

@@ -2,6 +2,13 @@
   "2.4.7": {
     "en": [
       {
+        "title": "Fixed — Windows startup readiness",
+        "items": [
+          "Wait up to 30 seconds for a cold Windows dashboard startup while requiring verified readiness and preserving a bounded failure deadline",
+          "Preserve isolated startup failure diagnostics in CI artifacts"
+        ]
+      },
+      {
         "title": "Fixed — Task extension phase integrity",
         "items": [
           "Require new task extensions to remain in their original parent phase and reject moving the parent to bypass this rule",
@@ -12,7 +19,8 @@
         "title": "Improved — Task identifiers and dependency links",
         "items": [
           "Keep full task identifiers visible when status labels compete for card space",
-          "Color dependency and unlock links by the referenced task status without trailing symbols, preserving navigation and accessible status descriptions"
+          "Color dependency and unlock links by the referenced task status without trailing symbols, preserving navigation and accessible status descriptions",
+          "Illustrate both READMEs with screenshots of the built-in guide using a fictional plan"
         ]
       }
     ]

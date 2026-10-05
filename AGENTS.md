@@ -14,4 +14,5 @@
 - A matriz de atualização inclui todas as versões publicadas no npm. Quando uma nova versão for publicada, confirme que a preparação dos cenários históricos continua compatível com ela.
 - Preserve validações de produção, dados históricos e a exigência de cobertura. Não exclua versões, desabilite jobs, enfraqueça asserções ou reduza limites de cobertura para obter aprovação.
 - Após cada push, confirme que o workflow foi disparado para o SHA enviado, acompanhe os seis jobs e a cobertura e investigue falhas antes de declarar o CI aprovado ou autorizar uma publicação.
+- Crie e envie uma nova tag de versão somente depois que os seis jobs e a consolidação de cobertura da main passarem no GitHub para o SHA exato que será marcado.
 - Registre falhas observadas e crie regressões relevantes. Não prometa ausência absoluta de falhas: apresente evidências verificadas e limitações reais.

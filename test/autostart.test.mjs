@@ -224,7 +224,7 @@ for (const startupDelay of [80, Infinity]) {
     assert.deepEqual(killed, [5300])
     assert.equal(launches.length, 1)
     if (startupDelay !== Infinity) assert.equal(preference(f.home).pid, 5301)
-    else { assert.equal(ticks, 149); assert.equal(preference(f.home).pid, 5301) }
+    else { assert.equal(ticks, 299); assert.equal(preference(f.home).pid, 5301) }
   })
 }
 
