@@ -128,11 +128,114 @@ function phaseFixture(t, { run = 'phase-agent-limit', maxAgents = 3 } = {}) {
   assert.equal(initialized.status, 0, initialized.stdout + initialized.stderr)
   return {
     root, project, plans, planPath, run, cli, ok, state, phase, events,
+    saveState: value => writeFileSync(statePath, JSON.stringify(value)),
     finishPhaseDiscussion, finishPhasePlanning, writePhasePlans, planPathFor,
   }
 }
 
 const ids = values => values.map(value => value.id).sort()
+
+test('atribuições inválidas de fase não abrem rodada nem alteram tarefas', t => {
+  const f = phaseFixture(t, { run: 'invalid-phase-assignments' })
+  f.ok('skip-phase-discussion', 'F1', '--reason', 'Contrato confirmado', '--confirmed-by-user')
+  for (const values of [[' '], ['=planner'], ['T1='], ['X=planner'], ['T1=a', 'bad'],
+    ['T1=a', 'T1=b', 'T3=c', 'T4=d'], ['T1=a', 'T2=a', 'T3=c', 'T4=d']]) {
+    const before = f.state(), events = f.events()
+    const result = f.cli('plan-phase', 'F1', ...values.flatMap(value => ['--agent', value]))
+    assert.notEqual(result.status, 0)
+    assert.match(result.stdout + result.stderr, /phase agent/)
+    assert.deepEqual(f.state(), before)
+    assert.deepEqual(f.events(), events)
+  }
+})
+
+test('limite legado sem maxAgents registra origem desconhecida e revisor não ocupa duas tarefas', t => {
+  const f = fixture(t, { tasks: ['T1', 'T2'], run: 'legacy-limit-reviewer' })
+  const legacy = f.state()
+  delete legacy.plan.maxAgents
+  for (const task of Object.values(legacy.tasks)) task.planningRequired = false
+  f.saveState(legacy)
+  f.ok('set-agent-limit', '--max', '3', '--actor', 'usuario', '--confirmed-by-user')
+  assert.equal(f.state().agentLimitHistory.at(-1).previous, null)
+  f.ok('authorize', '--scope', 'run', '--confirmed-by-user')
+  f.ok('start', 'T1', '--agent', 'one')
+  f.ok('start', 'T2', '--agent', 'two')
+  const before = f.state(), events = f.events()
+  const result = f.cli('review', 'T1', '--agent', 'two')
+  assert.notEqual(result.status, 0)
+  assert.match(result.stdout + result.stderr, /already on T2/)
+  assert.deepEqual(f.state(), before)
+  assert.deepEqual(f.events(), events)
+})
+
+test('repetir planejamento após aumentar limite ativa somente os alvos que aguardavam vaga', t => {
+  const f = phaseFixture(t, { run: 'phase-resume-capacity', maxAgents: 1 })
+  f.ok('skip-phase-discussion', 'F1', '--reason', 'Contrato confirmado', '--confirmed-by-user')
+  f.ok('plan-phase', 'F1', '--agent', 'planner')
+  const round = f.phase().planningAttempts.at(-1)
+  assert.equal(JSON.parse(f.ok('graph').stdout).derived.T2.agentQueued, true)
+  f.ok('plan-phase', 'F1', '--agent', 'planner')
+  assert.deepEqual(f.phase().planningAttempts.at(-1).activeTargets, ['T1'])
+  f.ok('set-agent-limit', '--max', '4', '--actor', 'usuario', '--confirmed-by-user')
+  f.ok('plan-phase', 'F1', '--agent', 'planner')
+  const resumed = f.phase().planningAttempts.at(-1)
+  assert.equal(f.phase().planningAttempts.length, 1)
+  assert.equal(resumed.startedAt, round.startedAt)
+  assert.deepEqual(resumed.activeTargets, ['T1', 'T2', 'T3', 'T4'])
+  assert.deepEqual(resumed.queuedTargets, [])
+  assert.equal(resumed.workers.T1.startedAt, round.workers.T1.startedAt)
+  assert.equal(occupancy(f.state()).busy.length, 4)
+})
+
+test('atividade de fase recusa agente errado, alvo em fila e worker encerrado sem mutação', t => {
+  const f = phaseFixture(t, { run: 'phase-activity-refusal' })
+  f.ok('skip-phase-discussion', 'F1', '--reason', 'Contrato confirmado', '--confirmed-by-user')
+  f.ok('plan-phase', 'F1', '--agent', 'planner')
+  for (const [id, scope, agent] of [['F1', 'phase', 'other'], ['T4', 'task', 'planner:T4'], ['T1', 'task', 'other']]) {
+    const before = f.state()
+    const result = f.cli('activity-start', id, '--scope', scope, '--role', 'planning', '--agent', agent)
+    assert.notEqual(result.status, 0)
+    assert.match(result.stdout + result.stderr, /assigned phase worker|belongs to/)
+    assert.deepEqual(f.state(), before)
+  }
+  f.finishPhasePlanning(['T1', 'T2', 'T3'])
+  const result = f.cli('activity-start', 'T1', '--scope', 'task', '--role', 'planning', '--agent', 'planner:T1')
+  assert.notEqual(result.status, 0)
+  assert.match(result.stdout + result.stderr, /assigned phase worker/)
+})
+
+test('discussão de fase respeita ocupação de outros papéis e nomes já em uso', t => {
+  const f = phaseFixture(t, { run: 'phase-occupied' })
+  const state = f.state()
+  state.tasks.extra = { ...structuredClone(state.tasks.T1), id: 'extra', phase: null, state: 'running', agent: 'orchestrator:T1', attempts: [{ n: 1, agent: 'orchestrator:T1' }] }
+  state.plan.maxAgents = 1
+  f.saveState(state)
+  const full = f.cli('begin-phase-discussion', 'F1')
+  assert.notEqual(full.status, 0)
+  assert.match(full.stdout + full.stderr, /1 agents busy \(cap 1\)/)
+  state.plan.maxAgents = 3
+  f.saveState(state)
+  const busy = f.cli('begin-phase-discussion', 'F1')
+  assert.notEqual(busy.status, 0)
+  assert.match(busy.stdout + busy.stderr, /already busy/)
+  assert.deepEqual(f.state(), state)
+})
+
+test('planejamento histórico sem listas de workers usa alvos originais sem perder artefatos', t => {
+  const f = phaseFixture(t, { run: 'legacy-phase-workers', maxAgents: 4 })
+  f.ok('skip-phase-discussion', 'F1', '--reason', 'Contrato confirmado', '--confirmed-by-user')
+  f.ok('plan-phase', 'F1', '--agent', 'planner')
+  const state = f.state(), round = state.phaseWorkflows.F1.planningAttempts.at(-1)
+  delete round.activeTargets
+  round.workers = {}
+  f.saveState(state)
+  const output = f.ok('plan-phase', 'F1', '--agent', 'planner').stdout
+  assert.match(output, /0 of 4 targets active/)
+  assert.match(output, /task-plan-T4.json/)
+  f.finishPhasePlanning(['T1', 'T2', 'T3', 'T4'])
+  assert.equal(f.phase().state, 'planned')
+  for (const task of Object.values(f.state().tasks)) assert.ok(task.taskPlan)
+})
 
 test('occupancy aplica default 3 e conta cada papel de tarefa uma vez', () => {
   const state = {

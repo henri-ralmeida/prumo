@@ -9,6 +9,40 @@ import { fileURLToPath } from 'node:url'
 const engine = resolve(dirname(fileURLToPath(import.meta.url)), '../scripts/engine.mjs')
 const validation = [{ kind: 'functional', run: 'node check.cjs', expect: 'behavior passes' }]
 
+test('bloqueio sem motivo continua externo e informa a entrada pendente na rodada e no comando direto', t => {
+  const f = fixture(t, { tasks: [{ id: 'T1', title: 'Bloqueada', phase: 'F1' }, { id: 'T2', title: 'Elegível', phase: 'F1' }] })
+  f.ok('block', 'T1')
+  f.rejected(/T1 is blocked: external input pending/, 'plan-task', 'T1', '--agent', 'planner')
+  const discussion = f.ok('begin-phase-discussion', 'F1')
+  assert.match(discussion.output, /T1 — external input pending/)
+  assert.deepEqual(f.phase('F1').discussionAttempts.at(-1).targets, ['T2'])
+})
+
+test('pausa para replanejar exige tentativa ativa e mantém a correção individual na mesma fase', t => {
+  const f = fixture(t)
+  const pending = f.state()
+  f.rejected(/requires an active attempt/, 'pause-replanning', 'T1', '--reason', 'Ainda não iniciada')
+  assert.deepEqual(f.state(), pending)
+  f.ok('skip-phase-discussion', 'F1', '--reason', 'Contrato confirmado', '--confirmed-by-user')
+  f.ok('plan-phase', 'F1', '--agent', 'planner')
+  f.finishPhasePlanning('F1')
+  f.ok('start', 'T1', '--agent', 'executor')
+  f.ok('pause-replanning', 'T1', '--reason', 'Pesquisar o escopo aprovado')
+  const paused = f.state()
+  assert.equal(paused.tasks.T1.individualPlanning, true)
+  assert.equal(paused.tasks.T1.phase, 'F1')
+  assert.equal(paused.tasks.T1.blockKind, 'replan')
+  paused.tasks.T1.blockQuestion = 'Decisão externa ainda pendente'
+  f.save(paused)
+  f.rejected(/requires an active attempt/, 'pause-replanning', 'T1', '--reason', 'Não contornar decisão externa')
+  assert.deepEqual(f.state(), paused)
+  delete paused.tasks.T1.blockQuestion
+  paused.tasks.T1.planningRequired = false
+  f.save(paused)
+  f.rejected(/requires an active attempt/, 'pause-replanning', 'T1', '--reason', 'Não há planejamento exigido')
+  assert.deepEqual(f.state(), paused)
+})
+
 function fixture(t, { planningMode = 'phase', scopePolicy, tasks = [{ id: 'T1', title: 'Entrega T1', phase: 'F1' }], phases = [{ id: 'F1', title: 'Fase F' }] } = {}) {
   const home = mkdtempSync(join(resolve(tmpdir()), 'prumo-external-blocks-'))
   t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }))
@@ -310,6 +344,10 @@ test('unblock de bloqueio externo com escopo obsoleto vira replanejamento intern
   assert.equal(externallyBlocked.stateBeforeBlock, 'reviewing')
   assert.equal(externallyBlocked.reviewer, 'reviewer-T1')
   assert.deepEqual(externallyBlocked.attempts, original.attempts)
+
+  f.rejected(/approved scope needs current planning before review/, 'unblock', 'T1',
+    '--answer', 'Aplicar o escopo aprovado', '--reviewer', 'new-reviewer')
+  assert.deepEqual(f.state().tasks.T1, externallyBlocked, 'revisão direta não contorna um escopo obsoleto')
 
   f.ok('unblock', 'T1', '--answer', 'Aplicar o escopo aprovado')
   let replanning = f.state().tasks.T1

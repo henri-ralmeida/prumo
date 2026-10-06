@@ -3130,9 +3130,6 @@ const commands = {
       die(`"${reviewer}" wrote ${id} — a reviewer must be a different agent (or --force)`)
     // A revisão substitui o executor no mesmo slot; também respeita reduções do limite.
     assertAvailable(state, t, 'reviewing', reviewer)
-    const busy = agentBusy(state, reviewer)
-    if (busy && busy.id !== t.id)
-      die(`agent "${reviewer}" is already on ${busy.id} — one agent per task`)
     const slotsBeforeReview = executionSlots(state)
     t.state = 'reviewing'
     t.reviewer = reviewer

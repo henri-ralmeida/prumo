@@ -8,6 +8,106 @@ import fs from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
 import { assertExplicitScope, scopePath, insideTouches, scopeConflicts, captureScopeBaseline, verifyTaskScope } from '../scripts/task-scope.mjs'
 
+function engineFixture(t, tasks, extra = {}) {
+  const home = mkdtempSync(join(tmpdir(), 'prumo-scope-engine-'))
+  const root = join(home, 'root'), project = join(home, 'project')
+  mkdirSync(root); mkdirSync(project)
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
+  const source = join(root, 'plan.json')
+  const plan = { name: 'Escopo aprovado', scopePolicy: 'explicit', planningMode: 'task', ...extra,
+    tasks: tasks.map(task => ({ writeScope: 'files', touches: [task.id], title: task.id,
+      validation: [{ kind: 'functional', run: 'node -e "process.exit(0)"', expect: 'O comportamento aprovado passa' }], ...task })) }
+  const writePlan = () => writeFileSync(source, JSON.stringify(plan))
+  writePlan()
+  const engine = new URL('../scripts/engine.mjs', import.meta.url).pathname.replace(/^\/(?:([A-Za-z]:))/, '$1')
+  const cli = (...args) => spawnSync(process.execPath, [engine, ...args], { cwd: project,
+    env: { ...process.env, PRUMO_ROOT: root, PRUMO_HOME: home, PRUMO_LANG: 'en' }, encoding: 'utf8', windowsHide: true, timeout: 30000 })
+  const ok = (...args) => { const r = cli(...args); assert.equal(r.status, 0, r.stdout + r.stderr); return r }
+  const rejected = (pattern, ...args) => { const r = cli(...args); assert.notEqual(r.status, 0); assert.match(r.stdout + r.stderr, pattern); return r }
+  const statePath = join(root, '.specs/graph/scope/state.json')
+  return { plan, source, project, writePlan, cli, ok, rejected,
+    state: () => JSON.parse(readFileSync(statePath, 'utf8')),
+    save: value => writeFileSync(statePath, JSON.stringify(value)) }
+}
+
+test('motor recusa limites e escopos inválidos e serializa recursos compartilhados de escrita', t => {
+  const f = engineFixture(t, [{ id: 'T1' }, { id: 'T2' }])
+  for (const maxAgents of [0, -1, 1.5, '3', null]) {
+    f.plan.maxAgents = maxAgents; f.writePlan()
+    f.rejected(/maxAgents must be a positive integer/, 'init', '--plan', f.source, '--run', 'invalid')
+  }
+  delete f.plan.maxAgents
+  delete f.plan.tasks[0].writeScope; f.writePlan()
+  f.rejected(/explicit scope requires writeScope/, 'init', '--plan', f.source, '--run', 'invalid')
+  f.plan.tasks[0].writeScope = 'files'
+  f.plan.tasks[0].sharedResources = [{ id: 'database', access: 'read' }]
+  f.plan.tasks[1].sharedResources = [{ id: 'database', access: 'write' }]
+  f.writePlan()
+  f.rejected(/share write resources: database/, 'init', '--plan', f.source, '--run', 'invalid')
+  f.ok('init', '--plan', f.source, '--run', 'scope', '--allow-overlap')
+  assert.deepEqual(f.state().tasks.T1.sharedResources, [{ id: 'database', access: 'read' }])
+  f.ok('authorize', '--scope', 'run', '--confirmed-by-user')
+  for (const id of ['T1', 'T2']) {
+    f.ok('skip-discussion', id, '--reason', 'Contrato confirmado', '--confirmed-by-user')
+    f.ok('skip-planning', id, '--reason', 'Escopo suficiente', '--confirmed-by-user')
+  }
+  f.ok('start', 'T1', '--agent', 'executor-one')
+  f.rejected(/Execution scope conflicts with T1: database/, 'start', 'T2', '--agent', 'executor-two')
+  f.ok('block', 'T1', '--reason', 'Recurso externo pendente')
+  const historical = f.state()
+  delete historical.tasks.T1.attempts.at(-1).concurrentScopes
+  f.save(historical)
+  f.ok('unblock', 'T1')
+  assert.deepEqual(f.state().tasks.T1.attempts.at(-1).concurrentScopes, [])
+  delete f.plan.scopePolicy; f.writePlan()
+  f.ok('sync-plan', '--plan', f.source, '--allow-overlap')
+  assert.equal(f.state().plan.scopePolicy, 'explicit', 'sincronizar plano antigo não pode remover a regra de escopo')
+  f.plan.tasks[1].deps = ['T1']; f.writePlan()
+  f.ok('init', '--plan', f.source, '--run', 'ordered')
+  f.plan.tasks[0].deps = ['T2']; delete f.plan.tasks[1].deps; f.writePlan()
+  f.ok('init', '--plan', f.source, '--run', 'reverse-ordered')
+})
+
+test('sem Git, execução exige evidência independente e done reconfere a atribuição do revisor', t => {
+  const f = engineFixture(t, [{ id: 'T1' }])
+  f.ok('init', '--plan', f.source, '--run', 'scope')
+  f.ok('authorize', '--scope', 'run', '--confirmed-by-user')
+  f.ok('skip-discussion', 'T1', '--reason', 'Contrato confirmado', '--confirmed-by-user')
+  f.ok('skip-planning', 'T1', '--reason', 'Escopo suficiente', '--confirmed-by-user')
+  f.rejected(/not running or reviewing/, 'validate', 'T1', '--ok', '--evidence', 'Ainda não executada')
+  f.ok('start', 'T1', '--agent', 'executor')
+  f.rejected(/independent reviewer/, 'validate', 'T1', '--ok', '--cwd', f.project, '--evidence', 'Verificação funcional')
+  f.ok('review', 'T1', '--agent', 'reviewer')
+  f.ok('validate', 'T1', '--ok', '--cwd', f.project, '--evidence', 'Verificação funcional', '--scope-evidence', 'Inspeção independente dos arquivos entregues')
+  assert.equal(f.state().tasks.T1.validations.at(-1).scopeCheck.method, 'independent-review')
+  const receipt = f.state()
+  f.ok('done', 'T1')
+  assert.equal(f.state().tasks.T1.state, 'done')
+  receipt.tasks.T1.validations.at(-1).scopeCheck.agent = 'other-reviewer'
+  f.save(receipt)
+  f.rejected(/independent reviewer/, 'done', 'T1')
+  receipt.tasks.T1.validations.at(-1).scopeCheck.independentEvidence = { agent: 'reviewer', evidence: 'Inspeção independente confirmada' }
+  f.save(receipt)
+  f.ok('done', 'T1')
+  assert.equal(f.state().tasks.T1.state, 'done')
+})
+
+test('validação do executor sem revisão obrigatória ainda confere escopo Git antes de concluir', t => {
+  const f = engineFixture(t, [{ id: 'T1' }], { requireReview: false })
+  assert.equal(spawnSync('git', ['-C', f.project, 'init']).status, 0)
+  f.ok('init', '--plan', f.source, '--run', 'scope')
+  f.ok('authorize', '--scope', 'run', '--confirmed-by-user')
+  f.ok('skip-discussion', 'T1', '--reason', 'Contrato confirmado', '--confirmed-by-user')
+  f.ok('skip-planning', 'T1', '--reason', 'Escopo suficiente', '--confirmed-by-user')
+  f.ok('start', 'T1', '--agent', 'executor')
+  writeFileSync(join(f.project, 'T1'), 'Entrega dentro do escopo aprovado')
+  f.ok('validate', 'T1', '--ok', '--cwd', f.project, '--evidence', 'Verificação funcional e conferência Git')
+  assert.equal(f.state().tasks.T1.validations.at(-1).by, 'executor')
+  assert.equal(f.state().tasks.T1.validations.at(-1).scopeCheck.method, 'git')
+  f.ok('done', 'T1')
+  assert.equal(f.state().tasks.T1.state, 'done')
+})
+
 test('contratos explícitos exigem escopo seguro e mantêm contratos históricos', () => {
   assert.doesNotThrow(() => assertExplicitScope({}))
   for (const task of [{ writeScope: 'files', touches: ['src'] }, { writeScope: 'read-only', touches: [] }, { writeScope: 'unknown', touches: [] }]) assert.doesNotThrow(() => assertExplicitScope(task, 'explicit'))

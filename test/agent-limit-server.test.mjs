@@ -102,6 +102,42 @@ function controlHeaders(request, token, contentType = 'application/json') {
   }
 }
 
+test('API distingue agentes ativos, alvos em fila e entregas que aguardam fechamento da fase', { timeout: 60000 }, async t => {
+  const f = fixture(t)
+  f.state.plan.planningMode = 'phase'
+  f.state.plan.phases = [{ id: 'F1', title: 'Discussão da fase' }]
+  f.state.tasks = Object.fromEntries(['T1', 'T2', 'T3', 'T4', 'T5'].map(id => [id, {
+    ...task(id), phase: 'F1', discussionRequired: true, discoveryRequired: true, planningRequired: true,
+  }]))
+  f.state.tasks.T4.state = 'discussing'
+  f.state.tasks.T4.discussionAttempts = [{ agent: 'discussor-individual' }]
+  f.state.phaseWorkflows = { F1: { id: 'F1', state: 'discussing', planningAttempts: [], discussionAttempts: [{
+    targets: ['T1', 'T2', 'T3', 'T5'], activeTargets: ['T1'], queuedTargets: ['T2'], workers: {
+      T1: { agent: 'discussor-ativo', role: 'discussion' },
+      T3: { agent: 'discussor-encerrado', role: 'discussion', endedAt: '2026-01-01T00:01:00Z' },
+      T5: { agent: 'discussor-aguardando', role: 'discussion' },
+    },
+  }] } }
+  writeFileSync(f.statePath, JSON.stringify(f.state))
+  const { request } = await startDashboard(t, f)
+  let derived = (await (await request('/api/state')).json()).derived
+  assert.equal(derived.T1.effective, 'discussing')
+  assert.equal(derived.T1.activeAgent, 'discussor-ativo')
+  assert.equal(derived.T2.agentQueued, true)
+  assert.equal(derived.T2.effective, 'waiting')
+  assert.equal(derived.T2.activeAgent, undefined)
+  assert.equal(derived.T3.phaseBatchPending, true)
+  assert.equal(derived.T3.effective, 'waiting')
+  assert.equal(derived.T3.activeAgent, undefined)
+  assert.equal(derived.T4.activeAgent, 'discussor-individual')
+  assert.equal(derived.T5.activeAgent, undefined, 'um worker fora dos alvos ativos não deve parecer em atividade')
+  f.state.phaseWorkflows.F1.state = 'pending'
+  writeFileSync(f.statePath, JSON.stringify(f.state))
+  derived = (await (await request('/api/state')).json()).derived
+  assert.equal(derived.T1.activeAgent, undefined)
+  assert.equal(derived.T3.phaseBatchPending, undefined)
+})
+
 test('API real expõe limite e persiste alteração para a próxima operação CLI', { timeout: 60000 }, async t => {
   const f = fixture(t)
   const { request, env } = await startDashboard(t, f)
@@ -249,4 +285,7 @@ syncBuiltinESMExports()
   assert.equal((await failed.json()).error, mode === 'stdout' ? 'diagnóstico do processo' : 'falha de processo')
   assert.equal(readFileSync(f.statePath, 'utf8'), before)
   assert.equal(readFileSync(f.eventsPath, 'utf8'), events)
+  const recovered = await request('/api/state')
+  assert.equal(recovered.status, 200, 'a falha do processo não pode derrubar o dashboard')
+  assert.equal((await recovered.json()).plan.maxAgents, 3)
 })
