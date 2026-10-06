@@ -167,6 +167,26 @@ const task = (id, state = 'pending', fields = {}) => ({
   id, title: `Task ${id}`, phase: 'P1', state, deps: [], attempts: [], validations: [], notes: [], ...fields,
 })
 
+test('resumo aplica o limite compartilhado a todos os papéis e acompanha a alteração do board', () => {
+  const ui = dashboard('pt-BR')
+  const roles = ['discussing', 'planning', 'running', 'reviewing']
+  const state = { run: 'limite-compartilhado', plan: { maxAgents: 6 }, agentUsage: { used: 4, maxAgents: 6 },
+    tasks: Object.fromEntries(roles.map((role, i) => ['T' + (i + 1), task('T' + (i + 1), role)])),
+    derived: Object.fromEntries(roles.map((effective, i) => ['T' + (i + 1), { effective }])) }
+  const labels = ['Discutindo', 'Planejando', 'Executando', 'Revisando']
+  ui.render(state)
+  assert.equal(ui.nodes.get('#agentUsageLabel').textContent, 'Agentes: 4 de 6 em uso')
+  for (const label of labels) assert.ok(ui.nodes.get('#counts').innerHTML.includes(label + '</span> <b>1/6</b>'))
+  state.agentUsage.maxAgents = 2
+  ui.render(state)
+  assert.equal(ui.nodes.get('#agentUsageLabel').textContent, 'Agentes: 4 de 2 em uso', 'reduzir o limite preserva os agentes atuais')
+  for (const label of labels) assert.ok(ui.nodes.get('#counts').innerHTML.includes(label + '</span> <b>1/2</b>'))
+  for (const entry of Object.values(state.derived)) entry.effective = 'waiting'
+  state.agentUsage.used = 0
+  ui.render(state)
+  for (const label of labels) assert.ok(ui.nodes.get('#counts').innerHTML.includes(label + '</span> <b>0/2</b>'))
+})
+
 test('controle de agentes mostra a ocupação do motor e mantém o valor digitado enquanto está aberto', () => {
   const ui = dashboard('pt-BR')
   const state = { run: 'limite', plan: { maxAgents: 3 }, agentControlToken: 'token', agentUsage: { used: 2, maxAgents: 3 }, tasks: {
@@ -1564,7 +1584,7 @@ test('dashboard renders separate planning queues, active planner hub and executi
     ui.render(state)
     const expected = lang === 'en' ? ['ready for planning', 'planning', 'ready for execution'] : ['pronto para planejar', 'em planejamento', 'pronto para executar']
     for (const label of expected) {
-      assert.ok(ui.nodes.get('#counts').innerHTML.includes(`${label === 'planning' ? 'Actively planning' : label === 'em planejamento' ? 'Planejando' : label.charAt(0).toLocaleUpperCase(lang) + label.slice(1)}</span> <b>1</b>`), `Counter: ${label}`)
+      assert.ok(ui.nodes.get('#counts').innerHTML.includes(`${label === 'planning' ? 'Actively planning' : label === 'em planejamento' ? 'Planejando' : label.charAt(0).toLocaleUpperCase(lang) + label.slice(1)}</span> <b>${['planning', 'em planejamento'].includes(label) ? '1/3' : '1'}</b>`), `Counter: ${label}`)
     }
     for (const [id, status] of Object.entries(states)) {
       assert.match(ui.nodes.get('#nodes').innerHTML, new RegExp(`data-st="${status}"[^>]*data-id="${id}"`))
@@ -3799,8 +3819,8 @@ test('resumo sempre exibe a ordem completa mesmo sem tarefas', () => {
   assert.deepEqual([...counts.matchAll(/data-state="([^"]+)"/g)].map(match=>match[1]), ['skipped','waiting','ready_for_discussion','discussing','ready_to_plan','planning','ready','running','ready_for_review','reviewing','blocked','failed','done'])
   assert.match(counts,/Pronto para planejar/)
   assert.match(counts,/Pronto para revisar/)
-  assert.equal((counts.match(/<b>0<\/b>/g)??[]).length,11)
-  assert.match(counts,/<b>0\/3<\/b>/)
+  assert.equal((counts.match(/<b>0<\/b>/g)??[]).length,8)
+  assert.equal((counts.match(/<b>0\/3<\/b>/g)??[]).length,4)
   assert.match(counts,/<b>0\/0<\/b>/)
 })
 
@@ -4570,6 +4590,9 @@ test('indicadores ficam juntos acima dos agentes, capitalizados e nas cores dos 
     assert.ok(row.includes('var(--' + color + ')'), label)
   }
   assert.match(counts, /Executando<\/span> <b>1\/3<\/b>/)
+  for (const label of ['Discutindo', 'Planejando', 'Revisando']) {
+    assert.match(counts, new RegExp(label + '<\\/span> <b>1\\/3<\\/b>'), 'todos os papéis exibem o mesmo teto compartilhado')
+  }
   assert.ok(html.indexOf('id="counts"') < html.indexOf('id="agentsBox"'))
   assert.doesNotMatch(html, /id="parTitle"/)
   assert.doesNotMatch(counts, /em execução|aguardando|concluído|pulado/)

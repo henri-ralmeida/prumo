@@ -3514,13 +3514,13 @@ function render(s, events = []) {
 
   // side panels — logs and run state only
   const running = list.filter((t) => eff(t.id) === 'running')
-  const maxExec = s.plan.maxAgents ?? 3
+  const maxAgents = s.agentUsage?.maxAgents ?? s.plan.maxAgents ?? 3
   const summaryCounts = [
     ['skipped', 'Skipped', by.skipped ?? 0], ['waiting', 'waiting', (by.waiting ?? 0) + (by.pending ?? 0)],
-    ['ready_for_discussion', 'ready for discussion', by.ready_for_discussion ?? 0], ['discussing', 'Actively discussing', discussingNow.length],
-    ['ready_to_plan', 'ready for planning', by.ready_to_plan ?? 0], ['planning', 'Actively planning', planningNow.length],
-    ['ready', 'ready for execution', by.ready ?? 0], ['running', 'Working', running.length + '/' + maxExec],
-    ['ready_for_review', 'ready for review', by.ready_for_review ?? 0], ['reviewing', 'Reviewing', inReview.length],
+    ['ready_for_discussion', 'ready for discussion', by.ready_for_discussion ?? 0], ['discussing', 'Actively discussing', discussingNow.length + '/' + maxAgents],
+    ['ready_to_plan', 'ready for planning', by.ready_to_plan ?? 0], ['planning', 'Actively planning', planningNow.length + '/' + maxAgents],
+    ['ready', 'ready for execution', by.ready ?? 0], ['running', 'Working', running.length + '/' + maxAgents],
+    ['ready_for_review', 'ready for review', by.ready_for_review ?? 0], ['reviewing', 'Reviewing', inReview.length + '/' + maxAgents],
     ['blocked', 'blocked', by.blocked ?? 0], ['failed', 'Failed / Rejected', by.failed ?? 0],
     ['done', 'done', completedTasks + '/' + validTasks],
   ]
