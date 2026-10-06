@@ -3758,6 +3758,27 @@ test('recolher o card mantém a seleção e não reinicia o apagamento do conte�
   assert.ok(cardLayer > scrimLayer, 'o fundo em desaparecimento nunca encobre o card recolhido')
 })
 
+test('recolher ancora no card usando a largura final mesmo durante a transição', () => {
+  const ui = dashboard('pt-BR'), state = graphState(1, 1)
+  ui.render(state)
+  const origin = ui.cards.find(card => card.dataset.id === 'T001')
+  origin.getBoundingClientRect = () => ({ left: 300, right: 480, top: 200, width: 180, height: 64 })
+  ui.run("innerWidth = 1330; openPop('T001', true); togglePopExpand(true)")
+  const panel = ui.nodes.get('#pop')
+  panel.offsetWidth = 1160
+  panel.offsetHeight = 704
+  ui.run('togglePopExpand(false)')
+  assert.equal(panel.style.left, '494px', 'retorna à direita do card, sem usar a largura expandida')
+  assert.equal(panel.style.top, '190px')
+  assert.equal(panel.style.width, '')
+  origin.getBoundingClientRect = () => ({ left: 900, right: 1080, top: 200, width: 180, height: 64 })
+  ui.run('positionPop()')
+  assert.equal(panel.style.left, '414px', 'retorna à esquerda quando não cabe à direita')
+  ui.run('innerWidth = 300; positionPop()')
+  assert.equal(panel.style.left, '12px', 'em tela estreita, respeita a margem da tela')
+  assert.equal(ui.run('POP.id'), 'T001')
+})
+
 test('o trilho alcança o fim da última fase mesmo com várias linhas de cards', () => {
   const ui = dashboard('pt-BR')
   for (const count of [0, 1, 12]) {

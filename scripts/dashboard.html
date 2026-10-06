@@ -3659,7 +3659,9 @@ function positionPop() {
   const node = document.querySelector(`.node[data-id="${CSS.escape(POP.id)}"]`)
   if (!node) return
   const r = node.getBoundingClientRect()
-  const pw = pop.offsetWidth, ph = pop.offsetHeight
+  // A transição ainda pode medir o tamanho expandido; a âncora usa o destino recolhido.
+  const pw = Math.min(472, innerWidth - 24)
+  const ph = Math.min(pop.offsetHeight, innerHeight * .7, 660)
   let x = r.right + 14
   if (x + pw > innerWidth - 12) x = r.left - pw - 14
   x = Math.max(12, Math.min(x, innerWidth - pw - 12))
