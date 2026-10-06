@@ -1607,5 +1607,15 @@
   "Clarify shared workspace setup and preserve explicit storage paths": "Esclareça a configuração de diretórios compartilhados e preserve caminhos explícitos de armazenamento",
   "Added — npm distribution and automatic updates": "Adicionado — Distribuição npm e atualizações automáticas",
   "Publish @henri-ralmeida/prumo and add prumo update": "Publique @henri-ralmeida/prumo e acrescente prumo update",
-  "Detect installed environments and custom paths while preserving language, backups and rollback": "Detecte ambientes instalados e caminhos personalizados, preservando idioma, backups e reversão"
+  "Detect installed environments and custom paths while preserving language, backups and rollback": "Detecte ambientes instalados e caminhos personalizados, preservando idioma, backups e reversão",
+  "Pending dependencies": "Pendências",
+  "Dependent tasks": "Liberações",
+  "Task relationships": "Vínculos da tarefa",
+  "All relationships": "Todos os vínculos",
+  "No pending tasks in this group": "Nenhuma tarefa pendente neste grupo",
+  "Guide example — no real plan": "Exemplo do guia — nenhum plano real",
+  "Improved — Dependencies and first-plan guidance": "Melhorado — Dependências e orientação para o primeiro plano",
+  "Group pending prerequisites and dependent tasks in board filters and task details while preserving status colors": "Agrupe pré-requisitos pendentes e tarefas dependentes nos filtros do board e nos detalhes, preservando as cores de status",
+  "Offer a guide-only example when no real plan exists and remove it automatically when the first plan appears": "Ofereça um exemplo exclusivo do guia quando não houver planos reais e remova-o automaticamente ao aparecer o primeiro plano",
+  "Resolved relationships": "Vínculos resolvidos"
 }

@@ -11,6 +11,104 @@ const html = readFileSync(new URL('../scripts/dashboard.html', import.meta.url),
 const canonicalScript = extractDashboardScript(html)
 const releaseCatalog = JSON.parse(readFileSync(new URL('../scripts/release-notes.json', import.meta.url), 'utf8'))
 
+test('agrupamentos do board distinguem pré-requisitos pendentes das tarefas que eles liberam', () => {
+  const ui = dashboard('pt-BR')
+  const state = graphState(6, 1)
+  for (const [id, value, deps] of [['T001', 'planning', []], ['T002', 'waiting', ['T001', 'T005']],
+    ['T003', 'blocked', ['T002']], ['T004', 'done', ['T002']], ['T005', 'done', []], ['T006', 'skipped', ['T002']]]) {
+    state.tasks[id].state = value; state.tasks[id].deps = deps; state.derived[id].effective = value
+  }
+  ui.render(state)
+  assert.deepEqual([...ui.run("filterSets(STATE.tasks, 'dependencies').matches")], ['T001', 'T002'])
+  assert.deepEqual([...ui.run("filterSets(STATE.tasks, 'unlocks').matches")], ['T002', 'T003'])
+  ui.run("setFilter('dependencies')")
+  assert.equal(ui.filterOptions.find(option => option.dataset.filterValue === 'dependencies').getAttribute('aria-pressed'), 'true')
+  const before = structuredClone(state)
+  ui.run("POP = {id:'T002', pinned:true}; fillPop('T002')")
+  let body = ui.nodes.get('#popBody').innerHTML
+  assert.match(body, /Pendências · 1/)
+  assert.match(body, /Liberações · 1/)
+  assert.match(body, /data-st="planning"/)
+  assert.match(body, /data-st="blocked"/)
+  ui.nodes.get('#popBody').scrollTop = 100
+  ui.run("setRelationFilter('dependencies')")
+  assert.equal(ui.nodes.get('#popBody').scrollTop, 100)
+  body = ui.nodes.get('#popBody').innerHTML
+  assert.match(body, /class="relation-group dependencies"/)
+  assert.doesNotMatch(body, /class="relation-group unlocks"/)
+  ui.run("setRelationFilter('unlocks')")
+  assert.match(ui.nodes.get('#popBody').innerHTML, /class="relation-group unlocks"/)
+  ui.run("setRelationFilter('invalid'); POP = null; setRelationFilter('all')")
+  assert.deepEqual(state, before, 'os agrupamentos alteram apenas a visualização')
+})
+
+test('grupos vazios e referências ausentes permanecem legíveis nos dois idiomas', () => {
+  for (const lang of ['en', 'pt-BR']) {
+    const ui = dashboard(lang), state = graphState(1, 1)
+    state.tasks.T001.deps = ['T-ausente']
+    ui.render(state)
+    ui.run("POP = {id:'T001', pinned:true}; fillPop('T001')")
+    assert.match(ui.nodes.get('#popBody').innerHTML, /T-ausente/)
+    assert.ok(ui.nodes.get('#popBody').innerHTML.includes(lang === 'en' ? 'No pending tasks in this group' : 'Nenhuma tarefa pendente neste grupo'))
+    assert.equal(ui.run("filterSets(STATE.tasks, 'dependencies').matches.size"), 0)
+    ui.run("POP_EXPANDED = true; setRelationFilter('all')")
+    assert.match(ui.nodes.get('#popBody').innerHTML, /relation-group/)
+  }
+})
+
+test('seletor sem planos abre apenas o guia e remove o exemplo ao aparecer o primeiro plano real', () => {
+  let opens = 0
+  const navigation = {state:null, urls:[]}
+  const ui = dashboard('pt-BR', 1000, new Map(), navigation, {full:true})
+  ui.run('ONBOARDING.open = openGuide', {openGuide(){opens++}})
+  ui.run('updateRunSelect({runs:[]})')
+  assert.equal(ui.nodes.get('#runName').textContent, 'sem-plano-verificar-guia-01')
+  assert.match(ui.nodes.get('#runOptions').innerHTML, /__guide__/)
+  ui.render({empty:true, plan:{name:'', phases:[]}, tasks:{}, derived:{}})
+  assert.equal(ui.nodes.get('#runLabel').textContent, 'Exemplo do guia — nenhum plano real')
+  assert.equal(ui.run('document.title'), 'sem-plano-verificar-guia-01 - prumo')
+  ui.run("selectRun('__guide__')")
+  assert.equal(opens, 1)
+  assert.equal(navigation.urls.length, 0)
+  const catalog = {currentRoot:'r1', current:'real-01', runs:[{root:'r1', run:'real-01', plan:'Plano real', taskCount:1}]}
+  ui.run('updateRunSelect(catalog)', {catalog})
+  assert.equal(ui.nodes.get('#runName').textContent, 'real-01')
+  assert.doesNotMatch(ui.nodes.get('#runOptions').innerHTML, /sem-plano-verificar-guia-01|__guide__/)
+  assert.deepEqual(catalog.runs.map(entry=>entry.run), ['real-01'])
+  const realState = graphState(1, 1)
+  realState.run = 'real-01'; realState.plan.name = 'Plano real'
+  ui.render(realState)
+  assert.equal(ui.nodes.get('#runLabel').dataset.i18nTitle, 'Plano real')
+})
+
+test('resposta obsoleta não substitui o plano recém-chegado ao seletor', async () => {
+  const ui = dashboard('pt-BR')
+  const catalog = {currentRoot:'r', current:'real', runs:[{root:'r', run:'real'}]}
+  const stale = {run:'outro', plan:{phases:[]}, tasks:{}, derived:{}}
+  ui.run('STATE = null')
+  await ui.run('tick()', {fetch: async url => {
+    const name = typeof url === 'string' ? url : url.pathname
+    assert.ok(['/api/runs','/api/state'].includes(name), 'uma resposta obsoleta não carrega histórico de outro plano')
+    return {ok:true, json:async()=>name === '/api/runs' ? catalog : stale}
+  }})
+  assert.equal(ui.run('STATE'), null)
+  assert.equal(ui.nodes.get('#runName').textContent, 'real')
+})
+
+test('catálogo parcial ou aba vazia com planos reais não insere um exemplo artificial', () => {
+  const ui = dashboard('en')
+  ui.run("STATE = null; setFilter('dependencies')")
+  const catalog = {runs:[{root:'r', run:'real'}]}
+  ui.run('updateRunSelect(catalog)', {catalog})
+  assert.match(ui.nodes.get('#runOptions').innerHTML, /r\/real/)
+  assert.doesNotMatch(ui.nodes.get('#runOptions').innerHTML, /__guide__/)
+  ui.run("STATE = {}; STATE_RUN_KEY = '\\0'; updateRunSelect(catalog)", {catalog})
+  const completed = {currentRoot:'r', current:'real', runs:[{root:'r', run:'real', complete:true}]}
+  ui.run("updateRunSelect(completed); toggleRunFilter('progress')", {completed})
+  assert.match(ui.nodes.get('#runOptions').innerHTML, /No plans in progress/)
+  assert.doesNotMatch(ui.nodes.get('#runOptions').innerHTML, /__guide__/)
+})
+
 test('versão abre todo o changelog no idioma selecionado e evita abrir duas janelas', async () => {
   const history = Object.entries(releaseCatalog).map(([version, notes]) => ({ version, sections: notes.en }))
   for (const lang of ['en', 'pt-BR']) {
@@ -1725,7 +1823,7 @@ test('filter controls expose every state and localize labels', () => {
   assert.doesNotMatch(html, /id="depsBtn"|toggleDependencies/)
   const panel = html.match(/<div[^>]+id="statusFilter"[^>]*>([\s\S]*?)<\/div>/)[1]
   const options = [...panel.matchAll(/<button\b[^>]*data-filter-value="([^"]+)"/g)].map(([, value]) => value)
-  assert.deepEqual(options, ['all', 'done', 'incomplete', 'waiting', 'ready_for_discussion', 'discussing', 'ready_to_plan', 'planning', 'ready', 'running', 'ready_for_review', 'reviewing', 'blocked', 'failed', 'skipped'])
+  assert.deepEqual(options, ['all', 'done', 'incomplete', 'dependencies', 'unlocks', 'waiting', 'ready_for_discussion', 'discussing', 'ready_to_plan', 'planning', 'ready', 'running', 'ready_for_review', 'reviewing', 'blocked', 'failed', 'skipped'])
   for (const [lang, labels] of [['en', ['all tasks', 'incomplete', 'ignored']], ['pt-BR', ['todas', 'incompletas', 'ignoradas']]]) {
     const ui = dashboard(lang)
     ui.render({ run: 'empty-filter', plan: { phases: [] }, tasks: {}, derived: {} })
@@ -3824,7 +3922,7 @@ test('o cabecalho compacto preserva ao vivo e abre todos os filtros sem os conta
   assert.ok(header.indexOf('id="orch"') > header.indexOf('<details class="header-menu"'), 'o status fica depois dos filtros, fora do menu')
   assert.doesNotMatch(menu, /id="orch"/)
   assert.ok(menu.includes('id="statusFilter"'))
-  assert.equal(small.filterOptions.length, 15)
+  assert.equal(small.filterOptions.length, 17)
   assert.doesNotMatch(menu, /<select/)
   assert.match(html, /\.filter-toggle \{ display: none; \}/)
   assert.doesNotMatch(header, /id="counts"/)

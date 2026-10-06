@@ -39,6 +39,13 @@
         "items": [
           "Open the full release history from the dashboard footer in the selected language"
         ]
+      },
+      {
+        "title": "Improved — Dependencies and first-plan guidance",
+        "items": [
+          "Group pending prerequisites and dependent tasks in board filters and task details while preserving status colors",
+          "Offer a guide-only example when no real plan exists and remove it automatically when the first plan appears"
+        ]
       }
     ]
   },

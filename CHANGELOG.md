@@ -4,6 +4,7 @@ Historical tag and commit corrections are documented in [Release history recover
 
 ## 2.5.0 — 2026-10-06
 
+- Agrupe pendências e liberações nos filtros do board e nos detalhes da tarefa, preservando as cores de status; ofereça um exemplo do guia no seletor sem planos reais, removido automaticamente no primeiro plano.
 - Abra todo o histórico de alterações pela versão no rodapé do dashboard, em inglês ou pt-BR conforme o idioma selecionado.
 - Declare o escopo de escrita nos contratos novos: caminhos investigados, somente leitura ou escopo ainda desconhecido, preservando a leitura e execução dos contratos antigos.
 - Confira a entrega contra o escopo aprovado a partir de uma referência anterior à execução; alterações fora dele precisam ser resolvidas antes da aprovação independente.
