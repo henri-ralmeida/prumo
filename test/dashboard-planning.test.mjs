@@ -11,6 +11,16 @@ const html = readFileSync(new URL('../scripts/dashboard.html', import.meta.url),
 const canonicalScript = extractDashboardScript(html)
 const releaseCatalog = JSON.parse(readFileSync(new URL('../scripts/release-notes.json', import.meta.url), 'utf8'))
 
+test('títulos dos vínculos seguem Jornada e os filtros ficam sem moldura externa', () => {
+  const declarations = selector => Object.fromEntries(html.match(new RegExp(selector + ' \\{([^}]+)\\}'))[1]
+    .split(';').filter(part => part.includes(':')).map(part => part.trim().split(/:\s*/)))
+  const journey = declarations('#pop \\.pk')
+  const headings = declarations('#pop \\.relation-group h4')
+  for (const property of ['font', 'color', 'letter-spacing', 'text-transform']) assert.equal(headings[property], journey[property])
+  const controls = declarations('#pop \\.relation-controls')
+  for (const property of ['border', 'background', 'padding']) assert.equal(controls[property], undefined)
+})
+
 test('agrupamentos do board distinguem pré-requisitos pendentes das tarefas que eles liberam', () => {
   const ui = dashboard('pt-BR')
   const state = graphState(6, 1)
