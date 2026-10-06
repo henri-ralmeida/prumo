@@ -33,6 +33,12 @@
           "Keep externally blocked tasks out of every workflow until unblock, while preserving internal replanning pauses",
           "Add simultaneous stage times in the live clock and advance current planning without checkpoints"
         ]
+      },
+      {
+        "title": "Added — Dashboard changelog",
+        "items": [
+          "Open the full release history from the dashboard footer in the selected language"
+        ]
       }
     ]
   },

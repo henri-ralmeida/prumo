@@ -10,8 +10,24 @@ import { setTimeout } from 'node:timers/promises'
 import { contentId } from '../lib/install.mjs'
 import { readDashboardEvents } from '../scripts/dashboard-diagnostics.mjs'
 import { initializeLegacyPlanFixture } from './fixtures/legacy-plan-init.mjs'
+import { releaseHistory } from '../lib/release-notes.mjs'
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
+
+test('histórico do changelog atende sem plano ou npm e ordena todas as versões do pacote', async t => {
+  const home = dashboardHome(t, 'prumo-changelog-')
+  const request = await startDashboard(t, join(packageRoot, 'scripts/serve.mjs'), ['--global'], {
+    ...process.env, HOME: home, USERPROFILE: home, PRUMO_HOME: join(home, 'central'),
+  })
+  const about = await (await request('/api/about')).json()
+  const response = await request('/api/changelog')
+  assert.equal(response.status, 200)
+  const history = await response.json()
+  assert.deepEqual(history, releaseHistory(['0.0.0'], about.version))
+  assert.equal(history[0].version, about.version)
+  assert.ok(history.length > 1)
+  assert.match(await (await request('/')).text(), /onclick="openChangelog\(\)"/)
+})
 
 test('consulta de atualização informa a versão e não bloqueia o servidor quando o npm falha', async t => {
   for (const latest of ['99.0.0', 'offline']) {

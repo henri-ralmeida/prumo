@@ -3,11 +3,67 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { createGuideDemoData } from '../scripts/dashboard-guide-demo.mjs'
 import { rejectionCases } from './fixtures/review-rejection.mjs'
+import { messages } from '../scripts/i18n.mjs'
 import { plannedManualInspectionState } from './fixtures/planned-manual-inspection.mjs'
 import { disableDashboardBoot, extractDashboardScript, injectDashboardLanguage, runDashboardScript } from './fixtures/dashboard-vm.mjs'
 
 const html = readFileSync(new URL('../scripts/dashboard.html', import.meta.url), 'utf8').replaceAll('\r\n', '\n')
 const canonicalScript = extractDashboardScript(html)
+const releaseCatalog = JSON.parse(readFileSync(new URL('../scripts/release-notes.json', import.meta.url), 'utf8'))
+
+test('versão abre todo o changelog no idioma selecionado e evita abrir duas janelas', async () => {
+  const history = Object.entries(releaseCatalog).map(([version, notes]) => ({ version, sections: notes.en }))
+  for (const lang of ['en', 'pt-BR']) {
+    const ui = dashboard(lang)
+    ui.run("$('#changelogDialog'); $('#changelogContent')")
+    const dialog = ui.nodes.get('#changelogDialog')
+    let opens = 0, calls = 0
+    dialog.showModal = () => { opens++; dialog.open = true }
+    const fetch = async url => { calls++; assert.equal(url, '/api/changelog'); return { ok: true, json: async () => history } }
+    await ui.run('openChangelog()', { fetch })
+    await ui.run('openChangelog()', { fetch })
+    assert.equal(opens, 1)
+    assert.equal(calls, 1)
+    const body = ui.nodes.get('#changelogContent').innerHTML
+    assert.equal((body.match(/<article>/g) ?? []).length, history.length)
+    for (const release of history) {
+      assert.ok(body.includes(`v${release.version}`))
+      for (const section of release.sections) {
+        if (lang === 'pt-BR') {
+          assert.ok(Object.hasOwn(messages, section.title), `Tradução do título: ${section.title}`)
+          for (const item of section.items) assert.ok(Object.hasOwn(messages, item), `Tradução da alteração: ${item}`)
+        }
+        assert.ok(body.includes(ui.run(`esc(tr(${JSON.stringify(section.title)}))`)))
+        for (const item of section.items) assert.ok(body.includes(ui.run(`esc(tr(${JSON.stringify(item)}))`)))
+      }
+    }
+    assert.equal(ui.run("tr('Changelog')"), lang === 'en' ? 'Changelog' : 'Histórico de alterações')
+  }
+  assert.match(html, /<button[^>]*id="identity"[^>]*onclick="openChangelog\(\)"/)
+  assert.match(html, /<dialog id="changelogDialog" aria-labelledby="changelogTitle">/)
+})
+
+test('changelog informa falha, permite tentar novamente e escapa o texto das notas', async () => {
+  const ui = dashboard('pt-BR')
+  ui.run("$('#changelogDialog'); $('#changelogContent')")
+  const dialog = ui.nodes.get('#changelogDialog'), content = ui.nodes.get('#changelogContent')
+  dialog.showModal = () => { dialog.open = true }
+  for (const fetch of [async () => { throw new Error('offline') }, async () => ({ ok: false }),
+    async () => ({ ok: true, json: async () => { throw new Error('JSON inválido') } })]) {
+    dialog.open = false
+    await ui.run('openChangelog()', { fetch })
+    assert.equal(content.textContent, 'Não foi possível carregar o histórico. Feche e tente novamente.')
+  }
+  dialog.open = false
+  await ui.run('openChangelog()', { fetch: async () => ({ ok: true, json: async () => [] }) })
+  assert.equal(content.textContent, 'Nenhum histórico de alterações disponível')
+  dialog.open = false
+  await ui.run('openChangelog()', { fetch: async () => ({ ok: true, json: async () => [{
+    version: '<img>', sections: [{ title: '<script>', items: ['<img src=x onerror=alert(1)>'] }],
+  }] }) })
+  assert.doesNotMatch(content.innerHTML, /<img|<script/)
+  assert.match(content.innerHTML, /&lt;img/)
+})
 const instant = (seconds) => new Date(Date.UTC(2026, 0, 1) + seconds * 1000).toISOString()
 const task = (id, state = 'pending', fields = {}) => ({
   id, title: `Task ${id}`, phase: 'P1', state, deps: [], attempts: [], validations: [], notes: [], ...fields,
