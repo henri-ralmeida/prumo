@@ -3736,6 +3736,28 @@ test('agentes ativos acompanham somente as tarefas em atividade ao atualizar o p
   assert.match(ui.nodes.get('#parallel').innerHTML, /class="empty"[^]*data-i18n="Nothing running"/)
 })
 
+test('recolher o card mantém a seleção e não reinicia o apagamento do conteúdo', () => {
+  const ui = dashboard('pt-BR'), state = graphState(1, 1)
+  ui.render(state)
+  ui.run("openPop('T001', true); togglePopExpand(true)")
+  assert.equal(ui.nodes.get('#popBody').classList.contains('swap'), true)
+  for (let cycle = 0; cycle < 2; cycle++) {
+    ui.run('togglePopExpand(false)')
+    assert.equal(ui.run('POP.id'), 'T001')
+    assert.equal(ui.nodes.get('#pop').classList.contains('open'), true)
+    assert.equal(ui.nodes.get('#pop').classList.contains('expanded'), false)
+    assert.equal(ui.nodes.get('#popScrim').classList.contains('on'), false)
+    assert.equal(ui.nodes.get('#popBody').classList.contains('swap'), false)
+    assert.equal(ui.nodes.get('#popExpand').getAttribute('aria-expanded'), 'false')
+    ui.render(state)
+    assert.equal(ui.nodes.get('#popBody').classList.contains('swap'), false, 'atualizar não reintroduz o piscar')
+    ui.run('togglePopExpand(true)')
+  }
+  const cardLayer = Number(html.match(/#pop\.open \{[^}]*z-index: (\d+)/)[1])
+  const scrimLayer = Number(html.match(/#popScrim \{[^}]*z-index: (\d+)/)[1])
+  assert.ok(cardLayer > scrimLayer, 'o fundo em desaparecimento nunca encobre o card recolhido')
+})
+
 test('o trilho alcança o fim da última fase mesmo com várias linhas de cards', () => {
   const ui = dashboard('pt-BR')
   for (const count of [0, 1, 12]) {

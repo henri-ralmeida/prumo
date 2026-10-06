@@ -762,7 +762,7 @@ SOFTWARE. -->
     --dim: #d8ded8; --faint: #c0ccc2;
     --ready-plan: #c8bbff;
   }
-  #pop.open { display: block; }
+  #pop.open { display: block; z-index: 31; }
   #pop { border-left: 3px solid var(--task-color, var(--line)); }
   #pop.expanded { max-height: calc(100vh - 96px); z-index: 31; }
   @keyframes pop { from { opacity: 0; transform: translateY(4px); } }
@@ -4273,7 +4273,8 @@ function togglePopExpand(on = !POP_EXPANDED) {
   if (!POP) return
   POP_EXPANDED = on
   // Expandir revela o conteudo completo; recolher volta ao resumo sem preferencias persistidas.
-  fillPop(POP.id, true)
+  fillPop(POP.id, on)
+  if (!on) $('#popBody').classList.remove('swap')
   pinPop()
   $('#pop').classList.toggle('expanded', on)
   $('#popScrim').classList.toggle('on', on)
