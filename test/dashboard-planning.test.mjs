@@ -362,7 +362,7 @@ test('seções da lateral recolhem independentemente e preservam conteúdo atual
   }
 })
 
-test('atividade explícita mantém relógios individuais e ao vivo sem multiplicar paralelismo', () => {
+test('atividade explícita mantém relógios individuais e soma paralelismo no ao vivo', () => {
   const ui = dashboard('pt-BR')
   const measured = role => ({ n: 1, startedAt: instant(90), activityTiming: 'explicit',
     activityIntervals: [{ role, startedAt: instant(90) }] })
@@ -375,7 +375,7 @@ test('atividade explícita mantém relógios individuais e ao vivo sem multiplic
   for (const item of Object.values(state.tasks)) {
     assert.equal(ui.run('taskClock(item, item.state)', { item }), 10000)
   }
-  assert.match(ui.nodes.get('#orch').innerHTML, />00:00:10<\/time>/)
+  assert.match(ui.nodes.get('#orch').innerHTML, />00:00:30<\/time>/)
   assert.doesNotMatch(ui.nodes.get('#parallel').innerHTML, /não aferido/)
   assert.equal(ui.run('analyse(STATE, [], true).agentTotal'), 30000)
   for (const item of Object.values(state.tasks)) {
@@ -384,7 +384,71 @@ test('atividade explícita mantém relógios individuais e ao vivo sem multiplic
   }
   ui.render(state)
   for (const item of Object.values(state.tasks)) assert.equal(ui.run('taskClock(item, item.state)', { item }), 5000)
-  assert.match(ui.nodes.get('#orch').innerHTML, />00:00:05<\/time>/)
+  assert.match(ui.nodes.get('#orch').innerHTML, />00:00:15<\/time>/)
+})
+
+test('três planejadores de trinta minutos somam uma hora e meia e avançam sem checkpoints', () => {
+  for (const language of ['en', 'pt-BR']) {
+    const ui = dashboard(language)
+    ui.run('Date.now = () => current', { current: Date.parse(instant(1800)) })
+    const state = { run: 'planejamento', createdAt: instant(0), plan: {}, tasks: Object.fromEntries(
+      ['T1', 'T2', 'T3'].map(id => [id, task(id, 'planning', { planningAttempts: [
+        { startedAt: instant(0), activityTiming: 'explicit', activityIntervals: [] },
+      ] })])) }
+    ui.render(state)
+    assert.match(ui.nodes.get('#orch').innerHTML, />01:30:00<\/time>/)
+    assert.equal(ui.run('analyse(STATE).stageElapsed'), 5400000)
+    ui.run('Date.now = () => current', { current: Date.parse(instant(1801)) })
+    ui.render(state)
+    assert.match(ui.nodes.get('#orch').innerHTML, />01:30:03<\/time>/)
+    for (const item of Object.values(state.tasks)) {
+      item.state = 'pending'
+      item.planningAttempts[0].endedAt = instant(1800)
+    }
+    ui.render(state)
+    assert.match(ui.nodes.get('#orch').innerHTML, />01:30:00<\/time>/)
+  }
+})
+
+test('ao vivo soma discussão, planejamento, execução e revisão sem duplicar rodadas de fase', () => {
+  const ui = dashboard()
+  const state = { run: 'etapas', plan: {}, tasks: {
+    T1: task('T1', 'discussing', { discussionAttempts: [{ activityTiming: 'explicit', startedAt: instant(90) }] }),
+    T2: task('T2', 'planning', { planningAttempts: [{ activityTiming: 'explicit', startedAt: instant(90) }] }),
+    T3: task('T3', 'running', { attempts: [{ activityTiming: 'explicit', startedAt: instant(90) }] }),
+    T4: task('T4', 'reviewing', { attempts: [{ activityTiming: 'explicit', startedAt: instant(80), reviewStartedAt: instant(90) }] }),
+  } }
+  ui.render(state)
+  assert.equal(ui.run('analyse(STATE).stageElapsed'), 50000)
+  assert.match(ui.nodes.get('#orch').innerHTML, />00:00:50<\/time>/)
+  state.tasks = Object.fromEntries(['T1', 'T2', 'T3'].map(id => [id, task(id, 'pending', { phase: 'F1' })]))
+  state.phaseWorkflows = { F1: { state: 'planning', planningAttempts: [{ activityTiming: 'explicit', startedAt: instant(90), targets: ['T1', 'T2', 'T3'] }] } }
+  ui.render(state)
+  assert.equal(ui.run('analyse(STATE).stageElapsed'), 10000, 'uma rodada de um planejador é contada uma vez')
+})
+
+test('relógio das etapas exclui pausas, espera, horários inválidos e registros incompletos', () => {
+  const ui = dashboard()
+  const round = { startedAt: instant(0), activityTiming: 'explicit', activityIntervals: [
+    { role: 'execution', startedAt: instant(0), endedAt: instant(10) },
+    { role: 'execution', startedAt: instant(90) },
+  ] }
+  assert.equal(ui.run('stageTime(round, "execution", true, Date.now())', { round }), 20000)
+  assert.equal(ui.run('stageTime(round, "execution", false, Date.now())', { round }), 10000)
+  for (const startedAt of [undefined, 'invalid', instant(110)])
+    assert.equal(ui.run('stageTime(round, "planning", true, Date.now())', { round: { activityTiming: 'explicit', startedAt } }), 0)
+  assert.equal(ui.run('stageTime(round, "planning", false, Date.now())', { round: { startedAt: instant(0) } }), 0)
+  const state = { run: 'pausas', createdAt: instant(0), plan: {}, tasks: {
+    T1: task('T1', 'running', { attempts: [{ activityTiming: 'explicit', startedAt: instant(0) }] }),
+    T2: task('T2', 'pending'),
+  } }
+  const events = [
+    { type: 'task_block', task: 'T1', at: instant(10) },
+    { type: 'task_unblock', task: 'T1', at: instant(90) },
+  ]
+  ui.render(state, events)
+  assert.equal(ui.run('analyse(STATE, EVENTS).stageElapsed'), 20000)
+  assert.equal(ui.run('analyse(STATE, EVENTS, false).stageElapsed'), 0)
 })
 
 test('relógio de planejamento acompanha a fase e não inventa tempo sem registro', () => {

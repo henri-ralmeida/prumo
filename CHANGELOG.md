@@ -9,6 +9,7 @@ Historical tag and commit corrections are documented in [Release history recover
 - Explique no dashboard as condições de prontidão e os impedimentos para executar, sem substituir as etapas de discussão, planejamento e revisão.
 - Declare recursos compartilhados para considerar conflitos de escrita além dos arquivos.
 - Use termos como funcionalidades, etapas e alterações nas confirmações da skill, conforme o contexto da solicitação.
+- Some no relógio ao vivo o tempo de discussão, planejamento, execução e revisão de cada agente, incluindo planejamentos sem checkpoints e respeitando pausas explícitas; atividades simultâneas acumulam seus tempos individuais.
 
 ## 2.4.8 — 2026-10-05
 
