@@ -66,6 +66,8 @@ The engine hashes the validated discovery and issued receipt with canonical JSON
 the planning round and final task plans. Repeating `plan-phase` while that round is active is a no-op.
 `finish-phase-planning` refuses a round whose discovery no longer matches the persisted context.
 
+For plans with `scopePolicy: "explicit"`, investigate `writeScope`, `touches` and `sharedResources` before proposing `writes`. For `read-only`, `writes` is empty or absent. For `files`, `writes` must fit approved prefixes; omission remains a warning, not permission to write elsewhere. `unknown` does not authorize execution: return the research for a contract change via `sync-plan`, without inventing paths. Any shared-resource writer requires dependencies; never infer independence from files alone.
+
 ## Planner prompt
 
 ```text
@@ -87,7 +89,7 @@ steps, verification, open questions, writes, phaseBinding and unresolvedInputs. 
 state who decides and by when with `decideBy`: `executor` (with the proposed `answer` the executor applies),
 `user-now`, `{ "beforeTask": "<id>" }` or `{ "beforePhase": "<id>" }`. Each verification item may
 declare required resources with `requires`; use only the documented vocabulary. Record anticipated project
-paths in `writes`, all contained by that task's `touches`. Copy the exact phaseBinding and
+paths in `writes`, all contained by that task's `touches`; use no file writes for `read-only`. Investigate shared resource access and unresolved scope; never invent paths. Copy the exact phaseBinding and
 that task's unresolvedInputs from the `plan-phase` output; do not recalculate them or renumber plannerRound.
 When discussion was skipped, discussionRoundId is the confirmed skip decisionId printed by the engine.
 Schema: references/runtime.md#task-plan-artifact.
@@ -133,7 +135,7 @@ steps, verification, openQuestions, writes, phaseBinding e unresolvedInputs. Par
 diga quem decide e até quando com `decideBy`: `executor` (com a resposta proposta em `answer`, que o executor
 aplica), `user-now`, `{ "beforeTask": "<id>" }` ou `{ "beforePhase": "<id>" }`. Cada item de verificação pode
 declarar recursos exigidos com `requires`; use somente o vocabulário documentado. Registre em `writes` os
-caminhos de projeto previstos, todos contidos nos `touches` da tarefa. Copie exatamente phaseBinding e os
+caminhos de projeto previstos, todos contidos nos `touches` da tarefa; não declare gravações de arquivos para `read-only`. Investigue acesso a recursos compartilhados e escopo pendente; não invente caminhos. Copie exatamente phaseBinding e os
 unresolvedInputs da tarefa do resultado de `plan-phase`; não os recalcule nem renumere plannerRound.
 Quando a discussão foi pulada, discussionRoundId é o decisionId da confirmação do pulo impresso pelo motor.
 Schema: references/runtime.md#task-plan-artifact.
@@ -177,6 +179,8 @@ Before the executor starts, record the real `git status --short`, staged and uns
 task's declared `writes` (or approved `touches` when `writes` is absent), and relevant pre-existing
 untracked paths in a durable task note or review handoff. The planner identifies those existing
 changes; the reviewer compares against this baseline and excludes them from the delivery judgment.
+
+The attempt records the disjoint file scopes of contemporaneous executors; a new executor also updates earlier active attempts with its scope. Git observes changed paths globally, not authorship. Changes outside this task may be excluded only when they fit those recorded other scopes and the current independent reviewer supplies explicit attribution through `--scope-evidence`. The scope receipt records `excludedPaths` and the authorship limitation. Observed changes outside every authorized recorded scope always block, even with reviewer evidence. `done` requires the same delivery fingerprint and reviewer identity as the passing receipt; changes after validation require fresh verification. Ignored files are not audited automatically: the scope receipt always exposes that limitation and the independent reviewer must inspect them separately, without a mandatory `--scope-evidence` flag just for ignored paths. Unavailable Git/baseline, submodules and non-Git workspaces require explicit `--scope-evidence`, as does attribution to another executor; external-resource effects need their own observations. The fingerprint conservatively covers all Git-visible changes: any change after validation, including another executor's change, requires new validation so attribution evidence cannot become stale.
 
 ## Open questions after planning
 

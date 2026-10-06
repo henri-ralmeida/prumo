@@ -23,6 +23,29 @@ opera uma GUI, não consulta um conector nem certifica uma observação humana. 
 verificação aprovado quando existir; aponte um método de verificação não suportado em vez de
 inventar um comando que passe ou tratar ferramentas indisponíveis como exceção de inspeção.
 
+## Escopo explícito de arquivos e recursos compartilhados
+
+Toda nova tradução de um plano aprovado, de qualquer harness, define `scopePolicy: "explicit"` no plano.
+Cada tarefa declara `writeScope: "files"|"read-only"|"unknown"`. `files` exige `touches` não vazio,
+baseado na investigação do projeto real, incluindo novos caminhos justificados; nunca invente escopo
+para passar na validação. `read-only` proíbe gravar arquivos do projeto e usa `touches`/`writes` do task-plan
+vazios ou ausentes; isso não significa que recursos externos sejam somente leitura. `unknown` é aceito na inicialização
+e permanece visível no dashboard, mas a execução aguarda uma alteração aprovada do contrato de escopo
+por `sync-plan`. Não converta automaticamente escopo ausente ou desconhecido para `read-only` nem edite `state.json`.
+
+Declare `sharedResources: [{ "id": "<id estável do recurso>", "access": "read"|"write" }]` na tarefa.
+A mesma tabela, serviço ou ambiente usa o mesmo id estável entre tarefas. Qualquer gravação num id
+compartilhado exige encadeamento de dependências; leituras simultâneas são permitidas. Investigue os
+efeitos externos além dos arquivos: caminhos diferentes não comprovam independência. Uma exceção aprovada
+`--allow-overlap` pode aceitar um grafo com conflitos, mas o motor serializa arquivos/recursos conflitantes;
+isso não autoriza gravações paralelas. `writes` do task-plan fica dentro de `touches` para `files` e vazio para `read-only`.
+
+Planos sem a política preservam o comportamento legado. A adoção é uma alteração explícita de contrato por
+`sync-plan`, com a renovação aplicável de aprovação/planejamento; preserve o histórico e as escolhas explícitas
+dos gates existentes. Discussão → planejamento → execução → revisão independente continua sendo o fluxo,
+incluindo as escolhas existentes do usuário de pular discussão ou planejamento. Verificações de escopo
+nunca dispensam validações de produção nem a independência da revisão.
+
 ## Contexto, critérios atuais e prova executável
 
 Mantenha estas três coisas separadas, usando o formato de plano existente:

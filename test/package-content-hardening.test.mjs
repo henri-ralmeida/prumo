@@ -10,7 +10,7 @@ import { packageContentManifest, packageDistributionFiles } from '../scripts/pac
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const rootFiles = ['package.json', 'SKILL.md', 'README.md', 'README.pt-BR.md', 'CHANGELOG.md', 'LICENSE']
-const bundleScripts = ['messages.json', 'region.mjs', 'i18n.mjs', 'storage.mjs', 'atomic-state.mjs', 'validation.mjs', 'contract-drift.mjs', 'sync-plan-audit.mjs', 'task-identifiers.mjs', 'dashboard-diagnostics.mjs', 'dashboard-update.mjs', 'dashboard.html', 'installation-bundle.mjs', 'engine-args.mjs', 'command-metrics.mjs', 'review-readiness.mjs', 'engine.mjs', 'serve-args.mjs', 'serve.mjs']
+const bundleScripts = ['messages.json', 'region.mjs', 'i18n.mjs', 'storage.mjs', 'atomic-state.mjs', 'validation.mjs', 'task-scope.mjs', 'execution-readiness.mjs', 'contract-drift.mjs', 'sync-plan-audit.mjs', 'task-identifiers.mjs', 'dashboard-diagnostics.mjs', 'dashboard-update.mjs', 'dashboard.html', 'installation-bundle.mjs', 'engine-args.mjs', 'command-metrics.mjs', 'review-readiness.mjs', 'engine.mjs', 'serve-args.mjs', 'serve.mjs']
 
 function fixture(t, prefix) {
   const root = mkdtempSync(join(resolve(tmpdir()), prefix))

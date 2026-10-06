@@ -36,7 +36,7 @@ function writeIsInsideTouches(write, touches) {
   const candidate = normalizedScopePath(write)
   return touches.some(touch => {
     const prefix = normalizedScopePath(touch)
-    return candidate === prefix || (prefix && candidate.startsWith(prefix + '/'))
+    return prefix === '' || candidate === prefix || candidate.startsWith(prefix + '/')
   })
 }
 const failureMessage = (step, check, index, total) =>
@@ -170,6 +170,7 @@ export function assertTaskPlan(task, plan) {
   if (plan.writes !== undefined) {
     insist(Array.isArray(plan.writes) && plan.writes.every(safeRelativePath),
       'task plan writes must be an array of safe relative paths without absolute paths, .. or NUL')
+    insist(task.writeScope !== 'read-only' || !plan.writes.length, 'read-only task plan cannot declare writes')
     if (task.touches?.length) {
       for (const write of plan.writes)
         insist(writeIsInsideTouches(write, task.touches),
@@ -203,6 +204,8 @@ export function planTaskFromState(t) {
     maxAttempts: t.maxAttempts,
     tags: t.tags,
     touches: t.touches,
+    ...(t.writeScope === undefined ? {} : { writeScope: t.writeScope }),
+    ...(t.sharedResources === undefined ? {} : { sharedResources: t.sharedResources }),
     unavailable: t.unavailable,
   }
 }

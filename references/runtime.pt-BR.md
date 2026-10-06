@@ -145,6 +145,7 @@ antes de registrar o resultado, confere de novo tentativa, contrato, revisor e e
 ```json
 {
   "name": "my-feature",
+  "scopePolicy": "explicit",
   "maxParallel": 4,
   "maxExecutors": 3,
   "phases": [{ "id": "F1", "title": "Server side" }],
@@ -159,13 +160,42 @@ antes de registrar o resultado, confere de novo tentativa, contrato, revisor e e
       "manualEstimate": "4h30",
       "deps": ["T0"],
       "validation": [{ "kind": "functional", "run": "pnpm test:changed", "expect": "the task-specific behavior cases pass" }],
+      "writeScope": "files",
       "touches": ["supabase/functions/scenes/"],
+      "sharedResources": [{ "id": "service:scenes", "access": "write" }],
       "unavailable": ["database", "manual-inspection"],
       "tags": ["migration"]
     }
   ]
 }
 ```
+
+## Escopo explícito de arquivos e recursos compartilhados
+
+Toda nova tradução de um plano aprovado, de qualquer harness, define `scopePolicy: "explicit"` no plano.
+Cada tarefa declara `writeScope: "files"|"read-only"|"unknown"`. `files` exige `touches` não vazio,
+baseado na investigação do projeto real, incluindo novos caminhos justificados; nunca invente escopo
+para passar na validação. `read-only` proíbe gravar arquivos do projeto e usa `touches`/`writes` do task-plan
+vazios ou ausentes; isso não significa que recursos externos sejam somente leitura. `unknown` é aceito na inicialização
+e permanece visível no dashboard, mas a execução aguarda uma alteração aprovada do contrato de escopo
+por `sync-plan`. Não converta automaticamente escopo ausente ou desconhecido para `read-only` nem edite `state.json`.
+
+Declare `sharedResources: [{ "id": "<id estável do recurso>", "access": "read"|"write" }]` na tarefa.
+A mesma tabela, serviço ou ambiente usa o mesmo id estável entre tarefas. Qualquer gravação num id
+compartilhado exige encadeamento de dependências; leituras simultâneas são permitidas. Investigue os
+efeitos externos além dos arquivos: caminhos diferentes não comprovam independência. Uma exceção aprovada
+`--allow-overlap` pode aceitar um grafo com conflitos, mas o motor serializa arquivos/recursos conflitantes;
+isso não autoriza gravações paralelas. `writes` do task-plan fica dentro de `touches` para `files` e vazio para `read-only`.
+
+Planos sem a política preservam o comportamento legado. A adoção é uma alteração explícita de contrato por
+`sync-plan`, com a renovação aplicável de aprovação/planejamento; preserve o histórico e as escolhas explícitas
+dos gates existentes. Discussão → planejamento → execução → revisão independente continua sendo o fluxo,
+incluindo as escolhas existentes do usuário de pular discussão ou planejamento. Verificações de escopo
+nunca dispensam validações de produção nem a independência da revisão.
+
+A verificação real de escopo em `validate`/`done` compara arquivos visíveis pelo Git à linha de base de `start`; arquivos ignorados e efeitos externos exigem observação independente. Sem Git/linha de base, `validate --ok --scope-evidence "<evidência e limitações>"` exige o revisor independente atual, registra a limitação e não libera gravações observadas sem autorização. Veja [review.md](review.md) para os limites da evidência.
+
+A tentativa registra os escopos de arquivos disjuntos dos executores contemporâneos; um novo executor também acrescenta seu escopo às tentativas anteriores ainda ativas. O Git observa caminhos alterados globalmente, não a autoria. Alterações fora desta tarefa só podem ser desconsideradas se couberem nesses outros escopos registrados e o revisor independente atual fornecer atribuição explícita por `--scope-evidence`. O recibo de escopo registra `excludedPaths` e a limitação de autoria. Alterações observadas fora de todos os escopos autorizados registrados sempre bloqueiam, mesmo com evidência do revisor. `done` exige a mesma impressão da entrega e a identidade do revisor do recibo aprovado; alterações após a validação exigem nova verificação. Arquivos ignorados não são auditados automaticamente: o recibo de escopo sempre expõe essa limitação e o revisor independente precisa conferi-los separadamente, sem obrigatoriedade de `--scope-evidence` somente por haver caminhos ignorados. Git/linha de base indisponíveis, submódulos e ambientes sem Git exigem `--scope-evidence` explícita, assim como a atribuição a outro executor; efeitos em recursos externos precisam de observações próprias. A impressão inclui conservadoramente todas as mudanças visíveis pelo Git: qualquer alteração após validar, inclusive de outro executor, exige nova validação para que a evidência de atribuição não fique obsoleta.
 
 ### Contrato da tarefa
 
@@ -185,6 +215,8 @@ e um contrato de validação válido; o planejamento da fase refina a execução
 | `validation`    | string \| {run, expect, kind, cacheable?, cachePaths?, cwd?, env?, shell?, expectedExitCodes?, timeoutMs?}[]    | `""`      | O que precisa ser VERDADE antes de done. Texto, ou passos estruturados (veja abaixo) |
 | `validationMode` | "functional" \| "inspection" | "functional" | Checagens comportamentais exigidas, a menos que seja uma inspeção justificada sem runtime. |
 | `inspectionReason` | string | — | Obrigatório para inspeção; explique por que o comportamento em runtime não é afetado. |
+| `writeScope` | "files" \| "read-only" \| "unknown" | — | Obrigatório em planos explícitos; posse de arquivos, nenhuma gravação de arquivos ou escopo de execução pendente. |
+| `sharedResources` | {id, access: "read" \| "write"}[] | `[]` | Ids estáveis de recursos e acesso; qualquer gravação exige ordenação. |
 | `touches`       | string[]                      | `[]`      | Prefixos de caminho que a tarefa grava; `init` recusa tarefas paralelas com caminhos sobrepostos |
 | `unavailable`   | resource[]                    | —         | Recursos que esta tarefa não pode usar: `database`, `network`, `credential`, `external-service`, `production-data`, `manual-inspection`; alterá-lo exige planejamento novo; entradas repetidas são gravadas uma vez |
 | `tags`          | string[]                      | `[]`      | Rótulos livres (`migration`, `docs`…) — apenas informativos                                   |
@@ -201,7 +233,7 @@ invalidar o planejamento. `manualEstimate` é uma estimativa humana para a visã
 estado a guarda em minutos inteiros, e valores inválidos (zero, negativos, frações ou ilegíveis) são recusados.
 
 Campos no nível do plano: `name` (obrigatório), `description`, `phases[]` (`{id, title}`),
-`maxParallel` (4), `maxExecutors` (3), `requireReview` (true).
+`maxParallel` (4), `maxExecutors` (3), `requireReview` (true), `scopePolicy` (opcional; `"explicit"`).
 
 Textos de exibição precisam estar preenchidos quando informados. Antes de acrescentar uma tarefa por
 `sync-plan`, o orquestrador deve preencher seu `summary` com base no escopo aprovado; a sincronização
@@ -850,7 +882,7 @@ Regras que o motor impõe (todo o resto é julgamento do orquestrador):
   pelo executor em vez de um revisor (`"requireReview": false` no plano desativa isso).
   **Autor ≠ verificador** é o ponto: um autorrelato não é um veredito.
 - `init` recusa um plano em que duas tarefas que podem rodar em paralelo declaram caminhos `touches`
-  sobrepostos — o mesmo arquivo entregue a dois agentes ao mesmo tempo. `touches` é opcional (prefixos, não
+  sobrepostos — o mesmo arquivo entregue a dois agentes ao mesmo tempo. Em planos legados, `touches` é opcional (prefixos, não
   globs); um plano que o omite recorre à cadeia de dependências como única proteção. Contorne com
   `--allow-overlap`, que NÃO é o que `--force` faz (este apenas sobrescreve uma execução existente).
 - `done` recusa sem uma **validação aprovada registrada para a tentativa atual**.

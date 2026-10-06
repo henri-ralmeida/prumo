@@ -33,6 +33,7 @@ dentro da mesma fase controlam a execução, não o planejamento da fase. A nume
 independentes. O usuário escolhe quais fases elegíveis planejar, inclusive várias fases em paralelo; a elegibilidade
 não autoriza abrir todas as fases automaticamente. Mantenha as atribuições de fase e as cadeias de dependência
 aprovadas. `touches` sobrepostos devem ser resolvidos pelo grafo de dependências aprovado, não movendo tarefas.
+Em planos explícitos, investigue também `writeScope` e `sharedResources`: gravações no mesmo recurso exigem dependências, mesmo com arquivos distintos. Resolva `unknown` por alteração aprovada via `sync-plan` antes de executar. Preserve as escolhas já registradas de discussão e planejamento.
 
 ## Quando uma fase fica elegível
 

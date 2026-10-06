@@ -47,7 +47,7 @@ node $ENGINE unblock T4 --confirmed-by-user                   # retomando execu�
 
 **Use um subagente nativo para plan-phase quando houver um realmente disponível; caso contrário, informe a limitação e siga o fallback do planejador local e somente leitura em [planning.pt-BR.md](planning.pt-BR.md). Todo start continua exigindo um despacho real de executor nativo na MESMA mensagem.**
 Dispare agentes planejadores prontos dentro da capacidade total e agentes de execução prontos dentro dos dois limites — o paralelismo é
-o propósito do grafo, e tarefas que não compartilham dependência não compartilham arquivo. O motor só enxerga
+o propósito do grafo, mas inspecione conflitos de arquivos e recursos compartilhados antes de considerar tarefas independentes. O motor só enxerga
 a string de `--agent`; por isso, um orquestrador que roda `start` e depois escreve o código ele mesmo
 passa em todas as verificações e deixa um arquivo de estado que mente: `--agent` precisa nomear um agente que
 EXISTE. Essa é a única regra aqui que o motor não consegue impor por você.
@@ -84,7 +84,8 @@ nomeie a área ou organização responsável somente quando ela for conhecida. D
 Não copie para o texto de produto identificadores de tarefa, rodada, achado ou critério, nomes de processos internos ou do orquestrador, nomes
 de pessoas, nem a data ou a autoria de uma decisão. Datas que sustentam uma medição ou descrevem
 comportamento do produto podem ser incluídas. Mantenha a rastreabilidade no contrato aprovado, no commit ou no ticket.
-Grave SOMENTE em: <touches>  — outro executor é dono do resto, neste momento.
+Respeite `writeScope`: `files` grava SOMENTE em <touches>; `read-only` não grava arquivos; `unknown` precisa de alteração aprovada por `sync-plan` antes de iniciar.
+Respeite os acessos de <sharedResources> e as dependências; arquivos distintos não comprovam independência.
 Construa sobre o que estas já produziram: <deps>.
 Leia o taskPlan atual e reconfira a pesquisa e os passos dele contra o workspace real: <artefato, ou "planejamento explicitamente pulado" mais o recibo>.
 Informe um plano desatualizado ou uma decisão consequencial não resolvida; não altere silenciosamente o contrato aprovado.

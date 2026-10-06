@@ -5,6 +5,15 @@ import { releaseHistory, releaseNotes } from '../lib/release-notes.mjs'
 
 const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 
+test('atualização da 2.4.8 apresenta as funcionalidades da 2.5.0', () => {
+  const history = releaseHistory(['2.4.8'], '2.5.0')
+  assert.deepEqual(history.map(release => release.version), ['2.5.0'])
+  assert.deepEqual(history[0].sections.map(section => section.title), [
+    'Added — Explicit task scopes', 'Added — Readiness and shared resources',
+    'Improved — Scope confirmations',
+  ])
+})
+
 test('atualização da 2.4.7 mostra somente as notas novas da 2.4.8', () => {
   const history = releaseHistory(['2.4.7'], '2.4.8')
   assert.deepEqual(history.map(release => release.version), ['2.4.8'])

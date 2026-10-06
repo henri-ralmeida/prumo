@@ -5,13 +5,15 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn, spawnSync } from 'node:child_process'
+import { downloadPublishedFile } from './fixtures/published-download.mjs'
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const smoke = join(repo, 'scripts/published-update-smoke.mjs')
 // O registro fornece os tarballs publicados; tags Git não representam instalações disponíveis no npm.
-// O orçamento comporta 23 versões publicadas, com um minuto por cenário e dois para preparar o candidato.
+// O prazo acompanha todas as publicações, para que novas versões não interrompam a matriz histórica.
 const workers = process.platform === 'win32' ? 1 : 2
-const publishedMatrixTimeout = Math.ceil(23 / workers) * 60000 + 120000
+const publishedMetadata = JSON.parse((await downloadPublishedFile('https://registry.npmjs.org/@henri-ralmeida%2fprumo')).toString('utf8'))
+const publishedMatrixTimeout = Math.ceil(Object.keys(publishedMetadata.versions).length / workers) * 90000 + 120000
 
 test('versões publicadas no npm atualizam para o candidato e preservam seus dados', { timeout: publishedMatrixTimeout }, async () => {
   const result = await new Promise((resolveResult, reject) => {

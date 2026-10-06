@@ -15,6 +15,7 @@ import { join, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readCommandMetrics } from './command-metrics.mjs'
 import { isReviewRejected } from './review-readiness.mjs'
+import { executionReadiness } from './execution-readiness.mjs'
 import { dashboardUpdate } from './dashboard-update.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -423,6 +424,7 @@ function derive(state) {
         { planningStatus, ...(planningBlockedBy.length ? { planningBlockedBy } : {}), ...(inputStatus ? { inputStatus } : {}) } : {}) }
     if (migrationPending && t.state === 'pending' && usesCurrentPlanning(state, t))
       Object.assign(out[id], { effective: 'pending', planningStatus: 'awaiting_migration' })
+    out[id].executionReadiness = executionReadiness(state, t, out[id])
   }
   return out
 }

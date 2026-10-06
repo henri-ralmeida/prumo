@@ -33,6 +33,7 @@ within the same phase gate execution, not phase planning. Phase numbering alone 
 phases. The user chooses which eligible phases to plan, including multiple phases in parallel; eligibility
 does not authorize opening all phases automatically. Keep the approved phase assignments and dependency
 chains. Overlapping `touches` must be resolved through the approved dependency graph, not by moving tasks.
+For explicit plans, also investigate `writeScope` and `sharedResources`: writers to the same resource require dependencies even with distinct files. Resolve `unknown` through an approved `sync-plan` change before execution. Preserve existing recorded discussion and planning choices.
 
 ## When a phase becomes eligible
 

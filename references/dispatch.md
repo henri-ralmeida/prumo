@@ -47,7 +47,7 @@ node $ENGINE unblock T4 --confirmed-by-user                   # resuming active 
 
 **Use a native subagent for plan-phase when one is actually available; otherwise report the limitation and follow the local, read-only planner fallback in [planning.md](planning.md). Every start still requires an actual native executor dispatch in the SAME message.**
 Dispatch ready planner agents within total capacity and ready execution agents within both caps — parallelism is
-the point of the graph, and tasks that share no dep share no file. The engine only ever sees
+the point of the graph, but inspect declared file and shared-resource conflicts before treating tasks as independent. The engine only ever sees
 the `--agent` string, so an orchestrator that runs `start` and then writes the code itself
 passes every check and leaves a state file that lies: `--agent` must name an agent that
 EXISTS. That is the one rule here the engine cannot enforce for you.
@@ -84,7 +84,8 @@ name its owning area or organization only when known. State technical reasons wi
 Do not copy task, round, finding or criterion identifiers, internal process or orchestrator names, people's
 names, or a decision's date or authorship into product text. Dates that support a measurement or describe
 product behavior may be included. Keep traceability in the approved contract, commit or ticket.
-Write ONLY under: <touches>  — another executor owns the rest, right now.
+Respect `writeScope`: `files` writes ONLY under <touches>; `read-only` writes no files; `unknown` needs an approved `sync-plan` contract change before starting.
+Respect <sharedResources> access and dependencies; distinct files do not prove independence.
 Build on what these already produced: <deps>.
 Read the current taskPlan and recheck its research/steps against the actual workspace: <artifact, or "planning explicitly skipped" plus its receipt>.
 Report a stale plan or unresolved consequential decision; do not silently change the approved contract.

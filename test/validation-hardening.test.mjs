@@ -355,11 +355,25 @@ test('plano exige recursos indisponíveis válidos em cada critério de verifica
   }
 })
 
+test('escopo sem escrita recusa caminhos e valida o formato antes de conferir o conteúdo', () => {
+  const delivery = { id: 'T1', writeScope: 'read-only', touches: [], validation: [step()] }
+  const approved = plan()
+  approved.writes = []
+  assert.doesNotThrow(() => assertTaskPlan(delivery, approved))
+  approved.writes = ['src/arquivo.txt']
+  assert.throws(() => assertTaskPlan(delivery, approved), /read-only task plan cannot declare writes/)
+  for (const writes of [null, 'src/arquivo.txt', 1, {}]) {
+    approved.writes = writes
+    assert.throws(() => assertTaskPlan(delivery, approved), /writes must be an array/)
+  }
+})
+
 test('plano valida caminhos escritos dentro do escopo da tarefa', () => {
   const delivery = { id: 'T1', touches: ['src/'], validation: [step()] }
   const approved = plan()
   approved.writes = ['src', 'src/arquivo.txt']
   assert.doesNotThrow(() => assertTaskPlan(delivery, approved))
+  assert.doesNotThrow(() => assertTaskPlan({ ...delivery, touches: ['.'] }, approved))
 
   const outside = structuredClone(approved)
   outside.writes = ['docs/arquivo.txt']

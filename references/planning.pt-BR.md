@@ -66,6 +66,8 @@ O motor calcula o hash da descoberta validada e do recibo emitido com JSON canô
 rodada de planejamento e aos planos finais das tarefas. Repetir `plan-phase` enquanto essa rodada está ativa não tem efeito.
 `finish-phase-planning` recusa uma rodada cuja descoberta não corresponde mais ao contexto persistido.
 
+Em planos com `scopePolicy: "explicit"`, investigue `writeScope`, `touches` e `sharedResources` antes de propor `writes`. Para `read-only`, `writes` fica vazio ou ausente. Para `files`, `writes` deve caber nos prefixos aprovados; ausência continua sendo um aviso, não autorização para gravar fora deles. Escopo `unknown` não autoriza execução: devolva a investigação para alterar o contrato por `sync-plan`, sem inventar caminhos. Recurso compartilhado com qualquer gravação exige dependências; não deduza independência só pelos arquivos.
+
 ## Prompt do planejador (inglês)
 
 ```text
@@ -87,7 +89,7 @@ steps, verification, open questions, writes, phaseBinding and unresolvedInputs. 
 state who decides and by when with `decideBy`: `executor` (with the proposed `answer` the executor applies),
 `user-now`, `{ "beforeTask": "<id>" }` or `{ "beforePhase": "<id>" }`. Each verification item may
 declare required resources with `requires`; use only the documented vocabulary. Record anticipated project
-paths in `writes`, all contained by that task's `touches`. Copy the exact phaseBinding and
+paths in `writes`, all contained by that task's `touches`; use no file writes for `read-only`. Investigate shared resource access and unresolved scope; never invent paths. Copy the exact phaseBinding and
 that task's unresolvedInputs from the `plan-phase` output; do not recalculate them or renumber plannerRound.
 When discussion was skipped, discussionRoundId is the confirmed skip decisionId printed by the engine.
 Schema: references/runtime.md#task-plan-artifact.
@@ -133,7 +135,7 @@ steps, verification, openQuestions, writes, phaseBinding e unresolvedInputs. Par
 diga quem decide e até quando com `decideBy`: `executor` (com a resposta proposta em `answer`, que o executor
 aplica), `user-now`, `{ "beforeTask": "<id>" }` ou `{ "beforePhase": "<id>" }`. Cada item de verificação pode
 declarar recursos exigidos com `requires`; use somente o vocabulário documentado. Registre em `writes` os
-caminhos de projeto previstos, todos contidos nos `touches` da tarefa. Copie exatamente phaseBinding e os
+caminhos de projeto previstos, todos contidos nos `touches` da tarefa; não declare gravações de arquivos para `read-only`. Investigue acesso a recursos compartilhados e escopo pendente; não invente caminhos. Copie exatamente phaseBinding e os
 unresolvedInputs da tarefa do resultado de `plan-phase`; não os recalcule nem renumere plannerRound.
 Quando a discussão foi pulada, discussionRoundId é o decisionId da confirmação do pulo impresso pelo motor.
 Schema: references/runtime.md#task-plan-artifact.
@@ -177,6 +179,8 @@ Antes de o executor começar, registre o `git status --short` real, o diff stage
 `writes` declarados da tarefa (ou dos `touches` aprovados quando `writes` estiver ausente) e os caminhos relevantes
 não rastreados já existentes em uma nota durável da tarefa ou no handoff de revisão. O planejador identifica essas
 mudanças existentes; o revisor compara com essa linha de base e as exclui do julgamento da entrega.
+
+A tentativa registra os escopos de arquivos disjuntos dos executores contemporâneos; um novo executor também acrescenta seu escopo às tentativas anteriores ainda ativas. O Git observa caminhos alterados globalmente, não a autoria. Alterações fora desta tarefa só podem ser desconsideradas se couberem nesses outros escopos registrados e o revisor independente atual fornecer atribuição explícita por `--scope-evidence`. O recibo de escopo registra `excludedPaths` e a limitação de autoria. Alterações observadas fora de todos os escopos autorizados registrados sempre bloqueiam, mesmo com evidência do revisor. `done` exige a mesma impressão da entrega e a identidade do revisor do recibo aprovado; alterações após a validação exigem nova verificação. Arquivos ignorados não são auditados automaticamente: o recibo de escopo sempre expõe essa limitação e o revisor independente precisa conferi-los separadamente, sem obrigatoriedade de `--scope-evidence` somente por haver caminhos ignorados. Git/linha de base indisponíveis, submódulos e ambientes sem Git exigem `--scope-evidence` explícita, assim como a atribuição a outro executor; efeitos em recursos externos precisam de observações próprias. A impressão inclui conservadoramente todas as mudanças visíveis pelo Git: qualquer alteração após validar, inclusive de outro executor, exige nova validação para que a evidência de atribuição não fique obsoleta.
 
 ## Perguntas abertas depois do planejamento
 

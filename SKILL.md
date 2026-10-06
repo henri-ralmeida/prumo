@@ -209,8 +209,22 @@ three fields carry judgment:
   for behavioral tests and `kind: "static"` for lint/build/typecheck. The rules are in
   [contracts.md](references/contracts.md).
 - **`touches` lists the path prefixes the task writes.** `init` refuses two parallel tasks with
-  overlapping paths, catching the collision while it is still a planning mistake. Optional;
-  omitting it leaves the dep chain as the only guard.
+  overlapping paths, catching the collision while it is still a planning mistake. New explicit plans
+  require it for `writeScope: "files"`; optional legacy scope relies on the dependency graph.
+
+**Explicit scope for new translations.** When translating an approved plan from any harness,
+set `scopePolicy: "explicit"` and declare every task's `writeScope`: `files`, `read-only` or `unknown`.
+For `files`, investigate the real paths and provide nonempty `touches`; never invent paths to pass
+validation. `read-only` means no project file writes; it can still change declared external resources.
+`unknown` may initialize and appear on the dashboard, but must be resolved by an approved contract
+change through `sync-plan` before execution; never turn it into `read-only` automatically.
+Declare `sharedResources: [{ "id": "<stable resource>", "access": "read"|"write" }]` for shared tables,
+services or environments. Equal resource ids with any writer require a dependency chain; simultaneous
+readers may proceed. File separation alone does not prove independence. Task-plan `writes` must remain
+inside `touches`, and independent review compares actual changes with the pre-start baseline.
+Plans without `scopePolicy` retain legacy behavior. Adopt the policy explicitly through `sync-plan`,
+never by editing state. This adds scope checks without skipping discussion, planning or independent review.
+See [contracts.md](references/contracts.md) and [runtime.md](references/runtime.md) for limits.
 
 Missing `touches` means unknown write scope, not proof that work is independent. Inspect `ready`,
 the task dependencies and the phase planning blockers before describing a task as runnable.

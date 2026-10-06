@@ -2,6 +2,14 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.5.0 — 2026-10-06
+
+- Declare o escopo de escrita nos contratos novos: caminhos investigados, somente leitura ou escopo ainda desconhecido, preservando a leitura e execução dos contratos antigos.
+- Confira a entrega contra o escopo aprovado a partir de uma referência anterior à execução; alterações fora dele precisam ser resolvidas antes da aprovação independente.
+- Explique no dashboard as condições de prontidão e os impedimentos para executar, sem substituir as etapas de discussão, planejamento e revisão.
+- Declare recursos compartilhados para considerar conflitos de escrita além dos arquivos.
+- Use termos como funcionalidades, etapas e alterações nas confirmações da skill, conforme o contexto da solicitação.
+
 ## 2.4.8 — 2026-10-05
 
 - Centralize o comando de atualização, ofereça cópia com confirmação acessível e destaque o botão de fechar em amarelo.

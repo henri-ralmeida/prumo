@@ -13,6 +13,146 @@ const task = (id, state = 'pending', fields = {}) => ({
   id, title: `Task ${id}`, phase: 'P1', state, deps: [], attempts: [], validations: [], notes: [], ...fields,
 })
 
+test('condições de execução explicam liberação e espera sem substituir resumo, contrato ou estado', () => {
+  const ui = dashboard('en')
+  const value = task('T1', 'ready', { summary: 'Preserve summary', validation: 'echo contract',
+    writeScope: 'files', touches: ['src/orders.mjs'], sharedResources: [{ id: 'orders-db', access: 'write' }],
+    executionReadiness: { ready: true, reasons: [] } })
+  const state = { run: 'escopo', plan: {}, tasks: { T1: value } }
+  ui.render(state)
+  assert.match(ui.nodes.get('#available').innerHTML, /Execution can start/)
+  for (const expanded of [false, true]) {
+    ui.run("POP_EXPANDED = expanded; fillPop('T1')", { expanded })
+    const body = ui.nodes.get('#popBody').innerHTML
+    assert.match(body, /role="group" aria-label="Execution conditions"/)
+    for (const text of ['Preserve summary', 'echo contract', 'src/orders.mjs', 'orders-db (write access)', 'Execution can start']) assert.ok(body.includes(text), text)
+  }
+  value.executionReadiness = { ready: false, reasons: [
+    { code: 'dependency', message: 'Dependencies are not complete', taskIds: ['T2'] },
+    { code: 'files', message: 'Files overlap', paths: ['src/orders.mjs'] },
+    { code: 'resources', message: 'Resources overlap', resources: ['orders-db'] },
+    ...['Unknown scope', 'No capacity', 'Discussion required', 'Planning required', 'Authorization required'].map(message => ({ code: message, message })),
+  ] }
+  ui.render(state)
+  ui.run("fillPop('T1')")
+  const body = ui.nodes.get('#popBody').innerHTML
+  assert.match(body, /Execution must wait/)
+  assert.doesNotMatch(body, /Execution can start/)
+  for (const reason of value.executionReadiness.reasons) assert.ok(body.includes(reason.message), reason.message)
+  for (const detail of ['(T2)', '(src/orders.mjs)', '(orders-db)']) assert.ok(body.includes(detail), detail)
+  assert.equal(ui.run("eff('T1')"), 'ready')
+  assert.match(ui.nodes.get('#available').innerHTML, /Execution must wait/)
+  assert.doesNotMatch(ui.nodes.get('#available').innerHTML, /the executor takes it next/)
+})
+
+test('estado servido usa condições derivadas e prioriza o cálculo vigente sobre campos antigos', () => {
+  for (const lang of ['en', 'pt-BR']) {
+    const ui = dashboard(lang)
+    const value = task('T1', 'pending', { writeScope: 'files', touches: ['src/orders.mjs'], summary: 'Resumo preservado', validation: 'echo contract' })
+    const readiness = { ready: false, reasons: [{ code: 'path_conflict', message: 'An active task owns overlapping paths', taskIds: ['T2'], paths: ['src/orders.mjs'] }] }
+    const state = { run: 'servido', plan: {}, tasks: { T1: value }, derived: { T1: { effective: 'ready', executionReadiness: readiness } } }
+    const waiting = lang === 'en' ? 'Execution must wait' : 'Execução deve aguardar'
+    const ready = lang === 'en' ? 'Execution can start' : 'Execução pode começar'
+    ui.render(state)
+    for (const expanded of [false, true]) {
+      ui.run("POP_EXPANDED = expanded; fillPop('T1')", { expanded })
+      const body = ui.nodes.get('#popBody').innerHTML
+      for (const text of [waiting, 'T2', 'src/orders.mjs', 'Resumo preservado', 'echo contract']) assert.ok(body.includes(text), text)
+      assert.ok(!body.includes(ready))
+    }
+    assert.ok(ui.nodes.get('#available').innerHTML.includes(waiting))
+    assert.doesNotMatch(ui.nodes.get('#available').innerHTML, /the executor takes it next|o executor assume a seguir/)
+    assert.equal(value.executionReadiness, undefined)
+    value.executionReadiness = { ready: true, reasons: [] }
+    ui.render(state)
+    ui.run("fillPop('T1')")
+    assert.ok(ui.nodes.get('#popBody').innerHTML.includes(waiting))
+    readiness.ready = true
+    readiness.reasons = []
+    value.executionReadiness = { ready: false, reasons: [] }
+    ui.render(state)
+    ui.run("fillPop('T1')")
+    assert.ok(ui.nodes.get('#popBody').innerHTML.includes(ready))
+    assert.ok(ui.nodes.get('#available').innerHTML.includes(ready))
+    assert.ok(!ui.nodes.get('#popBody').innerHTML.includes(waiting))
+  }
+})
+
+test('escopo desconhecido e somente leitura ficam visíveis; legado não ganha promessa de liberação', () => {
+  const ui = dashboard('en')
+  for (const [scope, expected] of [['unknown', 'Write scope is unknown'], ['read-only', 'No file writes']]) {
+    const value = task('T1', 'waiting', { writeScope: scope, sharedResources: [{ id: 'catalog', access: 'read' }],
+      executionReadiness: { ready: false } })
+    ui.render({ run: 'escopo', plan: {}, tasks: { T1: value } })
+    ui.run("fillPop('T1')")
+    assert.ok(ui.nodes.get('#popBody').innerHTML.includes(expected))
+    assert.match(ui.nodes.get('#popBody').innerHTML, /catalog \(read access\)/)
+  }
+  for (const executionReadiness of [undefined, {}, { ready: 'yes' }]) {
+    const value = task('T1', 'ready', { executionReadiness })
+    ui.render({ run: 'legado', plan: {}, tasks: { T1: value } })
+    ui.run("fillPop('T1')")
+    assert.doesNotMatch(ui.nodes.get('#popBody').innerHTML, /Execution conditions|Execution can start|Execution must wait/)
+    assert.doesNotMatch(ui.nodes.get('#available').innerHTML, /Execution can start|Execution must wait/)
+  }
+  assert.equal(ui.run('taskExecutionDetails(input)', { input: { writeScope: 'files' } }), '')
+})
+
+test('condições de execução e limites de escrita são traduzidos para pt-BR', () => {
+  const ui = dashboard('pt-BR')
+  const value = task('T1', 'pending', { writeScope: 'read-only',
+    sharedResources: [{ id: 'database:catalog', access: 'read' }],
+    executionReadiness: { ready: false, reasons: [
+      { code: 'discussion', message: 'Current discussion is required before execution' },
+      { code: 'capacity', message: 'Execution capacity is occupied' },
+    ] } })
+  ui.render({ run: 'escopo', plan: {}, tasks: { T1: value } })
+  ui.run("fillPop('T1')")
+  const body = ui.nodes.get('#popBody').innerHTML
+  for (const text of ['Condições de execução', 'Execução deve aguardar', 'Sem escrita em arquivos',
+    'É necessária uma discussão vigente antes da execução', 'As vagas de execução estão ocupadas',
+    'database:catalog (acesso de leitura)']) assert.ok(body.includes(text), text)
+})
+
+test('tarefas ativas e encerradas preservam escopo sem anunciar espera por início', () => {
+  const ui = dashboard('pt-BR')
+  for (const taskState of ['running', 'reviewing', 'done', 'skipped']) {
+    const value = task('T1', taskState, { writeScope: 'files', touches: ['src/orders.mjs'],
+      sharedResources: [{ id: 'orders-db', access: 'write' }] })
+    ui.render({ run: 'estado', plan: {}, tasks: { T1: value }, derived: { T1: {
+      effective: taskState, executionReadiness: { ready: false, reasons: [{ code: 'state', message: 'Task is not pending execution' }] },
+    } } })
+    for (const expanded of [false, true]) {
+      ui.run("POP_EXPANDED = expanded; fillPop('T1')", { expanded })
+      const body = ui.nodes.get('#popBody').innerHTML
+      assert.doesNotMatch(body, /Execução deve aguardar|Execução pode começar/)
+      assert.match(body, /src\/orders.mjs/)
+      assert.match(body, /orders-db \(acesso de escrita\)/)
+    }
+    assert.equal(value.state, taskState)
+  }
+  for (const taskState of ['blocked', 'failed']) {
+    const value = task('T1', taskState, { executionReadiness: { ready: false, reasons: [] } })
+    ui.render({ run: 'retomada', plan: {}, tasks: { T1: value } })
+    ui.run("fillPop('T1')")
+    assert.match(ui.nodes.get('#popBody').innerHTML, /Execução deve aguardar/)
+  }
+})
+
+test('detalhes de execução escapam dados externos em mensagens, escopo e recursos', () => {
+  const ui = dashboard('en')
+  const unsafe = '<img src=x onerror=alert(1)>'
+  const value = task('T1', 'ready', { writeScope: 'files', touches: [unsafe],
+    sharedResources: [{ id: unsafe, access: 'write' }],
+    executionReadiness: { ready: false, reasons: [{ code: 'files', message: unsafe, taskIds: [unsafe], paths: [unsafe], resources: [unsafe] }] } })
+  ui.render({ run: 'escopo', plan: {}, tasks: { T1: value } })
+  ui.run("fillPop('T1')")
+  for (const body of [ui.nodes.get('#popBody').innerHTML, ui.nodes.get('#available').innerHTML]) {
+    assert.doesNotMatch(body, /<img/)
+    assert.match(body, /&lt;img/)
+  }
+})
+
 test('aviso de atualização é traduzido, abre instruções manuais e não executa comandos', async () => {
   for (const lang of ['en', 'pt-BR']) {
     const ui = dashboard(lang)

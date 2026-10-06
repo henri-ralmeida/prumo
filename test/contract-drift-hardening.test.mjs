@@ -5,6 +5,27 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { businessContract, contractDrift } from '../scripts/contract-drift.mjs'
 
+test('mudanças no escopo e nos recursos compartilhados precisam de sincronização', () => {
+  const task = { id: 'T1', title: 'Entrega', phase: null, deps: [], tags: [], validation: '', touches: ['src/'], writeScope: 'files',
+    sharedResources: [{ id: 'database:contacts', access: 'write' }] }
+  const plan = { name: 'Plano', scopePolicy: 'explicit', tasks: [task] }
+  const state = { plan: { name: 'Plano', scopePolicy: 'explicit' }, tasks: { T1: structuredClone(task) } }
+  assert.deepEqual(contractDrift(state, { plan }).tasks, [])
+  const updated = structuredClone(plan)
+  updated.scopePolicy = 'legacy'
+  updated.tasks[0].writeScope = 'unknown'
+  updated.tasks[0].sharedResources[0].access = 'read'
+  const before = JSON.stringify(state)
+  const drift = contractDrift(state, { plan: updated })
+  assert.deepEqual(drift.planFields, ['scopePolicy'])
+  assert.deepEqual(drift.tasks, [{ task: 'T1', fields: ['writeScope', 'sharedResources'] }])
+  assert.equal(JSON.stringify(state), before)
+  const view = businessContract(plan, task)
+  assert.equal(view.plan.scopePolicy, 'explicit')
+  assert.equal(view.task.writeScope, 'files')
+  assert.deepEqual(view.task.sharedResources, task.sharedResources)
+})
+
 test('comparação não confunde tarefa ausente com propriedade herdada', () => {
   const tasks = ['constructor', 'toString', '__proto__'].map(id => ({ id, title: id, deps: [], validation: '' }))
   const state = { plan: { name: 'Plano' }, tasks: {} }, before = JSON.stringify(state)

@@ -38,7 +38,7 @@ Exemplos:
 
 ## Descubra e decida
 
-- Quando um novo pedido trouxer três ou mais mudanças distintas, antes de implementar qualquer uma delas, resuma seu entendimento na ordem solicitada. Introduza a lista com “Antes de prosseguir, eu entendi estas coisas:” no idioma do usuário e aguarde sua confirmação. Conte as mudanças pedidas, não etapas de implementação ou arquivos. Aplique isso somente ao novo escopo: não reconfirme escopo já aprovado e respeite uma instrução explícita do usuário para prosseguir sem essa confirmação.
+- Quando um novo pedido trouxer três ou mais mudanças distintas, antes de implementar qualquer uma delas, resuma seu entendimento na ordem solicitada. Introduza a lista naturalmente no idioma do usuário, usando funcionalidades, etapas ou alterações conforme o pedido, sem uma frase formal fixa, e aguarde sua confirmação. Conte as mudanças pedidas, não etapas de implementação ou arquivos. Aplique isso somente ao novo escopo: não reconfirme escopo já aprovado e respeite uma instrução explícita do usuário para prosseguir sem essa confirmação.
 - Questione soluções precipitadas quando o problema não estiver claro ou as evidências mostrarem uma divergência. Não reabra decisões já tomadas sem novas evidências relevantes.
 - Leia o contexto e os artefatos relevantes antes de perguntar algo que possa ser verificado. Separe fatos observados, suposições, decisões acordadas e dúvidas pendentes. O comportamento atual, por si só, não define a regra desejada.
 - Não invente regras de negócio para preencher lacunas. Expresse regras como condições observáveis: quem pode fazer o quê, quando, com quais informações, com qual resultado e com quais exceções. Use exemplos quando eles resolverem uma ambiguidade.

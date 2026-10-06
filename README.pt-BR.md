@@ -6,6 +6,8 @@ Prumo é um projeto independente inspirado no [graph-foreman](https://github.com
 
 O plano define o resultado esperado; o motor controla estados e registros. O ambiente de IA executa o trabalho e dispara seus agentes.
 
+Contratos novos declaram o escopo de escrita antes da execução: caminhos investigados, ausência de escrita em arquivos ou escopo que ainda precisa de pesquisa. Recursos compartilhados identificam conflitos além dos arquivos, como alterações na mesma tabela do banco. A discussão esclarece dúvidas, o planejamento detalha a abordagem, a execução respeita o escopo aprovado e a revisão independente confere a entrega contra a referência anterior à execução. O dashboard explica a prontidão e os impedimentos. Contratos antigos permanecem compatíveis; adotar a política explícita exige uma atualização aprovada do plano.
+
 ## Conheça o dashboard
 
 Estas capturas vêm do guia integrado e usam um plano fictício de checkout. Abra **Guia** no dashboard para experimentar os mesmos controles sem alterar seus planos. As imagens mostram a interface em inglês.

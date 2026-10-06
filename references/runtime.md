@@ -145,6 +145,7 @@ before recording the result, rechecks the attempt, contract, reviewer and state.
 ```json
 {
   "name": "my-feature",
+  "scopePolicy": "explicit",
   "maxParallel": 4,
   "maxExecutors": 3,
   "phases": [{ "id": "F1", "title": "Server side" }],
@@ -159,13 +160,41 @@ before recording the result, rechecks the attempt, contract, reviewer and state.
       "manualEstimate": "4h30",
       "deps": ["T0"],
       "validation": [{ "kind": "functional", "run": "pnpm test:changed", "expect": "the task-specific behavior cases pass" }],
+      "writeScope": "files",
       "touches": ["supabase/functions/scenes/"],
+      "sharedResources": [{ "id": "service:scenes", "access": "write" }],
       "unavailable": ["database", "manual-inspection"],
       "tags": ["migration"]
     }
   ]
 }
 ```
+
+## Explicit file and shared-resource scope
+
+Every new translation of an approved plan, from any harness, sets plan `scopePolicy: "explicit"`.
+Each task declares `writeScope: "files"|"read-only"|"unknown"`. `files` requires nonempty `touches`
+based on investigation of the actual project, including justified new paths; never invent scope just
+to satisfy validation. `read-only` forbids project file writes and uses empty or absent `touches`/task-plan `writes`;
+it does not mean external resources are read-only. `unknown` is accepted at initialization and remains
+visible in the dashboard, but execution waits for an approved scope contract change via `sync-plan`.
+Do not automatically convert missing or unknown scope to `read-only` or edit `state.json`.
+
+Declare task `sharedResources: [{ "id": "<stable resource id>", "access": "read"|"write" }]`.
+The same table, service or environment must use the same stable id across tasks. Any writer on a shared
+id requires a dependency chain; simultaneous readers are permitted. Inspect external effects as well
+as files: different paths alone do not establish independence. An approved `--allow-overlap` override
+can accept a conflicting graph, but runtime serializes conflicting files/resources; it does not grant
+parallel writes. `writes` in task plans stays within `touches` for `files` and is empty for `read-only`.
+
+Plans without the policy preserve legacy behavior. Adoption is an explicit contract change through
+`sync-plan`, with applicable renewed approval/planning; preserve history and existing explicit gate choices.
+Discussion → planning → execution → independent review remains the lifecycle, including existing user
+choices to skip discussion or planning. Scope checks never waive production validation or independence.
+
+Actual scope checks in `validate`/`done` compare files visible to Git with the `start` baseline; ignored files and external effects require independent observation. Without Git/baseline, `validate --ok --scope-evidence "<evidence and limitations>"` requires the current independent reviewer, records the limitation and never waives observed unauthorized writes. See [review.md](review.md) for evidence limits.
+
+The attempt records the disjoint file scopes of contemporaneous executors; a new executor also updates earlier active attempts with its scope. Git observes changed paths globally, not authorship. Changes outside this task may be excluded only when they fit those recorded other scopes and the current independent reviewer supplies explicit attribution through `--scope-evidence`. The scope receipt records `excludedPaths` and the authorship limitation. Observed changes outside every authorized recorded scope always block, even with reviewer evidence. `done` requires the same delivery fingerprint and reviewer identity as the passing receipt; changes after validation require fresh verification. Ignored files are not audited automatically: the scope receipt always exposes that limitation and the independent reviewer must inspect them separately, without a mandatory `--scope-evidence` flag just for ignored paths. Unavailable Git/baseline, submodules and non-Git workspaces require explicit `--scope-evidence`, as does attribution to another executor; external-resource effects need their own observations. The fingerprint conservatively covers all Git-visible changes: any change after validation, including another executor's change, requires new validation so attribution evidence cannot become stale.
 
 ### Task contract
 
@@ -185,6 +214,8 @@ and a valid validation contract; phase planning refines each task's execution wi
 | `validation`    | string \| {run, expect, kind, cacheable?, cachePaths?, cwd?, env?, shell?, expectedExitCodes?, timeoutMs?}[]    | `""`      | What must be TRUE before done. Prose, or structured steps (see below)                         |
 | `validationMode` | "functional" \| "inspection" | "functional" | Behavioral checks required unless this is a justified non-runtime inspection. |
 | `inspectionReason` | string | — | Required for inspection; explain why runtime behavior is unaffected. |
+| `writeScope` | "files" \| "read-only" \| "unknown" | — | Required for explicit plans; file ownership, no file writes or unresolved execution scope. |
+| `sharedResources` | {id, access: "read" \| "write"}[] | `[]` | Stable shared-resource ids and access; any writer requires ordering. |
 | `touches`       | string[]                      | `[]`      | Path prefixes the task writes; `init` refuses parallel tasks with overlapping paths           |
 | `unavailable`   | resource[]                    | —         | Resources this task cannot use: `database`, `network`, `credential`, `external-service`, `production-data`, `manual-inspection`; changing it requires fresh planning; repeated entries are stored once |
 | `tags`          | string[]                      | `[]`      | Free labels (`migration`, `docs`…) — informational only                                       |
@@ -201,7 +232,7 @@ invalidating planning. `manualEstimate` is a human estimate for the gains view, 
 state keeps it as whole minutes, and invalid values (zero, negative, fractional or unreadable) are refused.
 
 Plan-level fields: `name` (required), `description`, `phases[]` (`{id, title}`),
-`maxParallel` (4), `maxExecutors` (3), `requireReview` (true).
+`maxParallel` (4), `maxExecutors` (3), `requireReview` (true), `scopePolicy` (optional; `"explicit"`).
 
 Display text must be nonblank when supplied. Before adding a task through `sync-plan`, the orchestrator
 must fill its `summary` from the approved scope; synchronization refuses new tasks without it and
@@ -836,7 +867,7 @@ Rules the engine enforces (everything else is the orchestrator's judgment):
   by the executor rather than a reviewer (`"requireReview": false` in the plan opts out).
   **Author ≠ verifier** is the point: a self-report is not a verdict.
 - `init` refuses a plan where two tasks that can run in parallel declare overlapping `touches`
-  paths — the same file handed to two agents at once. `touches` is optional (prefixes, not
+  paths — the same file handed to two agents at once. For legacy plans, `touches` is optional (prefixes, not
   globs); a plan that omits it falls back to the dep chain as the only guard. Override with
   `--allow-overlap`, which is NOT what `--force` does (that one only overwrites an existing run).
 - `done` refuses without a **passing validation recorded for the current attempt**.

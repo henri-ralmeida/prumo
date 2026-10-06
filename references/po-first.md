@@ -34,7 +34,7 @@ Examples:
 
 ## Discover and decide
 
-- For a new request that asks for three or more distinct changes, before implementing any of them, summarize your understanding in the order requested. Introduce the list with “Before proceeding, I understood these things:” in the user's language and wait for the user's confirmation. Count requested changes, not implementation steps or files. This applies only to the new scope: do not reconfirm scope the user has already approved, and honor an explicit user instruction to proceed without this confirmation.
+- For a new request that asks for three or more distinct changes, before implementing any of them, summarize your understanding in the order requested. Introduce the list naturally in the user's language, naming features, stages or changes according to the request, without a fixed formal phrase, and wait for the user's confirmation. Count requested changes, not implementation steps or files. This applies only to the new scope: do not reconfirm scope the user has already approved, and honor an explicit user instruction to proceed without this confirmation.
 - Question premature solutions when the problem is unclear or evidence shows a mismatch. Do not reopen settled decisions without relevant new evidence.
 - Read the relevant context and artifacts before asking what you can verify. Distinguish observed facts, assumptions, agreed decisions and pending questions. Existing behavior alone does not establish the desired rule.
 - Do not invent business rules to fill gaps. Express rules as observable conditions: who can do what, when, with which information, with what result and exceptions. Use examples when they resolve ambiguity.

@@ -69,6 +69,8 @@ import {
 } from 'node:fs'
 import { randomUUID, createHash } from 'node:crypto'
 import { isReadyForReview } from './review-readiness.mjs'
+import { assertExplicitScope, scopeConflicts, captureScopeBaseline, verifyTaskScope } from './task-scope.mjs'
+import { executionReadiness, planQuestionRef, openQuestionRecords, questionResolutionMap, targetHasStarted, overdueQuestions, questionIsOverdue, taskAuthorization, runHasAuthorizationScope, occupancy } from './execution-readiness.mjs'
 import { writeAtomicState } from './atomic-state.mjs'
 import { runValidation, assertValidation, validationContract, validationDirectories, assertDiscovery, assertDiscussionBoundary, discoveryDigest, assertTaskPlan,
   assertUnavailableResources,
@@ -752,6 +754,7 @@ function validatePlan(plan, allowOverlap = false, historical = new Set()) {
   }
   for (const t of plan.tasks) {
     if (!t.id || !t.title) die('every task needs id and title')
+    try { assertExplicitScope(t, historical.has(t.id) ? undefined : plan.scopePolicy) } catch (error) { die(`task ${t.id}: ${error.message}`) }
     safeId(t.id)
     if (ids.has(t.id)) die(`duplicate task id ${t.id}`)
     for (const field of ['summary', 'validationSummary'])
@@ -800,9 +803,13 @@ function validatePlan(plan, allowOverlap = false, historical = new Set()) {
     for (let j = i + 1; j < plan.tasks.length; j++) {
       const a = plan.tasks[i]
       const b = plan.tasks[j]
+      const shared = scopeConflicts(a, b).resources
+      if (shared.length && !allowOverlap && !reaches(byId, a.id, b.id) && !reaches(byId, b.id, a.id))
+        die(`${a.id} and ${b.id} share write resources: ${shared.join(', ')} — add a dep between them (or --allow-overlap)`)
       if (!a.touches?.length || !b.touches?.length) continue
       if (reaches(byId, a.id, b.id) || reaches(byId, b.id, a.id)) continue
-      const clash = a.touches.find((pa) => b.touches.some((pb) => pathsCollide(pa, pb)))
+      const clash = plan.scopePolicy === 'explicit' ? scopeConflicts(a, b).paths[0] :
+        a.touches.find((pa) => b.touches.some((pb) => pathsCollide(pa, pb)))
       if (clash && !allowOverlap)
         die(
           `${a.id} and ${b.id} can run in parallel but both touch "${clash}" — ` +
@@ -898,6 +905,8 @@ function taskFromPlan(t) {
     maxAttempts: t.maxAttempts,
     tags: t.tags ?? [],
     touches: t.touches ?? [],
+    ...(t.writeScope === undefined ? {} : { writeScope: t.writeScope }),
+    ...(t.sharedResources === undefined ? {} : { sharedResources: t.sharedResources }),
     unavailable: t.unavailable === undefined ? undefined : [...new Set(t.unavailable)],
     state: 'pending',
     discussionRequired: true,
@@ -922,6 +931,7 @@ function globalPlanValues(plan) {
     name: plan.name,
     description: plan.description ?? '',
     requireReview: plan.requireReview !== false,
+    ...(plan.scopePolicy === undefined ? {} : { scopePolicy: plan.scopePolicy }),
   }
 }
 
@@ -1016,59 +1026,16 @@ function announceNewlyEligiblePhases(name, previouslyEligible, state, cause) {
   }
 }
 
-function planQuestionRef(task, plan, index) {
-  const fingerprint = digestValue([task.id, plan?.startedAt ?? '', index + 1, plan?.openQuestions?.[index]?.question])
-  return plan?.openQuestions?.[index]?.questionRef ?? `${task.id}:plan:${fingerprint.slice(0, 12)}`
-}
+
 
 function annotatePlanQuestions(task, questions, startedAt) {
   return questions.map((question, index) => ({ ...question,
     questionRef: `${task.id}:plan:${digestValue([task.id, startedAt, index + 1, question.question]).slice(0, 12)}` }))
 }
 
-function openQuestionRecords(state) {
-  const out = []
-  for (const task of Object.values(state.tasks)) {
-    const plan = task.taskPlan
-    // A pergunta persiste enquanto este taskPlan for o atual, inclusive durante
-    // replanejamento; só um novo plano ou uma decisão pode substituí-la.
-    if (!plan) continue
-    for (const [index, question] of (plan?.openQuestions ?? []).entries()) {
-      if (!question || typeof question.question !== 'string') continue
-      const decideBy = question.blocking ? 'user-now' : (question.decideBy ?? 'executor')
-      out.push({ ref: planQuestionRef(task, plan, index), sourceTask: task.id, question,
-        decideBy, planAt: plan.completedAt ?? plan.startedAt ?? '' })
-    }
-  }
-  return out
-}
 
-function questionResolutionMap(state) {
-  const out = new Map()
-  for (const entry of state.questionResolutions ?? [])
-    if (entry.questionRef) out.set(entry.questionRef, entry)
-  for (const task of Object.values(state.tasks)) {
-    const decisions = [
-      ...(task.taskPlan?.decisions ?? []),
-      ...(task.discovery?.decisions ?? []),
-      ...(task.planningHistory ?? []).flatMap(plan => plan.decisions ?? []),
-      ...(task.discussionAttempts ?? []).flatMap(round => round.discovery?.decisions ?? []),
-    ]
-    for (const decision of decisions) if (decision?.resolvesQuestion)
-      out.set(decision.resolvesQuestion, { questionRef: decision.resolvesQuestion, byTask: task.id,
-        answer: decision.answer, at: task.taskPlan?.completedAt ?? task.discovery?.recordedAt ?? null })
-  }
-  for (const phase of Object.values(state.phaseWorkflows ?? {})) {
-    const decisions = [
-      ...(phase.discovery?.decisions ?? []),
-      ...(phase.discussionAttempts ?? []).flatMap(round => round.discovery?.decisions ?? []),
-    ]
-    for (const decision of decisions) if (decision?.resolvesQuestion)
-      out.set(decision.resolvesQuestion, { questionRef: decision.resolvesQuestion, byPhase: phase.id,
-        answer: decision.answer, at: phase.discovery?.recordedAt ?? null })
-  }
-  return out
-}
+
+
 
 function validateQuestionDeadlines(state, taskId, openQuestions) {
   for (const [index, question] of openQuestions.entries()) {
@@ -1108,54 +1075,15 @@ function recordQuestionResolutions(state, refs, decisions, { task, phase } = {})
   }
 }
 
-function taskHasStarted(state, task) {
-  return Boolean(task && ((task.discussionAttempts?.length ?? 0) || (task.planningAttempts?.length ?? 0) ||
-    (task.discussionSkips?.length ?? 0) || (task.planningSkips?.length ?? 0) ||
-    (task.attempts?.length ?? 0) || ['running', 'reviewing', 'done', 'skipped'].includes(task.state)))
-}
 
-function phaseWorkflowHasStarted(state, phaseId, taskId = null) {
-  const workflow = state.phaseWorkflows?.[phaseId]
-  if (!workflow) return false
-  const records = [
-    ...(workflow.discussionAttempts ?? []).map(item => ({ item, targets: item.targets })),
-    ...(workflow.planningAttempts ?? []).map(item => ({ item, targets: [...(item.targets ?? []), ...(item.contextTargets ?? [])] })),
-    ...(workflow.discussionSkips ?? []).map(item => ({ item, targets: item.targets })),
-    ...(workflow.planningSkips ?? []).map(item => ({ item, targets: item.targets })),
-  ]
-  return records.some(({ item, targets }) => Boolean(item) && (taskId === null || targets?.includes(taskId)))
-}
 
-function targetHasStarted(state, decideBy) {
-  if (!decideBy || typeof decideBy !== 'object') return false
-  if (decideBy.beforeTask) {
-    const target = state.tasks[decideBy.beforeTask]
-    if (taskHasStarted(state, target)) return true
-    return Boolean(state.plan.planningMode === 'phase' && target?.phase &&
-      phaseWorkflowHasStarted(state, target.phase, target.id))
-  }
-  const phaseId = decideBy.beforePhase
-  return phaseWorkflowHasStarted(state, phaseId) || Object.values(state.tasks).some(task =>
-    task.phase === phaseId && taskHasStarted(state, task))
-}
 
-function overdueQuestions(state, taskId = null, phaseId = null) {
-  const resolved = questionResolutionMap(state)
-  return openQuestionRecords(state).filter(item => {
-    if (item.question.answer || resolved.has(item.ref)) return false
-    if (!questionIsOverdue(state, item)) return false
-    if (item.decideBy === 'user-now') return !taskId || item.sourceTask === taskId
-    if (item.decideBy?.beforeTask) return item.decideBy.beforeTask === taskId
-    if (item.decideBy?.beforePhase) return item.decideBy.beforePhase === phaseId
-    return false
-  })
-}
 
-function questionIsOverdue(state, item) {
-  if (item.decideBy === 'user-now') return true
-  if (item.decideBy === 'executor') return false
-  return targetHasStarted(state, item.decideBy)
-}
+
+
+
+
+
 
 function scheduledQuestionsForTarget(state, taskId = null, phaseId = null) {
   const resolved = questionResolutionMap(state)
@@ -1228,14 +1156,11 @@ function printQuestionStatus(state) {
   }
 }
 
-function taskAuthorization(task) { return task.executionAuthorization ?? null }
+
 
 // A run only restricts dispatch after the user's scope has been recorded at least once.
 // Runs created before authorization existed, or never authorized, keep the earlier behavior.
-function runHasAuthorizationScope(state) {
-  return (state.authorizations?.length ?? 0) > 0 || Object.values(state.tasks).some(task =>
-    task.executionAuthorization || task.authorizationHistory?.length)
-}
+
 
 /** Returns true when start proceeds under the earlier, unscoped behavior. */
 function assertTaskExecutionAuthorized(state, task) {
@@ -1775,28 +1700,24 @@ export function derive(state) {
     if (migrationPending && t.state === 'pending' && usesCurrentPlanning(state, t))
       Object.assign(out[id], { effective: 'pending', planningStatus: 'awaiting_migration' })
   }
+  for (const task of Object.values(out)) task.executionReadiness = executionReadiness(state, task, task)
   return out
 }
 
 /** Who is busy right now, split by role — the cap is enforced per role, not in bulk. */
-function occupancy(state) {
-  const all = Object.values(state.tasks)
-  const executors = all.filter((t) => t.state === 'running')
-  const reviewers = all.filter((t) => t.state === 'reviewing')
-  const planners = all.filter((t) => t.state === 'planning')
-  const phasePlanners = Object.values(state.phaseWorkflows ?? {}).filter(phase => phase.state === 'planning')
-  return {
-    executors,
-    reviewers,
-    planners: [...planners, ...phasePlanners],
-    phasePlanners,
-    busy: [...executors, ...reviewers, ...planners, ...phasePlanners],
-    maxExec: state.plan.maxExecutors ?? DEFAULT_MAX_EXECUTORS,
-    cap: state.plan.maxParallel ?? DEFAULT_MAX_PARALLEL,
-  }
-}
+
 
 /** An agent name may hold only one task at a time, whatever the role. */
+function recordConcurrentScopes(state, task, resume = false) {
+  const scopes = resume ? [...(task.attempts.at(-1)?.concurrentScopes ?? [])] : []
+  if (state.plan.scopePolicy === 'explicit') for (const other of Object.values(state.tasks).filter(other => other.id !== task.id && ['running', 'reviewing'].includes(other.state))) {
+    scopes.push(other.touches)
+    other.attempts.at(-1).concurrentScopes ??= []
+    other.attempts.at(-1).concurrentScopes.push(task.touches)
+  }
+  return scopes
+}
+
 function agentBusy(state, agent) {
   return occupancy(state).busy.find((t) => (t.state === 'reviewing' ? t.reviewer : t.state === 'planning' ? t.planner : t.agent) === agent)
 }
@@ -1807,6 +1728,13 @@ function assertAvailable(state, task, role, agent) {
   const blockedBy = task.deps.filter((id) => !['done', 'skipped'].includes(state.tasks[id]?.state))
   if (blockedBy.length) die(task.id + ' still waiting on: ' + blockedBy.join(', '))
   const occ = occupancy(state)
+  if (role === 'running' && state.plan.scopePolicy === 'explicit') {
+    if (!task.writeScope || task.writeScope === 'unknown') die('Write scope must be resolved before execution')
+    for (const other of occ.busy.filter(other => other.id !== task.id && other.touches)) {
+      const conflict = scopeConflicts(task, other)
+      if (conflict.paths.length || conflict.resources.length) die(`Execution scope conflicts with ${other.id}: ${[...conflict.paths, ...conflict.resources].join(', ')}`)
+    }
+  }
   if (role === 'running' && occ.executors.length >= occ.maxExec && !args.force)
     die(occ.executors.length + ' executors already running (max ' + occ.maxExec + ')')
   if (occ.busy.filter(t => t.id !== task.id).length >= occ.cap &&
@@ -1847,6 +1775,7 @@ const commands = {
         maxExecutors: plan.maxExecutors ?? DEFAULT_MAX_EXECUTORS,
         requireReview: plan.requireReview !== false,
         planningMode: plan.planningMode ?? ((plan.phases?.length ?? 0) ? 'phase' : 'task'),
+        ...(plan.scopePolicy === undefined ? {} : { scopePolicy: plan.scopePolicy }),
         source,
         ...(cwd ? { cwd } : {}),
       },
@@ -1948,7 +1877,7 @@ const commands = {
     const diagnostics = auditSyncPlan({ stateTasks: persistedTasks, planTasks: plan.tasks, added, effectiveTasks })
 
     // O modo existente governa a sincronização; o arquivo não pode enfraquecer suas regras de fase.
-    const effectivePlan = { ...plan, planningMode: state.plan.planningMode ?? 'task', tasks: Object.values(state.tasks).map(planTaskFromState) }
+    const effectivePlan = { ...plan, scopePolicy: plan.scopePolicy ?? state.plan.scopePolicy, planningMode: state.plan.planningMode ?? 'task', tasks: Object.values(state.tasks).map(planTaskFromState) }
     validatePlan(effectivePlan, args['allow-overlap'] === true, historicalTasks(state))
     const nextPlan = {
       name: plan.name,
@@ -1958,10 +1887,11 @@ const commands = {
       maxExecutors: plan.maxExecutors ?? DEFAULT_MAX_EXECUTORS,
       requireReview: plan.requireReview !== false,
       ...(state.plan.planningMode ? { planningMode: state.plan.planningMode } : {}),
+      ...((plan.scopePolicy ?? state.plan.scopePolicy) === undefined ? {} : { scopePolicy: plan.scopePolicy ?? state.plan.scopePolicy }),
       source,
       ...(cwd ? { cwd } : {}),
     }
-    const planningChanged = ['name', 'description', 'requireReview'].some(field => state.plan[field] !== nextPlan[field])
+    const planningChanged = ['name', 'description', 'requireReview', 'scopePolicy'].some(field => state.plan[field] !== nextPlan[field])
     const changedPlanFields = GLOBAL_PLAN_FIELDS.filter(field =>
       JSON.stringify(globalPlanValues(state.plan)[field]) !== JSON.stringify(globalPlanValues(nextPlan)[field]))
     if (state.plan.planningRevision || planningChanged)
@@ -2927,9 +2857,12 @@ const commands = {
     }
     const planDigest = t.taskPlan ? taskPlanDigest(t.taskPlan) : undefined
     if (planDigest) t.taskPlan.digest = planDigest
+    const concurrentScopes = recordConcurrentScopes(state, t)
     t.state = 'running'
     t.agent = agent
     t.attempts.push({ n: t.attempts.length + 1, agent, startedAt: new Date().toISOString(),
+      ...(state.plan.scopePolicy === 'explicit' ? { scopeBaseline: captureScopeBaseline(state.plan.cwd) } : {}),
+      ...(state.plan.scopePolicy === 'explicit' ? { concurrentScopes } : {}),
       activityTiming: 'explicit', activityIntervals: [],
       ...(t.retryPlan?.attempt === t.attempts.length + 1 ? {
         planSourceAttempt: t.retryPlan.planSourceAttempt,
@@ -3142,7 +3075,7 @@ const commands = {
         ...(t.planningRequired ? { planningScope: currentPlanningScope(state, t) } : {}) })
       saveState(name, state)
       emit(name, 'task_validation_started', id, { token, attempt: t.attempts.length })
-      return t
+      return { ...t, explicitScopeRequired: state.plan.scopePolicy === 'explicit' }
     })
     // Tests must not hold the run lock: other tasks and the dashboard remain usable.
     let result = {}
@@ -3166,6 +3099,8 @@ const commands = {
         })
         printValidationTail(result.checks ?? [], tail)
         assertValidation(snapshot, { ...result, evidence: args.evidence })
+        if (snapshot.explicitScopeRequired) result.scopeCheck = verifyTaskScope(snapshot, snapshot.attempts.at(-1)?.scopeBaseline,
+          snapshot.state === 'reviewing' && snapshot.reviewer ? { evidence: args['scope-evidence'], agent: snapshot.reviewer } : undefined, snapshot.attempts.at(-1)?.concurrentScopes)
       } catch (e) { error = e.message }
     }
     withLock(name, () => {
@@ -3216,6 +3151,14 @@ const commands = {
     if (last.by === 'review' && (!t.reviewer || last.agent !== t.reviewer || t.reviewer === t.agent))
       die('passing validation requires the current independent reviewer')
     try { assertValidation(t, last) } catch (e) { die(e.message) }
+    if (state.plan.scopePolicy === 'explicit') {
+      try {
+        const scope = verifyTaskScope(t, t.attempts.at(-1)?.scopeBaseline,
+          last.scopeCheck?.method === 'independent-review' && last.scopeCheck.agent === t.reviewer ? last.scopeCheck :
+            last.scopeCheck?.independentEvidence?.agent === t.reviewer ? last.scopeCheck.independentEvidence : undefined, t.attempts.at(-1)?.concurrentScopes)
+        if (scope.method === 'git' && scope.fingerprint !== last.scopeCheck?.fingerprint) die('Delivery changed after scope validation; validate again')
+      } catch (error) { die(error.message) }
+    }
     const previouslyEligible = eligibleDiscussionPhases(state)
     const slotsBeforeDone = executionSlots(state)
     t.state = 'done'
@@ -3395,6 +3338,7 @@ const commands = {
           progress.scopeRevision !== (t.scopeRevision ?? 0))
         reviewProgressRecord(t, reviewer, reviewDenom)
     }
+    if (state.plan.scopePolicy === 'explicit' && (target === 'running' || target === 'reviewing')) t.attempts.at(-1).concurrentScopes = recordConcurrentScopes(state, t, true)
     t.state = target
     t.blockHistory ??= []
     t.blockHistory.push({ reason: t.blockReason ?? '', ...(t.blockQuestion ? { question: t.blockQuestion } : {}),

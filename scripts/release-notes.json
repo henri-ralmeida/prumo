@@ -1,4 +1,28 @@
 {
+  "2.5.0": {
+    "en": [
+      {
+        "title": "Added — Explicit task scopes",
+        "items": [
+          "Declare investigated file paths, read-only work or unknown scope before execution while preserving existing contracts",
+          "Check delivered file changes against the approved scope using a pre-execution baseline and independent review"
+        ]
+      },
+      {
+        "title": "Added — Readiness and shared resources",
+        "items": [
+          "Explain execution readiness and blockers in the dashboard",
+          "Declare shared resources so conflicting writes are considered alongside file paths"
+        ]
+      },
+      {
+        "title": "Improved — Scope confirmations",
+        "items": [
+          "Use natural wording for features, steps and changes when confirming the requested scope"
+        ]
+      }
+    ]
+  },
   "2.4.8": {
     "en": [
       {
