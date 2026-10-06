@@ -1189,8 +1189,8 @@
   "New update": "Nova atualização",
   "Update available": "Atualização disponível",
   "Installed: {0} · Available: {1}": "Instalada: {0} · Disponível: {1}",
-  "Run prumo update in your terminal to install the latest version.": "Execute prumo update no terminal para instalar a versão mais recente.",
   "Copy command": "Copiar comando",
   "Command copied": "Comando copiado",
-  "Unable to copy. Select the command and copy it manually.": "Não foi possível copiar. Selecione o comando e copie manualmente."
+  "Unable to copy. Select the command and copy it manually.": "Não foi possível copiar. Selecione o comando e copie manualmente.",
+  "Run 'prumo update' in your terminal to install the latest version.": "Execute 'prumo update' no terminal para instalar a versão mais recente."
 }

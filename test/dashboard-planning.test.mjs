@@ -28,8 +28,8 @@ test('aviso de atualização é traduzido, abre instruções manuais e não exec
     assert.equal(ui.nodes.get('#updateVersions').textContent, lang === 'en'
       ? 'Installed: 2.4.7 · Available: 2.4.8' : 'Instalada: 2.4.7 · Disponível: 2.4.8')
     assert.equal(ui.run("tr('New update')"), lang === 'en' ? 'New update' : 'Nova atualização')
-    assert.equal(ui.run("tr('Run prumo update in your terminal to install the latest version.')"), lang === 'en'
-      ? 'Run prumo update in your terminal to install the latest version.' : 'Execute prumo update no terminal para instalar a versão mais recente.')
+    assert.equal(ui.run('tr("Run \'prumo update\' in your terminal to install the latest version.")'), lang === 'en'
+      ? "Run 'prumo update' in your terminal to install the latest version." : "Execute 'prumo update' no terminal para instalar a versão mais recente.")
     const dialog = ui.nodes.get('#updateDialog') ?? (ui.run("$('#updateDialog')"), ui.nodes.get('#updateDialog'))
     let opens = 0
     dialog.showModal = () => { opens++; dialog.open = true }
@@ -48,6 +48,7 @@ test('aviso de atualização é traduzido, abre instruções manuais e não exec
     }
   }
   assert.match(html, /<dialog id="updateDialog" aria-labelledby="updateTitle">/)
+  assert.match(html, /#updateTitle, #updateInstruction \{ text-transform: none; \}/)
   assert.match(html, /<code>prumo update<\/code>/)
   assert.match(html, /<form method="dialog">/)
   assert.match(html, /prefers-reduced-motion: reduce\) \{ #updateNotice \{ animation: none;/)
