@@ -3,12 +3,19 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { createServer } from 'node:net'
+import { createServer, createConnection } from 'node:net'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { setTimeout } from 'node:timers/promises'
 import { enableDashboard, restartDashboard, disableDashboard, stopDashboardForUpdate } from '../lib/autostart.mjs'
 import { createTranslator, messages } from '../scripts/i18n.mjs'
+
+function dashboardRequestInit(init) {
+  // O despejo síncrono do V8 entre respostas pode exceder o prazo HTTP do produto no CI.
+  // Apenas a integração instrumentada recebe mais tempo; a prontidão e a posse continuam obrigatórias.
+  return process.env.PRUMO_TEST_COVERAGE_FLUSH === '1'
+    ? { ...init, signal: AbortSignal.timeout(10000) } : init
+}
 
 test('Windows Startup launches and restarts a real isolated dashboard process', { skip: process.platform !== 'win32', timeout: 120000 }, async t => {
   const home = mkdtempSync(join(tmpdir(), 'prumo startup process-'))
@@ -28,12 +35,12 @@ test('Windows Startup launches and restarts a real isolated dashboard process', 
   writeFileSync(preferencePath, JSON.stringify({ enabled: true, mechanism: 'windows-startup' }))
   const options = { home, script: script.replaceAll('\\', '/'), packageRoot: fileURLToPath(new URL('..', import.meta.url)), env,
     // A inicialização real usa o prazo do produto; a cobertura não deve reduzi-lo para cinco segundos.
-    fetch: (url, init) => fetch(String(url).replace(':4949/', `:${port}/`), init),
-    portAvailable: async () => true }
+    fetch: (url, init) => fetch(String(url).replace(':4949/', `:${port}/`), dashboardRequestInit(init)),
+    portAvailable: () => isolatedPortAvailable(port) }
   const pids = new Set()
   // Track even a process whose ownership registration fails, so failures cannot leak it.
   options.fetch = async (url, init) => {
-    const response = await fetch(String(url).replace(':4949/', `:${port}/`), init)
+    const response = await fetch(String(url).replace(':4949/', `:${port}/`), dashboardRequestInit(init))
     if (response.ok) { const body = await response.clone().json(); if (body.pid) pids.add(body.pid) }
     return response
   }
@@ -120,6 +127,16 @@ async function freePort() {
   await new Promise(resolve => probe.close(resolve))
   return port
 }
+async function isolatedPortAvailable(port) {
+  // Consultar a porta sem reservá-la evita impedir a inicialização que o teste está aguardando.
+  const socket = createConnection({ port, host: '127.0.0.1' })
+  return await new Promise(resolve => {
+    const finish = available => { socket.destroy(); resolve(available) }
+    socket.once('connect', () => finish(false))
+    socket.once('error', error => finish(error.code === 'ECONNREFUSED'))
+    socket.setTimeout(1200, () => finish(false))
+  })
+}
 function alive(pid) { try { process.kill(pid, 0); return true } catch { return false } }
 async function waitFor(check, attempts = 200) {
   for (let attempt = 0; attempt < attempts; attempt++) {
@@ -146,12 +163,12 @@ async function isolatedDashboard(t) {
     CLAUDE_CONFIG_DIR: join(home, '.claude'), KIRO_HOME: join(home, '.kiro'), PRUMO_ROOT: '', GRAPH_ROOT: '', GRAPH_FOREMAN_HOME: '', PRUMO_LANG: 'en' }
   const pids = new Set(), killed = [], children = []
   const redirect = async (url, init) => {
-    const response = await fetch(String(url).replace(':4949/', `:${port}/`), init)
+    const response = await fetch(String(url).replace(':4949/', `:${port}/`), dashboardRequestInit(init))
     if (response.ok) try { const body = await response.clone().json(); if (body.pid) pids.add(body.pid) } catch {}
     return response
   }
   const options = { home, script, packageRoot: repo, env, readinessAttempts: 100, readinessInterval: 50,
-    fetch: redirect, portAvailable: async () => true, kill: pid => { killed.push(pid); process.kill(pid) } }
+    fetch: redirect, portAvailable: () => isolatedPortAvailable(port), kill: pid => { killed.push(pid); process.kill(pid) } }
   const file = join(home, '.local/share/prumo/dashboard.json')
   mkdirSync(dirname(file), { recursive: true })
   t.after(async () => {
