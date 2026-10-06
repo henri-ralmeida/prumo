@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { createGuideDemoData } from '../scripts/dashboard-guide-demo.mjs'
 import { rejectionCases } from './fixtures/review-rejection.mjs'
+import { plannedManualInspectionState } from './fixtures/planned-manual-inspection.mjs'
 import { disableDashboardBoot, extractDashboardScript, injectDashboardLanguage, runDashboardScript } from './fixtures/dashboard-vm.mjs'
 
 const html = readFileSync(new URL('../scripts/dashboard.html', import.meta.url), 'utf8').replaceAll('\r\n', '\n')
@@ -50,6 +51,43 @@ test('aviso de atualização é traduzido, abre instruções manuais e não exec
   assert.match(html, /<code>prumo update<\/code>/)
   assert.match(html, /<form method="dialog">/)
   assert.match(html, /prefers-reduced-motion: reduce\) \{ #updateNotice \{ animation: none;/)
+})
+
+test('copiar atualização copia somente o comando, anuncia sucesso e permite tentar novamente após falha', async () => {
+  for (const lang of ['en', 'pt-BR']) {
+    const ui = dashboard(lang)
+    ui.run("$('#updateCopy'); $('#updateCopyStatus')")
+    const button = ui.nodes.get('#updateCopy'), status = ui.nodes.get('#updateCopyStatus')
+    let copied
+    await ui.run('copyUpdateCommand()', { navigator: { clipboard: { writeText: async text => {
+      assert.equal(button.disabled, true)
+      copied = text
+    } } } })
+    assert.equal(copied, 'prumo update')
+    assert.equal(button.disabled, false)
+    assert.equal(status.textContent, lang === 'en' ? 'Command copied' : 'Comando copiado')
+    assert.equal(ui.run("tr('Copy command')"), lang === 'en' ? 'Copy command' : 'Copiar comando')
+    for (const navigator of [{}, { clipboard: { writeText: async () => { throw new Error('permissão negada') } } }]) {
+      await ui.run('copyUpdateCommand()', { navigator })
+      assert.equal(button.disabled, false)
+      assert.equal(status.textContent, lang === 'en' ? 'Unable to copy. Select the command and copy it manually.'
+        : 'Não foi possível copiar. Selecione o comando e copie manualmente.')
+    }
+    const dialog = ui.run("$('#updateDialog')")
+    dialog.showModal = () => { dialog.open = true }
+    ui.run('openUpdateDialog()')
+    assert.equal(status.textContent, '')
+  }
+})
+
+test('dashboard exibe tarefa planejada ainda sem tentativa e mantém a inspeção no contrato', () => {
+  const ui = dashboard('pt-BR'), state = plannedManualInspectionState()
+  const before = structuredClone(state)
+  ui.render(state)
+  assert.match(ui.nodes.get('#nodes').innerHTML, /T7a/)
+  ui.run("POP_EXPANDED = true; fillPop('T7a')")
+  assert.match(ui.nodes.get('#popBody').innerHTML, /manual-inspection/)
+  assert.deepEqual(state, before)
 })
 
 test('vinculos usam o estado da tarefa referenciada sem simbolos e preservam a navegacao', () => {

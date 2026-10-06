@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { plannedManualInspectionState } from './fixtures/planned-manual-inspection.mjs'
 import {
   assertDiscussionBoundary,
   assertDiscovery,
@@ -31,6 +32,16 @@ const step = (overrides = {}) => ({
   run: 'node check.cjs',
   expect: 'o comportamento aprovado passa',
   ...overrides,
+})
+
+test('escopo planejado antes da primeira tentativa preserva inspeção, dependências e revisão', () => {
+  const state = plannedManualInspectionState(), task = state.tasks.T7a
+  const before = structuredClone(state)
+  assert.equal(hasCurrentTaskScope(state, task, 1), true)
+  assert.equal(currentPlanningScope(state, task), task.taskPlan.scope)
+  assert.deepEqual(state, before)
+  task.taskPlan.scope = 'contrato obsoleto'
+  assert.equal(currentPlanningScope(state, task), undefined)
 })
 
 const task = (validation = [step()]) => ({

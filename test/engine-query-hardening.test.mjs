@@ -7,8 +7,23 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { packageIdentity } from '../scripts/installation-bundle.mjs'
 import { planningContext } from '../scripts/validation.mjs'
+import { plannedManualInspectionState } from './fixtures/planned-manual-inspection.mjs'
 
 const pkg = fileURLToPath(new URL('..', import.meta.url))
+
+test('status consulta tarefa planejada com inspeção manual sem iniciar execução', t => {
+  const f = fixture(t), state = plannedManualInspectionState()
+  f.save(state)
+  assert.match(f.query(['status']).output, /T7a.*Manual inspection pending/)
+  const persisted = JSON.parse(readFileSync(f.statePath, 'utf8'))
+  assert.equal(persisted.tasks.T7a.state, 'pending')
+  assert.equal(persisted.tasks.T7a.attempts.length, 0)
+  assert.deepEqual(persisted.tasks.T7a.taskPlan.verification[0].requires, ['manual-inspection'])
+  assert.equal(persisted.plan.requireReview, true)
+  state.tasks.T7.state = 'pending'; f.save(state)
+  assert.match(f.query(['status']).output, /T7a.*waiting/)
+  assert.match(f.query(['done', 'T7a'], 1).output, /running|review|state|pending/i)
+})
 const task = fields => ({ id: 'T1', title: 'Contrato', state: 'pending', phase: null, tags: [], touches: [], deps: [], notes: [], attempts: [], validations: [],
   planningRequired: false, validationMode: 'inspection', inspectionReason: 'Conferir o contrato persistido', validation: 'Inspecionar', ...fields })
 function fixture(t, { copy = false } = {}) {

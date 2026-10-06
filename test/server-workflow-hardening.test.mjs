@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
 import { setTimeout } from 'node:timers/promises'
 import { discoveryDigest, planningContext, phasePlanningContext } from '../scripts/validation.mjs'
+import { plannedManualInspectionState } from './fixtures/planned-manual-inspection.mjs'
 
 const serverFile = fileURLToPath(new URL('../scripts/serve.mjs', import.meta.url))
 const task = (id, fields = {}) => ({ id, title: `Tarefa ${id}`, state: 'pending', phase: 'F1', deps: [],
@@ -203,4 +204,13 @@ test('API mantém gates de tarefa e fase, catálogo e histórico sem modificar J
   writeFileSync(path, '{'); assert.equal((await get(query)).status, 500)
   assert.ok((await get('/api/runs')).value.warnings.some(value => value.includes('invalid CURRENT')))
   assert.equal((await get('/api/health')).value.readOnly, true)
+  const inspection = plannedManualInspectionState()
+  const inspectionBytes = JSON.stringify(inspection)
+  writeFileSync(path, inspectionBytes)
+  const response = await get(query)
+  assert.equal(response.status, 200, JSON.stringify(response.value))
+  assert.equal(response.value.tasks.T7a.state, 'pending')
+  assert.equal(response.value.tasks.T7a.attempts.length, 0)
+  assert.equal(response.value.derived.T7a.effective, 'ready')
+  assert.equal(readFileSync(path, 'utf8'), inspectionBytes, 'o dashboard preserva histórico, inspeção e revisão')
 })

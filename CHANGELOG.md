@@ -4,6 +4,8 @@ Historical tag and commit corrections are documented in [Release history recover
 
 ## Unreleased
 
+- Centralize o comando de atualização, ofereça cópia com confirmação acessível e destaque o botão de fechar em amarelo.
+- Preserve o escopo do planejamento antes da primeira tentativa, permitindo consultar tarefas com inspeção manual pendente sem criar execução nem alterar histórico, dependências ou revisão.
 - Consulte a versão estável do npm ao abrir o dashboard e exiba um aviso de nova atualização em inglês ou pt-BR, com instruções para executar `prumo update` manualmente no terminal. Falhas na consulta não interrompem o plano.
 
 ## 2.4.7 — 2026-10-05

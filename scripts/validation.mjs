@@ -419,7 +419,8 @@ export function hasCurrentTaskScope(state, task, attempt = task.attempts.length)
     retry.scope === planningContext(state, task, { scopeOnly: true, attempt })
 }
 
-export function currentPlanningScope(state, task, attempt = task.attempts.length) {
+// Antes da primeira execução, o planejamento pertence à tentativa 1, ainda sem registro de execução.
+export function currentPlanningScope(state, task, attempt = task.attempts.length || 1) {
   if (!usesCurrentPlanning(state, task) || !hasCurrentTaskScope(state, task, attempt)) return undefined
   const skipped = currentPlanningSkip(state, task)
   if (skipped) return skipped.scope
