@@ -421,11 +421,13 @@ SOFTWARE. -->
   .filter-option[data-filter-value="dependencies"] { --filter-color: var(--accent); --filter-bg: #443517; }
   .filter-option[data-filter-value="unlocks"] { --filter-color: var(--done); --filter-bg: #323c21; }
   .relation-controls { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
-  .relation-group { flex: 1 1 220px; min-width: 0; padding: 10px 12px; border-left: 2px solid var(--accent); background: #0002; border-radius: 0 8px 8px 0; }
-  .relation-group.unlocks { border-left-color: var(--done); }
-  .relation-group h4 { font: 500 11px/1.4 var(--font-mono); color: var(--accent); margin: 0 0 10px; }
-  .relation-group.unlocks h4 { color: var(--done); }
-  .relation-group .chips { margin: 0; }
+  #pop .relation-group { flex: 1 1 220px; min-width: 0; padding: 12px 14px; border: 1px dashed var(--line); background: var(--bg); border-radius: 10px; }
+  #pop .relation-group h4 { font: 500 11px/1.4 var(--font-mono); color: var(--dim); margin: 0 0 8px; }
+  #pop .relation-group .chips { margin: 0; gap: 6px; }
+  #pop .relation-resolved { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+  #pop .relation-controls { gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: var(--control-radius); background: var(--bg); box-sizing: border-box; }
+  #pop .relation-controls .filter-option { flex: 1 1 auto; --filter-color: var(--dim); --filter-bg: transparent; border-color: transparent; text-align: center; }
+  #pop .relation-controls .filter-option[aria-pressed="true"] { color: var(--text); background: var(--card); border-color: var(--line); box-shadow: none; }
   .filter-option:hover { border-color: var(--filter-color); background: color-mix(in srgb, var(--filter-bg) 88%, var(--text)); }
   .filter-option[aria-pressed="true"] { border-color: var(--filter-color); box-shadow: 0 0 0 1px var(--filter-color); color: var(--text); font-weight: 600; }
   .filter-option:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -3931,7 +3933,7 @@ function fillPop(id, swap = false) {
   const groups = [['dependencies', 'Pending dependencies', pendingDeps, 'Depends on', deps], ['unlocks', 'Dependent tasks', pendingDependents, 'Unlocks', dependents]]
   const links = `${phaseChip}<div class="relation-controls" role="group" aria-label="${esc(tr('Task relationships'))}">${[['all', 'All relationships'], ...groups.map(([key, label]) => [key, label])].map(([key, label]) =>
     `<button type="button" class="filter-option" data-filter-value="${key}" aria-pressed="${relationFilter === key}" onclick="setRelationFilter('${key}')">${esc(tr(label))}</button>`).join('')}</div>${groups.filter(([key]) => relationFilter === 'all' || relationFilter === key).map(([key, label, ids, prefix, allIds]) =>
-    `<section class="relation-group ${key}"><h4>${esc(tr(label))} · ${ids.length}</h4><div class="chips">${ids.map(taskId => depChip(taskId, prefix)).join('') || `<span class="empty">${esc(tr('No pending tasks in this group'))}</span>`}</div>${relationFilter === 'all' && allIds.some(taskId => !ids.includes(taskId)) ? `<h4>${esc(tr('Resolved relationships'))}</h4><div class="chips">${allIds.filter(taskId => !ids.includes(taskId)).map(taskId => depChip(taskId, prefix)).join('')}</div>` : ''}</section>`).join('')}`
+    `<section class="relation-group ${key}"><h4>${esc(tr(label))} · ${ids.length}</h4><div class="chips">${ids.map(taskId => depChip(taskId, prefix)).join('') || `<span class="empty">${esc(tr('No pending tasks in this group'))}</span>`}</div>${relationFilter === 'all' && allIds.some(taskId => !ids.includes(taskId)) ? `<div class="relation-resolved"><h4>${esc(tr('Resolved relationships'))}</h4><div class="chips">${allIds.filter(taskId => !ids.includes(taskId)).map(taskId => depChip(taskId, prefix)).join('')}</div></div>` : ''}</section>`).join('')}`
   const taskTiming = analyse(STATE, EVENTS).per.find((item) => item.id === id)
   const agentTime = taskTiming?.agentTime ?? 0
   const agentTimeLabel = !EVENTS_COMPLETE || (taskTiming?.unmeasured && agentTime === 0)

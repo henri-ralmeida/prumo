@@ -30,6 +30,9 @@ test('agrupamentos do board distinguem pré-requisitos pendentes das tarefas que
   assert.match(body, /Liberações · 1/)
   assert.match(body, /data-st="planning"/)
   assert.match(body, /data-st="blocked"/)
+  assert.match(body, /class="relation-resolved"><h4>Vínculos resolvidos<\/h4><div class="chips">/)
+  assert.match(body, /data-st="done"/)
+  assert.match(body, /Depende de T005/)
   ui.nodes.get('#popBody').scrollTop = 100
   ui.run("setRelationFilter('dependencies')")
   assert.equal(ui.nodes.get('#popBody').scrollTop, 100)
