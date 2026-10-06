@@ -11,6 +11,7 @@ test('atualização da 2.4.8 apresenta as funcionalidades da 2.5.0', () => {
   assert.deepEqual(history[0].sections.map(section => section.title), [
     'Added — Explicit task scopes', 'Added — Readiness and shared resources',
     'Improved — Scope confirmations',
+    'Added — Shared agent capacity', 'Fixed — External blocks and live clock',
   ])
 })
 

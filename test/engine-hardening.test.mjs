@@ -272,7 +272,7 @@ test('planejador recusa execução incompatível e contrato importado inválido 
     const state = structuredClone(baseline), task = state.tasks.T1
     if (kind === 'running') task.state = 'running'
     if (kind === 'paused-without-executor') {
-      task.state = 'blocked'; task.stateBeforeBlock = 'running'; task.planningRequired = true
+      task.state = 'blocked'; task.blockKind = 'replan'; task.stateBeforeBlock = 'running'; task.planningRequired = true
     }
     if (kind === 'invalid-contract') task.validation = []
     f.save(state)

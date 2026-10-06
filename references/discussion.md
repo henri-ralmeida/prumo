@@ -3,8 +3,9 @@
 [Português](discussion.pt-BR.md)
 
 Read this when a phase or task is `ready_for_discussion` or `discussing`, when the user must choose
-whether to discuss or plan, or when the engine reports a newly eligible phase. Discussion happens in the
-principal conversation; it is an engine state, not another agent. Planning itself is in
+whether to discuss or plan, or when the engine reports a newly eligible phase. Decisions and questions
+remain in the principal conversation; a phase may also assign active target workers. Those assignments are
+engine records only, so the orchestrator must create native agents with the exact names before dispatching them. Planning itself is in
 [planning.md](planning.md); the discovery JSON schema is in [runtime.md](runtime.md#task-plan-artifact).
 
 ## Two planning levels
@@ -21,14 +22,16 @@ nonempty reason and `--confirmed-by-user`. Supported combinations are discuss+pl
 discuss+skip planning and skip both.
 
 ```bash
-node $ENGINE begin-phase-discussion F2          # after the user chooses discussion
+node $ENGINE begin-phase-discussion F2 --agent T1=disc-f2-t1 --agent T2=disc-f2-t2 # exact native names
 node $ENGINE skip-phase-discussion F2 --reason "..." --confirmed-by-user
 node $ENGINE skip-phase-planning F2 --reason "..." --confirmed-by-user
 ```
 
 A phase can begin discussion
 or planning only when every external dependency of every unfinished member is `done` or `skipped`.
-One blocked member blocks the whole phase, including members without dependencies. Internal dependencies
+An externally blocked member is excluded from the current phase targets and recorded in
+`originalTargets`/`excludedTargets`; the remaining active/queued batch may finish. After `unblock`, that
+task uses its own task-scoped discussion and planning flow. Internal dependencies
 within the same phase gate execution, not phase planning. Phase numbering alone never blocks independent
 phases. The user chooses which eligible phases to plan, including multiple phases in parallel; eligibility
 does not authorize opening all phases automatically. Keep the approved phase assignments and dependency
@@ -121,20 +124,23 @@ Run `begin-phase-discussion` before presenting the first question. It persists t
 current `roundId` and `nonce`. Write the resulting discovery JSON with those values and bind at least
 one freshly answered question to that `roundId`; include light research, the real `native` or
 `chat-fallback` channel, PO First coverage, decisions, deferred ideas, `executionBoundary` and closure.
-`executionBoundary.deferredToExecutor` must name every targeted task and `prematureTaskWork` is normally
-empty. If task work occurred during discussion, record its task and action, stop, tell the user, and do not
+`executionBoundary.deferredToExecutor` must name every target covered by the complete round and
+`prematureTaskWork` is normally empty. `finish-phase-discussion` validates discovery only for the current
+`activeTargets`; it accumulates each completed wave and opens the next one until all targets are covered.
+If task work occurred during discussion, record its task and action, stop, tell the user, and do not
 reuse its result. Only after explicit user approval may `finish-*-discussion --accept-premature-work` close
 the round; the executor still repeats the work. Then run:
 
 ```bash
 node $ENGINE finish-phase-discussion F2 --context <discovery.json>
-node $ENGINE plan-phase F2 --agent <planner> --plan-dir <artifact-directory>
+node $ENGINE plan-phase F2 --agent T1=plan-f2-t1 --agent T2=plan-f2-t2 --plan-dir <artifact-directory>
 node $ENGINE finish-phase-planning F2 --plan-dir <artifact-directory>
 ```
 
 Passing the artifact directory to `plan-phase` is optional; with it, `status` and `ready` count the
-`task-plan-<id>.json` files already written there while the round is open. Before dispatching the
-planner, read [planning.md](planning.md).
+`task-plan-<id>.json` files already written there while the round is open. `finish-phase-planning` validates
+only the active wave, stages accepted plans and opens the next wave; the final wave records every task plan
+atomically. Before dispatching the workers, read [planning.md](planning.md).
 
 ## Task-scoped discussion in existing runs
 

@@ -18,7 +18,7 @@ legada. Uma entrega reprovada é tratada em [review.pt-BR.md](review.pt-BR.md#re
 
 ## Retomar ou migrar uma execução existente
 
-O dashboard global apenas observa; ele nunca sincroniza um plano. Antes de retomar uma execução existente, use
+O dashboard global observa e expõe somente o controle explícito de cota de agentes confirmado pelo usuário; ele nunca sincroniza um plano. Antes de retomar uma execução existente, use
 `node $ENGINE migrate --check --run <name>` quando precisar de um relatório de compatibilidade somente leitura. Todo
 comando do motor de execução única aplica antes, automaticamente, uma migração estrutural segura e versionada, cria
 `state.pre-migrate-v<schema>.json`, habilita as etapas de discussão e planejamento ausentes e não abre nenhuma rodada.
@@ -34,6 +34,9 @@ repositório, restaure a ordem e a composição declaradas das fases a partir da
 dependências, escopo e histórico, e então execute `sync-plan` na mesma execução
 e inspecione o resultado persistido. Não crie uma execução auxiliar para evitar adaptar tarefas antigas. Pergunte na
 discussão principal apenas quando um significado consequencial do contrato não puder ser estabelecido a partir do repositório.
+A migração também adota a cota compartilhada padrão `maxAgents: 3` quando ausente, preserva campos do plano,
+tarefas e históricos e acrescenta a mudança a `agentLimitHistory`. Valores legados de `maxParallel`/`maxExecutors`
+permanecem como metadados; tarefas antigas `blocked` sem `blockKind` continuam externas, independentemente do texto do motivo.
 
 ## Sincronizar uma mudança aprovada do plano
 
@@ -48,8 +51,9 @@ node $ENGINE show-contract <task> --diff --run <run-name>
 
 `sync-plan` acrescenta tarefas aprovadas e atualiza contratos em todo estado não terminal, preservando o
 ciclo de vida atual, agentes, tentativas, notas e evidências. Trabalho ativo cujo escopo mudou não pode avançar
-por revisão ou conclusão até que o planejamento atual seja restaurado; bloqueie e replaneje sem inventar uma
-falha. Contratos done/skipped permanecem como histórico imutável e precisam de uma tarefa de continuação explícita. A remoção de tarefas
+por revisão ou conclusão até que o planejamento atual seja restaurado; use `pause-replanning` na tentativa
+ativa que exige planejamento, replaneje e faça `unblock` explícito sem inventar uma falha. Um `block` externo
+comum precisa de `unblock` antes do planejamento. Contratos done/skipped permanecem como histórico imutável e precisam de uma tarefa de continuação explícita. A remoção de tarefas
 é recusada. Se uma execução migrada ainda nomear uma fonte graph-foreman ausente, `sync-plan` recupera o plano
 correspondente a partir do workspace central do Prumo. Sua saída lista mudanças delimitadas de campos por tarefa, resume os contratos
 de validação sem imprimir seu conteúdo e avisa quando um `blockReason` em espera contradiz a direção das
@@ -109,19 +113,35 @@ de contrato para a validação adaptada estão em [contracts.pt-BR.md](contracts
 
 ## Bloqueios e decisões do usuário
 
-Precisa do dev → `block T4 --reason "..."`. Bloqueado é um estado real; deixá-la em `running`
-enquanto você espera é como um grafo mente. Quando o bloqueio for uma decisão do usuário, registre-o como tal:
-`block T4 --reason "..." --question "<the decision in one sentence>" --option "<answer> => <effect>"`
-(repita `--option` para cada resposta). O evento de bloqueio e o dashboard passam então a carregar a pergunta, e
-`unblock T4 --answer "<answer>"` registra o que o usuário escolheu.
+Precisa do dev → `block T4 --reason "..."`. `block` é sempre uma pausa externa e registra
+`blockKind: "external"`; deixá-la em `running` enquanto você espera é como um grafo mente. Uma decisão do
+usuário é registrada com `--question "<the decision in one sentence>" --option "<answer> => <effect>"`
+(repita `--option` para cada resposta). O evento de bloqueio e o dashboard carregam a pergunta, e
+`unblock T4 --answer "<answer>"` registra a escolha.
 
-Um bloqueio que espera uma decisão do usuário deve ser registrado com `--question` e `--option`, não apenas
-com `--reason`; quando a retomada encontrar um bloqueio só com razão que na verdade é uma decisão, registre-o de novo com
-`block <task> --reason "..." --question "..." --option "<answer> => <effect>"` antes de perguntar ao usuário.
+Bloqueios externos excluem uma tarefa de fase de `activeTargets` e `queuedTargets`, preservam o conjunto
+original em `originalTargets`, acrescentam a razão em `excludedTargets` e marcam a tarefa para planejamento
+individual (`individualPlanning: true`). A onda restante pode terminar.
+Depois do `unblock`, a tarefa excluída usa `begin-discussion`, `plan-task` e `finish-planning` próprios na fase original.
+Comandos diretos falham antes de mutar o estado com a mensagem `is blocked` e a instrução `unblock`.
+Nenhum comando de discussão, planejamento, execução, revisão ou atividade pode contornar um bloqueio externo.
+Uma tarefa legada `blocked` sem `blockKind` é externa; nunca deduza uma pausa interna pelo texto de `blockReason`.
+
+Se um bloqueio externo pausar uma tentativa que exige planejamento em `running` ou `reviewing` e o escopo
+aprovado mudar antes da retomada, `unblock --answer` registra a decisão, mas mantém a tarefa bloqueada e a
+converte para `blockKind: "replan"` com a razão `approved scope needs current planning`. A tentativa e o revisor
+originais permanecem associados. Inicie uma discussão nova da tarefa, execute `plan-task` e `finish-planning`
+enquanto ela continua bloqueada; `finish-planning` mantém o bloqueio, e um `unblock` explícito posterior retoma
+a mesma tentativa ou revisão.
+
 Quando um bloqueio incluir um `blockQuestion` registrado, apresente exatamente essa pergunta e suas `blockOptions`
 por meio do PO First, peça a decisão ao usuário e então passe a resposta com `unblock <task> --answer`.
-Mantenha a razão, a pergunta, a resposta e o horário registrados no histórico de bloqueios. Bloqueios antigos só com razão continuam
-retomáveis com `unblock <task>`.
+Mantenha a razão, a pergunta, a resposta e o horário registrados no histórico. Bloqueios legados só com razão
+continuam retomáveis com `unblock <task>`, mas permanecem externos.
+
+Para uma tentativa ativa que exige planejamento e cujo contrato aprovado precisa ser atualizado, use
+`pause-replanning <task> --reason "..."`. Ele registra `blockKind: "replan"` sem pergunta externa; a mesma
+tentativa pode planejar enquanto bloqueada, `finish-planning` a mantém bloqueada e `unblock` explícito a retoma.
 
 Resolva ou aguarde o bloqueador registrado; nunca o contorne. Use `note <task> --text "..."` para o que um
 leitor posterior precisa saber e os estados não conseguem dizer.
@@ -131,8 +151,9 @@ leitor posterior precisa saber e os estados não conseguem dizer.
 `unblock <task>` restaura a fase registrada (pending, planning, running, reviewing ou failed), preservando
 a tentativa e o trabalho anterior. Para trabalho entregue pausado durante a execução ou a revisão, use
 `unblock <task> --reviewer <independent-agent>` para entregá-lo diretamente à revisão na mesma tentativa.
-Isso não ocupa uma vaga de executor. Ele reconfere dependências, capacidade total e a
-disponibilidade do revisor; a retomada comum de execução também confere a capacidade de executores. Uma recusa
+Isso é uma passagem na vaga já ocupada pela tarefa, não um quarto agente nem uma vaga de revisão reservada.
+Ele reconfere dependências, a cota compartilhada `maxAgents` e a disponibilidade do revisor; a retomada comum
+de execução também confere essa mesma cota. Reduzir a cota nunca encerra agentes atuais e apenas adia trabalho novo. Uma recusa
 deixa a tarefa bloqueada. Tarefas pending/failed não podem usar essa passagem para contornar start/retry.
 No modo de autorização manual, um `unblock` que retoma uma tentativa ativa também precisa de `--confirmed-by-user`.
 
@@ -148,9 +169,9 @@ Uma implementação reprovada pelo revisor com contrato aprovado inalterado deve
 atual em toda correção, independentemente do número de novas tentativas, enquanto o contexto completo de planejamento registrado ainda
 corresponder. O feedback da revisão segue para o próximo executor; ele não dispara um planejador. Somente uma mudança
 material de contrato explicitamente aprovada exige novo planejamento, preservando planos e evidências anteriores. Se o escopo de uma
-execução ativa mudar, mantenha sua tentativa, bloqueie-a, sincronize a mudança aprovada e use o fluxo de discussão/planejamento da fase.
-`finish-phase-planning` devolve esse trabalho a **blocked**, preservando sua fase original e sua razão;
-um `unblock` explícito então retoma a mesma tentativa. Não fabrique fail/retry para replanejar.
+execução ativa mudar, mantenha sua tentativa, use `pause-replanning`, sincronize a mudança aprovada e use o
+planejamento por tarefa. `finish-planning` devolve esse trabalho a **blocked**, preservando sua fase original e sua razão;
+um `unblock` explícito então retoma a mesma tentativa. Não use `block` externo seguido de planejamento nem fabrique fail/retry para replanejar.
 Mudanças apenas de validação ainda podem usar `refresh-contract` e nova revisão na mesma tentativa.
 
 ## Notas sobre o ciclo de vida legado

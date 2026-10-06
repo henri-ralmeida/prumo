@@ -6,10 +6,45 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
 import { setTimeout } from 'node:timers/promises'
-import { executionReadiness, planQuestionRef, openQuestionRecords, questionResolutionMap, taskHasStarted, phaseWorkflowHasStarted, targetHasStarted, overdueQuestions, questionIsOverdue } from '../scripts/execution-readiness.mjs'
+import { executionReadiness, planQuestionRef, openQuestionRecords, questionResolutionMap, taskHasStarted, phaseWorkflowHasStarted, targetHasStarted, overdueQuestions, questionIsOverdue, occupancy, isExternalBlock } from '../scripts/execution-readiness.mjs'
 
 const task = (id, fields = {}) => ({ id, title: id, state: 'pending', deps: [], attempts: [], discussionAttempts: [], planningAttempts: [], planningHistory: [], planningSkips: [], discussionSkips: [], touches: [], ...fields })
 const base = () => ({ run: 'scope', plan: { name: 'Escopo', planningMode: 'task', scopePolicy: 'explicit' }, tasks: { T1: task('T1', { writeScope: 'files', touches: ['src'] }) } })
+
+test('ocupação distingue agente de discussão do executor e não conta fila nem rodada encerrada', () => {
+  const state = base()
+  state.tasks.T1 = task('T1', { state: 'discussing', agent: 'executor-original', discussionAttempts: [{ agent: 'discutidor' }] })
+  state.tasks.T2 = task('T2')
+  state.phaseWorkflows = { F1: { id: 'F1', state: 'planning', planningAttempts: [{ workers: {
+    T2: { agent: 'planejador', endedAt: 'encerrado' },
+  }, queuedTargets: ['T2'] }] } }
+  assert.deepEqual(occupancy(state).busy.map(value => value.agent), ['discutidor'])
+  assert.equal(state.tasks.T1.agent, 'executor-original')
+  state.phaseWorkflows.F1.planningAttempts[0].endedAt = 'encerrado'
+  assert.equal(occupancy(state).busy.length, 1)
+  state.tasks.T1.discussionAttempts = []
+  assert.equal(occupancy(state).discussers[0].agent, 'executor-original')
+  state.phaseWorkflows.F2 = { id: 'F2', state: 'planning', planner: 'planejador-legado', planningAttempts: [{}] }
+  assert.equal(occupancy(state).phasePlanners[0].agent, 'planejador-legado')
+  assert.equal(isExternalBlock(undefined), false)
+  assert.equal(isExternalBlock({ state: 'blocked' }), true)
+  assert.equal(isExternalBlock({ state: 'blocked', blockKind: 'replan' }), false)
+})
+
+test('fila não inicia prazo de tarefa e bloquear um trabalhador não apaga o início registrado', () => {
+  const state = base()
+  state.plan.planningMode = 'phase'
+  state.tasks.T1.phase = 'F1'
+  state.tasks.T2 = task('T2', { phase: 'F1' })
+  state.phaseWorkflows = { F1: { planningAttempts: [{ targets: ['T2'], originalTargets: ['T1', 'T2'], workers: {
+    T1: { agent: 'planejador', endedAt: 'bloqueado' },
+  }, queuedTargets: ['T2'] }] } }
+  assert.equal(targetHasStarted(state, { beforeTask: 'T2' }), false)
+  assert.equal(targetHasStarted(state, { beforeTask: 'T1' }), true)
+  assert.equal(targetHasStarted(state, { beforePhase: 'F1' }), true)
+  delete state.phaseWorkflows.F1.planningAttempts[0].workers
+  assert.equal(targetHasStarted(state, { beforeTask: 'T1' }), true)
+})
 
 test('API real expõe prontidão compartilhada sem modificar o contrato persistido', { timeout: 60000 }, async t => {
   const home = mkdtempSync(join(tmpdir(), 'prumo-server-scope-')), root = join(home, 'root'), graph = join(root, '.specs/graph')
@@ -42,7 +77,7 @@ test('API real expõe prontidão compartilhada sem modificar o contrato persisti
   state = base(); state.tasks.T1.deps = ['T2']; state.tasks.T2 = task('T2'); await check(state, ['dependencies'])
   state = base(); state.tasks.T1.planningRequired = true; state.tasks.T1.discussionRequired = true; await check(state, ['planning', 'discussion'])
   state.tasks.T1.discussionRequired = false; await check(state, ['planning'])
-  state = base(); state.plan.maxExecutors = 1; state.tasks.T2 = task('T2', { state: 'running', touches: ['src/file'], sharedResources: [{ id: 'db', access: 'write' }] }); state.tasks.T1.sharedResources = [{ id: 'db', access: 'read' }]
+  state = base(); state.plan.maxAgents = 1; state.tasks.T2 = task('T2', { state: 'running', touches: ['src/file'], sharedResources: [{ id: 'db', access: 'write' }] }); state.tasks.T1.sharedResources = [{ id: 'db', access: 'read' }]
   const conflict = await check(state, ['capacity', 'path_conflict', 'shared_resource_conflict'])
   assert.deepEqual(conflict.derived.T1.executionReadiness.reasons.find(reason => reason.code === 'shared_resource_conflict').resources, ['db'])
   state = base(); state.authorizations = [{ id: 'recorded' }]; await check(state, ['authorization'])
@@ -56,7 +91,7 @@ test('API real expõe prontidão compartilhada sem modificar o contrato persisti
 
 test('prontidão considera ocupação por planejador de fase e estado ativo', () => {
   const state = base(); delete state.tasks.T1.writeScope
-  state.plan.maxParallel = 1; state.phaseWorkflows = { F1: { id: 'F1', state: 'planning' } }
+  state.plan.maxAgents = 1; state.phaseWorkflows = { F1: { id: 'F1', state: 'planning' } }
   assert.deepEqual(executionReadiness(state, state.tasks.T1, { effective: 'ready', blockedBy: [] }).reasons.map(reason => reason.code), ['scope_unknown', 'capacity'])
   state.tasks.T1.state = 'reviewing'; state.tasks.T1.authorizationHistory = [{}]
   assert.ok(executionReadiness(state, state.tasks.T1, { effective: 'reviewing', blockedBy: [] }).reasons.some(reason => reason.code === 'state'))

@@ -5,13 +5,14 @@ const definitions = {
   status: [0, '', 'verify-install'], ready: [0], graph: [0], runs: [0],
   'show-contract': [1, '', 'diff'], 'show-check': [1, 'check attempt'],
   authorize: [0, 'scope mode channel', 'confirmed-by-user'],
-  'begin-phase-discussion': [1, '', 'adopt-legacy'],
+  'begin-phase-discussion': [1, 'agent', 'adopt-legacy'],
   'skip-phase-discussion': [1, 'reason', 'confirmed-by-user'],
   'finish-phase-discussion': [1, 'context', 'accept-premature-work'],
   'plan-phase': [1, 'agent plan-dir'],
   'skip-phase-planning': [1, 'reason', 'confirmed-by-user'],
   'finish-phase-planning': [1, 'plan-dir'],
-  'begin-discussion': [1, '', 'adopt-legacy'],
+  'begin-discussion': [1, 'agent', 'adopt-legacy'],
+  'set-agent-limit': [0, 'max actor', 'confirmed-by-user'],
   'skip-discussion': [1, 'reason', 'confirmed-by-user'],
   'finish-discussion': [1, 'context', 'accept-premature-work'],
   'plan-task': [1, 'agent context', 'accept-premature-work'],
@@ -25,6 +26,7 @@ const definitions = {
   done: [1], fail: [1, 'reason', 'plan-defect'],
   retry: [1, 'channel', 'confirmed-by-user'],
   block: [1, 'reason question option'],
+  'pause-replanning': [1, 'reason'],
   unblock: [1, 'answer reviewer channel', 'confirmed-by-user'],
   skip: [1, 'reason'], note: [1, 'text'],
   'activity-start': [1, 'scope role agent'], 'activity-stop': [1, 'scope role agent'],
@@ -43,11 +45,13 @@ export function parseEngineArgs(command, tokens) {
     if (!token.startsWith('--')) { args._.push(token); continue }
     const key = token.slice(2)
     if (!stringFlags.has(key) && !booleanFlags.has(key)) throw new Error(`Unknown option --${key} for ${command}`)
-    if (Object.hasOwn(args, key) && key !== 'option') throw new Error(`Duplicate option --${key}`)
+    const repeatedAgent = key === 'agent' && ['plan-phase', 'begin-phase-discussion'].includes(command)
+    if (Object.hasOwn(args, key) && key !== 'option' && !repeatedAgent) throw new Error(`Duplicate option --${key}`)
     if (booleanFlags.has(key)) { args[key] = true; continue }
     const next = tokens[++i]
     if (next === undefined || next.startsWith('--')) throw new Error(`Option --${key} requires a value`)
     if (key === 'option') (args[key] ??= []).push(next)
+    else if (repeatedAgent && Object.hasOwn(args, key)) args[key] = [...(Array.isArray(args[key]) ? args[key] : [args[key]]), next]
     else args[key] = next
   }
   if (args._.length > positionals) throw new Error(`${command} accepts at most ${positionals} positional argument(s)`)

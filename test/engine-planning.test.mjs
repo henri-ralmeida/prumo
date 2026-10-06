@@ -108,6 +108,10 @@ test('skip encerra tentativa ativa sem inventar recibo de validação', t => {
     f.ok('start', 'T1', '--agent', 'executor-1')
     if (phase === 'reviewing') f.ok('review', 'T1', '--agent', 'reviewer-1')
     if (phase === 'blocked') f.ok('block', 'T1', '--reason', 'Pause before cancellation')
+    if (phase === 'blocked') {
+      f.rejects(/Use unblock before/, 'skip', 'T1', '--reason', 'Approved cancellation')
+      f.ok('unblock', 'T1')
+    }
     const before = f.state().tasks.T1
     f.ok('skip', 'T1', '--reason', 'Approved cancellation')
     const task = f.state().tasks.T1
@@ -232,14 +236,14 @@ test('material discovery, task scope and dependency changes invalidate a retry b
   }
 })
 
-function phaseFixture(t, tasks, { planningMode = 'phase' } = {}) {
+function phaseFixture(t, tasks, { planningMode = 'phase', maxAgents } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'prumo-phase-negative-'))
   t.after(() => rmSync(home, { recursive: true, force: true }))
   const root = join(home, 'workspace'), project = join(home, 'project'), plans = join(root, 'plans')
   mkdirSync(root); mkdirSync(project); mkdirSync(plans)
   writeFileSync(join(project, 'check.cjs'), "require('node:assert/strict').equal(1, 1)\n")
   const planPath = join(root, 'plan.json')
-  const plan = { name: 'Phase negative cases', planningMode,
+  const plan = { name: 'Phase negative cases', planningMode, ...(maxAgents === undefined ? {} : { maxAgents }),
     phases: [{ id: 'F1', title: 'First' }, { id: 'F2', title: 'Second' }],
     tasks: tasks.map(task => ({ validation, ...task })) }
   writeFileSync(planPath, JSON.stringify(plan))
@@ -464,7 +468,7 @@ test('planejamento de tarefa aberto pode concluir durante migração adiada sem 
 test('replanejamento de execução histórica usa a mesma tentativa ao importar descoberta explícita', t => {
   const f = fixture(t)
   f.ok('start', 'T1', '--agent', 'executor')
-  f.ok('block', 'T1', '--reason', 'É necessário revisar a implementação')
+  f.ok('pause-replanning', 'T1', '--reason', 'É necessário revisar a implementação')
   const state = f.state(), task = state.tasks.T1
   task.discussionRequired = false
   const context = join(dirname(f.planPath), 'legacy-replanning-discovery.json')
@@ -665,7 +669,7 @@ test('confirmação exigida sem lista de contratos não aceita declaração arbi
 test('nova discussão de execução pausada mantém a tentativa e recusa duplicação da rodada', t => {
   const f = fixture(t)
   f.ok('start', 'T1', '--agent', 'executor')
-  f.ok('block', 'T1', '--reason', 'Contrato precisa de nova discussão')
+  f.ok('pause-replanning', 'T1', '--reason', 'Contrato precisa de nova discussão')
   const original = structuredClone(f.state().tasks.T1.attempts)
   f.ok('begin-discussion', 'T1')
   const state = f.state(), statePath = join(dirname(f.planPath), '.specs', 'graph', 'retry', 'state.json')
@@ -857,10 +861,10 @@ test('force não ultrapassa capacidade de planejamento atual nem toma agente do 
     f.ok('skip-phase-discussion', 'F1', '--reason', 'Contrato aceito', '--confirmed-by-user')
     f.ok('skip-phase-planning', 'F1', '--reason', 'Execução direta', '--confirmed-by-user')
     const state = f.state()
-    state.plan.maxParallel = 1
+    state.plan.maxAgents = 1
     f.save(state)
     const before = f.state(), events = f.events()
-    f.rejects(/agents busy/, 'start', 'A', '--agent', 'executor', '--force')
+    f.rejects(/executors already running \(max 1\)/, 'start', 'A', '--agent', 'executor', '--force')
     assert.deepEqual(f.state(), before)
     assert.equal(f.events(), events)
   })
@@ -874,16 +878,16 @@ test('force não ultrapassa capacidade de planejamento atual nem toma agente do 
     f.ok('skip-phase-discussion', 'F2', '--reason', 'Contrato aceito', '--confirmed-by-user')
     f.ok('plan-phase', 'F2', '--agent', 'planejador')
     const state = f.state()
-    state.plan.maxParallel = 1
+    state.plan.maxAgents = 1
     f.save(state)
     let before = f.state(), events = f.events()
     f.rejects(/agents busy/, 'start', 'A', '--agent', 'executor', '--force')
     assert.deepEqual(f.state(), before)
     assert.equal(f.events(), events)
-    state.plan.maxParallel = 4
+    state.plan.maxAgents = 4
     f.save(state)
     before = f.state(); events = f.events()
-    f.rejects(/already on F2/, 'start', 'A', '--agent', 'planejador', '--force')
+    f.rejects(/already on B/, 'start', 'A', '--agent', 'planejador:B', '--force')
     assert.deepEqual(f.state(), before)
     assert.equal(f.events(), events)
   })
@@ -925,7 +929,7 @@ test('despacho de fase respeita agente ocupado e capacidade sem tomar a execuç�
   f.rejects(/already on B/, 'plan-phase', 'F1', '--agent', 'ocupado')
   assert.deepEqual(f.state(), before)
   assert.equal(f.events(), events)
-  before.plan.maxParallel = 1
+  before.plan.maxAgents = 1
   f.save(before)
   before = f.state(); events = f.events()
   f.rejects(/agents busy/, 'plan-phase', 'F1', '--agent', 'disponivel')
@@ -1033,7 +1037,7 @@ test('plan-phase prints the persisted copyable contract on first dispatch and no
 })
 
 test('finish-phase-planning reports every artifact error with its filename and accepts a UTF-8 BOM atomically', t => {
-  const f = phaseFixture(t, ['A', 'B', 'C', 'D'].map(id => ({ id, phase: 'F1', title: `Task ${id}` })))
+  const f = phaseFixture(t, ['A', 'B', 'C', 'D'].map(id => ({ id, phase: 'F1', title: `Task ${id}` })), { maxAgents: 4 })
   f.ok('begin-phase-discussion', 'F1')
   f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
   f.ok('plan-phase', 'F1', '--agent', 'planner')
@@ -1100,7 +1104,7 @@ test('unresolvedInputs diagnostics distinguish missing and unexpected inputs and
     { id: 'B', phase: 'F1', title: 'Producer' },
     { id: 'C', phase: 'F1', title: 'Unexpected input' },
     { id: 'D', phase: 'F1', title: 'Both directions', deps: ['B'] },
-  ])
+  ], { maxAgents: 4 })
   f.ok('begin-phase-discussion', 'F1')
   f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
   f.ok('plan-phase', 'F1', '--agent', 'planner')

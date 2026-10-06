@@ -163,13 +163,14 @@ test('legacy validation cannot approve a scope synchronized afterwards', (t) => 
 })
 
 test('unblock with reviewer hands delivered work directly to review without acquiring an executor slot', (t) => {
-  const f = fixture(t, {}, { maxExecutors: 1, maxParallel: 2, tasks: [{ id: 'T2', title: 'Other work', validation: [functionalStep] }] })
+  const f = fixture(t, {}, { maxAgents: 2, tasks: [{ id: 'T2', title: 'Other work', validation: [functionalStep] }] })
   f.ok('start', 'T1', '--agent', 'executor')
   f.ok('block', 'T1', '--reason', 'Pause delivered work')
   f.ok('start', 'T2', '--agent', 'other-executor')
   const before = f.state()
-  f.rejected(/executors already running/, 'unblock', 'T1')
-  assert.deepEqual(f.state(), before)
+  f.ok('unblock', 'T1')
+  assert.equal(f.state().tasks.T1.state, 'running')
+  f.ok('block', 'T1', '--reason', 'Pause delivered work')
   f.ok('unblock', 'T1', '--reviewer', 'reviewer')
   const task = f.state().tasks.T1
   assert.equal(task.state, 'reviewing')
@@ -226,7 +227,7 @@ test('pending and failed tasks restore their phase without bypassing dependencie
 })
 
 test('active resume checks total capacity and agent ownership, including reviewer replacement', (t) => {
-  const f = fixture(t, {}, { maxExecutors: 1, maxParallel: 2, tasks: [
+  const f = fixture(t, {}, { maxAgents: 2, tasks: [
     { id: 'T2', title: 'Second', validation: [functionalStep] },
     { id: 'T3', title: 'Third', validation: [functionalStep] }
   ] })

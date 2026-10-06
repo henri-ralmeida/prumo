@@ -15,11 +15,12 @@ import { join, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readCommandMetrics } from './command-metrics.mjs'
 import { isReviewRejected } from './review-readiness.mjs'
-import { executionReadiness } from './execution-readiness.mjs'
+import { executionReadiness, isExternalBlock, occupancy } from './execution-readiness.mjs'
 import { dashboardUpdate } from './dashboard-update.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ENGINE = join(HERE, 'engine.mjs')
+const AGENT_CONTROL_TOKEN = randomUUID()
 const eventHistoryCache = new Map()
 
 function forgetEventHistory(path) {
@@ -249,7 +250,7 @@ function selectedGraph(url) {
   const snapshot = requestedRoot === null ? catalog() : graphRoots()
   const root = snapshot.roots.find(candidate => candidate.name === (requestedRoot ?? snapshot.currentRoot))
   if (!root) return null
-  return { graphDir: root.graphDir, run: safeRun(requestedRun) ?? currentRun(root.path) }
+  return { root: root.path, graphDir: root.graphDir, run: safeRun(requestedRun) ?? currentRun(root.path) }
 }
 
 let lastPlanSignature = null
@@ -291,7 +292,7 @@ if (SYNC_PLAN) {
 /** Same derivation the engine uses — duplicated on purpose so this stays dependency-free
  *  read-only (importing engine.mjs would run its CLI arg handling). Keep in sync. */
 function phaseTargets(state, phaseId) {
-  return Object.values(state.tasks).filter(task => task.phase === phaseId && !['done', 'skipped'].includes(task.state) &&
+  return Object.values(state.tasks).filter(task => task.phase === phaseId && !['done', 'skipped'].includes(task.state) && !isExternalBlock(task) && !task.individualPlanning &&
     usesCurrentPlanning(state, task) &&
     !(task.taskPlan?.phaseId === phaseId && hasCurrentTaskPlan(state, task)))
 }
@@ -303,7 +304,7 @@ function taskById(state, id) {
 function phasePlanningBlockers(state, phaseId) {
   const blockers = new Set()
   for (const task of Object.values(state.tasks).filter(task => task.phase === phaseId)) {
-    if (['done', 'skipped'].includes(task.state) || !usesCurrentPlanning(state, task)) continue
+    if (['done', 'skipped'].includes(task.state) || isExternalBlock(task) || task.individualPlanning || !usesCurrentPlanning(state, task)) continue
     for (const id of task.deps ?? []) {
       const dep = taskById(state, id)
       if (dep?.phase !== phaseId && !['done', 'skipped'].includes(dep?.state)) {
@@ -388,14 +389,14 @@ function derive(state) {
       const phaseAdopted = !(state.legacyPhaseAdoption && !phase?.adoptedLegacy)
       if (!usesCurrentPlanning(state, t)) {
         effective = blockedBy.length ? 'waiting' : 'ready'
-      } else if (state.plan.planningMode === 'phase') {
+      } else if (state.plan.planningMode === 'phase' && !t.individualPlanning) {
         planningBlockedBy = phasePlanningBlockers(state, t.phase)
         const discussionRound = phase?.discussionAttempts?.at(-1)
         const phaseDiscussing = phase?.state === 'discussing' && !discussionRound?.endedAt &&
-          discussionRound?.targets?.includes(t.id)
+          (discussionRound?.activeTargets ?? discussionRound?.targets)?.includes(t.id)
         const planningRound = phase?.planningAttempts?.at(-1)
         const phasePlanning = phase?.state === 'planning' && currentPhasePlanning(state, phase, planningRound) &&
-          planningRound.targets.includes(t.id)
+          (planningRound.activeTargets ?? planningRound.targets).includes(t.id)
         effective = !phaseAdopted ? 'pending' : phaseDiscussing ? 'discussing' : hasCurrentTaskPlan(state, t) ?
           (blockedBy.length ? 'waiting' : 'ready') : phasePlanning ? 'planning' : planningBlockedBy.length ? 'waiting' :
             (currentPhaseDiscussionDecision(state, phase) ? 'ready_to_plan' : 'ready_for_discussion')
@@ -422,6 +423,13 @@ function derive(state) {
     out[id] = { effective, blockedBy,
       ...(showPlanningStatus ?
         { planningStatus, ...(planningBlockedBy.length ? { planningBlockedBy } : {}), ...(inputStatus ? { inputStatus } : {}) } : {}) }
+    const agentRound = phase?.[phase.state === 'discussing' ? 'discussionAttempts' : 'planningAttempts']?.at(-1)
+    const worker = Object.hasOwn(agentRound?.workers ?? {}, id) ? agentRound.workers[id] : null
+    if (worker && !worker.endedAt && ['planning', 'discussing'].includes(effective)) out[id].activeAgent = worker.agent
+    if (t.state === 'discussing' && t.discussionAttempts?.at(-1)?.agent) out[id].activeAgent = t.discussionAttempts.at(-1).agent
+    if (t.state === 'pending' && agentRound?.queuedTargets?.includes(id)) Object.assign(out[id], { effective: 'waiting', agentQueued: true })
+    if (t.state === 'pending' && worker?.endedAt && !agentRound.endedAt && ['planning', 'discussing'].includes(phase.state))
+      Object.assign(out[id], { effective: 'waiting', phaseBatchPending: true })
     if (migrationPending && t.state === 'pending' && usesCurrentPlanning(state, t))
       Object.assign(out[id], { effective: 'pending', planningStatus: 'awaiting_migration' })
     out[id].executionReadiness = executionReadiness(state, t, out[id])
@@ -498,6 +506,32 @@ const server = createServer((req, res) => {
   const selected = selectedGraph(url)
   const run = selected?.run
 
+  if (url.pathname === '/api/agent-limit') {
+    if (req.method !== 'POST') return json(res, 405, { error: 'POST required' })
+    const origin = req.headers.origin
+    let source, host
+    try { source = new URL(origin); host = new URL(`http://${req.headers.host}`) }
+    catch { return json(res, 403, { error: 'same-origin user control required' }) }
+    if (!['localhost', '127.0.0.1', '[::1]'].includes(host.hostname) || Number(host.port) !== server.address().port ||
+        source.origin !== host.origin || req.headers['x-prumo-control'] !== AGENT_CONTROL_TOKEN)
+      return json(res, 403, { error: 'same-origin user control required' })
+    if (!run) return json(res, 404, { error: 'no run' })
+    if (req.headers['content-type'] !== 'application/json') return json(res, 415, { error: 'JSON required' })
+    let body = '', oversized = false
+    req.on('data', chunk => { if (!oversized) { body += chunk; if (Buffer.byteLength(body) > 2048) { oversized = true; body = '' } } })
+    req.on('end', () => {
+      if (oversized) return json(res, 413, { error: 'request too large' })
+      let max
+      try { max = JSON.parse(body).maxAgents } catch { return json(res, 400, { error: 'invalid JSON' }) }
+      if (!Number.isSafeInteger(max) || max < 1) return json(res, 400, { error: 'maxAgents must be a positive integer' })
+      execFile(process.execPath, [ENGINE, 'set-agent-limit', '--max', String(max), '--actor', 'dashboard-user', '--confirmed-by-user', '--run', run],
+        { cwd: selected.root, env: { ...process.env, PRUMO_ROOT: selected.root, GRAPH_ROOT: selected.root, PRUMO_LANG: LANG }, windowsHide: true, timeout: 30000 },
+        (error, stdout, stderr) => error ? json(res, 409, { error: (stderr || stdout || error.message).trim() }) : json(res, 200, { maxAgents: max }))
+    })
+    req.on('error', error => { if (!res.writableEnded) json(res, 400, { error: error.message }) })
+    return
+  }
+
   if (url.pathname === '/api/state') {
     if (!run) {
       if (GLOBAL && !url.searchParams.has('root') && !url.searchParams.has('run')) return json(res, 200, {
@@ -508,7 +542,9 @@ const server = createServer((req, res) => {
     const p = join(selected.graphDir, run, 'state.json')
     if (!existsSync(p)) return json(res, 404, { error: tr(`run "${run}" not found`) })
     const state = JSON.parse(readFileSync(p, 'utf8'))
-    return json(res, 200, { ...state, derived: derive(state), commandMetrics: readCommandMetrics(join(selected.graphDir, run)) })
+    const usage = occupancy(state)
+    return json(res, 200, { ...state, derived: derive(state), agentUsage: { used: usage.busy.length, maxAgents: usage.cap },
+      agentControlToken: AGENT_CONTROL_TOKEN, commandMetrics: readCommandMetrics(join(selected.graphDir, run)) })
   }
 
   if (url.pathname === '/api/events') {

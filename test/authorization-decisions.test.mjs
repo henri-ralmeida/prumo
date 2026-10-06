@@ -547,7 +547,7 @@ test('a run without any recorded authorization scope starts as before, including
 test('a recorded scope refuses tasks outside it, and a freed slot names only authorized ready work', t => {
   const f = fixture(t, { authorize: false, tasks: [{ id: 'A', title: 'Source' }, { id: 'B', title: 'Target' }, { id: 'C', title: 'Outside' }] })
   const capped = f.state()
-  capped.plan.maxExecutors = 1
+  capped.plan.maxAgents = 1
   f.saveState(capped)
   for (const id of ['A', 'B', 'C']) f.planTask(id)
   f.ok('authorize', '--scope', 'tasks:A,B', '--confirmed-by-user')
@@ -557,11 +557,15 @@ test('a recorded scope refuses tasks outside it, and a freed slot names only aut
 
   f.ok('start', 'A', '--agent', 'executor-A')
   const review = f.ok('review', 'A', '--agent', 'reviewer-A')
-  assert.match(review.stdout, /execution slot freed by A \(review\); authorized next: start B --agent <executor>/)
+  assert.doesNotMatch(review.stdout, /execution slot freed/)
+  f.rejects(/agents busy|executors already running/, 'start', 'B', '--agent', 'executor-B')
+  f.ok('validate', 'A', '--ok', '--evidence', 'Approved behavior verified independently', '--cwd', f.project)
+  const completed = f.ok('done', 'A')
+  assert.match(completed.stdout, /execution slot freed by A \(done\); authorized next: start B --agent <executor>/)
   const freed = f.events().filter(event => event.type === 'slot_freed')
   assert.deepEqual(freed.map(({ freedBy, cause, slots, next }) => ({ freedBy, cause, slots, next })),
-    [{ freedBy: 'A', cause: 'review', slots: 1, next: ['B'] }])
-  assert.doesNotMatch(review.stdout, /start C/)
+    [{ freedBy: 'A', cause: 'done', slots: 1, next: ['B'] }])
+  assert.doesNotMatch(completed.stdout, /start C/)
 
   f.ok('start', 'B', '--agent', 'executor-B')
   const second = f.ok('review', 'B', '--agent', 'reviewer-B')

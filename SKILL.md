@@ -7,7 +7,7 @@ description: Executes an approved global plan as a task GRAPH — optional user-
 
 Runs an **already approved** global plan through the graph engine bundled with this skill: a DAG of
 tasks, optional phase discussion and read-only planning chosen explicitly by the user, parallel executors, a validation gate before anything
-is `done`, and a read-only dashboard the dev can watch.
+is `done`, and a dashboard for observing work and adjusting its agent limit through the engine.
 
 This file is the router: it says what to do in each state and which reference holds the detail. Read a
 reference when the state machine below sends you there, not up front.
@@ -277,6 +277,22 @@ also share the real ceiling — the machine and the API limits — without knowi
 
 ## 3. The loop
 
+**One shared agent limit.** `maxAgents` defaults to 3 for discussion, planning, execution and review
+combined. Read the current dashboard/engine occupancy before every native dispatch. Register each
+phase worker with `--agent T1=planner-a --agent T2=planner-b`; dispatch only `activeTargets`, never
+`queuedTargets`. A plain phase-agent prefix generates task-specific registration names; it does not
+create native agents. Complete the active wave with `finish-phase-*`, then dispatch the next recorded
+wave. Plans are committed together only when every eligible phase target has finished. The board's
+agent control or `set-agent-limit --max N --actor <user> --confirmed-by-user` changes the run's current
+limit and records an audit event. There is no hidden review reservation and `--force` cannot bypass
+capacity. A review handoff replaces the executor in its existing slot.
+
+**External block means no work.** `block`, including `--question`, prevents all discussion,
+planning, execution and review until `unblock`. Blocked phase members leave the round and need no
+artifact; after unblocking, an excluded member uses task-scoped discussion/planning in its original
+phase. Use `pause-replanning` only for an active attempt whose approved contract requires a revised
+plan; this internal pause permits planning and returns to blocked until explicit `unblock`.
+
 **The principal conversation discusses. Planners research. Executors deliver. A fresh REVIEWER judges.** These are separate assignments: `review`
 refuses a reviewer that authored the task, and `done` refuses a validation the executor
 recorded. That is the contract, and everything below serves it.
@@ -287,7 +303,7 @@ node $ENGINE ready                              # separate planning/execution re
 node $ENGINE begin-phase-discussion F2          # after the user chooses discussion
 node $ENGINE skip-phase-discussion F2 --reason "..." --confirmed-by-user
 node $ENGINE finish-phase-discussion F2 --context <discovery.json>
-node $ENGINE plan-phase F2 --agent plan-scenes  # one read-only planner for the phase
+node $ENGINE plan-phase F2 --agent T4=plan-scenes --agent T5=plan-review  # one recorded worker per target
 node $ENGINE skip-phase-planning F2 --reason "..." --confirmed-by-user
 node $ENGINE finish-phase-planning F2 --plan-dir <artifact-directory>
 node $ENGINE start T4 --agent ag-scenes         # dispatch up to the cap, in the SAME message
@@ -299,8 +315,9 @@ node $ENGINE done T4
 Para medir trabalho real, marque o começo quando a pessoa ou agente efetivamente iniciar cada papel e
 marque a parada antes de aguardar resposta, pausar ou encerrar a atividade. Use
 `activity-start <id> --scope task|phase --role discussion|planning|execution|review --agent <name>` e
-`activity-stop` com os mesmos argumentos. Discussão e planejamento de fase usam `--scope phase`;
-execução e revisão usam `--scope task`. Os comandos de despacho e de abertura de rodada não iniciam
+`activity-stop` com os mesmos argumentos. Em rodadas de fase, use `--scope task` com o ID e o nome
+exato de cada worker registrado; `--scope phase` também aceita esse nome. Execução e revisão usam
+`--scope task`. Os comandos de despacho e de abertura de rodada não iniciam
 atividade automaticamente, pois pode haver espera até o trabalho começar. Ao retomar, abra outro
 intervalo. O motor fecha um intervalo ainda aberto quando a rodada ou tentativa muda de estado;
 isso impede que uma pausa conte como trabalho após o bloqueio. Uma rodada antiga ainda aberta
@@ -313,7 +330,7 @@ que o trabalho anterior ao primeiro START não foi medido nem presumido.
 | --- | --- | --- | --- |
 | `ready_for_discussion` | Recommend discuss or skip, with reasons; wait for the user's choice | `begin-phase-discussion` / `skip-phase-discussion --reason --confirmed-by-user` | discussion.md |
 | `discussing` | Ask in the principal conversation until no consequential gray area remains; write discovery JSON | `finish-phase-discussion --context` | discussion.md |
-| `ready_to_plan` | Recommend plan or skip; dispatch one read-only planner, or skip by user choice | `plan-phase --agent [--plan-dir]` / `skip-phase-planning` | planning.md |
+| `ready_to_plan` | Recommend plan or skip; dispatch one read-only planner per active target within the shared limit, or skip by user choice | `plan-phase --agent [--plan-dir]` / `skip-phase-planning` | planning.md |
 | `planning` | Validate and record the returned artifacts; bring `user-now` questions to the user | `finish-phase-planning --plan-dir` | planning.md |
 | `pending` | Awaiting migration or phase adoption of a legacy run; follow the recovery steps before any new round | — | recovery.md |
 | `waiting` | Dependencies incomplete; explain the blocker, do not reshape the graph | — | runtime.md |
@@ -344,8 +361,8 @@ These hold in every state; each one protects the property that makes the graph t
 - **Author ≠ verifier.** The executor never approves its own work and the orchestrator never impersonates
   the reviewer. `done` requires a passing independent validation for the current attempt. Discussion and
   planning skips never waive review.
-- **One agent, one active task; a fresh reviewer per task.** Executors stay strictly below total capacity
-  so review is never capacity-blocked ([dispatch.md](references/dispatch.md#capacity)).
+- **One agent, one active task; a fresh reviewer per task.** All roles share `maxAgents`; a handoff
+  replaces the current role in its slot, with no hidden reservation ([dispatch.md](references/dispatch.md#capacity)).
 - **Gates are the user's choice.** Discussion and planning are optional only by the user's explicit choice,
   recorded with `--reason` and `--confirmed-by-user`; never skip for token economy.
 - **Eligibility is not permission.** A phase opens only when every external dependency of every unfinished member is `done` or `skipped`,

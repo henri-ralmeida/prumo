@@ -27,15 +27,16 @@ Install the global CLI, skill, PO First and per-user dashboard service; see the 
 npm install -g @henri-ralmeida/prumo
 ```
 
-The global npm `postinstall` configures detected supported harnesses and starts the read-only dashboard.
+The global npm `postinstall` configures detected supported harnesses and starts the dashboard with its read-only state view.
 A local npm install is inert. Use `prumo install --all` after disabled npm scripts or to repair a new harness.
 `prumo update` refreshes the CLI, skill, both READMEs, references, scripts and PO First configuration in
 every registered Claude Code, Kiro, Codex and DSH installation. It compares managed contents, resumes a pending
 activation and never downgrades a global CLI newer than npm `latest`. A damaged marker is recovered only
 for its exact registered harness/path and only from a byte-verified Prumo backup.
 Installation and update restart the dashboard when it is enabled, so it serves the installed version, and
-preserve an explicit disable. They never restart agents. The global dashboard only observes: only an explicit
-orchestrator call to `sync-plan` reconciles an approved plan.
+preserve an explicit disable. They never restart agents. The global dashboard reads the run and offers only
+the explicit user-confirmed agent-limit control; only an explicit orchestrator call to `sync-plan` reconciles
+an approved plan.
 
 ### DSH integration
 
@@ -45,16 +46,17 @@ DSH must already be installed and detected before `prumo install --dsh`; Prumo n
 
 ## What it does
 
-- **Research before execution** — one read-only planner studies each phase, records sources and
-  decisions, and writes a separate immutable execution plan for every targeted task.
-- **Parallel executors, capped** — independent tasks run at once; up to 3 executors out of
-  4 total slots, so a finished task never waits for capacity to be reviewed.
+- **Research before execution** — each active phase target gets a read-only worker that records sources
+  and decisions and writes its separately bound immutable execution plan.
+- **One shared agent cap** — discussion, planning, execution and review use the same per-run
+  `maxAgents` limit (default 3). A review is a handoff in the task's existing slot; lowering the
+  limit leaves current work alive and delays only new work until occupancy is below the cap.
 - **Author ≠ verifier, enforced** — every task is validated by a FRESH reviewer agent that
   never saw the code being written. `done` refuses a self-reported validation; `review`
   refuses the task's own author. Evidence is recorded per verdict.
 - **Collision-proof plans** — `init` rejects dependency cycles (naming the loop) and two
   parallel tasks that declare overlapping `touches` paths, before any agent starts.
-- **Live dashboard** — a read-only server on `:4949` renders the DAG as phase swimlanes with
+- **Live dashboard** — a dashboard server on `:4949` renders the read-only state view as phase swimlanes with
   animated dep edges, per-task state, retries and an event log. Killing it never affects a run.
 - **Zero runtime dependencies** — Node.js 22+. State is plain JSON +
   append-only NDJSON in a central Prumo workspace outside project repositories.
@@ -121,7 +123,7 @@ the skill is the DISCIPLINE. Neither replaces the other.
 | File             | Role                                                                                                                                                                                                                                                                                                                                              |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `engine.mjs`     | CLI + state machine. The ONLY writer of state.                                                                                                                                                                                                                                                                                                    |
-| `serve.mjs`      | Read-only HTTP server for the dashboard. Killing it never affects a run.                                                                                                                                                                                                                                                                          |
+| `serve.mjs`      | HTTP server for the dashboard; its state view is read-only and its explicit agent-limit control delegates to the engine. Killing it never affects a run.                                                                                                                                                                                          |
 | `dashboard.html` | Live view: DAG laid out as phase swimlanes (toggle to dep-depth layering), animated dep edges, lineage highlight on hover, task details in a popover beside the node (long hover peeks, click pins; side panel = run state + logs only), working/validated sub-state per running task, orchestrator heartbeat, event flashes, retries, event log. Plus a **results** tab (`r`) deriving what the run cost — see below. |
 
 New state lives in `~/.local/share/prumo/<workspace>/.specs/graph/<run>/`, outside project
@@ -146,8 +148,7 @@ before recording the result, rechecks the attempt, contract, reviewer and state.
 {
   "name": "my-feature",
   "scopePolicy": "explicit",
-  "maxParallel": 4,
-  "maxExecutors": 3,
+  "maxAgents": 3,
   "phases": [{ "id": "F1", "title": "Server side" }],
   "tasks": [
     {
@@ -232,7 +233,10 @@ invalidating planning. `manualEstimate` is a human estimate for the gains view, 
 state keeps it as whole minutes, and invalid values (zero, negative, fractional or unreadable) are refused.
 
 Plan-level fields: `name` (required), `description`, `phases[]` (`{id, title}`),
-`maxParallel` (4), `maxExecutors` (3), `requireReview` (true), `scopePolicy` (optional; `"explicit"`).
+`maxAgents` (positive integer, default 3), `requireReview` (true), and `scopePolicy` (optional; `"explicit"`).
+The old `maxParallel` and `maxExecutors` fields may remain in migrated state as compatibility metadata;
+they do not control scheduling. `agentLimitHistory` records the default adopted by migration and later
+user changes, including actor and time.
 
 Display text must be nonblank when supplied. Before adding a task through `sync-plan`, the orchestrator
 must fill its `summary` from the approved scope; synchronization refuses new tasks without it and
@@ -441,23 +445,39 @@ from its engine label alone. Record corrections in notes, preserving historical 
 
 ### Pause and resume
 
-`block` stores the current phase. Blocking an already blocked task updates the reason and keeps
-the original phase. Completed/skipped tasks cannot be paused.
+`block` is always an **external** pause and stores the current phase with `blockKind: "external"`.
+That includes blocks carrying a question or options. Blocking an already blocked task updates the reason
+and keeps the original phase. Completed/skipped tasks cannot be paused. An external block removes the task
+from a phase round's `activeTargets` and `queuedTargets`, records `originalTargets`/`excludedTargets`, and
+marks it for individual planning (`individualPlanning: true`), and prevents discussion, planning, execution,
+review or activity commands until explicit `unblock`.
+Direct blocked-task commands fail before mutation with `<task> is blocked: ... Use unblock before discussing,
+planning, reviewing or executing.`
+If a phase task is unblocked after exclusion, it is marked for its own `begin-discussion` → `plan-task` →
+`finish-planning` flow within its original phase; it does not silently re-enter the old phase batch. An old blocked task with no
+`blockKind` is external for compatibility; never infer an internal pause from `blockReason` text.
+
+`pause-replanning <task> --reason <text>` is the separate internal pause. It is allowed only for an active
+attempt of a task with `planningRequired`, carries no external question, and records `blockKind: "replan"`.
+The same attempt may run its task planning while blocked; `finish-planning` keeps it blocked, and explicit
+`unblock` resumes that attempt. This command never turns an external decision into planning work.
 
 | Command | Result |
 | --- | --- |
 | `unblock <task>` | Restores pending/planning/running/reviewing/failed without adding an attempt. |
 | `unblock <task> --reviewer <agent>` | Paused running/reviewing work goes directly to independent review in the same open attempt. |
+| `pause-replanning <task> --reason <text>` | Pauses an active planning-required attempt internally so its plan can be refreshed before the same attempt is unblocked. |
 
 `block --question <text>` stores the decision needed to resume, and repeatable `--option <text>`
 stores its choices. When a question was recorded, `unblock` requires `--answer <text>` and appends
 the reason, question, answer and time to block history. A legacy reason-only block can still use
 `unblock <task>`.
 
-Resume reacquires capacity and checks dependencies and the active agent's availability.
-Direct review needs only a total slot, not an executor slot. For tasks requiring planning,
-`--force` cannot bypass planning, dependencies, total capacity or concurrent agent uniqueness;
-the executor-quota override remains. It cannot manufacture an open attempt or a valid review.
+Resume reacquires the shared `maxAgents` capacity and checks dependencies and the active agent's availability.
+Direct review is a handoff in the same occupied task slot, not a fourth agent or a reserved review slot.
+For tasks requiring planning, `--force` cannot bypass planning, dependencies, total capacity or concurrent
+agent uniqueness; it cannot manufacture an open attempt or a valid review. Reducing `maxAgents` never kills
+current agents; it only prevents new workers until occupancy falls below the limit.
 No command dispatches an agent. A rejected resume leaves the block reason and history intact.
 Resuming pending work still needs current planning before start when required; failed work still needs retry.
 
@@ -497,10 +517,13 @@ For runs with declared phases, discussion and planning are independent optional 
 gate separately from observable scope complexity, ambiguity, impact, dependencies and risk, then wait for
 the user's explicit choice. Record a skip with `--reason` and `--confirmed-by-user`; execution and
 independent review remain mandatory. Corrective homologation work may skip either gate only by explicit
-user choice. When selected, discussion uses the visible principal conversation and planning uses one
-read-only planner per phase. The planner emits one separately bound immutable `task-plan-<id>.json` per targeted task. A phase opens only when every
-external dependency of every unfinished member is `done` or `skipped`. One blocked member holds the
-entire phase. Internal dependencies gate execution, not planning. Independent phases can be discussed
+user choice. When selected, discussion uses the visible principal conversation and each active phase target
+receives one assigned read-only worker. `--agent` assignments are persisted labels, not native agent creation:
+the orchestrator must create exact named agents and dispatch only active workers. The workers emit one
+separately bound immutable `task-plan-<id>.json` per targeted task. A phase opens only when every
+external dependency of every unfinished member is `done` or `skipped`. An external-blocked member is
+excluded from the current phase targets and recorded in `originalTargets`/`excludedTargets`, so the
+remaining batch can finish; it must later use the task-scoped flow after `unblock`. Internal dependencies gate execution, not planning. Independent phases can be discussed
 and planned in parallel when the user chooses them, regardless of their declared order. Never move tasks
 between phases or remove dependencies to bypass a blocker. An explicitly named existing task is a hard planning boundary: prerequisites,
 evidence gaps and internal deliverables remain inside its single task plan, and adding helper tasks or
@@ -534,6 +557,11 @@ stay unchanged. A task with an existing legacy attempt keeps its previous lifecy
 receive independent review and finish without retroactive discussion or planning. New or never-started
 tasks receive the current gates and can proceed when their own dependencies are complete. Only an
 in-flight planning workflow that cannot be mapped safely blocks migration, with a task-specific reason.
+Migration also adopts `maxAgents: 3` when an old run has no shared limit, preserves the old plan fields,
+tasks and histories, and appends the migration entry to `agentLimitHistory`; it does not infer a new limit
+from `maxParallel`, `maxExecutors` or block prose.
+If the schema is current and only the shared limit is missing, commands use the default 3 without
+rewriting state on a query or refusal. Persist it explicitly with `migrate` or the board limit control.
 `sync-plan` can repair approved contracts without rewriting active or terminal history.
 Workspace relocation preserves dependency links without traversing their targets; internal absolute links
 follow the new workspace location, and external targets remain untouched.
@@ -577,15 +605,21 @@ must carry `confirmsContract: [{ "task": "<id>", "digest": "<current-64-characte
 current target. Missing tasks, old digests and either discussion/planning skip leave the confirmation
 unsatisfied.
 The engine computes a canonical SHA-256 digest from the persisted fields and discussion receipt and
-binds it to `plan-phase`. The one planner researches the current code and contracts without editing them,
-then writes deterministic `task-plan-<id>.json` files. `plan-phase` prints a copyable JSON fragment for each
-target, read from the persisted planning round; copy that task's `phaseBinding` and `unresolvedInputs` unchanged
+binds it to `plan-phase`. A phase round can have one native read-only worker per active target. Repeat
+`--agent <task>=<native-agent>` for every target, with distinct exact names, or give one prefix and let
+the engine record `<prefix>:<task>` for each target. These assignments are state records, not agent creation:
+the orchestrator or harness must create native agents with those exact names and only for `activeTargets`;
+`queuedTargets` remain undispatched until a slot opens. The planner workers research the current code and
+contracts without editing them, then write deterministic `task-plan-<id>.json` files. `plan-phase` prints a
+copyable JSON fragment for each active target; copy that task's `phaseBinding` and `unresolvedInputs` unchanged
 into its artifact. `discussionRoundId` is the discussion `roundId`, or the user-confirmed `decisionId` when
 discussion was skipped. Keep `plannerRound` as printed; never renumber it. Repeating `plan-phase` in the same
-open round prints the same fragments without creating a round. `finish-phase-planning --plan-dir <directory>` validates
-the complete batch before atomically recording any plan. Every artifact includes `phaseBinding` and lists
-currently incomplete direct dependencies in `unresolvedInputs` with producer task, phase and required evidence.
-New material uncertainty returns to principal discovery and fresh planning.
+open round keeps the same assignments and activates the next queued wave when possible.
+`finish-phase-discussion --context <discovery.json>` validates discovery only for the current active wave,
+accumulates the recorded discoveries and opens the next wave until all targets are covered. Likewise,
+`finish-phase-planning --plan-dir <directory>` validates only the active wave, stages its plans and opens the
+next wave; only the final wave atomically records every task plan. New material uncertainty returns to
+principal discovery and fresh planning.
 Only the orchestrator records engine transitions. See [the workflow](discussion.md#two-planning-levels).
 
 Example for a task with one executable validation check:
@@ -651,24 +685,35 @@ plans; `--plan-defect` invalidates only that task. Ordinary findings and depende
 At `start`, direct dependencies must be terminal: `done` supplies its current passing validation receipt and
 `skipped` supplies an explicit waiver bound to its reason. Review, validation and completion reject a changed
 input receipt. If the execution scope changes during running/reviewing,
-block the work, synchronize the approved change, then dispatch `plan-task` on the blocked task.
-`finish-planning` returns it to **blocked**, preserving the original phase, reason and open
-execution attempt. Only explicit `unblock` resumes it; do not invent fail/retry to refresh
-planning. Validation-only `refresh-contract` remains possible within the same attempt and
-requires fresh validation. Receipts from the old planning scope cannot approve the new scope.
+use `pause-replanning` for the active planning-required attempt, synchronize the approved change, then
+dispatch `plan-task` on that internally paused task. `finish-planning` returns it to **blocked**, preserving
+the original phase, reason and open execution attempt; only explicit `unblock` resumes it. An ordinary
+external `block` must be unblocked before any planning command. Do not invent fail/retry to refresh planning.
+Validation-only `refresh-contract` remains possible within the same attempt and requires fresh validation.
+Receipts from the old planning scope cannot approve the new scope.
 
 Persisted task-scoped runs continue to use `begin-discussion`, `finish-discussion`, `plan-task` and
 `finish-planning` with their existing dependency-ready semantics.
 
 ### Dashboard startup
 
-`prumo dashboard enable` starts the read-only server immediately and registers it for the current user.
+`prumo dashboard enable` starts the dashboard server immediately and registers it for the current user.
 On Windows, Prumo tries the `Prumo Dashboard` ONLOGON Task Scheduler task first. If Windows refuses or
 cannot create that task, it automatically writes one hidden Prumo-owned launcher to the current user's
 Startup folder; no administrator access is requested. The selected mechanism is persisted across status,
 restart, update and reinstall. `prumo dashboard status` reports it, and `prumo dashboard disable` removes
 only that registration and stops only a process whose complete absolute Node and server command is proven.
 An unrelated listener on port 4949 is never terminated.
+
+The dashboard exposes `agentUsage.used`, shared `agentUsage.maxAgents` and a per-process
+`agentControlToken` through `GET /api/state`. Its local same-origin control form sends
+`POST /api/agent-limit` with `Content-Type: application/json` and JSON `{ "maxAgents": N }`; it must use
+the exact loopback origin and `x-prumo-control` token from that response. The server rejects every other
+method, origin, token, content type, malformed or oversized body, and noninteger limit before writing; the
+selected root/run must belong to the discovered catalog, so query strings cannot authorize an arbitrary path.
+Valid requests delegate `set-agent-limit --max N --actor dashboard-user --confirmed-by-user` and record actor
+and time in `agentLimitHistory`. A new limit applies to the next engine operation. Reducing it never kills
+active agents; it only prevents new dispatch until occupancy is below the cap.
 
 ### Effective states
 
@@ -686,7 +731,7 @@ independently, so discussion and planning can be active while a card is still `w
 | `ready_for_discussion` | The phase needs current discovery; dependency completion is not required | Violet |
 | `discussing` | Persisted phase discussion is active in the principal conversation | Violet |
 | `ready_to_plan` | Persisted phase discussion is closed; its planner may start before dependencies finish | Blue |
-| `planning` | One read-only phase planner is composing separate task plans | Pink |
+| `planning` | Assigned read-only phase workers are composing separate task plans; queued targets are not dispatched | Pink |
 | `ready` | Ready to execute with a current plan, or original legacy readiness | Teal |
 | `running` | Executor working | Amber |
 | `reviewing` | Independent reviewer working | Cyan |
@@ -695,14 +740,12 @@ independently, so discussion and planning can be active while a card is still `w
 | `blocked` | Paused pending a decision or another impediment | Purple |
 | `skipped` | Explicitly skipped | Gray |
 
-**Tuning parallelism.** `maxExecutors` (default 3) caps agents WRITING at once;
-`maxParallel` (default 4) caps total busy agents (planning + running + reviewing). Planning
-does not consume an executor slot or execution attempt. The defaults are a
-safe floor, not a law — a bigger machine and a wide plan can run 6+8 or more. Two things to
-know when raising them: keep `maxExecutors` strictly below `maxParallel` (that headroom is
-what keeps review permanently unblockable — the engine's core property), and remember the
-real ceiling is usually elsewhere: the plan's dep width, your API rate limits, and token
-burn scale with every extra executor.
+**Tuning parallelism.** `maxAgents` (default 3) is the one shared cap for active discussion,
+planning, execution and review workers. `maxParallel` and `maxExecutors` in an old state are metadata
+only and do not create a second cap. Lowering `maxAgents` never terminates current work; it prevents
+new workers until the number of active agents is below the new limit. A review is a handoff in the same
+task slot, so it does not reserve a fourth slot or require spare capacity. Phase targets beyond the active
+wave remain queued and do not occupy the cap.
 
 `deps` orders execution. Phase discussion and planning may finish before dependencies, but a task is
 **ready to execute** only with a current immutable plan and every dep `done` or `skipped`.
@@ -771,14 +814,14 @@ mkdir -p "$PRUMO_ROOT/.specs/graph/plans" && export PRUMO_ROOT
 node .claude/skills/prumo/scripts/engine.mjs init --plan "$PRUMO_ROOT/.specs/graph/plans/x.plan.json" --run x-01
 node .claude/skills/prumo/scripts/engine.mjs migrate --check          # read-only compatibility report
 node .claude/skills/prumo/scripts/engine.mjs ready                 # what can start now
-node .claude/skills/prumo/scripts/engine.mjs begin-phase-discussion F1 # use --adopt-legacy only for a safe old phase
+node .claude/skills/prumo/scripts/engine.mjs begin-phase-discussion F1 --agent T1=disc-f1-t1 --agent T2=disc-f1-t2 # exact native worker names
 node .claude/skills/prumo/scripts/engine.mjs skip-phase-discussion F1 --reason "The approved contract is clear" --confirmed-by-user # after explicit user choice
 node .claude/skills/prumo/scripts/engine.mjs finish-phase-discussion F1 --context <discovery.json>
-node .claude/skills/prumo/scripts/engine.mjs plan-phase F1 --agent plan-server --plan-dir <artifact-dir>  # dir optional
-# The read-only planner writes one task-plan-<id>.json per target.
+node .claude/skills/prumo/scripts/engine.mjs plan-phase F1 --agent T1=plan-f1-t1 --agent T2=plan-f1-t2 --plan-dir <artifact-dir>  # dir optional
+# A single prefix, for example --agent plan-f1, records plan-f1:T1, plan-f1:T2, and so on.
 node .claude/skills/prumo/scripts/engine.mjs skip-phase-planning F1 --reason "The global contract is sufficient" --confirmed-by-user # after explicit user choice
 node .claude/skills/prumo/scripts/engine.mjs finish-phase-planning F1 --plan-dir <artifact-directory>
-node .claude/skills/prumo/scripts/engine.mjs start T1 --agent ag-server      # max 3 executors
+node .claude/skills/prumo/scripts/engine.mjs start T1 --agent ag-server      # shared maxAgents cap
 node .claude/skills/prumo/scripts/engine.mjs progress T1 --step 2 --agent ag-server  # actual executor report
 node .claude/skills/prumo/scripts/engine.mjs review T1 --agent rev-server    # hand to a fresh reviewer
 node .claude/skills/prumo/scripts/engine.mjs review-progress T1 --step 1 --agent rev-server # after inspecting check 1
@@ -789,6 +832,8 @@ node .claude/skills/prumo/scripts/engine.mjs fail T2 --reason "typecheck broke"
 node .claude/skills/prumo/scripts/engine.mjs retry T2              # warns after 3 attempts
 node .claude/skills/prumo/scripts/engine.mjs block T9 --reason "needs dev decision" --question "Which policy applies?" --option "Keep current" --option "Adopt proposed"
 node .claude/skills/prumo/scripts/engine.mjs unblock T9 --answer "Keep current"
+node .claude/skills/prumo/scripts/engine.mjs pause-replanning T9 --reason "approved contract changed during the active attempt"
+node .claude/skills/prumo/scripts/engine.mjs set-agent-limit --max 3 --actor dashboard-user --confirmed-by-user
 node .claude/skills/prumo/scripts/engine.mjs status | graph        # human table | full JSON
 node .claude/skills/prumo/scripts/engine.mjs status --verify-install # also compare installed files with the marker
 ```
@@ -812,19 +857,22 @@ Resolve `scripts/engine.mjs` from the installed skill. Add `--run <name>` to sel
 | `authorize --scope run\|phase:<phase>\|tasks:<T1,T2> [--mode auto\|manual] [--channel <name>] --confirmed-by-user` | Records the dispatch scope and mode the user accepted; `auto` is the default |
 | `show-contract <task> [--diff]` | Shows the business contract before/after without `validation.run` commands |
 | `show-check <task> --check <N> --attempt <K>` | Shows the stored check's stdout, stderr, directory, exit code and reuse status |
-| `begin-phase-discussion <phase> [--adopt-legacy]` | Persists the chosen phase discussion before the first question; the option adopts a safe legacy phase |
+| `begin-phase-discussion <phase> [--agent <task>=<name>]... [--adopt-legacy]` | Persists the phase discussion and exact per-target worker assignments; one unqualified name expands to `<name>:<task>` |
 | `skip-phase-discussion <phase> --reason <text> --confirmed-by-user` | Records the explicit choice to skip the phase discussion |
-| `finish-phase-discussion <phase> --context <discovery.json> [--accept-premature-work]` | Validates the receipt and the current round's answers |
-| `plan-phase <phase> --agent <name> [--plan-dir <directory>]` | Records the phase's single read-only planner; the optional directory lets status count artifacts already written |
+| `finish-phase-discussion <phase> --context <discovery.json> [--accept-premature-work]` | Validates discovery for the active wave, accumulates it and opens the next wave when needed |
+| `plan-phase <phase> --agent <task>=<name>... [--plan-dir <directory>]` | Records distinct per-target read-only workers; only active targets are dispatched and the optional directory lets status count artifacts |
 | `skip-phase-planning <phase> --reason <text> --confirmed-by-user` | Records the explicit choice to skip phase planning after the discussion decision |
-| `finish-phase-planning <phase> --plan-dir <directory>` | Validates and atomically records one immutable plan per target task |
+| `finish-phase-planning <phase> --plan-dir <directory>` | Validates/stages the active wave and opens the next; the final wave atomically records every task plan |
 | `begin-discussion <task> [--adopt-legacy]` | Persists an active task discussion; the option adopts only an eligible legacy task |
 | `skip-discussion <task> --reason <text> --confirmed-by-user` | Records the explicit choice to skip the task discussion |
 | `finish-discussion <task> --context <discovery.json>` | Validates the current round's answers and releases planning |
 | `plan-task <task> --agent <name> [--context <file>] [--accept-premature-work]` | Records the planner after the discussion closed |
 | `skip-planning <task> --reason <text> --confirmed-by-user` | Records the explicit choice to skip task planning |
 | `finish-planning <task> --plan <artifact.json>` | Checks and records the task plan; releases execution unless a preserved pause remains |
+| `set-agent-limit --max <N> --actor <name> --confirmed-by-user` | Records a user-approved shared per-run agent limit and its actor/time in `agentLimitHistory` |
 | `start <task> --agent <name>` | Records the executor and opens an attempt (`--executor` is an alias) |
+| `activity-start <id> --scope task\|phase --role discussion\|planning\|execution\|review --agent <name>` | Starts a real work interval for the active round; phase workers must use the exact task ID and assigned worker name (or the exact phase ID and worker name) |
+| `activity-stop <id> --scope task\|phase --role discussion\|planning\|execution\|review --agent <name>` | Closes that interval before waiting, pausing or finishing; use the same exact task/phase ID and assigned worker name, then start a new interval after resume |
 | `progress <task> --step <index> --agent <executor>` | Records the current plan step during execution, starting at 1 |
 | `review <task> --agent <name>` | Hands the work to review |
 | `review-progress <task> --step <index> --agent <reviewer>` | Records the criteria traversed in review, in order |
@@ -834,6 +882,7 @@ Resolve `scripts/engine.mjs` from the installed skill. Add `--run <name>` to sel
 | `fail <task> --reason <text> [--plan-defect]` | Records a real attempt failure; `--plan-defect` marks the plan itself as wrong |
 | `retry <task>` | Returns failed to pending; reuses the current plan only for a bounded correction with unchanged context and a valid review reason |
 | `block <task> --reason <text> [--question <text>] [--option <text>...]` | Pauses, preserving the previous phase and, when given, the decision needed to resume |
+| `pause-replanning <task> --reason <text>` | Internally pauses an active planning-required attempt so task planning can refresh before the same attempt resumes |
 | `unblock <task> [--answer <text>]` | Restores the previous phase; records question and answer in history when there is a decision |
 | `unblock <task> --reviewer <name>` | Takes a paused active attempt directly to review |
 | `skip <task> --reason <text>` | Skips once by a nonempty explicit decision; an active attempt ends as skipped without a fabricated receipt |
@@ -855,11 +904,10 @@ Rules the engine enforces (everything else is the orchestrator's judgment):
 - Phase discussion and planning do not require completed task dependencies. `start` does: it requires
   a current per-task plan and binds current validated or explicitly waived direct-dependency receipts.
   `--force` cannot bypass planning or those receipts.
-- `start` refuses past `maxExecutors` (default **3**) and past `maxParallel` (default **4**)
-  total busy agents (`planning` + `running` + `reviewing`). `review` itself is never capacity-checked — it
-  is a role handoff on a slot the task already holds — so a finished task is always judged
-  immediately, and any number of reviews run in parallel. Executors are capped below the total
-  on purpose: that headroom is what keeps review unblockable.
+- `start` and every new discussion/planning worker refuse when active occupancy reaches shared
+  `maxAgents` (default **3**). `review` is a handoff in the task's existing slot, so it does not reserve
+  a fourth agent or require a separate review quota. A lower limit leaves active work running and waits
+  for occupancy to fall before opening new work; phase targets still in `queuedTargets` do not count.
 - Planning, execution and review refuse an agent already busy on another task: **one agent, one task**. A label
   on two concurrent tasks means either a mislabelled dispatch or one agent doing both — and
   then the parallelism is a fiction the graph would happily record as real.
@@ -880,8 +928,9 @@ Rules the engine enforces (everything else is the orchestrator's judgment):
 node .claude/skills/prumo/scripts/serve.mjs      # http://localhost:4949 — polls state every 1.5s
 ```
 
-The dashboard is observability ONLY. It reads the same `state.json` the engine writes and
-mutates nothing — never a second source of truth, never a second orchestrator.
+The dashboard is observability plus an explicit user-confirmed agent-limit control. Its state view reads the
+same `state.json` the engine writes; the limit control delegates `set-agent-limit` to the engine and never
+becomes a second source of truth or a second orchestrator.
 
 The managed service is `prumo dashboard enable` (`prumo dashboard status` reports it; plain
 `prumo dashboard` runs it in the foreground). Its default address, `http://localhost:4949`, is restricted

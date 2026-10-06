@@ -89,7 +89,8 @@ export function phaseWorkflowHasStarted(state, phaseId, taskId = null) {
     ...(workflow.discussionSkips ?? []).map(item => ({ item, targets: item.targets })),
     ...(workflow.planningSkips ?? []).map(item => ({ item, targets: item.targets })),
   ]
-  return records.some(({ item, targets }) => Boolean(item) && (taskId === null || targets?.includes(taskId)))
+  return records.some(({ item, targets }) => Boolean(item) && (taskId === null ||
+    (item.workers ? Object.hasOwn(item.workers, taskId) : (item.originalTargets ?? targets)?.includes(taskId))))
 }
 
 export function targetHasStarted(state, decideBy) {
@@ -130,19 +131,35 @@ export function runHasAuthorizationScope(state) {
     task.executionAuthorization || task.authorizationHistory?.length)
 }
 
+export function isExternalBlock(task) {
+  return task?.state === 'blocked' && task.blockKind !== 'replan'
+}
+
 export function occupancy(state) {
   const all = Object.values(state.tasks)
   const executors = all.filter((t) => t.state === 'running')
   const reviewers = all.filter((t) => t.state === 'reviewing')
   const planners = all.filter((t) => t.state === 'planning')
-  const phasePlanners = Object.values(state.phaseWorkflows ?? {}).filter(phase => phase.state === 'planning')
+  const discussers = all.filter(t => t.state === 'discussing').map(t => ({ ...t, agent: t.discussionAttempts?.at(-1)?.agent ?? t.agent }))
+  const phaseAgents = Object.values(state.phaseWorkflows ?? {}).flatMap(phase => {
+    if (!['planning', 'discussing'].includes(phase.state)) return []
+    const round = phase[phase.state === 'planning' ? 'planningAttempts' : 'discussionAttempts']?.at(-1)
+    if (round?.endedAt) return []
+    if (round?.workers) return Object.entries(round.workers).filter(([, worker]) => !worker.endedAt)
+      .map(([id, worker]) => ({ ...state.tasks[id], ...worker, id, phase: phase.id, state: phase.state, planner: worker.agent }))
+    return [{ ...phase, agent: round?.agent ?? phase.planner ?? 'orchestrator' }]
+  })
+  const phasePlanners = phaseAgents.filter(agent => agent.state === 'planning')
+  const phaseDiscussers = phaseAgents.filter(agent => agent.state === 'discussing')
+  const cap = state.plan.maxAgents ?? 3
   return {
     executors,
     reviewers,
     planners: [...planners, ...phasePlanners],
     phasePlanners,
-    busy: [...executors, ...reviewers, ...planners, ...phasePlanners],
-    maxExec: state.plan.maxExecutors ?? 3,
-    cap: state.plan.maxParallel ?? 4,
+    discussers: [...discussers, ...phaseDiscussers],
+    busy: [...executors, ...reviewers, ...planners, ...discussers, ...phaseAgents],
+    maxExec: cap,
+    cap,
   }
 }

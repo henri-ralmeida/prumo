@@ -10,6 +10,8 @@ Historical tag and commit corrections are documented in [Release history recover
 - Declare recursos compartilhados para considerar conflitos de escrita além dos arquivos.
 - Use termos como funcionalidades, etapas e alterações nas confirmações da skill, conforme o contexto da solicitação.
 - Some no relógio ao vivo o tempo de discussão, planejamento, execução e revisão de cada agente, incluindo planejamentos sem checkpoints e respeitando pausas explícitas; atividades simultâneas acumulam seus tempos individuais.
+- Impeça discussão, planejamento, execução e revisão de tarefas com bloqueio externo até `unblock`; retire esses alvos das rodadas de fase sem exigir artefatos e preserve a pausa interna `pause-replanning`.
+- Compartilhe `maxAgents` entre os quatro papéis, com padrão 3, agentes registrados por tarefa e fila para excedentes. O board permite ajustar o limite sem reiniciar, com histórico da alteração.
 
 ## 2.4.8 — 2026-10-05
 

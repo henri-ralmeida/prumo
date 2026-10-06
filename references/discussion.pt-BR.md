@@ -3,8 +3,9 @@
 [English](discussion.md)
 
 Leia isto quando uma fase ou tarefa estiver `ready_for_discussion` ou `discussing`, quando o usuário precisar escolher
-entre discutir ou planejar, ou quando o motor informar uma fase recém-elegível. A discussão acontece na
-conversa principal; é um estado do motor, não outro agente. O planejamento em si está em
+entre discutir ou planejar, ou quando o motor informar uma fase recém-elegível. Decisões e perguntas permanecem
+na conversa principal; a fase também pode atribuir trabalhadores aos alvos ativos. Essas atribuições são apenas
+registros do motor: o orquestrador precisa criar agentes nativos com os nomes exatos antes de despachá-los. O planejamento em si está em
 [planning.pt-BR.md](planning.pt-BR.md); o schema JSON da descoberta está em [runtime.pt-BR.md](runtime.pt-BR.md#artefato-de-plano-da-tarefa).
 
 ## Dois níveis de planejamento
@@ -21,15 +22,16 @@ motivo não vazio e `--confirmed-by-user`. As combinações suportadas são disc
 discutir+pular planejamento e pular ambas.
 
 ```bash
-node $ENGINE begin-phase-discussion F2          # depois que o usuário escolhe a discussão
+node $ENGINE begin-phase-discussion F2 --agent T1=disc-f2-t1 --agent T2=disc-f2-t2 # nomes nativos exatos
 node $ENGINE skip-phase-discussion F2 --reason "..." --confirmed-by-user
 node $ENGINE skip-phase-planning F2 --reason "..." --confirmed-by-user
 ```
 
 Uma fase só pode iniciar a discussão
 ou o planejamento quando toda dependência externa de todo membro não concluído estiver `done` ou `skipped`.
-Um membro bloqueado bloqueia a fase inteira, inclusive membros sem dependências. Dependências internas
-dentro da mesma fase controlam a execução, não o planejamento da fase. A numeração das fases, por si só, nunca bloqueia fases
+Um membro bloqueado externamente é excluído dos alvos atuais e registrado em `originalTargets`/`excludedTargets`;
+o lote restante ativo/enfileirado pode terminar. Depois do `unblock`, essa tarefa usa seu próprio fluxo de discussão
+e planejamento por tarefa. Dependências internas dentro da mesma fase controlam a execução, não o planejamento da fase. A numeração das fases, por si só, nunca bloqueia fases
 independentes. O usuário escolhe quais fases elegíveis planejar, inclusive várias fases em paralelo; a elegibilidade
 não autoriza abrir todas as fases automaticamente. Mantenha as atribuições de fase e as cadeias de dependência
 aprovadas. `touches` sobrepostos devem ser resolvidos pelo grafo de dependências aprovado, não movendo tarefas.
@@ -122,20 +124,22 @@ Execute `begin-phase-discussion` antes de apresentar a primeira pergunta. Ele pe
 `roundId` e o `nonce` atuais. Grave o JSON de descoberta resultante com esses valores e vincule pelo menos
 uma pergunta recém-respondida a esse `roundId`; inclua a pesquisa leve, o canal real `native` ou
 `chat-fallback`, a cobertura PO First, as decisões, as ideias adiadas, `executionBoundary` e o encerramento.
-`executionBoundary.deferredToExecutor` deve nomear toda tarefa-alvo, e `prematureTaskWork` normalmente fica
-vazio. Se houve trabalho de tarefa durante a discussão, registre a tarefa e a ação, pare, avise o usuário e não
+`executionBoundary.deferredToExecutor` deve nomear todo alvo coberto pela rodada completa, e `prematureTaskWork` normalmente fica
+vazio. `finish-phase-discussion` valida a descoberta somente para `activeTargets`, acumula cada onda concluída
+e abre a próxima até cobrir todos os alvos. Se houve trabalho de tarefa durante a discussão, registre a tarefa e a ação, pare, avise o usuário e não
 reaproveite o resultado. Somente após aprovação explícita do usuário `finish-*-discussion --accept-premature-work` pode encerrar
 a rodada; o executor ainda repete o trabalho. Então execute:
 
 ```bash
 node $ENGINE finish-phase-discussion F2 --context <discovery.json>
-node $ENGINE plan-phase F2 --agent <planner> --plan-dir <artifact-directory>
+node $ENGINE plan-phase F2 --agent T1=plan-f2-t1 --agent T2=plan-f2-t2 --plan-dir <artifact-directory>
 node $ENGINE finish-phase-planning F2 --plan-dir <artifact-directory>
 ```
 
 Passar o diretório de artefatos para `plan-phase` é opcional; com ele, `status` e `ready` contam os
-arquivos `task-plan-<id>.json` já gravados ali enquanto a rodada está aberta. Antes de disparar o
-planejador, leia [planning.pt-BR.md](planning.pt-BR.md).
+arquivos `task-plan-<id>.json` já gravados ali enquanto a rodada está aberta. `finish-phase-planning` valida
+somente a onda ativa, coloca planos aceitos em staging e abre a próxima; a última onda grava todos os planos
+atomicamente. Antes de disparar os trabalhadores, leia [planning.pt-BR.md](planning.pt-BR.md).
 
 ## Discussão por tarefa em execuções existentes
 

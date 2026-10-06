@@ -70,7 +70,7 @@ import {
 import { randomUUID, createHash } from 'node:crypto'
 import { isReadyForReview } from './review-readiness.mjs'
 import { assertExplicitScope, scopeConflicts, captureScopeBaseline, verifyTaskScope } from './task-scope.mjs'
-import { executionReadiness, planQuestionRef, openQuestionRecords, questionResolutionMap, targetHasStarted, overdueQuestions, questionIsOverdue, taskAuthorization, runHasAuthorizationScope, occupancy } from './execution-readiness.mjs'
+import { executionReadiness, planQuestionRef, openQuestionRecords, questionResolutionMap, targetHasStarted, overdueQuestions, questionIsOverdue, taskAuthorization, runHasAuthorizationScope, occupancy, isExternalBlock } from './execution-readiness.mjs'
 import { writeAtomicState } from './atomic-state.mjs'
 import { runValidation, assertValidation, validationContract, validationDirectories, assertDiscovery, assertDiscussionBoundary, discoveryDigest, assertTaskPlan,
   assertUnavailableResources,
@@ -98,7 +98,7 @@ const GRAPH_DIR = join(ROOT, '.specs', 'graph')
 const CURRENT_FILE = join(GRAPH_DIR, 'CURRENT')
 const MAX_ATTEMPTS_SOFT = 3
 const DEFAULT_MAX_PARALLEL = 4
-const DEFAULT_MAX_EXECUTORS = 3   // the 4th slot is RESERVED for review
+const DEFAULT_MAX_EXECUTORS = 3   // Metadado legado; maxAgents governa todos os papéis.
 const STATE_SCHEMA_VERSION = 1
 const LOCK_WAIT_MS = 5000         // how long a command waits for the run's lock
 const LOCK_STALE_MS = 30000       // a lock older than this belonged to a process that died
@@ -195,6 +195,11 @@ function closeInactiveActivity(state, at) {
   for (const phase of Object.values(state.phaseWorkflows ?? {})) {
     if (phase.state !== 'discussing' || phase.discussionAttempts?.at(-1)?.endedAt) stopOpenActivity(phase.discussionAttempts?.at(-1), at)
     if (phase.state !== 'planning' || phase.planningAttempts?.at(-1)?.endedAt) stopOpenActivity(phase.planningAttempts?.at(-1), at)
+    for (const role of ['discussion', 'planning']) {
+      const round = phase[`${role}Attempts`]?.at(-1)
+      for (const worker of Object.values(round?.workers ?? {}))
+        if (worker.endedAt || round.endedAt || phase.state !== (role === 'discussion' ? 'discussing' : 'planning')) stopOpenActivity(worker, at)
+    }
   }
   for (const task of Object.values(state.tasks ?? {})) {
     if (task.state !== 'discussing' || task.discussionAttempts?.at(-1)?.endedAt) stopOpenActivity(task.discussionAttempts?.at(-1), at)
@@ -236,7 +241,7 @@ function migrationStatus(state) {
       if (phase.planningAttempts?.some(round => !round.endedAt)) blockers.push(`${phase.id}: open phase planning`)
     }
   }
-  return { needed: state.schemaVersion !== STATE_SCHEMA_VERSION || structural, structural, mode, blockers }
+  return { needed: state.schemaVersion !== STATE_SCHEMA_VERSION || structural || state.plan.maxAgents === undefined, structural, mode, blockers }
 }
 
 function migrateState(name, { check = false, quiet = false } = {}) {
@@ -256,6 +261,12 @@ function migrateState(name, { check = false, quiet = false } = {}) {
   const adoptingLegacy = !['phase', 'task'].includes(state.plan.planningMode)
   state.schemaVersion = STATE_SCHEMA_VERSION
   state.plan.planningMode = status.mode
+  if (state.plan.maxAgents === undefined) {
+    state.plan.maxAgents = 3
+    state.agentLimitHistory ??= []
+    state.agentLimitHistory.push({ previous: null, maxAgents: 3, actor: 'migration', at: new Date().toISOString(),
+      previousLimits: { maxParallel: state.plan.maxParallel ?? null, maxExecutors: state.plan.maxExecutors ?? null } })
+  }
   if (status.mode === 'phase') {
     state.phaseWorkflows ??= {}
     for (const phase of state.plan.phases ?? []) {
@@ -266,6 +277,10 @@ function migrateState(name, { check = false, quiet = false } = {}) {
   }
   for (const task of Object.values(state.tasks)) {
     if (['done', 'skipped'].includes(task.state)) continue
+    if (isExternalBlock(task)) {
+      task.blockKind = 'external'
+      excludeBlockedPhaseTask(state, task)
+    }
     const started = (task.attempts?.length ?? 0) > 0
     const openWorkflow = task.discussionAttempts?.some(round => !round.endedAt) ||
       task.planningAttempts?.some(round => !round.endedAt)
@@ -742,6 +757,7 @@ function manualEstimateMinutes(value) {
 }
 
 function validatePlan(plan, allowOverlap = false, historical = new Set()) {
+  if (plan.maxAgents !== undefined && (!Number.isSafeInteger(plan.maxAgents) || plan.maxAgents < 1)) die('maxAgents must be a positive integer')
   if (!Array.isArray(plan.tasks) || plan.tasks.length === 0) die('plan has no tasks')
   const ids = new Set()
   const planningMode = plan.planningMode ?? ((plan.phases?.length ?? 0) ? 'phase' : 'task')
@@ -979,7 +995,7 @@ function getPhase(state, phaseId) {
 }
 
 function phaseTargets(state, phaseId) {
-  return phaseMembers(state, phaseId).filter(task => !['done', 'skipped'].includes(task.state) &&
+  return phaseMembers(state, phaseId).filter(task => !['done', 'skipped'].includes(task.state) && !isExternalBlock(task) && !task.individualPlanning &&
     usesCurrentPlanning(state, task) &&
     !(task.taskPlan?.phaseId === phaseId && hasCurrentTaskPlan(state, task)))
 }
@@ -988,13 +1004,13 @@ function phaseDiscussionTargets(state, phaseId, round = null) {
   const targets = phaseTargets(state, phaseId)
   if (targets.length || !round?.targetsFallback) return targets
   return phaseMembers(state, phaseId).filter(task => usesCurrentPlanning(state, task) &&
-    !['done', 'skipped'].includes(task.state))
+    !['done', 'skipped'].includes(task.state) && !isExternalBlock(task) && !task.individualPlanning)
 }
 
 function phasePlanningBlockers(state, phaseId) {
   const blockers = new Set()
   for (const task of phaseMembers(state, phaseId)) {
-    if (['done', 'skipped'].includes(task.state) || !usesCurrentPlanning(state, task)) continue
+    if (['done', 'skipped'].includes(task.state) || isExternalBlock(task) || task.individualPlanning || !usesCurrentPlanning(state, task)) continue
     for (const id of task.deps ?? []) {
       const dep = state.tasks[id]
       if (dep?.phase !== phaseId && !['done', 'skipped'].includes(dep?.state)) {
@@ -1003,6 +1019,51 @@ function phasePlanningBlockers(state, phaseId) {
     }
   }
   return [...blockers]
+}
+
+function logExcludedTasks(state, phaseId) {
+  const tasks = phaseMembers(state, phaseId).filter(isExternalBlock)
+  if (tasks.length) log('[prumo] ' + tr('Outside this round (blocked): {0}', tasks.map(task => `${task.id} — ${task.blockReason || tr('external input pending')}`).join('; ')))
+}
+
+function excludeBlockedPhaseTask(state, task) {
+  const phase = state.phaseWorkflows?.[task.phase]
+  if (!phase || !isExternalBlock(task)) return
+  task.individualPlanning = true
+  for (const record of [phase.discussionAttempts?.at(-1), phase.discussionSkips?.at(-1), phase.planningAttempts?.at(-1)]) {
+    if (!record?.targets?.includes(task.id)) continue
+    record.originalTargets ??= [...record.targets]
+    record.excludedTargets ??= []
+    record.excludedTargets.push({ task: task.id, reason: task.blockReason, at: new Date().toISOString() })
+    record.targets = record.targets.filter(id => id !== task.id)
+    if (Object.hasOwn(record.workers ?? {}, task.id)) {
+      stopOpenActivity(record.workers[task.id], new Date().toISOString())
+      record.workers[task.id].endedAt = new Date().toISOString()
+    }
+    if (record.activeTargets) record.activeTargets = record.activeTargets.filter(id => id !== task.id)
+    if (record.queuedTargets) record.queuedTargets = record.queuedTargets.filter(id => id !== task.id)
+    if (record.stagedPlans) record.stagedPlans = record.stagedPlans.filter(item => item.task !== task.id)
+    if (record.contextTargets) record.contextTargets = record.contextTargets.filter(id => id !== task.id)
+    const targets = (record.contextTargets ?? record.targets).map(id => state.tasks[id]).filter(Boolean)
+    record.context = phaseContext(state, phase.id, targets)
+    record.contextSnapshot = phaseContextSnapshot(state, targets)
+    if (phase.discovery && phase.discovery.roundId === record.roundId) phase.discovery.context = record.context
+    if (record.discovery && record.discovery.roundId === record.roundId) record.discovery.context = record.context
+  }
+}
+
+function assertExternalBlockAction(state, id) {
+  const task = state.tasks[id]
+  if (isExternalBlock(task)) die(tr('{0} is blocked: {1}. Use unblock before discussing, planning, reviewing or executing.',
+    id, task.blockReason || tr('external input pending')))
+}
+
+function agentLimitChange() {
+  if (args['confirmed-by-user'] !== true) die('set-agent-limit requires --confirmed-by-user')
+  const max = Number(args.max), actor = args.actor
+  if (!Number.isSafeInteger(max) || max < 1) die('maxAgents must be a positive integer')
+  if (typeof actor !== 'string' || !actor.trim()) die('set-agent-limit requires --actor')
+  return { max, actor: actor.trim() }
 }
 
 function eligibleDiscussionPhases(state) {
@@ -1588,12 +1649,72 @@ function currentPhaseDiscussionDecision(state, phase) {
 
 function logPhasePlanningInputs(phaseId, round) {
   const binding = { phaseId, discussionRoundId: round.discussionRoundId, plannerRound: round.n }
-  for (const id of round.targets) {
+  for (const id of round.activeTargets ?? round.targets) {
     log(tr('Copy these fields into task-plan-{0}.json:', id))
     log('```json')
     log(JSON.stringify({ phaseBinding: binding, unresolvedInputs: round.requiredInputs?.[id] ?? [] }, null, 2))
     log('```')
   }
+}
+
+function phaseAssignments(targets, specification, role) {
+  const values = Array.isArray(specification) ? specification : [specification ?? role]
+  let entries
+  if (values.length === 1 && !values[0].includes('=')) {
+    if (!values[0].trim()) die('phase agents require a nonempty name')
+    entries = targets.map(task => [task.id, `${values[0]}:${task.id}`])
+  }
+  else entries = values.map(value => {
+    const separator = value.indexOf('=')
+    const id = value.slice(0, separator), agent = value.slice(separator + 1).trim()
+    if (separator < 1 || !agent || !targets.some(task => task.id === id)) die('phase agent assignments must use a target task=agent')
+    return [id, agent]
+  })
+  if (new Set(entries.map(([id]) => id)).size !== targets.length || entries.length !== targets.length)
+    die('phase agent assignments must cover every target exactly once')
+  if (new Set(entries.map(([, agent]) => agent)).size !== entries.length) die('phase agents must have distinct names')
+  return Object.fromEntries(entries)
+}
+
+function activatePhaseWorkers(state, round, role) {
+  round.workers ??= {}
+  let slots = Math.max(0, occupancy(state).cap - occupancy(state).busy.length)
+  round.activeTargets = Object.entries(round.workers).filter(([, worker]) => !worker.endedAt).map(([id]) => id)
+  while (slots > 0 && round.queuedTargets.length) {
+    const id = round.queuedTargets[0], agent = round.assignments[id]
+    if (agentBusy(state, agent)) die(`agent "${agent}" is already busy`)
+    round.queuedTargets.shift()
+    Object.defineProperty(round.workers, id, { value: { agent, role, startedAt: new Date().toISOString(), activityTiming: 'explicit', activityIntervals: [] }, enumerable: true, writable: true, configurable: true })
+    round.activeTargets.push(id)
+    slots--
+  }
+}
+
+function finishPhaseWorkers(round, at) {
+  for (const id of round.activeTargets ?? []) {
+    const worker = round.workers[id]
+    stopOpenActivity(worker, at)
+    worker.endedAt = at
+  }
+  round.activeTargets = []
+}
+
+function phaseActivityWorker(state, id, scope, role, agent) {
+  if (!['discussion', 'planning'].includes(role)) return null
+  if (scope === 'task' && state.tasks[id]?.individualPlanning) return null
+  const phase = scope === 'phase' ? state.phaseWorkflows?.[id] : state.phaseWorkflows?.[state.tasks[id]?.phase]
+  const round = phase?.[`${role}Attempts`]?.at(-1)
+  if (!round?.workers) return null
+  const worker = scope === 'phase' ? Object.values(round.workers).find(value => value.agent === agent && !value.endedAt) : Object.hasOwn(round.workers, id) ? round.workers[id] : null
+  if (!worker || worker.endedAt || phase.state !== (role === 'discussion' ? 'discussing' : 'planning'))
+    die('activity requires a currently assigned phase worker')
+  return worker
+}
+
+function logPhaseWorkers(phaseId, round) {
+  log('[prumo] ' + tr('{0} of {1} targets active; waiting for a slot: {2}',
+    round.activeTargets?.length ?? 0, round.targets.length, round.queuedTargets?.join(', ') || '—'))
+  for (const id of round.activeTargets ?? []) log(`[prumo] ${phaseId} ${id}: ${round.workers[id].agent}`)
 }
 
 function currentTaskDiscussionSkip(state, task) {
@@ -1664,14 +1785,14 @@ export function derive(state) {
       const phaseAdopted = !(state.legacyPhaseAdoption && !state.phaseWorkflows?.[t.phase]?.adoptedLegacy)
       if (!usesCurrentPlanning(state, t)) {
         effective = blockedBy.length ? 'waiting' : 'ready'
-      } else if (state.plan.planningMode === 'phase') {
+      } else if (state.plan.planningMode === 'phase' && !t.individualPlanning) {
         planningBlockedBy = phasePlanningBlockers(state, t.phase)
         const discussionRound = phase?.discussionAttempts?.at(-1)
         const phaseDiscussing = phase?.state === 'discussing' && !discussionRound?.endedAt &&
-          discussionRound?.targets?.includes(t.id)
+          (discussionRound?.activeTargets ?? discussionRound?.targets)?.includes(t.id)
         const planningRound = phase?.planningAttempts?.at(-1)
         const phasePlanning = phase?.state === 'planning' && currentPhasePlanning(state, phase, planningRound) &&
-          planningRound.targets.includes(t.id)
+          (planningRound.activeTargets ?? planningRound.targets).includes(t.id)
         effective = !phaseAdopted ? 'pending' : phaseDiscussing ? 'discussing' : hasCurrentTaskPlan(state, t) ?
           (blockedBy.length ? 'waiting' : 'ready') : phasePlanning ? 'planning' : planningBlockedBy.length ? 'waiting' :
             (currentPhaseDiscussionDecision(state, phase) ? 'ready_to_plan' : 'ready_for_discussion')
@@ -1697,6 +1818,13 @@ export function derive(state) {
     const showPlanningStatus = state.plan.planningMode === 'phase' && usesCurrentPlanning(state, t) && !['done', 'skipped'].includes(t.state)
     out[id] = { ...t, effective, blockedBy, ...(manualInspectionPending(state, t) ? { manualInspectionPending: true } : {}), ...(showPlanningStatus ?
       { planningStatus, ...(planningBlockedBy.length ? { planningBlockedBy } : {}), ...(inputStatus ? { inputStatus } : {}) } : {}) }
+    const agentRound = phase?.[phase.state === 'discussing' ? 'discussionAttempts' : 'planningAttempts']?.at(-1)
+    const worker = Object.hasOwn(agentRound?.workers ?? {}, id) ? agentRound.workers[id] : null
+    if (worker && !worker.endedAt && ['planning', 'discussing'].includes(effective)) out[id].activeAgent = worker.agent
+    if (t.state === 'discussing' && t.discussionAttempts?.at(-1)?.agent) out[id].activeAgent = t.discussionAttempts.at(-1).agent
+    if (t.state === 'pending' && agentRound?.queuedTargets?.includes(id)) Object.assign(out[id], { effective: 'waiting', agentQueued: true })
+    if (t.state === 'pending' && worker?.endedAt && !agentRound.endedAt && ['planning', 'discussing'].includes(phase.state))
+      Object.assign(out[id], { effective: 'waiting', phaseBatchPending: true })
     if (migrationPending && t.state === 'pending' && usesCurrentPlanning(state, t))
       Object.assign(out[id], { effective: 'pending', planningStatus: 'awaiting_migration' })
   }
@@ -1735,13 +1863,14 @@ function assertAvailable(state, task, role, agent) {
       if (conflict.paths.length || conflict.resources.length) die(`Execution scope conflicts with ${other.id}: ${[...conflict.paths, ...conflict.resources].join(', ')}`)
     }
   }
-  if (role === 'running' && occ.executors.length >= occ.maxExec && !args.force)
+  if (role === 'running' && occ.executors.length >= occ.maxExec)
     die(occ.executors.length + ' executors already running (max ' + occ.maxExec + ')')
-  if (occ.busy.filter(t => t.id !== task.id).length >= occ.cap &&
-      (!args.force || role === 'planning' || task.planningRequired || occ.planners.length > 0))
+  // A revisão substitui o executor na vaga atual, mesmo após reduzir o limite.
+  const reviewHandoff = role === 'reviewing' && task.state === 'running'
+  if (occ.busy.filter(t => t.id !== task.id).length >= occ.cap && !reviewHandoff)
     die(occ.busy.length + ' agents busy (cap ' + occ.cap + ')')
   const busy = agentBusy(state, agent)
-  if (busy && busy.id !== task.id && (!args.force || role === 'planning' || task.planningRequired || busy.state === 'planning'))
+  if (busy && busy.id !== task.id)
     die('agent "' + agent + '" is already on ' + busy.id + ' — one agent per task')
 }
 
@@ -1773,6 +1902,7 @@ const commands = {
         phases: plan.phases ?? [],
         maxParallel: plan.maxParallel ?? DEFAULT_MAX_PARALLEL,
         maxExecutors: plan.maxExecutors ?? DEFAULT_MAX_EXECUTORS,
+        maxAgents: plan.maxAgents ?? 3,
         requireReview: plan.requireReview !== false,
         planningMode: plan.planningMode ?? ((plan.phases?.length ?? 0) ? 'phase' : 'task'),
         ...(plan.scopePolicy === undefined ? {} : { scopePolicy: plan.scopePolicy }),
@@ -1794,7 +1924,7 @@ const commands = {
     emit(name, 'run_init', null, { plan: plan.name, tasks: plan.tasks.length })
     log(
       `[prumo] run "${name}" initialised: ${plan.tasks.length} tasks, ` +
-        `${state.plan.maxExecutors} executors + 1 review slot (cap ${state.plan.maxParallel})` +
+        `${state.plan.maxAgents} agents shared by all roles` +
         `${state.plan.requireReview ? ', review REQUIRED before done' : ''} — set as CURRENT`,
     )
   },
@@ -1885,6 +2015,7 @@ const commands = {
       phases: plan.phases ?? [],
       maxParallel: plan.maxParallel ?? DEFAULT_MAX_PARALLEL,
       maxExecutors: plan.maxExecutors ?? DEFAULT_MAX_EXECUTORS,
+      maxAgents: state.plan.maxAgents ?? 3,
       requireReview: plan.requireReview !== false,
       ...(state.plan.planningMode ? { planningMode: state.plan.planningMode } : {}),
       ...((plan.scopePolicy ?? state.plan.scopePolicy) === undefined ? {} : { scopePolicy: plan.scopePolicy ?? state.plan.scopePolicy }),
@@ -2117,6 +2248,18 @@ const commands = {
     printDispatchSuggestions(state)
   },
 
+  'set-agent-limit'() {
+    const { max, actor } = agentLimitChange()
+    const name = runName(), state = loadState(name), previous = state.plan.maxAgents ?? null
+    state.plan.maxAgents = max
+    const change = { previous, maxAgents: max, actor: actor.trim(), at: new Date().toISOString() }
+    state.agentLimitHistory ??= []
+    state.agentLimitHistory.push(change)
+    saveState(name, state)
+    emit(name, 'agent_limit_changed', null, change)
+    log('[prumo] ' + tr('Agent limit updated: {0}; {1} in use', max, occupancy(state).busy.length))
+  },
+
   async status() {
     const name = runName()
     const state = loadState(name)
@@ -2138,8 +2281,8 @@ const commands = {
     log(`${tr('Discussion skipped')}: ${countGateSkips('discussionSkips')}  ${tr('Planning skipped')}: ${countGateSkips('planningSkips')}`)
     const width = Math.max(...Object.values(d).map((t) => t.id.length))
     const row = (t) => {
-      const phasePlanner = t.effective === 'planning' && t.state !== 'planning' ? state.phaseWorkflows?.[t.phase]?.planner : null
-      const agent = t.state === 'discussing' ? `  @${tr('orchestrator')} (${tr('discussing')})` :
+      const phasePlanner = t.effective === 'planning' && t.state !== 'planning' ? t.activeAgent : null
+      const agent = t.effective === 'discussing' ? `  @${t.activeAgent ?? t.agent ?? tr('orchestrator')} (${tr('discussing')})` :
         t.state === 'planning' ? `  @${t.planner} (${tr('planning')})` :
         phasePlanner ? `  @${phasePlanner} (${tr('planning')})` :
         t.state === 'reviewing' ? `  @${t.reviewer} (review)` : t.agent ? `  @${t.agent}` : ''
@@ -2267,19 +2410,23 @@ const commands = {
       superseded.push({ workflow: 'planning', round: planning.n, cause })
       phase.planner = null
     }
+    logExcludedTasks(state, phaseId)
     let targets = phaseTargets(state, phaseId)
     const targetsFallback = targets.length === 0
     if (targetsFallback) targets = phaseMembers(state, phaseId).filter(task =>
-      usesCurrentPlanning(state, task) && !['done', 'skipped'].includes(task.state))
+      usesCurrentPlanning(state, task) && !['done', 'skipped'].includes(task.state) && !isExternalBlock(task) && !task.individualPlanning)
     if (!targets.length) die(`${phaseId} has no nonterminal tasks to discuss`)
+    if (occupancy(state).busy.length >= occupancy(state).cap) die(`${occupancy(state).busy.length} agents busy (cap ${occupancy(state).cap})`)
     const requiresContractConfirmation = Boolean(phase.contractConfirmationRequired)
     const round = { roundId: randomUUID(), nonce: randomUUID(), startedAt: new Date().toISOString(),
       activityTiming: 'explicit', activityIntervals: [],
       targets: targets.map(task => task.id), context: phaseContext(state, phaseId, targets),
       contextSnapshot: phaseContextSnapshot(state, targets),
+      assignments: phaseAssignments(targets, args.agent, 'orchestrator'), queuedTargets: targets.map(task => task.id), workers: {},
       ...(targetsFallback ? { targetsFallback: true } : {}),
       ...(requiresContractConfirmation ? { requiresContractConfirmation: true,
         confirmsContract: phaseContractDigests(state, targets) } : {}) }
+    activatePhaseWorkers(state, round, 'discussion')
     phase.discussionAttempts.push(round)
     phase.state = 'discussing'
     saveState(name, state)
@@ -2290,6 +2437,7 @@ const commands = {
       ...(args['adopt-legacy'] === true ? { adoptedLegacy: true } : {}) })
     log(`[prumo] ${phaseId} discussing ${round.targets.length} task(s) (round ${round.roundId}, nonce ${round.nonce})`)
     log('[prumo] ' + tr('discussion targets: {0}', round.targets.join(', ')))
+    logPhaseWorkers(phaseId, round)
     logSupersededRounds(phaseId, superseded)
     if (requiresContractConfirmation) {
       log('[prumo] ' + tr('contract confirmation required: inspect each task with show-contract, then ask the user to confirm the displayed contracts'))
@@ -2340,7 +2488,7 @@ const commands = {
     try {
       discovery = JSON.parse(readFileSync(resolve(args.context), 'utf8'))
       assertDiscovery(discovery)
-      assertDiscussionBoundary(discovery, round.targets, { acceptPremature: args['accept-premature-work'] === true })
+      assertDiscussionBoundary(discovery, round.activeTargets ?? round.targets, { acceptPremature: args['accept-premature-work'] === true })
       if (discovery.roundId !== round.roundId || discovery.nonce !== round.nonce)
         throw new Error('discovery roundId and nonce must match the current phase discussion')
       if (!discovery.questions.some(question => question.roundId === round.roundId))
@@ -2359,6 +2507,25 @@ const commands = {
       round.questionRefs = validateQuestionResolutions(state, discovery.decisions)
       digest = discoveryDigest(discovery)
     } catch (error) { die(error.message) }
+    if (round.workers) {
+      round.discoveries ??= []
+      round.discoveries.push(discovery)
+      finishPhaseWorkers(round, new Date().toISOString())
+      if (round.queuedTargets.length) {
+        activatePhaseWorkers(state, round, 'discussion')
+        saveState(name, state)
+        emit(name, 'phase_discussion_batch', null, { phase: phaseId, active: round.activeTargets, queued: round.queuedTargets })
+        logPhaseWorkers(phaseId, round)
+        return
+      }
+      const pieces = round.discoveries
+      discovery = { ...discovery, research: pieces.flatMap(piece => piece.research), questions: pieces.flatMap(piece => piece.questions),
+        decisions: pieces.flatMap(piece => piece.decisions), deferred: pieces.flatMap(piece => piece.deferred),
+        executionBoundary: { deferredToExecutor: [...new Set(pieces.flatMap(piece => piece.executionBoundary.deferredToExecutor))].filter(id => round.targets.includes(id)),
+          prematureTaskWork: pieces.flatMap(piece => piece.executionBoundary.prematureTaskWork) } }
+      round.questionRefs = validateQuestionResolutions(state, discovery.decisions)
+      digest = discoveryDigest(discovery)
+    }
     const fields = ['research', 'questions', 'coverage', 'decisions', 'deferred', 'executionBoundary', 'closure', 'roundId', 'nonce']
     phase.discovery = { ...Object.fromEntries(fields.map(field => [field, discovery[field]])),
       recordedAt: new Date().toISOString(), context: round.context, digest }
@@ -2381,8 +2548,10 @@ const commands = {
   'plan-phase'() {
     const name = runName()
     const phaseId = args._[0] ?? die('plan-phase <phase> --agent <name>')
-    const agent = args.agent ?? die('plan-phase needs --agent <name>')
+    const specification = args.agent ?? die('plan-phase needs --agent <name>')
+    const agent = Array.isArray(specification) ? JSON.stringify(specification) : specification
     const state = loadState(name), phase = getPhase(state, phaseId)
+    logExcludedTasks(state, phaseId)
     assertPhasePlanningOrder(state, phaseId)
     printQuestionsForTarget(state, null, phaseId)
     const discussion = currentPhaseDiscussionDecision(state, phase)
@@ -2395,6 +2564,13 @@ const commands = {
       if (agent !== phase.planner) die(`${phaseId} already has planner "${phase.planner}" for the current round`)
       log(`[prumo] ${tr('{0} already in planning with the same discovery; no new round recorded', phaseId)}`)
       logPhasePlanningInputs(phaseId, open)
+      if (open.workers) {
+        if (open.queuedTargets.length && occupancy(state).busy.length < occupancy(state).cap) {
+          activatePhaseWorkers(state, open, 'planning')
+          saveState(name, state)
+        }
+        logPhaseWorkers(phaseId, open)
+      }
       return
     }
     if (phase.state === 'planning') {
@@ -2415,7 +2591,9 @@ const commands = {
       discussionDecision: discussion.kind, discussionDigest: discussion.digest, discussionRoundId: discussion.id,
       ...(discussion.kind === 'discussed' ? { discoveryDigest: discussion.digest } : {}),
       targets: targets.map(task => task.id), contextTargets: discussion.targets,
-      requiredInputs: Object.fromEntries(targets.map(task => [task.id, phaseRequiredInputs(state, task)])) }
+      requiredInputs: Object.fromEntries(targets.map(task => [task.id, phaseRequiredInputs(state, task)])),
+      assignments: phaseAssignments(targets, specification, 'planner'), queuedTargets: targets.map(task => task.id), workers: {} }
+    activatePhaseWorkers(state, round, 'planning')
     phase.planner = agent
     phase.planningAttempts.push(round)
     phase.state = 'planning'
@@ -2423,6 +2601,7 @@ const commands = {
     emit(name, 'phase_planning', null, { phase: phaseId, planner: agent, round: round.n, members: round.targets })
     log(`[prumo] ${phaseId} in planning (planner ${agent}, ${round.targets.length} task(s))`)
     logPhasePlanningInputs(phaseId, round)
+    logPhaseWorkers(phaseId, round)
     log('[prumo] planner guard: read-only research may determine how to execute; task results and acceptance evidence belong to the executor')
   },
 
@@ -2474,9 +2653,10 @@ const commands = {
       die(tr('{0} planning is stale: {1} — discuss and plan the current phase contract', phaseId,
         staleReason(name, round, phaseContextSnapshot(state, targets), currentContext)))
     }
-    const tasks = round.targets.map(id => getTask(state, id))
+    const tasks = (round.activeTargets ?? round.targets).map(id => getTask(state, id)).filter(task => !isExternalBlock(task))
     const binding = { phaseId, discussionRoundId: round.discussionRoundId, plannerRound: round.n }
-    const plans = [], errors = [], plannedQuestionRefs = new Set(), planDir = resolve(args['plan-dir'])
+    let plans = []
+    const errors = [], plannedQuestionRefs = new Set((round.stagedPlans ?? []).flatMap(item => item.questionRefs)), planDir = resolve(args['plan-dir'])
     for (const task of tasks) {
       const filename = `task-plan-${task.id}.json`
       try {
@@ -2498,6 +2678,20 @@ const commands = {
       phaseId, errors.length, errors.join('\n')))
     for (const [task, plan] of plans) warnTaskPlan(task, plan)
     const completedAt = new Date().toISOString()
+    if (round.workers) {
+      round.stagedPlans ??= []
+      round.stagedPlans.push(...plans.map(([task, plan, questionRefs]) => ({ task: task.id, plan, questionRefs })))
+      finishPhaseWorkers(round, completedAt)
+      if (round.queuedTargets.length) {
+        activatePhaseWorkers(state, round, 'planning')
+        saveState(name, state)
+        emit(name, 'phase_planning_batch', null, { phase: phaseId, completed: tasks.map(task => task.id), active: round.activeTargets, queued: round.queuedTargets })
+        logPhaseWorkers(phaseId, round)
+        logPhasePlanningInputs(phaseId, round)
+        return
+      }
+      plans = round.stagedPlans.filter(item => !isExternalBlock(state.tasks[item.task])).map(item => [getTask(state, item.task), item.plan, item.questionRefs])
+    }
     const allResolutions = []
     for (const [task, plan, questionRefs] of plans) {
       const fields = ['summary', 'research', 'decisions', 'steps', 'verification', 'openQuestions', 'phaseBinding', 'unresolvedInputs', 'writes']
@@ -2506,8 +2700,8 @@ const commands = {
       allResolutions.push(...questionRefs.map(questionRef => ({
         task: task.id, questionRef, decisions: plan.decisions,
       })))
-      task.planner = phase.planner
-      task.taskPlan = { ...artifact, digest: taskPlanDigest(artifact), planner: phase.planner, startedAt: round.startedAt, completedAt,
+      task.planner = round.assignments?.[task.id] ?? phase.planner
+      task.taskPlan = { ...artifact, digest: taskPlanDigest(artifact), planner: task.planner, startedAt: round.workers?.[task.id]?.startedAt ?? round.startedAt, completedAt,
         context: round.context, scope: phasePlanningContext(state, task), phaseId,
         phaseDecision: round.discussionDecision ?? 'discussed', phaseDecisionDigest: round.discussionDigest ?? round.discoveryDigest,
         ...(round.discoveryDigest ? { phaseDiscoveryDigest: round.discoveryDigest } : {}), attempt: task.attempts.length + 1 }
@@ -2532,7 +2726,7 @@ const commands = {
     const name = runName()
     const id = args._[0] ?? die('begin-discussion <task>')
     const state = loadState(name)
-    if (state.plan.planningMode === 'phase') die('this run uses phase planning; use begin-phase-discussion')
+    if (state.plan.planningMode === 'phase' && !state.tasks[id]?.individualPlanning) die('this run uses phase planning; use begin-phase-discussion')
     const t = getTask(state, id)
     printQuestionsForTarget(state, id, t.phase)
     const blockedBy = t.deps.filter(dep => !['done', 'skipped'].includes(state.tasks[dep]?.state))
@@ -2573,7 +2767,7 @@ const commands = {
       closePlanning(t, 'superseded', cause)
       superseded.push({ workflow: 'planning', round: staleRound.n, cause })
     }
-    if (pausedExecution) t.planningReturn = { stateBeforeBlock: t.stateBeforeBlock, blockReason: t.blockReason }
+    if (pausedExecution) t.planningReturn = { stateBeforeBlock: t.stateBeforeBlock, blockReason: t.blockReason, blockKind: 'replan' }
     const requiresContractConfirmation = Boolean(t.contractConfirmationRequired)
     const round = {
       roundId: randomUUID(), nonce: randomUUID(), startedAt: new Date().toISOString(),
@@ -2591,6 +2785,9 @@ const commands = {
       t.planningHistory ??= []
     }
     t.discussionAttempts ??= []
+    const discussionAgent = args.agent ?? `orchestrator:${id}`
+    assertAvailable(state, t, 'discussing', discussionAgent)
+    round.agent = discussionAgent
     t.discussionAttempts.push(round)
     t.state = 'discussing'
     saveState(name, state)
@@ -2613,7 +2810,7 @@ const commands = {
     const name = runName()
     const id = args._[0] ?? die('skip-discussion <task> --reason <text> --confirmed-by-user')
     const state = loadState(name)
-    if (state.plan.planningMode === 'phase') die('this run uses phase planning; use skip-phase-discussion')
+    if (state.plan.planningMode === 'phase' && !state.tasks[id]?.individualPlanning) die('this run uses phase planning; use skip-phase-discussion')
     const task = getTask(state, id)
     const blockedBy = task.deps.filter(dep => !['done', 'skipped'].includes(state.tasks[dep]?.state))
     if (blockedBy.length) die(id + ' still waiting on: ' + blockedBy.join(', '))
@@ -2637,7 +2834,7 @@ const commands = {
     if (typeof args.context !== 'string' || !args.context.trim())
       die('finish-discussion needs --context <discovery.json>')
     const state = loadState(name)
-    if (state.plan.planningMode === 'phase') die('this run uses phase planning; use finish-phase-discussion')
+    if (state.plan.planningMode === 'phase' && !state.tasks[id]?.individualPlanning) die('this run uses phase planning; use finish-phase-discussion')
     const t = getTask(state, id)
     const round = t.discussionAttempts?.at(-1)
     if (t.state !== 'discussing' || !round || round.endedAt)
@@ -2691,10 +2888,11 @@ const commands = {
     const id = args._[0] ?? die('plan-task <task> --agent <name> --context <discovery.json>')
     const agent = args.agent ?? die('plan-task needs --agent <name>')
     const state = loadState(name)
-    if (state.plan.planningMode === 'phase') die('this run uses phase planning; use plan-phase')
+    if (state.plan.planningMode === 'phase' && !state.tasks[id]?.individualPlanning) die('this run uses phase planning; use plan-phase')
     const t = getTask(state, id)
     printQuestionsForTarget(state, id, t.phase)
     const pausedExecution = t.planningRequired && t.state === 'blocked' && ['running', 'reviewing'].includes(t.stateBeforeBlock)
+    if (pausedExecution && t.blockKind === 'replan') t.planningReturn = { stateBeforeBlock: t.stateBeforeBlock, blockReason: t.blockReason, blockKind: 'replan' }
     const stale = t.state === 'planning' && t.planningAttempts?.at(-1)?.context !== planningContext(state, t)
     let discovery, digest
     if (t.discussionRequired) {
@@ -2730,7 +2928,7 @@ const commands = {
     }
     try { validationContract(t) } catch (error) { die(error.message) }
     assertAvailable(state, t, 'planning', agent)
-    if (pausedExecution) t.planningReturn = { stateBeforeBlock: t.stateBeforeBlock, blockReason: t.blockReason }
+    if (pausedExecution) t.planningReturn = { stateBeforeBlock: t.stateBeforeBlock, blockReason: t.blockReason, blockKind: 'replan' }
     const superseded = []
     if (stale || changedDiscovery) {
       const oldRound = t.planningAttempts?.at(-1)
@@ -2758,7 +2956,7 @@ const commands = {
     const name = runName()
     const id = args._[0] ?? die('skip-planning <task> --reason <text> --confirmed-by-user')
     const state = loadState(name)
-    if (state.plan.planningMode === 'phase') die('this run uses phase planning; use skip-phase-planning')
+    if (state.plan.planningMode === 'phase' && !state.tasks[id]?.individualPlanning) die('this run uses phase planning; use skip-phase-planning')
     const task = getTask(state, id)
     if (!['pending', 'failed'].includes(task.state)) die(`${id} must be pending or failed to skip planning`)
     if (!usesCurrentPlanning(state, task)) die(`${id} is a legacy task without current planning gates`)
@@ -2784,7 +2982,7 @@ const commands = {
     const id = args._[0] ?? die('finish-planning <task> --plan <task-plan.json>')
     if (typeof args.plan !== 'string' || !args.plan.trim()) die('finish-planning needs --plan <task-plan.json>')
     const state = loadState(name)
-    if (state.plan.planningMode === 'phase') die('this run uses phase planning; use finish-phase-planning')
+    if (state.plan.planningMode === 'phase' && !state.tasks[id]?.individualPlanning) die('this run uses phase planning; use finish-phase-planning')
     const t = getTask(state, id)
     if (t.state !== 'planning') die(id + ' is not in planning')
     const round = t.planningAttempts?.at(-1)
@@ -2930,12 +3128,10 @@ const commands = {
     assertCurrentExecutionInputs(state, t)
     if (reviewer === t.agent && !args.force)
       die(`"${reviewer}" wrote ${id} — a reviewer must be a different agent (or --force)`)
-    /* No cap check here on purpose: the task ALREADY holds a slot as `running`, so moving
-       it to `reviewing` is a role handoff, not a new agent. Review is therefore never
-       blocked by capacity — a finished task can always be judged immediately, which is the
-       whole reason executors are capped below the total. */
+    // A revisão substitui o executor no mesmo slot; também respeita reduções do limite.
+    assertAvailable(state, t, 'reviewing', reviewer)
     const busy = agentBusy(state, reviewer)
-    if (busy && (!args.force || t.planningRequired || busy.state === 'planning'))
+    if (busy && busy.id !== t.id)
       die(`agent "${reviewer}" is already on ${busy.id} — one agent per task`)
     const slotsBeforeReview = executionSlots(state)
     t.state = 'reviewing'
@@ -3045,6 +3241,7 @@ const commands = {
     const snapshot = withLock(name, () => {
       const state = loadState(name)
       const t = getTask(state, id)
+      assertExternalBlockAction(state, id)
       if (t.state !== 'running' && t.state !== 'reviewing') die(id + ' is not running or reviewing')
       if (requestedOk) {
         assertNoOverdueQuestions(state, t)
@@ -3266,22 +3463,29 @@ const commands = {
       die(tr('block --option requires --question'))
     if (['done', 'skipped'].includes(t.state)) die('completed tasks cannot be paused')
     const alreadyBlocked = t.state === 'blocked'
+    if (cmd === 'pause-replanning' && (!t.planningRequired || !['running', 'reviewing'].includes(t.stateBeforeBlock ?? t.state) || t.blockQuestion))
+      die('pause-replanning requires an active attempt needing a revised plan, without an external question')
     if (t.state === 'planning') closePlanning(t, 'blocked')
     if (t.state === 'discussing') closeDiscussion(t, 'blocked')
     if (!alreadyBlocked) t.stateBeforeBlock = t.state
     t.stateRevision = (t.stateRevision ?? 0) + 1
     t.state = 'blocked'
+    t.blockKind = cmd === 'pause-replanning' ? 'replan' : 'external'
+    if (cmd === 'pause-replanning' && state.plan.planningMode === 'phase' && t.phase) t.individualPlanning = true
     t.blockReason = args.reason ?? ''
     if (question !== undefined) {
       if (t.blockQuestion !== question && options === undefined) delete t.blockOptions
       t.blockQuestion = question
     }
     if (options !== undefined) t.blockOptions = [...new Set(options)]
+    excludeBlockedPhaseTask(state, t)
     saveState(name, state)
-    emit(name, alreadyBlocked ? 'task_block_updated' : 'task_block', id, { reason: args.reason ?? '',
+    emit(name, alreadyBlocked ? 'task_block_updated' : 'task_block', id, { reason: args.reason ?? '', blockKind: t.blockKind,
       ...(t.blockQuestion ? { question: t.blockQuestion } : {}), ...(t.blockOptions ? { options: t.blockOptions } : {}) })
     log(`[prumo] ${id} blocked: ${args.reason ?? ''}`)
   },
+
+  'pause-replanning'() { commands.block() },
 
   unblock() {
     const name = runName()
@@ -3300,7 +3504,9 @@ const commands = {
     const handoff = args.reviewer !== undefined
     if (handoff && !['running', 'reviewing'].includes(previous))
       die('direct review requires a paused active attempt; pending/failed tasks cannot bypass start/retry')
-    const target = handoff ? 'reviewing' : previous === 'discussing' ? 'pending' : previous
+    const needsReplanning = isExternalBlock(t) && t.planningRequired && ['running', 'reviewing'].includes(previous) && !hasCurrentTaskScope(state, t)
+    if (needsReplanning && handoff) die('approved scope needs current planning before review')
+    const target = needsReplanning ? 'blocked' : handoff ? 'reviewing' : previous === 'discussing' ? 'pending' : previous
     if (['running', 'reviewing'].includes(target)) assertReauthorizedAfterContractChange(t)
     const dispatchConfirmation = ['running', 'reviewing'].includes(target) ?
       manualDispatchConfirmation(t, 'manual authorization for {0} requires --confirmed-by-user to resume execution') : null
@@ -3344,9 +3550,16 @@ const commands = {
     t.blockHistory.push({ reason: t.blockReason ?? '', ...(t.blockQuestion ? { question: t.blockQuestion } : {}),
       ...(answer !== undefined ? { answer } : {}), at: new Date().toISOString() })
     delete t.blockReason
+    delete t.blockKind
     delete t.blockQuestion
     delete t.blockOptions
     delete t.stateBeforeBlock
+    if (needsReplanning) {
+      t.blockKind = 'replan'
+      t.blockReason = 'approved scope needs current planning'
+      t.stateBeforeBlock = previous
+      if (state.plan.planningMode === 'phase' && t.phase) t.individualPlanning = true
+    }
     saveState(name, state)
     emit(name, 'task_unblock', id, { state: target, agent: target === 'reviewing' ? t.reviewer : target === 'planning' ? t.planner : t.agent,
       attempt: t.attempts.length, ...(answer !== undefined ? { answer } : {}),
@@ -3408,13 +3621,14 @@ const commands = {
     if (scope === 'phase' && !['discussion', 'planning'].includes(role)) die(tr('phase activity supports discussion or planning only'))
     const state = loadState(name)
     const target = scope === 'phase' ? getPhase(state, id) : getTask(state, id)
+    const worker = phaseActivityWorker(state, id, scope, role, agent)
     const expectedState = { discussion: 'discussing', planning: 'planning', execution: 'running', review: 'reviewing' }[role]
-    if (target.state !== expectedState) die(tr('{0} must be {1} to start {2} activity', id, expectedState, role))
-    const owner = role === 'discussion' ? target.discussionAttempts?.at(-1) : role === 'planning' ?
-      target.planningAttempts?.at(-1) : target.attempts?.at(-1)
+    if (!worker && target.state !== expectedState) die(tr('{0} must be {1} to start {2} activity', id, expectedState, role))
+    const owner = worker ?? (role === 'discussion' ? target.discussionAttempts?.at(-1) : role === 'planning' ?
+      target.planningAttempts?.at(-1) : target.attempts?.at(-1))
     if (!owner || owner.endedAt) die(tr('{0} has no current {1} activity round', id, role))
-    const expectedAgent = role === 'planning' ? target.planner : role === 'execution' ? target.agent :
-      role === 'review' ? target.reviewer : owner.activityAgent
+    const expectedAgent = worker?.agent ?? (role === 'planning' ? target.planner : role === 'execution' ? target.agent :
+      role === 'review' ? target.reviewer : owner.agent ?? owner.activityAgent)
     if (expectedAgent && expectedAgent !== agent) die(tr('{0} {1} activity belongs to {2}', id, role, expectedAgent))
     if (owner.activityIntervals?.some(interval => !interval.endedAt)) die(tr('{0} already has active work', id))
     if (owner.activityTiming !== 'explicit') {
@@ -3441,8 +3655,8 @@ const commands = {
     if (scope === 'phase' && !['discussion', 'planning'].includes(role)) die(tr('phase activity supports discussion or planning only'))
     const state = loadState(name)
     const target = scope === 'phase' ? getPhase(state, id) : getTask(state, id)
-    const owner = role === 'discussion' ? target.discussionAttempts?.at(-1) : role === 'planning' ?
-      target.planningAttempts?.at(-1) : target.attempts?.at(-1)
+    const owner = phaseActivityWorker(state, id, scope, role, agent) ?? (role === 'discussion' ? target.discussionAttempts?.at(-1) : role === 'planning' ?
+      target.planningAttempts?.at(-1) : target.attempts?.at(-1))
     const open = owner?.activityIntervals?.findLast(interval => !interval.endedAt)
     if (!open || open.role !== role || open.agent !== agent) die(tr('{0} has no active {1} work by {2}', id, role, agent))
     open.endedAt = new Date().toISOString()
@@ -3464,10 +3678,11 @@ if (!cmd || !Object.hasOwn(commands, cmd)) {
 const READ_ONLY = new Set(['runs', 'status', 'ready', 'graph', 'show-contract', 'show-check'])
 const LEGACY_MIGRATION_CONTINUATIONS = new Set([
   'start', 'progress', 'review', 'review-progress', 'validate', 'done', 'fail', 'retry', 'block', 'unblock', 'skip', 'refresh-contract',
+  'pause-replanning',
   'activity-start', 'activity-stop',
 ])
 function assertMigrationCommandAllowed(state, command) {
-  if (READ_ONLY.has(command) || command === 'sync-plan' || command === 'note') return
+  if (READ_ONLY.has(command) || command === 'sync-plan' || command === 'note' || command === 'set-agent-limit') return
   const task = Object.hasOwn(state.tasks, args._[0]) ? state.tasks[args._[0]] : undefined
   if (command === 'finish-discussion' && task?.discussionAttempts?.some(round => !round.endedAt)) return
   if (command === 'finish-planning' && task?.planningAttempts?.some(round => !round.endedAt)) return
@@ -3490,12 +3705,16 @@ function assertMigrationCommandAllowed(state, command) {
   if (legacyAttempt && LEGACY_MIGRATION_CONTINUATIONS.has(command)) return
   die('migration is blocked by unsafe in-flight planning; only legacy attempt continuation, read-only commands, sync-plan and note are allowed')
 }
+if (cmd === 'set-agent-limit') agentLimitChange()
 if (!['init', 'runs', 'migrate'].includes(cmd)) {
   const name = runName()
-  const aliases = loadState(name).taskIdAliases ?? {}
+  const initialState = loadState(name)
+  const aliases = initialState.taskIdAliases ?? {}
   if (!cmd.includes('phase') && args._[0] && Object.hasOwn(aliases, args._[0])) args._[0] = aliases[args._[0]]
   if (args.scope?.startsWith('tasks:')) args.scope = 'tasks:' + args.scope.slice(6).split(',').map(id => Object.hasOwn(aliases, id) ? aliases[id] : id).join(',')
-  if (migrationStatus(loadState(name)).needed) withLock(name, () => {
+  const initialMigration = migrationStatus(initialState)
+  // Um limite ausente usa o padrão 3; consultas e recusas não devem reescrever um plano atual.
+  if (initialMigration.needed && (initialState.schemaVersion !== STATE_SCHEMA_VERSION || initialMigration.structural)) withLock(name, () => {
     const state = loadState(name)
     if (!migrationStatus(state).needed) return
     const status = migrationStatus(state)
@@ -3506,6 +3725,11 @@ if (!['init', 'runs', 'migrate'].includes(cmd)) {
     } else migrateState(name, { quiet: true })
   })
 }
-if (cmd === 'migrate' && args.check !== true) withLock(runName(), commands[cmd])
-else if (READ_ONLY.has(cmd) || cmd === 'validate' || cmd === 'migrate') await commands[cmd]()
-else withLock(cmd === 'init' ? (args.run ?? die('init needs --run <name>')) : runName(), commands[cmd])
+const BLOCKED_ACTIONS = new Set(['begin-discussion', 'finish-discussion', 'skip-discussion', 'plan-task', 'finish-planning', 'skip-planning', 'start', 'progress', 'review', 'review-progress', 'validate', 'done', 'fail', 'retry', 'skip', 'activity-start', 'pause-replanning'])
+function runCommand() {
+  if (BLOCKED_ACTIONS.has(cmd) && args.scope !== 'phase') assertExternalBlockAction(loadState(runName()), args._[0])
+  return commands[cmd]()
+}
+if (cmd === 'migrate' && args.check !== true) withLock(runName(), runCommand)
+else if (READ_ONLY.has(cmd) || cmd === 'validate' || cmd === 'migrate') await runCommand()
+else withLock(cmd === 'init' ? (args.run ?? die('init needs --run <name>')) : runName(), runCommand)

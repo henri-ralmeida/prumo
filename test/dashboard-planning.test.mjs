@@ -13,6 +13,94 @@ const task = (id, state = 'pending', fields = {}) => ({
   id, title: `Task ${id}`, phase: 'P1', state, deps: [], attempts: [], validations: [], notes: [], ...fields,
 })
 
+test('controle de agentes mostra a ocupação do motor e mantém o valor digitado enquanto está aberto', () => {
+  const ui = dashboard('pt-BR')
+  const state = { run: 'limite', plan: { maxAgents: 3 }, agentControlToken: 'token', agentUsage: { used: 2, maxAgents: 3 }, tasks: {
+    T1: task('T1'), T2: task('T2'), T3: task('T3'),
+  }, phaseWorkflows: { P1: { state: 'planning', planningAttempts: [{ activityTiming: 'explicit', workers: {
+    T1: { agent: 'planejador-a', role: 'planning', startedAt: instant(90), activityTiming: 'explicit', activityIntervals: [] },
+    T2: { agent: 'planejador-b', role: 'planning', startedAt: instant(90), activityTiming: 'explicit', activityIntervals: [] },
+  }, activeTargets: ['T1', 'T2'], queuedTargets: ['T3'], targets: ['T1', 'T2', 'T3'] }] } }, derived: {
+    T1: { effective: 'planning', activeAgent: 'planejador-a' }, T2: { effective: 'planning', activeAgent: 'planejador-b' },
+    T3: { effective: 'waiting', agentQueued: true },
+  } }
+  ui.render(state)
+  assert.equal(ui.nodes.get('#agentLimitMenu').hidden, false)
+  assert.equal(ui.nodes.get('#agentUsageLabel').textContent, 'Agentes: 2 de 3 em uso')
+  assert.equal(ui.nodes.get('#agentLimitValue').value, '3')
+  assert.match(ui.nodes.get('#parallel').innerHTML, /@planejador-a[\s\S]*@planejador-b/)
+  assert.match(ui.nodes.get('#planSub').textContent, /2 tarefas/)
+  assert.doesNotMatch(ui.nodes.get('#parallel').innerHTML, /T3/)
+  assert.match(ui.nodes.get('#nodes').innerHTML, /Aguardando uma vaga de agente/)
+  assert.equal(ui.run('analyse(STATE).stageElapsed'), 20000)
+  assert.equal(ui.run('taskClock(STATE.tasks.T1, "planning")'), 10000)
+  ui.nodes.get('#agentLimitMenu').open = true
+  ui.nodes.get('#agentLimitValue').value = '5'
+  ui.render(state)
+  assert.equal(ui.nodes.get('#agentLimitValue').value, '5')
+  state.derived.T1 = { effective: 'waiting', phaseBatchPending: true }
+  state.phaseWorkflows.P1.planningAttempts[0].workers.T1.endedAt = instant(100)
+  state.phaseWorkflows.P1.planningAttempts[0].activeTargets = ['T2']
+  state.agentUsage.used = 1
+  ui.render(state)
+  assert.match(ui.nodes.get('#nodes').innerHTML, /Aguardando os demais alvos da fase/)
+  assert.doesNotMatch(ui.nodes.get('#parallel').innerHTML, /@planejador-a/)
+  assert.equal(ui.nodes.get('#agentUsageLabel').textContent, 'Agentes: 1 de 3 em uso')
+  assert.match(ui.nodes.get('#planSub').textContent, /1 tarefas/)
+  state.tasks.T1 = task('T1', 'planning', { individualPlanning: true, planner: 'planejador-individual', planningAttempts: [{
+    startedAt: instant(95), activityTiming: 'explicit', activityIntervals: [{ role: 'planning', startedAt: instant(95) }],
+  }] })
+  state.derived.T1 = { effective: 'planning' }
+  state.agentUsage.used = 2
+  ui.render(state)
+  assert.equal(ui.run('taskClock(STATE.tasks.T1, "planning")'), 5000)
+  assert.match(ui.nodes.get('#parallel').innerHTML, /@planejador-individual/)
+  assert.doesNotMatch(ui.nodes.get('#parallel').innerHTML, /@planejador-a/)
+  // Fases históricas sem rodada de planejamento continuam renderizáveis.
+  state.phaseWorkflows.P1.planningAttempts = []
+  state.phaseWorkflows.P1.discussionAttempts = [{ targets: ['T2'] }]
+  ui.render(state)
+  assert.match(ui.nodes.get('#nodes').innerHTML, /T2/)
+  delete state.agentControlToken
+  ui.render(state)
+  assert.equal(ui.nodes.get('#agentLimitMenu').hidden, true)
+})
+
+test('controle de agentes envia somente o limite escolhido e informa sucesso ou falha sem trocar de execução', async () => {
+  const ui = dashboard('pt-BR'), requests = []
+  ui.render({ run: 'limite', plan: {}, tasks: {}, agentControlToken: 'token' })
+  ui.run('STATE_RUN_KEY = "run-a"; tick = async () => {}')
+  for (const value of ['', '0', '-1', '1.5', 'invalid']) {
+    ui.nodes.get('#agentLimitValue').value = value
+    await ui.run('changeAgentLimit({preventDefault(){}})')
+    assert.equal(ui.nodes.get('#agentLimitFeedback').textContent, 'Informe um número inteiro maior que zero')
+  }
+  ui.nodes.get('#agentLimitValue').value = '5'
+  ui.run('fetch = handler', { handler: async (url, options) => { requests.push({ url, options }); return { ok: true, json: async () => ({ maxAgents: 5 }) } } })
+  await ui.run('changeAgentLimit({preventDefault(){}})')
+  assert.equal(requests.length, 1)
+  assert.match(String(requests[0].url), /\/api\/agent-limit/)
+  assert.equal(requests[0].options.method, 'POST')
+  assert.equal(requests[0].options.headers['X-Prumo-Control'], 'token')
+  assert.deepEqual(JSON.parse(requests[0].options.body), { maxAgents: 5 })
+  assert.equal(ui.nodes.get('#agentLimitFeedback').textContent, 'Limite de agentes salvo')
+  for (const result of [{ ok: false, error: 'Capacidade indisponível' }, { ok: false }, { throws: true }]) {
+    ui.run('fetch = handler', { handler: async () => {
+      if (result.throws) throw new Error('Conexão interrompida')
+      return { ok: result.ok, json: async () => result }
+    } })
+    await ui.run('changeAgentLimit({preventDefault(){}})')
+    assert.equal(ui.nodes.get('#agentLimitApply').disabled, false)
+    assert.equal(ui.nodes.get('#agentLimitFeedback').textContent, result.error || (result.throws ? 'Conexão interrompida' : 'Não foi possível alterar o limite de agentes'))
+  }
+  ui.run('fetch = async () => {STATE_RUN_KEY = "run-b"; return {ok:true,json:async()=>({})}}')
+  await ui.run('changeAgentLimit({preventDefault(){}})')
+  assert.notEqual(ui.nodes.get('#agentLimitFeedback').textContent, 'Limite de agentes salvo')
+  ui.run('STATE_RUN_KEY = "run-a"; fetch = async () => {STATE_RUN_KEY = "run-b"; throw Error("old run error")}')
+  await ui.run('changeAgentLimit({preventDefault(){}})')
+  assert.notEqual(ui.nodes.get('#agentLimitFeedback').textContent, 'old run error')
+})
+
 test('condições de execução explicam liberação e espera sem substituir resumo, contrato ou estado', () => {
   const ui = dashboard('en')
   const value = task('T1', 'ready', { summary: 'Preserve summary', validation: 'echo contract',
@@ -4359,7 +4447,7 @@ test('Concluido ocupa uma linha central e plano e filtros compartilham a mesma s
   assert.match(html, /#statusBox \.counts > span\[data-state="done"\] \.count-label \{ flex: none;/)
   const header = html.slice(html.indexOf('<header>'), html.indexOf('</header>'))
   const chevrons = [...header.matchAll(/<svg class="control-chevron"[^>]*>[\s\S]*?<\/svg>/g)].map(match => match[0])
-  assert.equal(chevrons.length, 3)
+  assert.equal(chevrons.length, 4)
   assert.equal(new Set(chevrons).size, 1)
   assert.doesNotMatch(header, /control-chevron[^>]*tabindex/)
   assert.doesNotMatch(html, /(?:\.filter-toggle|\.header-menu summary)::after \{ content: '⌄'/)

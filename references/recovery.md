@@ -18,7 +18,7 @@ legacy run. A rejected delivery is handled in [review.md](review.md#real-rejecti
 
 ## Resuming or migrating an existing run
 
-The global dashboard only observes; it never synchronizes a plan. Before resuming an existing run, use
+The global dashboard observes and exposes only the explicit user-confirmed agent-limit control; it never synchronizes a plan. Before resuming an existing run, use
 `node $ENGINE migrate --check --run <name>` when you need a read-only compatibility report. Every
 single-run engine command automatically applies a safe, versioned structural migration first, creates
 `state.pre-migrate-v<schema>.json`, enables missing discussion and planning gates, and opens no rounds.
@@ -34,6 +34,9 @@ evidence, restore declared phase order and membership from the approved plan str
 dependencies, scope and history, then run `sync-plan` on the same run
 and inspect the persisted result. Do not create an auxiliary run to avoid adapting old tasks. Ask in the
 principal discussion only when a consequential contract meaning cannot be established from the repository.
+Migration also adopts the shared `maxAgents: 3` default when absent, preserves plan fields, tasks and
+histories, and appends the change to `agentLimitHistory`. Legacy `maxParallel`/`maxExecutors` values remain
+metadata; blocked legacy tasks without `blockKind` remain external, regardless of their reason text.
 
 ## Synchronizing an approved plan change
 
@@ -48,8 +51,9 @@ node $ENGINE show-contract <task> --diff --run <run-name>
 
 `sync-plan` adds approved tasks and refreshes contracts in every nonterminal state while preserving the
 current lifecycle, agents, attempts, notes and evidence. Active work whose scope changed cannot advance
-through review or completion until current planning is restored; block and replan it without inventing a
-failure. Done/skipped contracts remain immutable history and need an explicit follow-up task. Task removal
+through review or completion until current planning is restored; use `pause-replanning` for an active
+planning-required attempt, then replan and explicitly `unblock` it without inventing a failure. An ordinary
+external `block` must be unblocked before planning. Done/skipped contracts remain immutable history and need an explicit follow-up task. Task removal
 is refused. If a migrated run still names a missing graph-foreman source, `sync-plan` recovers the matching
 plan from the central Prumo workspace. Its output lists bounded per-task field changes, summarizes validation
 contracts without printing their contents and warns when a waiting `blockReason` contradicts dependency
@@ -109,19 +113,35 @@ rules for the adapted validation are in [contracts.md](contracts.md).
 
 ## Blocking and user decisions
 
-Needs the dev → `block T4 --reason "..."`. Blocked is a real state; leaving it `running`
-while you wait is how a graph lies. When the block is a user decision, record it as one:
-`block T4 --reason "..." --question "<the decision in one sentence>" --option "<answer> => <effect>"`
-(repeat `--option` per answer). The block event and the dashboard then carry the question, and
-`unblock T4 --answer "<answer>"` records what the user chose.
+Needs the dev → `block T4 --reason "..."`. `block` is always an external pause and records
+`blockKind: "external"`; leaving the task `running` while you wait is how a graph lies. A user decision is
+recorded with `--question "<the decision in one sentence>" --option "<answer> => <effect>"` (repeat
+`--option` per answer). The block event and dashboard carry the question, and
+`unblock T4 --answer "<answer>"` records the choice.
 
-A block that waits for a user decision must be recorded with `--question` and `--option`, not only
-`--reason`; when resuming finds a reason-only block that is really a decision, re-record it with
-`block <task> --reason "..." --question "..." --option "<answer> => <effect>"` before asking the user.
+External blocks exclude a phase task from its current `activeTargets` and `queuedTargets`, preserve the
+original set in `originalTargets`, append the exclusion reason to `excludedTargets`, and mark the task for
+individual planning (`individualPlanning: true`). The remaining phase wave may finish. After `unblock`, the excluded task uses its own `begin-discussion`, `plan-task` and
+`finish-planning` flow within its original phase. Direct commands fail before mutation with the task's `is blocked` message and the
+`unblock` instruction. No discussion, planning, execution, review or activity command may route around an
+external block. A legacy `blocked` task without `blockKind` is external; never infer an internal pause from
+`blockReason` wording.
+
+If an external block pauses a planning-required attempt in `running` or `reviewing` and the approved scope
+changes before resumption, `unblock --answer` records the decision but keeps the task blocked and converts it
+to `blockKind: "replan"` with reason `approved scope needs current planning`. The original attempt and reviewer
+remain attached. Start a fresh task discussion, then run `plan-task` and `finish-planning` while it remains
+blocked; `finish-planning` keeps it blocked, and a later explicit `unblock` resumes the same attempt or review.
+
 When a block includes a recorded `blockQuestion`, present that exact question and its `blockOptions`
 through PO First, ask the user for the decision, then pass the answer with `unblock <task> --answer`.
-Keep the recorded reason, question, answer and time in the block history. Older reason-only blocks remain
-resumable with `unblock <task>`.
+Keep the recorded reason, question, answer and time in the block history. Reason-only legacy blocks remain
+resumable with `unblock <task>` but are still external.
+
+For an active planning-required attempt whose approved contract must be refreshed, use
+`pause-replanning <task> --reason "..."`. It records `blockKind: "replan"` without an external question;
+the same attempt may run task planning while blocked, `finish-planning` leaves it blocked, and explicit
+`unblock` resumes it.
 
 Resolve or wait for the recorded blocker; never route around it. Use `note <task> --text "..."` for what a
 later reader needs and the states cannot say.
@@ -131,8 +151,9 @@ later reader needs and the states cannot say.
 `unblock <task>` restores the recorded phase (pending, planning, running, reviewing or failed), preserving
 the attempt and previous work. For delivered work paused during execution or review, use
 `unblock <task> --reviewer <independent-agent>` to hand it directly to review in the same attempt.
-This does not acquire an executor slot. It does recheck dependencies, total capacity and the
-reviewer's availability; ordinary execution resume also checks executor capacity. A refusal
+A direct review is a handoff in the task's existing occupied slot, not a fourth agent or a reserved review slot. It
+rechecks dependencies, shared `maxAgents` capacity and the reviewer's availability; ordinary execution resume
+also checks the same shared cap. Lowering the cap never kills current agents and only delays new work. A refusal
 leaves the task blocked. Pending/failed tasks cannot use this handoff to bypass start/retry.
 In manual authorization mode, `unblock` that resumes an active attempt also needs `--confirmed-by-user`.
 
@@ -148,9 +169,10 @@ A reviewer-rejected implementation with an unchanged approved contract must reus
 plan for every correction, regardless of retry count, while the complete recorded planning context still
 matches. Review feedback travels to the next executor; it does not dispatch a planner. Only an explicitly
 approved material contract change requires fresh planning while preserving prior plans and evidence. If an active execution
-scope changes, keep its attempt, block it, synchronize the approved change and use its phase discussion/planning workflow.
-`finish-phase-planning` returns this work to **blocked**, preserving its original phase and reason;
-explicit `unblock` then resumes the same attempt. Do not fabricate fail/retry for replanning.
+scope changes, keep its attempt, use `pause-replanning`, synchronize the approved change and use the task-scoped
+planning workflow. `finish-planning` returns this work to **blocked**, preserving its original phase and reason;
+explicit `unblock` then resumes the same attempt. Do not use ordinary external `block` followed by planning,
+and do not fabricate fail/retry for replanning.
 Validation-only changes can still use `refresh-contract` and fresh review in the same attempt.
 
 ## Legacy lifecycle notes

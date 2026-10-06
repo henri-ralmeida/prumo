@@ -19,21 +19,26 @@ vem antes, em [discussion.pt-BR.md](discussion.pt-BR.md).
 
 ## Quem planeja e com quais permissões
 
-Cada fase recebe um planejador depois que sua descoberta é encerrada, e cada contrato de tarefa aprovado recebe exatamente um
-planejador (veja "One planner per approved task contract" em [SKILL.md](../SKILL.md)). Primeiro confira as ferramentas e permissões reais
-desta sessão para determinar se é possível disparar um planejador dedicado e se ele consegue gravar no
-diretório de artefatos indicado. Nunca deduza nenhuma dessas capacidades pelo nome do harness. O planejador
-continua somente leitura para o trabalho do projeto: ele pesquisa a fase e pode gravar apenas o artefato de plano
-designado para cada tarefa alvo.
+Depois que a descoberta termina, cada alvo ativo da fase recebe um trabalhador de planejamento somente leitura,
+e cada contrato de tarefa aprovado recebe exatamente um planejador (veja "One planner per approved task contract"
+em [SKILL.md](../SKILL.md)). Os comandos de fase aceitam `--agent <task>=<agente-nativo>` repetido, cobrindo
+cada alvo uma vez com nomes distintos, ou um prefixo que registra `<prefixo>:<task>`. Esses nomes são atribuições
+persistidas, não criação de agentes nativos: confira as ferramentas reais, crie os agentes com os nomes exatos e
+despache somente `activeTargets`; um coordenador não pode representar vários workers. Primeiro confira as ferramentas e permissões reais desta sessão para determinar
+se os trabalhadores podem ser disparados e se conseguem gravar no diretório de artefatos indicado. Nunca deduza
+nenhuma dessas capacidades pelo nome do harness. Cada trabalhador continua somente leitura para o trabalho do
+projeto e pode gravar apenas o artefato designado para seu alvo.
 Pesquise primeiro o código atual, os artefatos, as saídas de dependências, as regras do projeto e a documentação
 de origem relevante; reaproveite pesquisas anteriores úteis, mas confirme que ainda se aplicam. Inspeção
 somente leitura e verificações seguras de pesquisa são permitidas. O planejador grava somente o artefato de plano
 da tarefa designado; ele não implementa a tarefa nem edita o estado do grafo. Se não houver subagente planejador
 dedicado disponível, o orquestrador informa essa limitação e faz o mesmo planejamento localmente, com
 pesquisa somente leitura e apenas a gravação do artefato designado. Esse fallback não autoriza implementação
-do produto. O planejamento local grava somente o artefato designado e não inventa um agente disparado
-nem consome uma vaga de agente. O planejamento usa a capacidade total, não a capacidade de executores nem uma
-tentativa de execução ([dispatch.pt-BR.md](dispatch.pt-BR.md#capacidade)).
+do produto. Registre o ator de planejamento local seguindo as mesmas regras de capacidade; nunca o descreva
+como um subagente nativo. Se houver apenas um ator, obtenha a escolha do usuário para definir o limite em 1
+antes de abrir uma fase, para não inventar identidades paralelas. Trabalhadores de planejamento ativos usam a mesma cota `maxAgents` compartilhada
+com discussão, execução e revisão; alvos de fase enfileirados não consomem vaga. `maxParallel`/`maxExecutors`
+legados são apenas metadados ([dispatch.pt-BR.md](dispatch.pt-BR.md#capacidade)).
 
 Consuma a descoberta persistida e não repita suas perguntas. Aplique PO First para pesquisar a fundo a abordagem
 de implementação escolhida, os impactos e a verificação. Se a pesquisa revelar uma nova decisão consequencial,
@@ -47,10 +52,11 @@ para acumular confiança; registre uma lacuna real em vez de buscar certeza inde
 
 ## O que o planejador produz
 
-Quando se escolhe planejar, o planejador grava `task-plan-<id>.json` para cada membro alvo. Nunca transforme passos, lacunas de evidência,
+Quando se escolhe planejar, o trabalhador ativo grava `task-plan-<id>.json` para seu alvo. Nunca transforme passos, lacunas de evidência,
 pré-requisitos ou saídas de dependências de uma tarefa explicitamente selecionada em tarefas separadas do grafo ou
 em atribuições separadas de planejador sem aprovação explícita do usuário. O motor valida o lote inteiro
-antes de registrar qualquer artefato. Cada artefato é imutável e lista dependências diretas incompletas como
+antes de registrar qualquer artefato final. O planejamento da fase valida a onda ativa, coloca seus planos em
+staging, abre a próxima onda e só registra todos os planos atomicamente na última onda. Cada artefato é imutável e lista dependências diretas incompletas como
 entradas não resolvidas. Um recibo de validação revisado de forma independente de um produtor posterior, ou uma dispensa explícita de pulo,
 satisfaz essa entrada no momento da execução sem reescrever o plano. Mudanças de contrato invalidam apenas o plano
 afetado e os escopos realmente a jusante; a descoberta compartilhada da fase invalida os planos não terminais daquela fase; um
@@ -63,16 +69,18 @@ aviso de planejamento não bloqueante. Mantenha `manual-inspection` visível com
 que a inspeção tenha evidência atual; nunca a deduza pelo nome do harness.
 
 O motor calcula o hash da descoberta validada e do recibo emitido com JSON canônico e vincula esse digest à
-rodada de planejamento e aos planos finais das tarefas. Repetir `plan-phase` enquanto essa rodada está ativa não tem efeito.
-`finish-phase-planning` recusa uma rodada cuja descoberta não corresponde mais ao contexto persistido.
+rodada de planejamento e aos planos finais das tarefas. Repetir `plan-phase` enquanto essa rodada está ativa
+preserva as atribuições e pode ativar a próxima onda enfileirada. `finish-phase-discussion` valida a descoberta
+somente para a onda ativa, acumula cada onda concluída e abre a próxima. `finish-phase-planning` recusa uma
+rodada cuja descoberta não corresponde mais ao contexto persistido.
 
 Em planos com `scopePolicy: "explicit"`, investigue `writeScope`, `touches` e `sharedResources` antes de propor `writes`. Para `read-only`, `writes` fica vazio ou ausente. Para `files`, `writes` deve caber nos prefixos aprovados; ausência continua sendo um aviso, não autorização para gravar fora deles. Escopo `unknown` não autoriza execução: devolva a investigação para alterar o contrato por `sync-plan`, sem inventar caminhos. Recurso compartilhado com qualquer gravação exige dependências; não deduza independência só pelos arquivos.
 
 ## Prompt do planejador (inglês)
 
 ```text
-You are the read-only PLANNER for the approved phase. Inspect the actual tools and write permissions available
-to you; do not infer capabilities from the harness name. Research every targeted task; do not implement them.
+You are the read-only PLANNING WORKER assigned to the active target(s) of the approved phase. Inspect the actual tools and write permissions available to you; do not infer capabilities from the harness name. Work
+only on the target IDs assigned to your exact native agent name; do not act on queued targets and do not implement them.
 Read project rules, approved objective/constraints, member contracts and known dependency outputs: <references>.
 Read the persisted phase discovery and its locked decisions: <phaseWorkflows.F2.discovery from state.json>.
 Use the available tools to inspect the current implementation/artifacts, real project rules, dependency outputs
@@ -84,7 +92,7 @@ internal process details out of comments, tests, messages and README drafts; req
 belong only in the designated task-plan contract fields.
 Preserve known decisions; propose any material contract change for the authorized global-plan workflow.
 Include `summary` in each artifact: 1–2 sentences describing the chosen approach and why it meets the expected result.
-Write ONLY task-plan-<id>.json in <absolute artifact directory> for each target: research, decisions,
+Write ONLY the exact `task-plan-<id>.json` for each active target in <absolute artifact directory>: research, decisions,
 steps, verification, open questions, writes, phaseBinding and unresolvedInputs. For every open question,
 state who decides and by when with `decideBy`: `executor` (with the proposed `answer` the executor applies),
 `user-now`, `{ "beforeTask": "<id>" }` or `{ "beforePhase": "<id>" }`. Each verification item may
@@ -116,8 +124,9 @@ Use o diretório de artefatos e o schema de tarefa informados para essa tarefa, 
 Quando a conversa de planejamento estiver em português, use este prompt equivalente do planejador:
 
 ```text
-Você é o PLANEJADOR somente leitura da fase aprovada. Confira as ferramentas e permissões de gravação realmente
-disponíveis; não deduza capacidades pelo nome do harness. Pesquise todas as tarefas alvo sem implementá-las.
+Você é o TRABALHADOR DE PLANEJAMENTO somente leitura atribuído aos alvos ativos da fase aprovada. Confira
+as ferramentas e permissões de gravação realmente disponíveis; não deduza capacidades pelo nome do harness.
+Trabalhe somente nos IDs atribuídos ao seu nome nativo exato; não atue sobre alvos enfileirados nem implemente tarefas.
 Leia as regras do projeto, o objetivo e as restrições aprovados, os contratos das tarefas e as saídas de
 dependências conhecidas: <referências>.
 Leia a descoberta persistida da fase e suas decisões travadas: <phaseWorkflows.F2.discovery do state.json>.
@@ -130,7 +139,7 @@ Mantenha identificadores e detalhes internos do fluxo fora de comentários, test
 README; identificadores exigidos pelo planejamento pertencem somente aos campos do contrato do task-plan.
 Preserve as decisões conhecidas; proponha qualquer mudança material de contrato para o fluxo autorizado do plano global.
 Inclua `summary` em cada artefato: 1–2 frases descrevendo a abordagem escolhida e por que ela atende ao resultado esperado.
-Grave SOMENTE task-plan-<id>.json em <diretório absoluto do artefato> para cada tarefa: research, decisions,
+Grave SOMENTE o `task-plan-<id>.json` exato de cada alvo ativo em <diretório absoluto do artefato>: research, decisions,
 steps, verification, openQuestions, writes, phaseBinding e unresolvedInputs. Para cada pergunta em aberto,
 diga quem decide e até quando com `decideBy`: `executor` (com a resposta proposta em `answer`, que o executor
 aplica), `user-now`, `{ "beforeTask": "<id>" }` ou `{ "beforePhase": "<id>" }`. Cada item de verificação pode
@@ -167,7 +176,8 @@ pode contestar um plano incompleto ou incorreto em relação ao objetivo aprovad
 Esses papéis reduzem as oportunidades de erro; nenhum deles garante que os modelos não cometam erros.
 
 ```bash
-node $ENGINE plan-phase F2 --agent plan-scenes  # um planejador somente leitura para a fase
+node $ENGINE plan-phase F2 --agent T1=plan-f2-t1 --agent T2=plan-f2-t2  # trabalhadores nativos exatos dos alvos ativos
+# Um único prefixo --agent plan-f2 registra plan-f2:T1, plan-f2:T2 e assim por diante; alvos enfileirados aguardam vaga.
 node $ENGINE finish-phase-planning F2 --plan-dir <artifact-directory>
 node $ENGINE plan-task T4 --agent <planner>     # execuções por tarefa
 node $ENGINE finish-planning T4 --plan <artifact.json>

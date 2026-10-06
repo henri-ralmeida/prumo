@@ -45,16 +45,19 @@ node $ENGINE unblock T4 --confirmed-by-user                   # retomando execu�
 
 ## Registrar um papel não cria um agente
 
-**Use um subagente nativo para plan-phase quando houver um realmente disponível; caso contrário, informe a limitação e siga o fallback do planejador local e somente leitura em [planning.pt-BR.md](planning.pt-BR.md). Todo start continua exigindo um despacho real de executor nativo na MESMA mensagem.**
-Dispare agentes planejadores prontos dentro da capacidade total e agentes de execução prontos dentro dos dois limites — o paralelismo é
+**Use um subagente nativo por alvo ativo de plan-phase quando houver disponibilidade; caso contrário, informe a limitação e siga o fallback do planejador local e somente leitura em [planning.pt-BR.md](planning.pt-BR.md). Todo start continua exigindo um despacho real de executor nativo na MESMA mensagem.**
+Dispare agentes prontos de todos os papéis dentro do limite único `maxAgents` — o paralelismo é
 o propósito do grafo, mas inspecione conflitos de arquivos e recursos compartilhados antes de considerar tarefas independentes. O motor só enxerga
 a string de `--agent`; por isso, um orquestrador que roda `start` e depois escreve o código ele mesmo
 passa em todas as verificações e deixa um arquivo de estado que mente: `--agent` precisa nomear um agente que
 EXISTE. Essa é a única regra aqui que o motor não consegue impor por você.
-O planejamento local grava somente o artefato designado e não inventa um agente disparado nem consome uma vaga de agente.
+O planejamento local grava somente o artefato designado e segue as mesmas regras de registro e capacidade.
+Se houver apenas um ator local, obtenha a escolha do usuário para definir o limite em 1 antes de abrir uma fase;
+não registre identidades extras para simular agentes paralelos.
 
 `review` também é uma chamada de subagente — um `review` sem revisor por trás é o mesmo autorrelato
-com outro rótulo. Ele não tem limite de capacidade, então é disparado no momento em que o trabalho termina.
+com outro rótulo. A revisão compartilha o mesmo limite; a passagem substitui o executor na vaga ocupada pela tarefa.
+Após reduzir o limite, essa substituição continua permitida para concluir tentativas atuais; ela não abre vaga extra.
 
 `start --executor <name>` é um alias de `start --agent <name>`. Esses comandos registram a atribuição; eles
 não criam o agente.
@@ -142,17 +145,18 @@ incluindo início, aprovação, falha ou reaproveitamento de cache. Uma nova ten
 
 ## Capacidade
 
-- **3 executores entre 4 agentes ocupados** por padrão (`maxExecutors`/`maxParallel` por plano).
-  Ajuste os dois, mas mantenha os executores **estritamente abaixo do total**: essa folga é o que mantém
-  a revisão sempre desbloqueável, e trabalho terminado mas não verificado é o pior estado que o grafo pode ter.
-- **A revisão nunca é bloqueada por capacidade e roda em paralelo.** `review` é uma passagem de papel em uma
-  vaga que a tarefa já ocupa, então três tarefas terminando juntas recebem três revisores ao mesmo tempo.
-  Elas ocupam, sim, o limite total: 1 em execução + 3 em revisão = 4 ocupados.
-- **O planejamento usa a capacidade total, não a capacidade de executores nem uma tentativa de execução.** Planejamento,
-  execução e revisão juntos ocupam `maxParallel`; priorize execução e revisão prontas
-  ao distribuir vagas liberadas. Novas tarefas não podem contornar planejamento, dependências, capacidade total
-  ou a unicidade de agentes simultâneos com `--force`; a sobreposição legada da cota de executores continua valendo.
-- **Um agente, uma tarefa ativa**, entre planejamento, execução e revisão; o motor recusa um `--agent` ocupado.
+- **3 agentes somando todos os papéis** por padrão (`maxAgents` por execução). Discussão, planejamento,
+  execução e revisão compartilham esse teto, sem reserva escondida para revisão. Os limites antigos
+  ficam como metadados históricos; a migração adota 3 e registra os valores anteriores sem alterar tarefas.
+- **A revisão substitui a execução na mesma vaga.** Três tarefas transferidas a revisores independentes
+  continuam ocupando três vagas. Novas atribuições não contornam o limite com `--force`.
+- **Cada alvo da fase tem seu worker registrado.** Informe os vínculos `tarefa=agente`, dispare somente
+  `activeTargets` e mantenha `queuedTargets` sem despacho. O fechamento de uma onda libera vagas;
+  a fase só fecha depois que todos os alvos elegíveis terminam.
+- **Altere o limite ao vivo pelo board**, ou use `set-agent-limit --max N --actor <usuário> --confirmed-by-user`.
+  O próximo comando usa o valor atual. Reduzir o limite deixa as atividades atuais terminarem e impede
+  novas atribuições enquanto não houver vaga; o motor nunca encerra agentes nativos.
+- **Um agente, uma tarefa ativa**, em todos os papéis; o motor recusa um `--agent` ocupado.
   Um rótulo em duas tarefas simultâneas registra um paralelismo que não aconteceu.
 - **Um revisor NOVO por tarefa.** Um agente revisando trinta acumula exatamente o contexto que o
   grafo existe para evitar, e deixa de ler com olhos frescos muito antes do fim.

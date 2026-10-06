@@ -6,7 +6,8 @@ import { parseEngineArgs } from '../scripts/engine-args.mjs'
 const commands = ['init', 'migrate', 'sync-plan', 'status', 'ready', 'graph', 'runs', 'show-contract', 'show-check', 'authorize',
   'begin-phase-discussion', 'skip-phase-discussion', 'finish-phase-discussion', 'plan-phase', 'skip-phase-planning', 'finish-phase-planning',
   'begin-discussion', 'skip-discussion', 'finish-discussion', 'plan-task', 'skip-planning', 'finish-planning', 'start', 'progress',
-  'review', 'review-progress', 'refresh-contract', 'validate', 'done', 'fail', 'retry', 'block', 'unblock', 'skip', 'note']
+  'review', 'review-progress', 'refresh-contract', 'validate', 'done', 'fail', 'retry', 'block', 'unblock', 'skip', 'note',
+  'pause-replanning', 'set-agent-limit']
 
 for (const command of commands) {
   test(`${command}: opção desconhecida não executa ação`, () => assert.throws(() => parseEngineArgs(command, ['--typo']), /Unknown option/))
@@ -23,6 +24,8 @@ for (const command of [undefined, '', 'typo', 'constructor', 'toString', '__prot
 const stringOptions = {
   init: ['plan', 'cwd'], 'sync-plan': ['plan', 'cwd'], 'show-check': ['check', 'attempt'], authorize: ['scope', 'mode', 'channel'],
   'finish-phase-discussion': ['context'], 'plan-phase': ['agent', 'plan-dir'], 'finish-phase-planning': ['plan-dir'],
+  'begin-phase-discussion': ['agent'], 'begin-discussion': ['agent'],
+  'pause-replanning': ['reason'], 'set-agent-limit': ['max', 'actor'],
   'finish-discussion': ['context'], 'plan-task': ['agent', 'context'], 'finish-planning': ['plan'],
   start: ['agent', 'executor'], progress: ['agent', 'step'], review: ['agent'], 'review-progress': ['agent', 'step'],
   'refresh-contract': ['plan'], validate: ['evidence', 'summary', 'cwd', 'tail'], fail: ['reason'],
@@ -51,7 +54,13 @@ for (const command of commands) {
 }
 
 for (const [command, options] of Object.entries(stringOptions)) for (const flag of options.filter(flag => flag !== 'option')) {
+  if (flag === 'agent' && ['plan-phase', 'begin-phase-discussion'].includes(command)) continue
   test(`${command}: repetir --${flag} não troca silenciosamente a entrada`, () => {
     assert.throws(() => parseEngineArgs(command, [`--${flag}`, 'A', `--${flag}`, 'B']), /Duplicate option/)
   })
 }
+
+for (const command of ['plan-phase', 'begin-phase-discussion']) test(`${command}: preserva agentes por alvo sem substituir os anteriores`, () => {
+  assert.deepEqual(parseEngineArgs(command, ['F1', '--agent', 'T1=a', '--agent', 'T2=b', '--agent', 'T3=c']).agent,
+    ['T1=a', 'T2=b', 'T3=c'])
+})

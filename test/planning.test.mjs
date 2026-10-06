@@ -531,15 +531,15 @@ test('incomplete research, missing check coverage and unanswered blocking questi
 
 test('planners consume total capacity and cannot share an agent with execution or review', t => {
   const tasks = ['T1', 'T2', 'T3'].map(id => ({ id, title: id }))
-  const f = fixture(t, tasks, { maxParallel: 2, maxExecutors: 1 })
+  const f = fixture(t, tasks, { maxAgents: 2 })
   f.planTask('T1')
   f.ok('start', 'T1', '--agent', 'executor')
   f.discuss('T2')
   f.rejected(/already on T1/, 'plan-task', 'T2', '--agent', 'executor', '--force')
   f.ok('review', 'T1', '--agent', 'reviewer')
   f.rejected(/already on T1/, 'plan-task', 'T2', '--agent', 'reviewer')
-  f.ok('plan-task', 'T2', '--agent', 'planner')
   f.discuss('T3')
+  f.ok('plan-task', 'T2', '--agent', 'planner')
   f.rejected(/agents busy/, 'plan-task', 'T3', '--agent', 'other', '--force')
   assert.match(f.ok('ready').output, /1 in planning.*0 agent slots/)
   f.ok('block', 'T1', '--reason', 'Release review slot')
@@ -553,7 +553,7 @@ test('planners consume total capacity and cannot share an agent with execution o
 })
 
 test('planning pause restores the planner phase and excludes paused time from active rounds', t => {
-  const f = fixture(t, [{ id: 'T1', title: 'First' }, { id: 'T2', title: 'Second' }], { maxParallel: 1 })
+  const f = fixture(t, [{ id: 'T1', title: 'First' }, { id: 'T2', title: 'Second' }], { maxAgents: 1 })
   f.beginPlan('T1', 'planner')
   f.ok('block', 'T1', '--reason', 'Need a product decision')
   f.ok('block', 'T1', '--reason', 'Question clarified')
@@ -759,7 +759,7 @@ test('paused execution must replan changed scope before resume without replacing
     if (phase === 'reviewing') f.ok('review', 'T1', '--agent', 'reviewer')
     f.ok('validate', 'T1', phase === 'reviewing' ? '--ok' : '--failed', '--evidence', 'Recorded the original delivery review', '--cwd', f.project)
     f.ok('note', 'T1', '--text', 'Preserve the delivered implementation')
-    f.ok('block', 'T1', '--reason', 'Wait for the approved scope clarification')
+    f.ok('pause-replanning', 'T1', '--reason', 'Wait for the approved scope clarification')
     const original = f.state().tasks.T1
     Object.assign(f.plan.tasks[0], { title: 'Clarified delivery scope', touches: ['delivery.cjs'], deps: ['T2'] })
     f.writePlan()
@@ -808,7 +808,7 @@ test('changed global scope cannot bypass planning through active review or valid
   f.rejected(/scope needs current planning/, 'review', 'T1', '--agent', 'reviewer', '--force')
   f.rejected(/scope needs current planning/, 'validate', 'T1', '--ok', '--evidence', 'Old research', '--cwd', f.project)
   f.rejected(/scope needs current planning/, 'done', 'T1', '--force')
-  f.ok('block', 'T1', '--reason', 'Research the approved global scope')
+  f.ok('pause-replanning', 'T1', '--reason', 'Research the approved global scope')
   f.beginPlan('T1', 'scope-planner')
   f.finish('T1', { ...f.artifact(), scope: 'an input file cannot author engine metadata' })
   assert.notEqual(f.state().tasks.T1.taskPlan.scope, 'an input file cannot author engine metadata')

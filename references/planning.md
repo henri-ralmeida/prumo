@@ -19,21 +19,27 @@ comes first, in [discussion.md](discussion.md).
 
 ## Who plans, and with what permissions
 
-Every phase gets one planner after its discovery closes, and every approved task contract gets exactly one
-planner (see "One planner per approved task contract" in [SKILL.md](../SKILL.md)). First inspect the actual tools and permissions
-in this session to determine whether a dedicated planner can be dispatched and whether it can write to
-the indicated artifact directory. Never infer either capability from the harness name. The planner
-remains read-only for project work: it researches the phase and may write only the designated plan
-artifact for each targeted task.
+After discovery closes, every active phase target gets one assigned read-only planning worker, and every
+approved task contract gets exactly one task planner (see "One planner per approved task contract" in
+[SKILL.md](../SKILL.md)). Phase commands accept repeated `--agent <task>=<native-agent>` assignments that
+must cover every target exactly once with distinct names, or one prefix that records `<prefix>:<task>`.
+These names are persisted assignments, not native agent creation: inspect the actual tools and create the
+native agents with the exact names before dispatching only `activeTargets`; one coordinator must not stand in
+for several workers. First inspect the actual tools
+and permissions in this session to determine whether dedicated workers can be dispatched and whether they
+can write to the indicated artifact directory. Never infer either capability from the harness name. Every
+worker remains read-only for project work and may write only the designated plan artifact for its target.
 Research the current code, artifacts, dependency outputs, project rules and relevant source
 documentation first; reuse useful prior research, but verify that it still applies. Read-only
 inspection and safe research checks are allowed. The planner writes only its designated task-plan
 artifact; it does not implement the task or edit graph state. If no dedicated planner subagent is
 available, the orchestrator reports that limitation and performs the same planning locally, with
 read-only research and only the designated artifact write. This fallback does not authorize product
-implementation. Local planning writes only the designated artifact and does not invent a dispatched
-agent or consume an agent slot. Planning uses total capacity, not executor capacity or an execution
-attempt ([dispatch.md](dispatch.md#capacity)).
+implementation. Register the local planning actor using the same capacity rules; never describe it as a
+native subagent. If only one actor is available, obtain the user's choice to set the limit to 1 before
+opening a phase, so parallel identities are not invented. Active planning workers use the same shared `maxAgents` cap as discussion,
+execution and review; queued phase targets consume no slot. Legacy `maxParallel`/`maxExecutors` fields are
+metadata only ([dispatch.md](dispatch.md#capacity)).
 
 Consume the persisted discovery and do not repeat its questions. Apply PO First to research the selected
 implementation approach, impacts and verification in depth. If research reveals a new consequential
@@ -47,10 +53,11 @@ to accumulate confidence; record a real gap instead of searching indefinitely fo
 
 ## What the planner produces
 
-When planning is chosen, the planner writes `task-plan-<id>.json` for every targeted member. Never turn steps, evidence gaps,
+When planning is chosen, the active worker writes `task-plan-<id>.json` for its target. Never turn steps, evidence gaps,
 prerequisites or dependency outputs inside an explicitly selected task into separate graph tasks or
 planner assignments without explicit user approval. The engine validates the whole batch
-before recording any artifact. Each artifact is immutable and lists incomplete direct dependencies as
+before recording any final artifact. Phase planning validates the active wave, stages its accepted plans,
+opens the next queued wave and records every task plan atomically only after the final wave. Each artifact is immutable and lists incomplete direct dependencies as
 unresolved inputs. A later producer's independently reviewed validation receipt, or an explicit skip waiver,
 satisfies that input at execution time without rewriting the plan. Contract changes stale only the affected
 plan and true downstream scopes; shared phase discovery stales nonterminal plans in that phase; a marked
@@ -63,16 +70,18 @@ nonblocking planning warning. Keep `manual-inspection` visible as pending for th
 the inspection has current evidence; never infer it from a harness name.
 
 The engine hashes the validated discovery and issued receipt with canonical JSON and binds that digest to
-the planning round and final task plans. Repeating `plan-phase` while that round is active is a no-op.
-`finish-phase-planning` refuses a round whose discovery no longer matches the persisted context.
+the planning round and final task plans. Repeating `plan-phase` while that round is active preserves its
+assignments and can activate the next queued wave. `finish-phase-discussion` validates discovery only for
+the active wave, accumulates each completed wave and opens the next one. `finish-phase-planning` refuses a
+round whose discovery no longer matches the persisted context.
 
 For plans with `scopePolicy: "explicit"`, investigate `writeScope`, `touches` and `sharedResources` before proposing `writes`. For `read-only`, `writes` is empty or absent. For `files`, `writes` must fit approved prefixes; omission remains a warning, not permission to write elsewhere. `unknown` does not authorize execution: return the research for a contract change via `sync-plan`, without inventing paths. Any shared-resource writer requires dependencies; never infer independence from files alone.
 
 ## Planner prompt
 
 ```text
-You are the read-only PLANNER for the approved phase. Inspect the actual tools and write permissions available
-to you; do not infer capabilities from the harness name. Research every targeted task; do not implement them.
+You are the read-only PLANNING WORKER assigned to the active target(s) of the approved phase. Inspect the actual tools and write permissions available to you; do not infer capabilities from the harness name. Work
+only on the target IDs assigned to your exact native agent name; do not act on queued targets and do not implement them.
 Read project rules, approved objective/constraints, member contracts and known dependency outputs: <references>.
 Read the persisted phase discovery and its locked decisions: <phaseWorkflows.F2.discovery from state.json>.
 Use the available tools to inspect the current implementation/artifacts, real project rules, dependency outputs
@@ -84,7 +93,7 @@ internal process details out of comments, tests, messages and README drafts; req
 belong only in the designated task-plan contract fields.
 Preserve known decisions; propose any material contract change for the authorized global-plan workflow.
 Include `summary` in each artifact: 1–2 sentences describing the chosen approach and why it meets the expected result.
-Write ONLY task-plan-<id>.json in <absolute artifact directory> for each target: research, decisions,
+Write ONLY the exact `task-plan-<id>.json` for each active target in <absolute artifact directory>: research, decisions,
 steps, verification, open questions, writes, phaseBinding and unresolvedInputs. For every open question,
 state who decides and by when with `decideBy`: `executor` (with the proposed `answer` the executor applies),
 `user-now`, `{ "beforeTask": "<id>" }` or `{ "beforePhase": "<id>" }`. Each verification item may
@@ -116,8 +125,9 @@ Use the artifact directory and task schema given for that task, without adding p
 When the planning conversation is in Portuguese, use this equivalent planner prompt:
 
 ```text
-Você é o PLANEJADOR somente leitura da fase aprovada. Confira as ferramentas e permissões de gravação realmente
-disponíveis; não deduza capacidades pelo nome do harness. Pesquise todas as tarefas alvo sem implementá-las.
+Você é o PLANEJADOR somente leitura da fase aprovada, atuando como WORKER DE PLANEJAMENTO atribuído aos alvos ativos. Confira as ferramentas
+e permissões de gravação reais disponíveis; não deduza capacidades pelo nome do harness. Trabalhe somente nos IDs
+atribuídos ao seu nome nativo exato; não atue sobre alvos enfileirados nem implemente tarefas.
 Leia as regras do projeto, o objetivo e as restrições aprovados, os contratos das tarefas e as saídas de
 dependências conhecidas: <referências>.
 Leia a descoberta persistida da fase e suas decisões travadas: <phaseWorkflows.F2.discovery do state.json>.
@@ -130,7 +140,7 @@ Mantenha identificadores e detalhes internos do fluxo fora de comentários, test
 README; identificadores exigidos pelo planejamento pertencem somente aos campos do contrato do task-plan.
 Preserve as decisões conhecidas; proponha qualquer mudança material de contrato para o fluxo autorizado do plano global.
 Inclua `summary` em cada artefato: 1–2 frases descrevendo a abordagem escolhida e por que ela atende ao resultado esperado.
-Grave SOMENTE task-plan-<id>.json em <diretório absoluto do artefato> para cada tarefa: research, decisions,
+Grave SOMENTE o task-plan-<id>.json exato de cada alvo ativo em <diretório absoluto do artefato>: research, decisions,
 steps, verification, openQuestions, writes, phaseBinding e unresolvedInputs. Para cada pergunta em aberto,
 diga quem decide e até quando com `decideBy`: `executor` (com a resposta proposta em `answer`, que o executor
 aplica), `user-now`, `{ "beforeTask": "<id>" }` ou `{ "beforePhase": "<id>" }`. Cada item de verificação pode
@@ -167,7 +177,8 @@ can challenge an incomplete or incorrect plan against the approved objective and
 These roles reduce opportunities for error; none guarantees that models cannot make mistakes.
 
 ```bash
-node $ENGINE plan-phase F2 --agent plan-scenes  # one read-only planner for the phase
+node $ENGINE plan-phase F2 --agent T1=plan-f2-t1 --agent T2=plan-f2-t2  # exact native workers for active targets
+# A single --agent plan-f2 prefix records plan-f2:T1, plan-f2:T2, ...; queued targets wait for a slot.
 node $ENGINE finish-phase-planning F2 --plan-dir <artifact-directory>
 node $ENGINE plan-task T4 --agent <planner>     # task-scoped runs
 node $ENGINE finish-planning T4 --plan <artifact.json>

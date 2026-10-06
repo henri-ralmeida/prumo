@@ -20,6 +20,19 @@
         "items": [
           "Use natural wording for features, steps and changes when confirming the requested scope"
         ]
+      },
+      {
+        "title": "Added — Shared agent capacity",
+        "items": [
+          "Use one adjustable limit for discussion, planning, execution and review, with named phase workers and visible queues"
+        ]
+      },
+      {
+        "title": "Fixed — External blocks and live clock",
+        "items": [
+          "Keep externally blocked tasks out of every workflow until unblock, while preserving internal replanning pauses",
+          "Add simultaneous stage times in the live clock and advance current planning without checkpoints"
+        ]
       }
     ]
   },

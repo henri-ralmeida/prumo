@@ -45,16 +45,19 @@ node $ENGINE unblock T4 --confirmed-by-user                   # resuming active 
 
 ## Recording a role does not create an agent
 
-**Use a native subagent for plan-phase when one is actually available; otherwise report the limitation and follow the local, read-only planner fallback in [planning.md](planning.md). Every start still requires an actual native executor dispatch in the SAME message.**
-Dispatch ready planner agents within total capacity and ready execution agents within both caps — parallelism is
+**Use one native subagent for each active plan-phase target when available; otherwise report the limitation and follow the local, read-only planner fallback in [planning.md](planning.md). Every start still requires an actual native executor dispatch in the SAME message.**
+Dispatch ready agents of every role within the shared `maxAgents` limit — parallelism is
 the point of the graph, but inspect declared file and shared-resource conflicts before treating tasks as independent. The engine only ever sees
 the `--agent` string, so an orchestrator that runs `start` and then writes the code itself
 passes every check and leaves a state file that lies: `--agent` must name an agent that
 EXISTS. That is the one rule here the engine cannot enforce for you.
-Local planning writes only the designated artifact and does not invent a dispatched agent or consume an agent slot.
+Local planning writes only the designated artifact and follows the same registration and capacity rules.
+If only one local actor is available, obtain the user's choice to set the limit to 1 before opening a phase;
+do not register extra identities to simulate parallel agents.
 
 `review` is a subagent call too — a `review` with no reviewer behind it is the same self-report
-wearing a different label. It is not capacity-capped, so it goes out the moment work finishes.
+wearing a different label. It shares the same limit; a handoff replaces the executor in the occupied task slot.
+After a limit reduction, that replacement remains allowed so existing attempts can finish; it opens no extra slot.
 
 `start --executor <name>` is an alias for `start --agent <name>`. These commands record assignment; they
 do not spawn the agent.
@@ -142,17 +145,18 @@ including its start, pass, failure or cache reuse. A retry reruns functional che
 
 ## Capacity
 
-- **3 executors out of 4 busy agents** by default (`maxExecutors`/`maxParallel` per plan).
-  Scale both, but keep executors **strictly below the total**: that headroom is what keeps
-  review unblockable, and work finished but unverified is the worst state the graph can hold.
-- **Review is never capacity-blocked and runs in parallel.** `review` is a role handoff on a
-  slot the task already holds, so three tasks finishing together get three reviewers at once.
-  They do occupy the total cap: 1 running + 3 reviewing = 4 busy.
-- **Planning uses total capacity, not executor capacity or an execution attempt.** Planning,
-  running and reviewing together occupy `maxParallel`; prioritize ready execution and review
-  when allocating released slots. New tasks cannot bypass planning, dependencies, total capacity
-  or concurrent agent uniqueness with `--force`; the legacy executor-quota override remains.
-- **One agent, one active task**, across planning, execution and review; the engine refuses a busy `--agent`.
+- **3 agents across all roles** by default (`maxAgents` per run). Discussion, planning, execution
+  and review share this ceiling, with no hidden review reservation. Legacy separate limits remain
+  historical metadata; migration adopts 3 and records the prior settings without changing tasks.
+- **Review replaces execution in its existing slot.** It does not add a fourth agent when three
+  tasks hand off to independent reviewers. New assignments cannot bypass capacity with `--force`.
+- **Each phase target has its own recorded worker.** Register explicit `task=agent` assignments,
+  dispatch only the returned `activeTargets`, and leave `queuedTargets` undispatched. Finishing a
+  wave releases its slots; the phase closes only when all eligible targets finish.
+- **Change the live limit in the board**, or use `set-agent-limit --max N --actor <user> --confirmed-by-user`.
+  The next command uses the current limit. Lowering it lets existing work finish and refuses new
+  assignments until capacity becomes available; the engine never terminates native agents.
+- **One agent, one active task**, across all roles; the engine refuses a busy `--agent`.
   A label on two concurrent tasks records parallelism that did not happen.
 - **A FRESH reviewer per task.** One agent reviewing thirty accumulates exactly the context the
   graph exists to avoid, and stops reading with fresh eyes long before the end.
