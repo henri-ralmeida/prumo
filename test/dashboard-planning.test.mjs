@@ -11,14 +11,13 @@ const html = readFileSync(new URL('../scripts/dashboard.html', import.meta.url),
 const canonicalScript = extractDashboardScript(html)
 const releaseCatalog = JSON.parse(readFileSync(new URL('../scripts/release-notes.json', import.meta.url), 'utf8'))
 
-test('títulos dos vínculos seguem Jornada e os filtros ficam sem moldura externa', () => {
+test('títulos dos vínculos seguem Jornada e os filtros locais são removidos', () => {
   const declarations = selector => Object.fromEntries(html.match(new RegExp(selector + ' \\{([^}]+)\\}'))[1]
     .split(';').filter(part => part.includes(':')).map(part => part.trim().split(/:\s*/)))
   const journey = declarations('#pop \\.pk')
   const headings = declarations('#pop \\.relation-group h4')
   for (const property of ['font', 'color', 'letter-spacing', 'text-transform']) assert.equal(headings[property], journey[property])
-  const controls = declarations('#pop \\.relation-controls')
-  for (const property of ['border', 'background', 'padding']) assert.equal(controls[property], undefined)
+  assert.doesNotMatch(html, /relation-controls|setRelationFilter/)
 })
 
 test('agrupamentos do board distinguem pré-requisitos pendentes das tarefas que eles liberam', () => {
@@ -34,7 +33,7 @@ test('agrupamentos do board distinguem pré-requisitos pendentes das tarefas que
   ui.run("setFilter('dependencies')")
   assert.equal(ui.filterOptions.find(option => option.dataset.filterValue === 'dependencies').getAttribute('aria-pressed'), 'true')
   const before = structuredClone(state)
-  ui.run("POP = {id:'T002', pinned:true}; fillPop('T002')")
+  ui.run("POP = {id:'T002', pinned:true, relationFilter:'dependencies'}; fillPop('T002')")
   let body = ui.nodes.get('#popBody').innerHTML
   assert.match(body, /Pendências · 1/)
   assert.match(body, /Liberações · 1/)
@@ -44,14 +43,12 @@ test('agrupamentos do board distinguem pré-requisitos pendentes das tarefas que
   assert.match(body, /data-st="done"/)
   assert.match(body, /Depende de T005/)
   ui.nodes.get('#popBody').scrollTop = 100
-  ui.run("setRelationFilter('dependencies')")
+  ui.run("fillPop('T002', true)")
   assert.equal(ui.nodes.get('#popBody').scrollTop, 100)
   body = ui.nodes.get('#popBody').innerHTML
   assert.match(body, /class="relation-group dependencies"/)
-  assert.doesNotMatch(body, /class="relation-group unlocks"/)
-  ui.run("setRelationFilter('unlocks')")
-  assert.match(ui.nodes.get('#popBody').innerHTML, /class="relation-group unlocks"/)
-  ui.run("setRelationFilter('invalid'); POP = null; setRelationFilter('all')")
+  assert.match(body, /class="relation-group unlocks"/)
+  assert.doesNotMatch(body, /setRelationFilter|Todos os vínculos/)
   assert.deepEqual(state, before, 'os agrupamentos alteram apenas a visualização')
 })
 
@@ -64,7 +61,7 @@ test('grupos vazios e referências ausentes permanecem legíveis nos dois idioma
     assert.match(ui.nodes.get('#popBody').innerHTML, /T-ausente/)
     assert.ok(ui.nodes.get('#popBody').innerHTML.includes(lang === 'en' ? 'No pending tasks in this group' : 'Nenhuma tarefa pendente neste grupo'))
     assert.equal(ui.run("filterSets(STATE.tasks, 'dependencies').matches.size"), 0)
-    ui.run("POP_EXPANDED = true; setRelationFilter('all')")
+    ui.run("POP_EXPANDED = true; fillPop('T001')")
     assert.match(ui.nodes.get('#popBody').innerHTML, /relation-group/)
   }
 })
