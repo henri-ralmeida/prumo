@@ -5,6 +5,14 @@ import { releaseHistory, releaseNotes } from '../lib/release-notes.mjs'
 
 const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 
+test('atualização da 2.4.7 mostra somente as notas novas da 2.4.8', () => {
+  const history = releaseHistory(['2.4.7'], '2.4.8')
+  assert.deepEqual(history.map(release => release.version), ['2.4.8'])
+  assert.deepEqual(history[0].sections.map(section => section.title), [
+    'Added — Dashboard update notice', 'Fixed — Planning scope before execution',
+  ])
+})
+
 test('histórico ignora versões de tipos inválidos sem modificar os registros recebidos', () => {
   const invalid = [null, 42, true, ['2.3.1'], { version: '2.3.1' }, 'invalid']
   const before = structuredClone(invalid)

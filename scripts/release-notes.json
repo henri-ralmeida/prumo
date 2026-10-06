@@ -1,4 +1,21 @@
 {
+  "2.4.8": {
+    "en": [
+      {
+        "title": "Added — Dashboard update notice",
+        "items": [
+          "Check the latest stable npm version when opening the dashboard and show a localized update notice without interrupting the plan when the registry is unavailable",
+          "Open manual terminal instructions with a compact centered command, accessible copy feedback and a highlighted close button"
+        ]
+      },
+      {
+        "title": "Fixed — Planning scope before execution",
+        "items": [
+          "Keep status and dashboard queries available for planned tasks awaiting their first attempt and manual inspection, preserving dependencies, history and independent review without creating an execution attempt"
+        ]
+      }
+    ]
+  },
   "2.4.7": {
     "en": [
       {

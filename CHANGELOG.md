@@ -2,7 +2,7 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
-## Unreleased
+## 2.4.8 — 2026-10-05
 
 - Centralize o comando de atualização, ofereça cópia com confirmação acessível e destaque o botão de fechar em amarelo.
 - Preserve o escopo do planejamento antes da primeira tentativa, permitindo consultar tarefas com inspeção manual pendente sem criar execução nem alterar histórico, dependências ou revisão.
