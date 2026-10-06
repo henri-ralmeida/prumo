@@ -15,6 +15,7 @@ import { join, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readCommandMetrics } from './command-metrics.mjs'
 import { isReviewRejected } from './review-readiness.mjs'
+import { dashboardUpdate } from './dashboard-update.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ENGINE = join(HERE, 'engine.mjs')
@@ -482,6 +483,7 @@ const server = createServer((req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`)
 
   if (url.pathname === '/api/runs') return json(res, 200, listRuns())
+  if (url.pathname === '/api/update') return void dashboardUpdate(VERSION).then(result => json(res, 200, result))
   if (url.pathname === '/api/health') return json(res, 200, {
     product: 'prumo', version: VERSION, pid: process.pid, mode: GLOBAL ? 'global' : 'workspace',
     readOnly: true, host: '127.0.0.1', port: server.address().port,

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, realpathSync, cpSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { spawn, spawnSync, execFileSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import { setTimeout } from 'node:timers/promises'
@@ -12,6 +12,22 @@ import { readDashboardEvents } from '../scripts/dashboard-diagnostics.mjs'
 import { initializeLegacyPlanFixture } from './fixtures/legacy-plan-init.mjs'
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
+
+test('consulta de atualização informa a versão e não bloqueia o servidor quando o npm falha', async t => {
+  for (const latest of ['99.0.0', 'offline']) {
+    const home = dashboardHome(t, 'prumo-update-notice-')
+    const preload = pathToFileURL(join(packageRoot, 'test/fixtures/dashboard-update-registry.mjs')).href
+    const request = await startDashboard(t, join(packageRoot, 'scripts/serve.mjs'), ['--global'], {
+      ...process.env, HOME: home, USERPROFILE: home, PRUMO_HOME: join(home, 'central'),
+      PRUMO_TEST_UPDATE_RESULT: latest, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import="${preload}"`,
+    })
+    const result = await (await request('/api/update')).json()
+    const about = await (await request('/api/about')).json()
+    assert.deepEqual(result, latest === 'offline' ? { available: false }
+      : { available: true, current: about.version, latest })
+    assert.equal((await request('/api/health')).status, 200)
+  }
+})
 
 test('catálogo usa ações efetivas, prioridades e bloqueios sem alterar planos', async t => {
   const home = dashboardHome(t, 'prumo-catalog-status-')

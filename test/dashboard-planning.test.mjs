@@ -12,6 +12,46 @@ const task = (id, state = 'pending', fields = {}) => ({
   id, title: `Task ${id}`, phase: 'P1', state, deps: [], attempts: [], validations: [], notes: [], ...fields,
 })
 
+test('aviso de atualização é traduzido, abre instruções manuais e não executa comandos', async () => {
+  for (const lang of ['en', 'pt-BR']) {
+    const ui = dashboard(lang)
+    let calls = 0
+    await ui.run('checkDashboardUpdate()', { fetch: async (url, options) => {
+      calls++
+      assert.equal(url, '/api/update')
+      assert.equal(options.cache, 'no-store')
+      return { ok: true, json: async () => ({ available: true, current: '2.4.7', latest: '2.4.8' }) }
+    } })
+    assert.equal(calls, 1)
+    assert.equal(ui.nodes.get('#updateNotice').hidden, false)
+    assert.equal(ui.nodes.get('#updateVersions').textContent, lang === 'en'
+      ? 'Installed: 2.4.7 · Available: 2.4.8' : 'Instalada: 2.4.7 · Disponível: 2.4.8')
+    assert.equal(ui.run("tr('New update')"), lang === 'en' ? 'New update' : 'Nova atualização')
+    assert.equal(ui.run("tr('Run prumo update in your terminal to install the latest version.')"), lang === 'en'
+      ? 'Run prumo update in your terminal to install the latest version.' : 'Execute prumo update no terminal para instalar a versão mais recente.')
+    const dialog = ui.nodes.get('#updateDialog') ?? (ui.run("$('#updateDialog')"), ui.nodes.get('#updateDialog'))
+    let opens = 0
+    dialog.showModal = () => { opens++; dialog.open = true }
+    ui.run('openUpdateDialog(); openUpdateDialog()')
+    assert.equal(opens, 1)
+    assert.equal(calls, 1, 'abrir as instruções não inicia uma instalação')
+    for (const fetch of [
+      async () => { throw new Error('offline') },
+      async () => ({ ok: false }),
+      async () => ({ ok: true, json: async () => { throw new Error('JSON inválido') } }),
+      ...[{ available: false }, { available: true }, { available: true, current: '2.4.7' },
+        { available: true, current: 247, latest: '2.4.8' }].map(data => async () => ({ ok: true, json: async () => data })),
+    ]) {
+      await ui.run('checkDashboardUpdate()', { fetch })
+      assert.equal(ui.nodes.get('#updateNotice').hidden, true)
+    }
+  }
+  assert.match(html, /<dialog id="updateDialog" aria-labelledby="updateTitle">/)
+  assert.match(html, /<code>prumo update<\/code>/)
+  assert.match(html, /<form method="dialog">/)
+  assert.match(html, /prefers-reduced-motion: reduce\) \{ #updateNotice \{ animation: none;/)
+})
+
 test('vinculos usam o estado da tarefa referenciada sem simbolos e preservam a navegacao', () => {
   const ui = dashboard('pt-BR')
   const states = ['done', 'blocked', 'planning', 'running', 'reviewing', 'discussing', 'waiting', 'pending', 'ready', 'ready_to_plan', 'ready_for_discussion', 'ready_for_review', 'failed', 'skipped']

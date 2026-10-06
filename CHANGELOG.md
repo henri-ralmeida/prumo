@@ -2,6 +2,10 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## Unreleased
+
+- Consulte a versão estável do npm ao abrir o dashboard e exiba um aviso de nova atualização em inglês ou pt-BR, com instruções para executar `prumo update` manualmente no terminal. Falhas na consulta não interrompem o plano.
+
 ## 2.4.7 — 2026-10-05
 
 - Aguarde por até 30 segundos a prontidão de uma inicialização fria no Windows, sem aprovar um dashboard indisponível, e preserve diagnósticos de falhas da integração no CI.
