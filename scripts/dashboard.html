@@ -579,9 +579,9 @@ SOFTWARE. -->
   #updateDialog #updateCopy:hover { background: var(--card-hi); border-color: var(--dim); }
   #updateCopy svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; }
   #updateCopy:disabled { opacity: .6; cursor: wait; }
-  #updateDialog #updateCopyStatus { min-height: 36px; padding-top: 8px; font-size: 11px; color: var(--dim); }
-  #updateDialog form { display: flex; justify-content: flex-end; margin-top: 8px; }
-  #updateDialog form button { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 700; }
+  #updateDialog #updateCopyStatus { flex: 1; min-width: 0; font-size: 11px; color: var(--dim); }
+  #updateDialog form { display: flex; align-items: center; justify-content: flex-end; gap: 16px; margin-top: 16px; }
+  #updateDialog form button { flex: none; background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 700; }
   #updateDialog form button:hover { background: #f2c46a; border-color: #f2c46a; }
   @media (max-width: 420px) { #updateDialog { padding: 24px 20px; } }
 
@@ -1159,8 +1159,7 @@ SOFTWARE. -->
   <p id="updateVersions"></p>
   <p id="updateInstruction" data-i18n="Run 'prumo update' in your terminal to install the latest version.">Run 'prumo update' in your terminal to install the latest version.</p>
   <div class="update-command"><code>prumo update</code><button id="updateCopy" type="button" onclick="copyUpdateCommand()" aria-label="Copy command" data-i18n-aria="Copy command" title="Copy command" data-i18n-title="Copy command"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg></button></div>
-  <p id="updateCopyStatus" role="status" aria-live="polite"></p>
-  <form method="dialog"><button type="submit" data-i18n="Close">Close</button></form>
+  <form method="dialog"><p id="updateCopyStatus" role="status" aria-live="polite"></p><button type="submit" data-i18n="Close">Close</button></form>
 </dialog>
 <div id="guideInvitation" class="guide-invitation" role="dialog" aria-labelledby="guideInvitationTitle" aria-describedby="guideInvitationDescription" hidden>
   <strong id="guideInvitationTitle" data-i18n="Explore Prumo">Explore Prumo</strong>
