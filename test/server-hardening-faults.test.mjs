@@ -126,6 +126,7 @@ async function isolatedServer(t, { layout = 'workspace', args = [], preload = ''
   const original = fileURLToPath(new URL('../scripts/serve.mjs', import.meta.url))
   const pkg = layout === 'global' ? join(home, 'node_modules', 'prumo') : join(home, 'package')
   cpSync(dirname(original), join(pkg, 'scripts'), { recursive: true })
+  cpSync(fileURLToPath(new URL('../lib', import.meta.url)), join(pkg, 'lib'), { recursive: true })
   writeFileSync(join(pkg, 'package.json'), JSON.stringify({ type: 'module', version: '2.3.2' }))
   if (layout === 'installed') writeFileSync(join(pkg, '.prumo-install.json'), '{}')
   const importFile = join(home, 'preload.mjs')
@@ -157,6 +158,9 @@ test('API identifica pacote global e cópia instalada com execução fixada sem 
   for (const layout of ['global', 'installed']) {
     const server = await isolatedServer(t, { layout, args: ['--run', 'demo'] })
     assert.equal((await server.get('/api/about')).body.origin, layout)
+    const history = await server.get('/api/changelog')
+    assert.equal(history.status, 200)
+    assert.ok(history.body.some(release => release.version === '2.3.1'), 'o histórico publicado funciona nas cópias global e instalada, fora do checkout')
     mkdirSync(join(server.graph, 'demo'))
     const path = join(server.graph, 'demo', 'state.json'), state = JSON.stringify({ plan: { name: layout }, tasks: {}, keep: layout })
     writeFileSync(path, state)

@@ -11,6 +11,7 @@ async function fixture(t, { sync = false, damagedRoot = false, reuseIdentity = f
   const home = mkdtempSync(join(tmpdir(), 'prumo-adversarial-'))
   const pkg = join(home, 'package')
   cpSync(fileURLToPath(new URL('../scripts', import.meta.url)), join(pkg, 'scripts'), { recursive: true })
+  cpSync(fileURLToPath(new URL('../lib', import.meta.url)), join(pkg, 'lib'), { recursive: true })
   const put = (path, content) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content) }
   put(join(pkg, 'package.json'), JSON.stringify({ version: '1.0.8', type: 'module' }))
   const central = join(home, 'data')

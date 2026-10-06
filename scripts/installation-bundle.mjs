@@ -21,6 +21,7 @@ function walk(path, base = path) {
 
 export function installationBundle(lang, packageRoot = PACKAGE) {
   const files = ['README.md', 'README.pt-BR.md', 'LICENSE', ...walk(join(packageRoot, 'references')).map(path => join('references', path))]
+  files.push(join('lib', 'release-notes.mjs'), join('scripts', 'release-notes.json'))
   // Dependencies first, entrypoints next, discovery last. Live clients need no restart to finish their current work.
   for (const name of ['messages.json', 'region.mjs', 'i18n.mjs', 'storage.mjs', 'atomic-state.mjs', 'task-scope.mjs', 'validation.mjs', 'execution-readiness.mjs', 'contract-drift.mjs', 'sync-plan-audit.mjs', 'task-identifiers.mjs', 'dashboard-diagnostics.mjs', 'dashboard-update.mjs', 'dashboard.html', 'installation-bundle.mjs', 'engine-args.mjs', 'command-metrics.mjs', 'review-readiness.mjs', 'engine.mjs', 'serve-args.mjs', 'serve.mjs']) files.push(join('scripts', name))
   files.push('SKILL.md')

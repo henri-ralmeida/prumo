@@ -199,6 +199,10 @@ test('motor instalado inclui as dependências e executa comandos fora do checkou
   const installed = applyInstall(planned)
   assert.ok(installed.groups.every(g => g.status !== 'conflict'), JSON.stringify(installed.groups))
   const installedEngine = join(f.home, '.agents/skills/prumo/scripts/engine.mjs')
+  const installedRoot = dirname(dirname(installedEngine))
+  for (const name of ['lib/release-notes.mjs', 'scripts/release-notes.json']) {
+    assert.equal(readFileSync(join(installedRoot, name), 'utf8'), readFileSync(join(source, name), 'utf8'), 'a skill instalada preserva o histórico de versões necessário ao dashboard')
+  }
   const r = f.run(installedEngine, 'runs'); assert.equal(r.status, 0, r.output); assert.match(r.output, /no runs/)
   const dashboard = join(dirname(installedEngine), 'serve.mjs')
   const rejected = f.run(dashboard, '--global', '--dry-run')
