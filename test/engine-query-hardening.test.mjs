@@ -119,6 +119,7 @@ test('status distingue origem sem metadados, identidade incompleta e instalaçã
   assert.match(incomplete.output, /content identifier unavailable/)
   for (const name of ['README.md', 'README.pt-BR.md', 'LICENSE', 'SKILL.md']) cpSync(join(pkg, name), join(f.packageRoot, name))
   cpSync(join(pkg, 'references'), join(f.packageRoot, 'references'), { recursive: true })
+  cpSync(join(pkg, 'lib'), join(f.packageRoot, 'lib'), { recursive: true })
   const identity = packageIdentity('pt-BR', { packageRoot: f.packageRoot })
   writeFileSync(marker, JSON.stringify({ product: 'prumo', version: '2.4.0', harness: 'codex', lang: 'pt-BR', ...identity }))
   assert.match(f.query(['status', '--verify-install']).output, /installed files match/)
