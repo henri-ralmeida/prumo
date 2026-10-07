@@ -634,7 +634,7 @@ test('seções da lateral recolhem independentemente e preservam conteúdo atual
   }
 })
 
-test('atividade explícita mantém relógios individuais e soma paralelismo no ao vivo', () => {
+test('atividade explícita mantém relógios individuais e conta paralelismo uma vez no ao vivo', () => {
   const ui = dashboard('pt-BR')
   const measured = role => ({ n: 1, startedAt: instant(90), activityTiming: 'explicit',
     activityIntervals: [{ role, startedAt: instant(90) }] })
@@ -647,7 +647,7 @@ test('atividade explícita mantém relógios individuais e soma paralelismo no a
   for (const item of Object.values(state.tasks)) {
     assert.equal(ui.run('taskClock(item, item.state)', { item }), 10000)
   }
-  assert.match(ui.nodes.get('#orch').innerHTML, />00:00:30<\/time>/)
+  assert.match(ui.nodes.get('#orch').innerHTML, />00:00:10<\/time>/)
   assert.doesNotMatch(ui.nodes.get('#parallel').innerHTML, /não aferido/)
   assert.equal(ui.run('analyse(STATE, [], true).agentTotal'), 30000)
   for (const item of Object.values(state.tasks)) {
@@ -656,10 +656,10 @@ test('atividade explícita mantém relógios individuais e soma paralelismo no a
   }
   ui.render(state)
   for (const item of Object.values(state.tasks)) assert.equal(ui.run('taskClock(item, item.state)', { item }), 5000)
-  assert.match(ui.nodes.get('#orch').innerHTML, />00:00:15<\/time>/)
+  assert.match(ui.nodes.get('#orch').innerHTML, />00:00:05<\/time>/)
 })
 
-test('três planejadores de trinta minutos somam uma hora e meia e avançam sem checkpoints', () => {
+test('três planejadores de trinta minutos contam trinta minutos e avançam um segundo', () => {
   for (const language of ['en', 'pt-BR']) {
     const ui = dashboard(language)
     ui.run('Date.now = () => current', { current: Date.parse(instant(1800)) })
@@ -668,21 +668,21 @@ test('três planejadores de trinta minutos somam uma hora e meia e avançam sem 
         { startedAt: instant(0), activityTiming: 'explicit', activityIntervals: [] },
       ] })])) }
     ui.render(state)
-    assert.match(ui.nodes.get('#orch').innerHTML, />01:30:00<\/time>/)
+    assert.match(ui.nodes.get('#orch').innerHTML, />00:30:00<\/time>/)
     assert.equal(ui.run('analyse(STATE).stageElapsed'), 5400000)
     ui.run('Date.now = () => current', { current: Date.parse(instant(1801)) })
     ui.render(state)
-    assert.match(ui.nodes.get('#orch').innerHTML, />01:30:03<\/time>/)
+    assert.match(ui.nodes.get('#orch').innerHTML, />00:30:01<\/time>/)
     for (const item of Object.values(state.tasks)) {
       item.state = 'pending'
       item.planningAttempts[0].endedAt = instant(1800)
     }
     ui.render(state)
-    assert.match(ui.nodes.get('#orch').innerHTML, />01:30:00<\/time>/)
+    assert.match(ui.nodes.get('#orch').innerHTML, />00:30:00<\/time>/)
   }
 })
 
-test('ao vivo soma discussão, planejamento, execução e revisão sem duplicar rodadas de fase', () => {
+test('ao vivo une discussão, planejamento, execução e revisão sem duplicar rodadas de fase', () => {
   const ui = dashboard()
   const state = { run: 'etapas', plan: {}, tasks: {
     T1: task('T1', 'discussing', { discussionAttempts: [{ activityTiming: 'explicit', startedAt: instant(90) }] }),
@@ -692,11 +692,94 @@ test('ao vivo soma discussão, planejamento, execução e revisão sem duplicar 
   } }
   ui.render(state)
   assert.equal(ui.run('analyse(STATE).stageElapsed'), 50000)
-  assert.match(ui.nodes.get('#orch').innerHTML, />00:00:50<\/time>/)
+  assert.match(ui.nodes.get('#orch').innerHTML, />00:00:20<\/time>/)
   state.tasks = Object.fromEntries(['T1', 'T2', 'T3'].map(id => [id, task(id, 'pending', { phase: 'F1' })]))
   state.phaseWorkflows = { F1: { state: 'planning', planningAttempts: [{ activityTiming: 'explicit', startedAt: instant(90), targets: ['T1', 'T2', 'T3'] }] } }
   ui.render(state)
   assert.equal(ui.run('analyse(STATE).stageElapsed'), 10000, 'uma rodada de um planejador é contada uma vez')
+})
+
+test('ao vivo conserva início, troca de etapas e novas tentativas sem contar espera', () => {
+  const ui = dashboard()
+  const round = { startedAt: instant(0), activityTiming: 'explicit', activityIntervals: [] }
+  const state = { run: 'continuidade', plan: {}, tasks: {
+    T1: task('T1', 'planning', { planningAttempts: [round] }),
+  } }
+  const elapsed = () => ui.run('analyse(input, [], true).liveElapsed', { input: state })
+  assert.equal(elapsed(), 100000)
+  round.activityIntervals.push({ role: 'planning', startedAt: instant(30) })
+  assert.equal(elapsed(), 100000, 'o primeiro checkpoint não apaga os trinta segundos anteriores')
+  round.activityIntervals[0].endedAt = instant(40)
+  assert.equal(elapsed(), 40000, 'uma pausa explícita não cresce durante a espera')
+  round.activityIntervals.push({ role: 'planning', startedAt: instant(60), endedAt: instant(70) })
+  round.endedAt = instant(70)
+  state.tasks.T1.state = 'running'
+  state.tasks.T1.attempts.push({ startedAt: instant(80), activityTiming: 'explicit' })
+  assert.equal(elapsed(), 70000, 'a execução continua o acumulado de cinquenta segundos do planejamento')
+  state.tasks.T1.attempts[0].reviewStartedAt = instant(90)
+  state.tasks.T1.state = 'reviewing'
+  assert.equal(elapsed(), 70000, 'a passagem para revisão não reinicia nem duplica o relógio')
+  state.tasks.T1.attempts[0].endedAt = instant(95)
+  state.tasks.T1.state = 'pending'
+  assert.equal(elapsed(), 65000)
+  state.tasks.T1.state = 'running'
+  state.tasks.T1.attempts.push({ startedAt: instant(98), activityTiming: 'explicit' })
+  assert.equal(elapsed(), 67000, 'a nova tentativa conserva as etapas anteriores')
+  ui.render(state)
+  assert.match(ui.nodes.get('#orch').innerHTML, />00:01:07<\/time>/)
+  assert.equal(ui.run('eventActivityClock(analyse(STATE))(input)', { input: instant(100) }), '00:01:07')
+})
+
+test('ao vivo conserva o último quadro quando o histórico falha e retoma sem zerar', async () => {
+  const ui = dashboard()
+  const state = { run: 'rede', plan: {}, tasks: { T1: task('T1', 'planning', {
+    planningAttempts: [{ startedAt: instant(90), activityTiming: 'explicit' }],
+  }) } }
+  ui.render(state)
+  let fail = true
+  ui.run('SELECTED_ROOT = "root"; SELECTED_RUN = "rede"; fetch = inputFetch', { inputFetch: async input => {
+    const path = new URL(String(input), 'http://localhost').pathname
+    if (path === '/api/runs') return { ok: true, json: async () => ({ currentRoot: 'root', current: 'rede', runs: [] }) }
+    if (path === '/api/state') return { ok: true, json: async () => state }
+    if (fail) throw new Error('Falha temporária de rede')
+    return { ok: true, json: async () => ({ events: [], revision: 'rede', next: 0, total: 0, complete: true }) }
+  } })
+  await ui.run('tick()')
+  assert.match(ui.nodes.get('#orch').innerHTML, />00:00:10<\/time>/)
+  fail = false
+  ui.run('Date.now = () => current', { current: Date.parse(instant(101)) })
+  await ui.run('tick()')
+  assert.match(ui.nodes.get('#orch').innerHTML, />00:00:11<\/time>/)
+  let refreshed = false
+  ui.run('RESULTS_OPEN = true; POP = { id: "T1" }; positionPop = () => {}; loadResults = inputRefresh', { inputRefresh: () => { refreshed = true } })
+  await ui.run('tick()')
+  assert.equal(refreshed, true, 'o histórico recuperado atualiza os resultados abertos')
+  const lastPaint = ui.nodes.get('#orch').innerHTML
+  ui.run('syncEventHistory = async () => { TICK_GENERATION++; return true }; Date.now = () => current', {
+    current: Date.parse(instant(150)),
+  })
+  await ui.run('tick()')
+  assert.equal(ui.nodes.get('#orch').innerHTML, lastPaint, 'uma troca de plano ao concluir a leitura não repinta o relógio anterior')
+  ui.run('fetch = async () => { throw new Error("Servidor indisponível") }')
+  await ui.run('tick()')
+  assert.equal(ui.nodes.get('#orch').innerHTML, lastPaint, 'a indisponibilidade do servidor conserva o tempo exibido')
+})
+
+test('períodos do ao vivo respeitam pausas e recusam horários ausentes ou inválidos', () => {
+  const ui = dashboard()
+  const ranges = (round, role = 'planning', active = true, pauses = []) =>
+    JSON.parse(ui.run('JSON.stringify(liveStageSegments(input, role, active, Date.now(), pauses))', { input: round, role, active, pauses }))
+  for (const round of [undefined, {}, { activityTiming: 'legacy' },
+    { activityTiming: 'explicit' }, { activityTiming: 'explicit', startedAt: 'invalid' },
+    { activityTiming: 'explicit', startedAt: instant(110) },
+    { activityTiming: 'explicit', startedAt: instant(0), activityIntervals: [{ role: 'planning' }] }])
+    assert.deepEqual(ranges(round), [])
+  const round = { activityTiming: 'explicit', startedAt: instant(0), endedAt: instant(100) }
+  const paused = ranges(round, 'planning', false, [[Date.parse(instant(10)), Date.parse(instant(90))]])
+  assert.deepEqual(paused, [[Date.parse(instant(0)), Date.parse(instant(10))], [Date.parse(instant(90)), Date.parse(instant(100))]])
+  assert.deepEqual(ranges({ activityTiming: 'explicit', startedAt: instant(0) }, 'execution', false), [])
+  assert.deepEqual(ranges({ activityTiming: 'explicit', startedAt: instant(0), activityIntervals: [{ role: 'execution', startedAt: instant(10), endedAt: 'invalid' }] }, 'execution'),
+    [[Date.parse(instant(0)), Date.parse(instant(10))]])
 })
 
 test('relógio das etapas exclui pausas, espera, horários inválidos e registros incompletos', () => {
@@ -802,21 +885,21 @@ test('horário dos eventos acompanha atividade medida e preserva a data completa
   for (const language of ['en', 'pt-BR']) {
     const ui = dashboard(language)
     const createdAt = '2026-10-01T23:59:00Z'
-    const timing = { per: [{ spans: [['exec', Date.parse(createdAt), Date.parse('2026-10-02T00:00:00Z')],
-      ['review', Date.parse('2026-10-02T00:10:00Z'), Date.parse('2026-10-02T00:11:00Z')]] }],
-      sharedSpans: [['planning', Date.parse(createdAt), Date.parse('2026-10-02T00:00:00Z')]], unmeasuredActivity: false }
+    const timing = { liveWindows: [[Date.parse(createdAt), Date.parse('2026-10-02T00:00:00Z')],
+      [Date.parse('2026-10-02T00:10:00Z'), Date.parse('2026-10-02T00:11:00Z')],
+      [Date.parse(createdAt), Date.parse('2026-10-02T00:00:00Z')]], unmeasuredActivity: false }
     for (const [at, expected] of [
-      [createdAt, '00:00:00'], ['2026-10-01T23:59:30Z', '00:01:00'],
-      ['2026-10-02T00:00:00Z', '00:02:00'], ['2026-10-02T00:09:00Z', '00:02:00'],
-      ['2026-10-02T00:10:30Z', '00:02:30'], ['2026-10-03T03:59:10Z', '00:03:00'],
+      [createdAt, '00:00:00'], ['2026-10-01T23:59:30Z', '00:00:30'],
+      ['2026-10-02T00:00:00Z', '00:01:00'], ['2026-10-02T00:09:00Z', '00:01:00'],
+      ['2026-10-02T00:10:30Z', '00:01:30'], ['2026-10-03T03:59:10Z', '00:02:00'],
       ['2026-10-01T20:59:00-03:00', '00:00:00'], ['2026-10-01T23:58:00Z', '00:00:00'],
       ['invalid', '—'], [undefined, '—'],
     ]) assert.equal(ui.run('eventActivityClock(timing)(at)', { timing, at }), expected)
     for (const measured of [false, true]) {
-      const empty = { per: [], sharedSpans: [], unmeasuredActivity: measured }
+      const empty = { liveWindows: [], unmeasuredActivity: measured }
       assert.equal(ui.run('eventActivityClock(timing)(at)', { timing: empty, at: createdAt }), measured ? ui.run("tr('not measured')") : '00:00:00')
     }
-    assert.equal(ui.run('eventActivityClock(timing)(at)', { timing: { per: [], sharedSpans: [['exec', 0, 28 * 3600000]], unmeasuredActivity: false }, at: new Date(28 * 3600000).toISOString() }), '28:00:00')
+    assert.equal(ui.run('eventActivityClock(timing)(at)', { timing: { liveWindows: [[0, 28 * 3600000]], unmeasuredActivity: false }, at: new Date(28 * 3600000).toISOString() }), '28:00:00')
     assert.equal(ui.run('fmtEventDate(at)', { at: 'invalid' }), '—')
     const at = '2026-10-02T00:14:32Z'
     const fullDate = ui.run('fmtEventDate(at)', { at })

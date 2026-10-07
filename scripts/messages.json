@@ -1001,7 +1001,6 @@
   "Startup ownership verification failed: managed process not found; the dashboard on port {0} (pid {1}) is not the Prumo process managed by this installation, so it was not stopped. Stop process {2}, then run prumo dashboard enable": "Não foi possível confirmar a posse do dashboard: o processo gerenciado não foi encontrado; o dashboard na porta {0} (pid {1}) não é o processo do Prumo gerenciado por esta instalação, por isso não foi encerrado. Encerre o processo {2} e depois execute prumo dashboard enable",
   "Startup ownership verification failed: managed process not found; the dashboard on port {0} did not report a verifiable Prumo process, so it was not stopped. Stop it, then run prumo dashboard enable": "Não foi possível confirmar a posse do dashboard: o processo gerenciado não foi encontrado; o dashboard na porta {0} não informou um processo do Prumo verificável, por isso não foi encerrado. Encerre-o e depois execute prumo dashboard enable",
   "Measured time advances only when activity is recorded.": "O tempo medido avança somente quando há atividade registrada.",
-  "Accumulated time in discussion, planning, execution and review; simultaneous activities are added.": "Tempo acumulado em discussão, planejamento, execução e revisão; atividades simultâneas são somadas.",
   "No summary recorded — expand the card to read the full text.": "Sem resumo registrado — expanda o card para ler o texto completo.",
   "Task card": "Card da tarefa",
   "Click a task to open its summary. Expand the card to read the full details.": "Clique em uma tarefa para abrir seu resumo. Expanda o card para ler todos os detalhes.",
@@ -1617,5 +1616,6 @@
   "Improved — Dependencies and first-plan guidance": "Melhorado — Dependências e orientação para o primeiro plano",
   "Group pending prerequisites and dependent tasks in board filters and task details while preserving status colors": "Agrupe pré-requisitos pendentes e tarefas dependentes nos filtros do board e nos detalhes, preservando as cores de status",
   "Offer a guide-only example when no real plan exists and remove it automatically when the first plan appears": "Ofereça um exemplo exclusivo do guia quando não houver planos reais e remova-o automaticamente ao aparecer o primeiro plano",
-  "Resolved relationships": "Vínculos resolvidos"
+  "Resolved relationships": "Vínculos resolvidos",
+  "Elapsed work time in discussion, planning, execution and review; parallel activity counts once.": "Tempo de trabalho em discussão, planejamento, execução e revisão; atividades paralelas contam uma vez."
 }
