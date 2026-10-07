@@ -5,6 +5,19 @@ import { releaseHistory, releaseNotes } from '../lib/release-notes.mjs'
 
 const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 
+test('atualização da 2.5.0 explica a continuidade do relógio e o paralelismo da 2.5.1', () => {
+  const messages = JSON.parse(readFileSync(new URL('../scripts/messages.json', import.meta.url), 'utf8'))
+  const history = releaseHistory(['2.5.0'], '2.5.1')
+  assert.deepEqual(history.map(release => release.version), ['2.5.1'])
+  const sections = history[0].sections
+  assert.ok(sections.some(section => section.items.some(item => item.includes('overlapping activities once'))))
+  assert.ok(sections.some(section => section.items.some(item => item.includes('first activity checkpoint'))))
+  for (const section of sections) {
+    assert.equal(typeof messages[section.title], 'string')
+    for (const item of section.items) assert.equal(typeof messages[item], 'string')
+  }
+})
+
 test('atualização da 2.4.8 apresenta as funcionalidades da 2.5.0', () => {
   const history = releaseHistory(['2.4.8'], '2.5.0')
   assert.deepEqual(history.map(release => release.version), ['2.5.0'])

@@ -1617,5 +1617,9 @@
   "Group pending prerequisites and dependent tasks in board filters and task details while preserving status colors": "Agrupe pré-requisitos pendentes e tarefas dependentes nos filtros do board e nos detalhes, preservando as cores de status",
   "Offer a guide-only example when no real plan exists and remove it automatically when the first plan appears": "Ofereça um exemplo exclusivo do guia quando não houver planos reais e remova-o automaticamente ao aparecer o primeiro plano",
   "Resolved relationships": "Vínculos resolvidos",
-  "Elapsed work time in discussion, planning, execution and review; parallel activity counts once.": "Tempo de trabalho em discussão, planejamento, execução e revisão; atividades paralelas contam uma vez."
+  "Elapsed work time in discussion, planning, execution and review; parallel activity counts once.": "Tempo de trabalho em discussão, planejamento, execução e revisão; atividades paralelas contam uma vez.",
+  "Fixed — Continuous elapsed live clock": "Corrigido — Relógio ao vivo contínuo",
+  "Preserve elapsed work before the first activity checkpoint and across discussion, planning, execution and review": "Preserve o tempo de trabalho anterior ao primeiro checkpoint e entre discussão, planejamento, execução e revisão",
+  "Count overlapping activities once in project elapsed time while retaining individual agent metrics": "Conte atividades simultâneas uma única vez no tempo do projeto, preservando as métricas individuais dos agentes",
+  "Keep the last displayed clock during temporary history or server failures": "Mantenha o último relógio exibido durante falhas temporárias no histórico ou no servidor"
 }

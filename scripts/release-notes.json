@@ -1,4 +1,16 @@
 {
+  "2.5.1": {
+    "en": [
+      {
+        "title": "Fixed — Continuous elapsed live clock",
+        "items": [
+          "Preserve elapsed work before the first activity checkpoint and across discussion, planning, execution and review",
+          "Count overlapping activities once in project elapsed time while retaining individual agent metrics",
+          "Keep the last displayed clock during temporary history or server failures"
+        ]
+      }
+    ]
+  },
   "2.5.0": {
     "en": [
       {

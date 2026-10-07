@@ -2,6 +2,12 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.5.1 — 2026-10-07
+
+- Preserve o tempo de trabalho anterior ao primeiro checkpoint e o acumulado entre discussão, planejamento, execução e revisão, sem reiniciar o relógio ao mudar de tarefa.
+- Conte períodos paralelos uma única vez no tempo do projeto, mantendo as métricas individuais dos agentes e respeitando pausas.
+- Mantenha o último relógio exibido durante falhas temporárias na leitura do histórico ou indisponibilidade do servidor.
+
 ## 2.5.0 — 2026-10-06
 
 - Agrupe pendências e liberações nos filtros do board e nos detalhes da tarefa, preservando as cores de status; ofereça um exemplo do guia no seletor sem planos reais, removido automaticamente no primeiro plano.
