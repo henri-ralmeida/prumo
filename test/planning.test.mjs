@@ -9,6 +9,22 @@ import { fileURLToPath } from 'node:url'
 const engine = resolve(dirname(fileURLToPath(import.meta.url)), '../scripts/engine.mjs')
 const check = { kind: 'functional', run: 'node delivery.test.cjs', expect: 'Express delivery takes 1 day and normal delivery takes 3 days' }
 
+test('conversão do plano remove ordinais duplicados sem alterar subpassos ou comandos', t => {
+  const f = fixture(t)
+  f.beginPlan('T1')
+  const artifact = { ...f.artifact(), steps: ['1. Investigar', ' 2. Executar node check.cjs', '1.1 Subpasso', '3.14 medir', 'node -e "console.log(1.1)"'] }
+  const invalid = join(f.root, 'invalid-steps.json')
+  writeFileSync(invalid, JSON.stringify({ ...artifact, steps: [12] }))
+  f.rejected(/execution steps/, 'finish-planning', 'T1', '--plan', invalid)
+  f.finish('T1', artifact)
+  const task = f.state().tasks.T1
+  assert.deepEqual(task.taskPlan.steps, ['Investigar', 'Executar node check.cjs', '1.1 Subpasso', '3.14 medir', 'node -e "console.log(1.1)"'])
+  assert.deepEqual(task.planningHistory.at(-1).steps, task.taskPlan.steps)
+  assert.deepEqual(JSON.parse(readFileSync(join(f.root, 'T1-task-plan.json'), 'utf8')), artifact, 'o arquivo de origem permanece intacto')
+  f.ok('start', 'T1', '--agent', 'executor')
+  assert.equal(f.state().tasks.T1.attempts.at(-1).planDigest, task.taskPlan.digest)
+})
+
 function fixture(t, tasks = [{ id: 'T1', title: 'Delivery estimate' }], options = {}, { lang = 'en' } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'prumo-planning-'))
   t.after(() => {

@@ -805,7 +805,7 @@ test('relógio visual avança um segundo sem rede, duplicação de agentes ou re
   assert.equal(ui.nodes.get('#nodes').innerHTML, board)
   const scheduled = timers.length
   ui.render(state)
-  assert.equal(timers.length, scheduled, 'a consulta de estado não reinicia o ciclo visual')
+  assert.equal(timers.length, scheduled + 1, 'a consulta realinha um único ciclo visual ao tempo acumulado')
   for (const item of Object.values(state.tasks)) {
     item.state = 'pending'
     item.planningAttempts[0].endedAt = instant(103)
@@ -821,6 +821,67 @@ test('relógio visual avança um segundo sem rede, duplicação de agentes ou re
   assert.equal(ui.nodes.get('#agentClock').textContent, '00:00:13')
   ui.run('STATE = null; refreshLiveClock(); LIVE_CLOCK = null; refreshLiveClock()')
   assert.equal(ui.run('LIVE_CLOCK_TIMER'), null)
+})
+
+test('consulta de um segundo e meio não acelera relógio iniciado fora da virada do segundo', () => {
+  const ui = dashboard()
+  ui.run("$('#orch'); $('#agentClock')")
+  Object.defineProperty(ui.nodes.get('#orch'), 'innerHTML', {
+    get() { return this.markup ?? '' },
+    set(markup) {
+      this.markup = markup
+      const clock = markup.match(/<time id="agentClock"[^>]*>([^<]*)<\/time>/)
+      if (clock) ui.nodes.get('#agentClock').textContent = clock[1]
+    },
+  })
+  const pending = new Map(), changes = []
+  let now = Date.parse(instant(100)), sequence = 0
+  ui.run('Date.now = inputNow; setTimeout = inputTimeout; clearTimeout = inputClear', {
+    inputNow: () => now,
+    inputTimeout: (callback, delay) => { const id = ++sequence; pending.set(id, { callback, at: now + delay }); return id },
+    inputClear: id => pending.delete(id),
+  })
+  const state = { run: 'ritmo', plan: {}, tasks: { T1: task('T1', 'running', {
+    attempts: [{ activityTiming: 'explicit', startedAt: new Date(now - 10800).toISOString() }],
+  }) } }
+  ui.render(state)
+  const base = now
+  const observe = () => {
+    const text = ui.nodes.get('#agentClock').textContent
+    if (changes.at(-1)?.text !== text) changes.push({ at: now - base, text })
+  }
+  observe()
+  for (let elapsed = 1; elapsed <= 5200; elapsed++) {
+    now = base + elapsed
+    for (const [id, timer] of [...pending]) if (timer.at <= now) { pending.delete(id); timer.callback() }
+    if (elapsed % 1500 === 0) ui.render(state)
+    observe()
+  }
+  assert.deepEqual(changes, [
+    { at: 0, text: '00:00:10' }, { at: 200, text: '00:00:11' },
+    { at: 1200, text: '00:00:12' }, { at: 2200, text: '00:00:13' },
+    { at: 3200, text: '00:00:14' }, { at: 4200, text: '00:00:15' },
+    { at: 5200, text: '00:00:16' },
+  ])
+  assert.equal(pending.size, 1, 'só um agendamento do relógio permanece ativo')
+  state.tasks.T1.state = 'pending'
+  state.tasks.T1.attempts[0].endedAt = new Date(base + 5100).toISOString()
+  ui.render(state)
+  assert.equal([...pending.values()][0].at - now, 1000, 'a espera não cria um ciclo rápido por causa de milissegundos restantes')
+})
+
+test('passos antigos numerados são exibidos uma vez sem reescrever o plano', () => {
+  const ui = dashboard()
+  const plan = { steps: ['1. Inspecionar', '2. Executar', '1.1 Subpasso', '3.14 medir', 'Concluir'] }
+  const before = structuredClone(plan)
+  const html = ui.run('fmtTaskPlan(input)', { input: plan })
+  assert.match(html, />1\. Inspecionar</)
+  assert.match(html, />2\. Executar</)
+  assert.match(html, />3\. 1\.1 Subpasso</)
+  assert.match(html, />4\. 3\.14 medir</)
+  assert.match(html, />5\. Concluir</)
+  assert.doesNotMatch(html, />1\. 1\.|>2\. 2\./)
+  assert.deepEqual(plan, before)
 })
 
 test('relógio das etapas exclui pausas, espera, horários inválidos e registros incompletos', () => {

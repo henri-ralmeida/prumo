@@ -1066,10 +1066,14 @@ test('finish-phase-planning reports every artifact error with its filename and a
   assert.deepEqual(Object.values(f.state().tasks).map(task => task.taskPlan), [undefined, undefined, undefined, undefined])
 
   f.writeArtifacts('F1')
-  writeFileSync(files.B, `\uFEFF${readFileSync(files.B, 'utf8')}`)
+  const numbered = JSON.parse(readFileSync(files.B, 'utf8'))
+  numbered.steps = ['1. Inspecionar contrato', '2. Conferir evidências', '1.1 Subpasso']
+  writeFileSync(files.B, `\uFEFF${JSON.stringify(numbered)}`)
   f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
   assert.equal(f.state().phaseWorkflows.F1.state, 'planned')
   assert.ok(f.state().tasks.B.taskPlan)
+  assert.deepEqual(f.state().tasks.B.taskPlan.steps, ['Inspecionar contrato', 'Conferir evidências', '1.1 Subpasso'])
+  assert.deepEqual(f.state().tasks.B.planningHistory.at(-1).steps, f.state().tasks.B.taskPlan.steps)
 })
 
 test('phase planning checks writes before batch persistence and records resource warnings', t => {

@@ -2251,6 +2251,7 @@ const phaseTaskLabel = (task) => {
 }
 
 function refreshLiveClock() {
+  clearTimeout(LIVE_CLOCK_TIMER)
   LIVE_CLOCK_TIMER = null
   if (!LIVE_CLOCK || document.hidden || !STATE || LIVE_CLOCK.key !== STATE_RUN_KEY) return
   // Só o texto do relógio muda a cada segundo; consultar o servidor continua independente.
@@ -2258,7 +2259,8 @@ function refreshLiveClock() {
   const clock = elapsed > 0 ? fmtClock(Math.floor(elapsed / 1000)) : LIVE_CLOCK.emptyLabel
   setText('#agentClock', clock)
   $('#agentClock').setAttribute('aria-label', `${tr('Agent time')}: ${clock}${LIVE_CLOCK.suffix}`)
-  LIVE_CLOCK_TIMER = setTimeout(refreshLiveClock, 1000 - Date.now() % 1000)
+  // A próxima virada pertence ao tempo acumulado, que pode começar entre dois segundos do sistema.
+  LIVE_CLOCK_TIMER = setTimeout(refreshLiveClock, LIVE_CLOCK.advancing ? 1000 - elapsed % 1000 : 1000)
 }
 
 async function tick(generation = TICK_GENERATION) {
@@ -3232,7 +3234,7 @@ function fmtTaskPlan(plan, unavailable = []) {
   const grid = [
     row('Research', plan.research?.map((r) => `${r.source} — ${r.findings}`)),
     row('Decisions', plan.decisions?.map((d) => `${d.question} → ${d.answer}`)),
-    row('Execution steps', plan.steps?.map((step, i) => `${i + 1}. ${step}`)),
+    row('Execution steps', plan.steps?.map((step, i) => new RegExp(`^\\s*${i + 1}\\.\\s+`).test(step) ? step : `${i + 1}. ${step}`)),
     row('Verification', plan.verification?.map((v) => `${v.criterion} → ${tr('check {0}', v.check)}${v.requires?.length ? ` · ${tr('Requires: {0}', v.requires.join(', '))}` : ''}`)),
   ].join('')
   return `<dt>${esc(tr('Recorded task plan'))}</dt><dd>${esc(plan.planner)} · ${fmtTime(plan.completedAt)}`
@@ -3568,7 +3570,7 @@ function render(s, events = []) {
   LIVE_CLOCK = { key: STATE_RUN_KEY, elapsed: timing.liveElapsed, at: timing.clockAt,
     advancing: activeNow && timing.liveWindows.some(([, end]) => end === timing.clockAt),
     emptyLabel: agentClock, suffix: timing.unmeasuredActivity && timing.agentTotal > 0 ? ` · ${tr('not measured')}` : '' }
-  if (LIVE_CLOCK_TIMER === null) refreshLiveClock()
+  refreshLiveClock()
 
   // side panels — logs and run state only
   const running = list.filter((t) => eff(t.id) === 'running')

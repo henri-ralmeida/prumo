@@ -139,7 +139,13 @@ function readPlanningArtifact(path) {
     throw error
   }
   if (source.charCodeAt(0) === 0xFEFF) source = source.slice(1)
-  try { return JSON.parse(source) }
+  try {
+    const plan = JSON.parse(source)
+    // O dashboard numera a lista; remova apenas o ordinal correspondente na conversão de novos planos.
+    if (Array.isArray(plan?.steps)) plan.steps = plan.steps.map((step, index) => typeof step === 'string'
+      ? step.replace(new RegExp(`^\\s*${index + 1}\\.\\s+(?=\\S)`), '') : step)
+    return plan
+  }
   catch (error) { throw new Error(tr('task plan artifact JSON is invalid: {0}', error.message)) }
 }
 
