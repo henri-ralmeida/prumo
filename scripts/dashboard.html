@@ -2816,8 +2816,8 @@ function analyse(s, events = EVENTS, historyComplete = EVENTS_COMPLETE) {
     })
 
   /* A execução permanece pausada enquanto o planejador pesquisa a mudança de escopo. Preserve os intervalos de pausa; totais agregados não descontam corretamente o planejamento sobreposto. */
-  const blocked = {}
-  const openedAt = {}
+  const blocked = Object.create(null)
+  const openedAt = Object.create(null)
   for (const e of events) {
     if (e.type === 'task_block' || (e.type === 'task_planned' && e.state === 'blocked')) openedAt[e.task] ??= at(e.at)
     else if (['task_unblock', 'task_skip', 'task_fail', 'task_done'].includes(e.type) && openedAt[e.task] != null) {
@@ -2826,7 +2826,7 @@ function analyse(s, events = EVENTS, historyComplete = EVENTS_COMPLETE) {
     }
   }
   for (const [id, t0] of Object.entries(openedAt)) (blocked[id] ??= []).push([t0, now])
-  for (const task of tasks) (blocked[task.id] ??= []).push(...runPauses)
+  if (runPauses.length) for (const task of tasks) (blocked[task.id] ??= []).push(...runPauses)
   const outside = (start, end, intervals) => activeSegments(start, end, intervals)
     .reduce((duration, [from, to]) => duration + to - from, 0)
 

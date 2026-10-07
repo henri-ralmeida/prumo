@@ -5947,3 +5947,51 @@ test('retomada do run avança duração e relógio após fechar checkpoint sem a
   assert.equal(result.recordedTiming.roles.execution.stageMs, 120000)
   assert.equal(ui.run('LIVE_CLOCK.advancing'), true)
 })
+
+test('painel preserva históricos parciais, espelhos de workers e recibos de revisores distintos', () => {
+  const ui = dashboard('pt-BR')
+  const inspect = (input, now = instant(1200)) => ui.run('recordedAgentTiming(input, [], Date.parse(now), true)', { input, now })
+  assert.equal(inspect({ runPause: { startedAt: instant(60) } }).paused, true)
+  const partial = inspect({ tasks: { legacy: { discovery: { recordedAt: instant(0) }, taskPlan: { planner: 'legacy', startedAt: instant(0), completedAt: instant(120) } }, inactive: { state: 'planned', planningAttempts: [{ startedAt: instant(0), activityIntervals: [{ role: 'planning', startedAt: instant(0) }] }] } } })
+  assert.equal(partial.roles.planning.stageMs, 120000)
+  assert.equal(partial.roles.planning.measuredMs, 0)
+  assert.equal(partial.roles.discussion.partial, true)
+  assert.equal(partial.roles.planning.partial, true)
+  const discussed = inspect({ tasks: { T1: { discovery: { recordedAt: instant(60) }, discussionAttempts: [{ agent: 'discussion', startedAt: instant(0), endedAt: instant(60), activityIntervals: [] }] } } })
+  assert.equal(discussed.roles.discussion.stageMs, 60000)
+  assert.equal(discussed.roles.discussion.measuredMs, 0)
+  assert.equal(discussed.roles.discussion.partial, false)
+  const mirrored = inspect({ tasks: { T1: { phase: 'P1', planningAttempts: [{ agent: 'mirror', startedAt: instant(0), endedAt: instant(120) }] } }, phaseWorkflows: { P1: { planningAttempts: [{ workers: { T1: { agent: 'worker', startedAt: instant(0), endedAt: instant(120) } } }] } } })
+  assert.equal(mirrored.roles.planning.durationMs, 120000)
+  assert.equal(mirrored.agents.mirror, undefined)
+  const review = { n: 1, agent: 'executor', reviewer: 'fresh', startedAt: instant(0), reviewStartedAt: instant(600), endedAt: instant(1200), reviewHistory: [{ reviewer: 'old', reviewStartedAt: instant(300), reviewEndedAt: instant(600) }], activityIntervals: [] }
+  const revised = inspect({ tasks: { T1: { state: 'done', attempts: [review], validations: [{ by: 'review', attempt: 1, agent: 'old', at: instant(600) }, { by: 'review', attempt: 1, agent: 'fresh', at: instant(900) }] } } })
+  assert.equal(revised.roles.execution.stageMs, 300000)
+  assert.equal(revised.roles.review.stageMs, 600000)
+  assert.equal(revised.agents.old.review.stageMs, 300000)
+  assert.equal(revised.agents.fresh.review.stageMs, 300000)
+  assert.equal(revised.roles.review.measuredMs, 0)
+  assert.equal(inspect({ tasks: { T1: { state: 'done', attempts: [review] } } }).roles.review.stageMs, 900000)
+})
+test('checkpoint após retomada separa duração da etapa de trabalho aferido e STOP normal congela o relógio', () => {
+  const ui = dashboard('pt-BR'), state = graphState(1, 1), value = state.tasks.T001
+  ui.run('Date.now = () => Date.parse(now)', { now: instant(240) })
+  value.state = 'running'; state.derived.T001.effective = 'running'
+  value.attempts = [{ n: 1, agent: 'executor', startedAt: instant(0), activityTiming: 'explicit', activityIntervals: [{ role: 'execution', agent: 'executor', startedAt: instant(0), endedAt: instant(60), closedBy: 'run-pause' }, { role: 'execution', agent: 'executor', startedAt: instant(180) }] }]
+  state.runPause = { reason: 'Pausa encerrada', startedAt: instant(60), endedAt: instant(120) }
+  ui.render(state)
+  let result = ui.run('analyse(STATE, [], true)')
+  assert.equal(result.liveElapsed, 180000)
+  assert.equal(result.recordedTiming.roles.execution.measuredMs, 120000)
+  assert.equal(result.recordedTiming.roles.execution.stageMs, 60000)
+  assert.equal(ui.run('LIVE_CLOCK.advancing'), true)
+  value.attempts[0].activityIntervals[1].endedAt = instant(240)
+  ui.run('Date.now = () => Date.parse(now)', { now: instant(360) })
+  ui.render(state)
+  result = ui.run('analyse(STATE, [], true)')
+  assert.equal(result.liveElapsed, 180000)
+  assert.equal(ui.run('LIVE_CLOCK.advancing'), false)
+  delete state.runPause.endedAt
+  ui.render(state)
+  assert.match(ui.nodes.get('#orch').innerHTML, /Execução pausada: Pausa encerrada<\/b>/)
+})
