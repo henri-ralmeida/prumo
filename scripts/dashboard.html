@@ -1876,6 +1876,8 @@ let SELECTED_RUN = SEARCH.get('run')
 let CURRENT_RUN = SELECTED_RUN
 let TICK_GENERATION = 0
 let TICK_TIMER = null
+let LIVE_CLOCK_TIMER = null
+let LIVE_CLOCK = null
 let LAST_TICK_PAINT = null
 const SIDEBAR_BREAKPOINT = 900
 const SIDEBAR_STORAGE_KEY = 'graphSidebarCollapsed'
@@ -2133,6 +2135,9 @@ function selectRun(value) {
   if (RESULTS_OPEN) clearResultsForPendingRun()
   closePop()
   STATE = null
+  LIVE_CLOCK = null
+  clearTimeout(LIVE_CLOCK_TIMER)
+  LIVE_CLOCK_TIMER = null
   showRunLoading(run)
   refreshOnboarding()
   clearTimeout(TICK_TIMER)
@@ -2243,6 +2248,17 @@ const phaseTaskLabel = (task) => {
     awaiting_migration: 'awaiting run migration',
     unresolved_input: 'unresolved input', unresolved_later_phase_input: 'unresolved later-phase input',
     validated_input: 'validated input', waived_input: 'waived input' })[key] ?? key) : ''
+}
+
+function refreshLiveClock() {
+  LIVE_CLOCK_TIMER = null
+  if (!LIVE_CLOCK || document.hidden || !STATE || LIVE_CLOCK.key !== STATE_RUN_KEY) return
+  // Só o texto do relógio muda a cada segundo; consultar o servidor continua independente.
+  const elapsed = LIVE_CLOCK.elapsed + (LIVE_CLOCK.advancing ? Math.max(0, Date.now() - LIVE_CLOCK.at) : 0)
+  const clock = elapsed > 0 ? fmtClock(Math.floor(elapsed / 1000)) : LIVE_CLOCK.emptyLabel
+  setText('#agentClock', clock)
+  $('#agentClock').setAttribute('aria-label', `${tr('Agent time')}: ${clock}${LIVE_CLOCK.suffix}`)
+  LIVE_CLOCK_TIMER = setTimeout(refreshLiveClock, 1000 - Date.now() % 1000)
 }
 
 async function tick(generation = TICK_GENERATION) {
@@ -2364,6 +2380,8 @@ document.addEventListener('visibilitychange', () => {
   document.querySelectorAll('svg').forEach(svg => paused ? svg.pauseAnimations?.() : svg.unpauseAnimations?.())
   if (GUIDE_DEMO) return
   clearTimeout(TICK_TIMER)
+  clearTimeout(LIVE_CLOCK_TIMER)
+  LIVE_CLOCK_TIMER = null
   const generation = ++TICK_GENERATION
   if (!document.hidden) tick(generation)
 })
@@ -2965,7 +2983,7 @@ function analyse(s, events = EVENTS, historyComplete = EVENTS_COMPLETE) {
   const taskReviewMid = taskReviews.length ? taskReviews[Math.floor((taskReviews.length - 1) / 2)] : 0
 
   return {
-    per, sharedSpans, liveWindows, liveElapsed, phasePlanning, phasePlanningByPhase, planningTotal, planningMeasured, discussionTotal, discussionMeasured: historyComplete && !discussionUnmeasured, runStart, endAt: anyLive ? now : lastEnd, execTotal, reviewTotal, agentTotal, activeElapsed, stageElapsed, unmeasuredActivity, wall,
+    per, sharedSpans, liveWindows, liveElapsed, clockAt: now, phasePlanning, phasePlanningByPhase, planningTotal, planningMeasured, discussionTotal, discussionMeasured: historyComplete && !discussionUnmeasured, runStart, endAt: anyLive ? now : lastEnd, execTotal, reviewTotal, agentTotal, activeElapsed, stageElapsed, unmeasuredActivity, wall,
     speedup: wall > 0 ? agentTotal / wall : 0,
     maxExec: s.plan.maxAgents ?? 3,
     cap: s.plan.maxAgents ?? 3,
@@ -3547,6 +3565,10 @@ function render(s, events = []) {
   orch.classList.toggle('live', !settled && activeNow)
   orch.classList.toggle('complete', settled)
   paintStable('#orch', `<span data-i18n="${clockLabel}">${esc(tr(clockLabel))}</span> · <time id="agentClock" title="${esc(tr('Elapsed work time in discussion, planning, execution and review; parallel activity counts once.'))}" aria-label="${esc(agentTimeAria)}">${esc(agentClock)}</time><span class="hb" aria-hidden="true"></span>`)
+  LIVE_CLOCK = { key: STATE_RUN_KEY, elapsed: timing.liveElapsed, at: timing.clockAt,
+    advancing: activeNow && timing.liveWindows.some(([, end]) => end === timing.clockAt),
+    emptyLabel: agentClock, suffix: timing.unmeasuredActivity && timing.agentTotal > 0 ? ` · ${tr('not measured')}` : '' }
+  if (LIVE_CLOCK_TIMER === null) refreshLiveClock()
 
   // side panels — logs and run state only
   const running = list.filter((t) => eff(t.id) === 'running')

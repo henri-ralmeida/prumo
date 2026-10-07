@@ -782,6 +782,47 @@ test('períodos do ao vivo respeitam pausas e recusam horários ausentes ou inv�
     [[Date.parse(instant(0)), Date.parse(instant(10))]])
 })
 
+test('relógio visual avança um segundo sem rede, duplicação de agentes ou repintura do board', () => {
+  const ui = dashboard('pt-BR')
+  let requests = 0
+  const timers = []
+  ui.run('fetch = inputFetch; setTimeout = inputTimeout', {
+    inputFetch: () => { requests++; throw new Error('O relógio visual não consulta a rede') },
+    inputTimeout: (callback, delay) => { timers.push({ callback, delay }); return timers.length },
+  })
+  const state = { run: 'segundos', plan: {}, tasks: Object.fromEntries(['T1', 'T2', 'T3'].map(id =>
+    [id, task(id, 'planning', { planningAttempts: [{ startedAt: instant(90), activityTiming: 'explicit' }] })])) }
+  ui.render(state)
+  const board = ui.nodes.get('#nodes').innerHTML
+  assert.equal(ui.nodes.get('#agentClock').textContent, '00:00:10')
+  assert.equal(timers.at(-1).delay, 1000)
+  for (let second = 101; second <= 103; second++) {
+    ui.run('Date.now = () => clockNow', { clockNow: Date.parse(instant(second)) })
+    timers.at(-1).callback()
+    assert.equal(ui.nodes.get('#agentClock').textContent, `00:00:${second - 90}`)
+  }
+  assert.equal(requests, 0)
+  assert.equal(ui.nodes.get('#nodes').innerHTML, board)
+  const scheduled = timers.length
+  ui.render(state)
+  assert.equal(timers.length, scheduled, 'a consulta de estado não reinicia o ciclo visual')
+  for (const item of Object.values(state.tasks)) {
+    item.state = 'pending'
+    item.planningAttempts[0].endedAt = instant(103)
+  }
+  ui.render(state)
+  ui.run('Date.now = () => clockNow', { clockNow: Date.parse(instant(120)) })
+  timers.at(-1).callback()
+  assert.equal(ui.nodes.get('#agentClock').textContent, '00:00:13', 'o relógio não avança durante espera')
+  ui.run('document.hidden = true')
+  timers.at(-1).callback()
+  assert.equal(ui.run('LIVE_CLOCK_TIMER'), null)
+  ui.run('document.hidden = false; STATE_RUN_KEY = "outro-plano"; refreshLiveClock()')
+  assert.equal(ui.nodes.get('#agentClock').textContent, '00:00:13')
+  ui.run('STATE = null; refreshLiveClock(); LIVE_CLOCK = null; refreshLiveClock()')
+  assert.equal(ui.run('LIVE_CLOCK_TIMER'), null)
+})
+
 test('relógio das etapas exclui pausas, espera, horários inválidos e registros incompletos', () => {
   const ui = dashboard()
   const round = { startedAt: instant(0), activityTiming: 'explicit', activityIntervals: [
