@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 
 let cached
 
-// Country/region preferences, not display language, browser language or IP location.
+// Usa preferências de país e região, sem inferir pelo idioma da interface, navegador ou localização do IP.
 export function regionalLanguage({ platform = process.platform, env = process.env, run = execFileSync } = {}) {
   const cacheable = platform === process.platform && env === process.env && run === execFileSync
   if (cacheable && cached) return cached
@@ -10,14 +10,14 @@ export function regionalLanguage({ platform = process.platform, env = process.en
   let brazil = false
   try {
     if (platform === 'win32') {
-      // Windows geographical-location identifier 32 is Brazil.
+      // O identificador de localização geográfica 32 do Windows corresponde ao Brasil.
       brazil = read('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '(Get-WinHomeLocation).GeoId']) === '32'
     } else if (platform === 'darwin') {
       brazil = /[-_]BR(?:[.@-]|$)/i.test(read('/usr/bin/defaults', ['read', '-g', 'AppleLocale']))
     } else if (platform === 'linux') {
       brazil = /^country_ab2="?BR"?$/im.test(read('/usr/bin/locale', ['-k', 'LC_ADDRESS']))
     }
-  } catch { /* Missing or unavailable regional settings fall back to English. */ }
+  } catch { /* Configurações regionais ausentes ou indisponíveis usam inglês como alternativa. */ }
   const lang = brazil ? 'pt-BR' : 'en'
   if (cacheable) cached = lang
   return lang

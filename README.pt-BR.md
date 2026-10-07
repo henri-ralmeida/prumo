@@ -24,9 +24,11 @@ Estas capturas vêm do guia integrado e usam um plano fictício de checkout. Abr
 
 ![Guia mostrando um card aberto com resumo, validação e vínculo de dependência](https://raw.githubusercontent.com/henri-ralmeida/prumo/main/docs/images/guide-task.jpg)
 
+O [guia de integração dos harnesses](references/harnesses.pt-BR.md) também mostra os pontos nativos de planejamento e escolha de modelo do Antigravity, OpenCode e Grok Build.
+
 ## Instalação
 
-Requer **Node.js 22 ou superior** e o ambiente escolhido. O instalador não instala Claude Code, Kiro, Codex ou `@deepseek-ai/dsh`, nem altera suas permissões de execução.
+Requer **Node.js 22 ou superior** e o ambiente escolhido. O instalador não instala Claude Code, Kiro, Codex, DeepSeek Harness, Antigravity, OpenCode ou Grok Build, nem altera suas permissões de execução.
 
 Instale a CLI, a skill Prumo, o PO First e o serviço de dashboard do usuário em uma etapa:
 
@@ -48,10 +50,13 @@ Você também pode abrir o instalador interativo, escolher um ambiente ou confer
 | Kiro | `bunx @henri-ralmeida/prumo@latest install --kiro` |
 | Codex | `bunx @henri-ralmeida/prumo@latest install --codex` |
 | DeepSeek Harness (DSH) | `bunx @henri-ralmeida/prumo@latest install --dsh` |
+| Antigravity | `bunx @henri-ralmeida/prumo@latest install --antigravity` |
+| OpenCode | `bunx @henri-ralmeida/prumo@latest install --opencode` |
+| Grok Build | `bunx @henri-ralmeida/prumo@latest install --grok` |
 | Reparar após scripts npm desabilitados | `prumo install --all` |
 | Conferir mudanças de ambientes e dashboard | `prumo install --all --dry-run` |
 
-Ele detecta ambientes por configurações reais ou comandos no `PATH` (`claude`, `kiro-cli` / `kiro`, `codex`, `dsh`). O DSH também pode ser detectado por sua estrutura global oficial sob um `DSH_HOME` não vazio, com fallback para `~/.dsh`; uma pasta `.dsh` vazia ou apenas `.dsh/AGENTS.md` dentro de um projeto não basta. Pastas vazias como `~/.claude`, `~/.kiro` e `~/.codex` também não bastam. O menu mostra somente os ambientes detectados, inicialmente todos marcados. Use as setas para navegar, Espaço para marcar/desmarcar, A para todos/nenhum, Enter para instalar ou Esc para cancelar. A instalação é por usuário e vale para seus projetos; nenhuma alteração é aplicada antes da seleção.
+Ele detecta ambientes por configurações reais ou comandos no `PATH` (`claude`, `kiro-cli` / `kiro`, `codex`, `dsh`, `agy` / `antigravity`, `opencode`, `grok`). O DSH também pode ser detectado por sua estrutura global oficial sob um `DSH_HOME` não vazio, com fallback para `~/.dsh`; Antigravity, OpenCode e Grok Build podem ser detectados pelas raízes de configuração existentes. Uma pasta `.dsh` vazia ou apenas `.dsh/AGENTS.md` dentro de um projeto não basta, e pastas de configuração vazias também não bastam. O menu mostra somente os ambientes detectados, inicialmente todos marcados. Use as setas para navegar, Espaço para marcar/desmarcar, A para todos/nenhum, Enter para instalar ou Esc para cancelar. A instalação é por usuário e vale para seus projetos; nenhuma alteração é aplicada antes da seleção.
 
 Para instalar em todos os ambientes detectados sem perguntas, inclusive em scripts:
 
@@ -66,6 +71,9 @@ bunx @henri-ralmeida/prumo@latest install --claude --lang pt-BR
 bunx @henri-ralmeida/prumo@latest install --kiro --lang pt-BR
 bunx @henri-ralmeida/prumo@latest install --codex --lang pt-BR
 bunx @henri-ralmeida/prumo@latest install --dsh --lang pt-BR
+bunx @henri-ralmeida/prumo@latest install --antigravity --lang pt-BR
+bunx @henri-ralmeida/prumo@latest install --opencode --lang pt-BR
+bunx @henri-ralmeida/prumo@latest install --grok --lang pt-BR
 ```
 
 O idioma é detectado pelo **país/região configurado no sistema operacional**: Brasil seleciona português do Brasil; outras regiões ou configuração indisponível selecionam inglês. Usa a região residencial do Windows, as preferências regionais do macOS ou a localidade de endereços do Linux, independentemente do idioma de exibição/navegador. Não usa geolocalização por IP. Para escolher explicitamente, use `--lang pt-BR` ou `--lang en`. Por exemplo:
@@ -92,6 +100,11 @@ bunx @henri-ralmeida/prumo@latest doctor --dsh --lang pt-BR
 | Kiro | `/prumo` | Steering permanente e recursos explícitos dos agentes JSON encontrados |
 | Codex | `$prumo` / seletor de skills | Bloco no arquivo global de instruções efetivamente carregado |
 | DeepSeek Harness (DSH) | `/prumo` | Skill em `<DSH_HOME>/skills/prumo` e bloco PO First gerenciado em `<DSH_HOME>/AGENTS.md` |
+| Antigravity | `/prumo` | Skill nas duas raízes globais do Antigravity e PO First gerenciado em `~/.gemini/AGENTS.md` |
+| OpenCode | `skill({ name: "prumo" })` / seletor de skills | Skill em `~/.config/opencode/skills/prumo` e PO First gerenciado em `~/.config/opencode/AGENTS.md` |
+| Grok Build | `/prumo` | Skill em `$GROK_HOME/skills/prumo` (ou `~/.grok/skills/prumo`) e PO First gerenciado no `AGENTS.md` da mesma raiz |
+
+Consulte o [guia de integração dos harnesses](references/harnesses.pt-BR.md) para as raízes distintas do IDE/CLI do Antigravity, os caminhos de descoberta do OpenCode, as regras de projeto do Grok Build, os controles nativos de planejamento e os seletores de modelo. O Prumo preserva o catálogo e os padrões de modelo do harness; escolha o modelo atual nesse ambiente depois da instalação.
 
 No DSH, `DSH_HOME` prevalece quando não está vazio; caso contrário, a raiz é `~/.dsh`. O Prumo grava somente sua skill em `<DSH_HOME>/skills/prumo` e seu bloco PO First gerenciado no `<DSH_HOME>/AGENTS.md` global; com a raiz de fallback, esses caminhos são `~/.dsh/skills/prumo` e `~/.dsh/AGENTS.md`. `install --all` e o `postinstall` global incluem DSH somente quando ele é detectado. Update e reparo reutilizam instalações Prumo detectadas ou registradas, inclusive caminhos personalizados de `DSH_HOME`, sem criar uma instalação DSH do zero.
 
@@ -149,7 +162,7 @@ bunx @henri-ralmeida/prumo@latest install --all --dry-run
 bunx @henri-ralmeida/prumo@latest install --all
 ```
 
-Omita `--all` para escolher pelas caixas de seleção, ou use `--claude`, `--kiro`, `--codex` ou `--dsh` para selecionar um diretamente. Se a instalação estiver dentro de um projeto, execute na pasta dele ou acrescente `--project "<caminho-do-projeto>"`. Essa primeira troca usa `install`; `update` só atualiza ambientes que já contêm Prumo. Depois da migração, use `/prumo` (ou `$prumo` no Codex); a skill original `/graph-foreman` permanece intacta em sua pasta separada.
+Omita `--all` para escolher pelas caixas de seleção, ou use uma opção explícita como `--claude`, `--kiro`, `--codex`, `--dsh`, `--antigravity`, `--opencode` ou `--grok`. Se a instalação estiver dentro de um projeto, execute na pasta dele ou acrescente `--project "<caminho-do-projeto>"`. Essa primeira troca usa `install`; `update` só atualiza ambientes que já contêm Prumo. Depois da migração, use a invocação de skill nativa do ambiente selecionado; a skill original `/graph-foreman` permanece intacta em sua pasta separada.
 
 Quem tem somente graph-foreman mantém a skill e os planos intactos. Prumo usa seu próprio armazenamento e não importa esses planos automaticamente. A cópia de compatibilidade ocorre somente quando uma instalação anterior do Prumo é identificada pelo marcador de produto e versão do Prumo.
 
@@ -182,7 +195,7 @@ prumo migrate --run <nome-da-run>
 
 ## Executar um plano
 
-Apresente e aprove o plano global no modo Plan/Spec do ambiente de IA. Se esse modo bloquear escrita ou despacho de agentes, saia dele depois da aprovação. Então invoque `/prumo <plano-ou-execução>` no Claude Code, Kiro ou DSH, ou `$prumo` no Codex. O motor registra despachos; quem cria agentes é o ambiente. Sem suporte a planejadores dedicados, executores ou revisores independentes, o fluxo deve informar a limitação.
+Apresente e aprove o plano global no modo nativo de planejamento do ambiente de IA. Se esse modo bloquear escrita ou despacho de agentes, saia dele depois da aprovação. Então invoque a skill instalada do Prumo (`/prumo`, `$prumo` ou o seletor/ferramenta de skills do harness) para o plano aprovado. O motor registra despachos; quem cria agentes é o ambiente. Sem suporte a planejadores dedicados, executores ou revisores independentes, o fluxo deve informar a limitação.
 
 O fluxo atual tem dois níveis de planejamento. O modo Plan/Spec global define e aprova o grafo. Cada fase então segue **discutir → planejar → executar → revisar**: primeiro o orquestrador registra a fase em discussão, pesquisa e faz ao menos uma pergunta contextual na conversa principal. Quando as áreas cinzentas relevantes estão fechadas, confira as ferramentas e permissões reais antes de planejar; nunca deduza suporte a subagentes ou gravação pelo nome do harness. Um planejador somente leitura pesquisa cada tarefa e grava somente seu artefato `task-plan-<id>.json` separado e imutável. Se não houver subagente planejador, informe essa limitação e deixe o orquestrador planejar localmente com pesquisa somente leitura. Se o planejador não puder gravar, ele retorna cada JSON completo em um bloco aberto com ```json, precedido pelo nome exato do arquivo; o orquestrador decodifica entidades HTML em valores de texto, valida e grava o artefato antes de concluir o planejamento. Planejar não implementa arquivos de produto nem edita o estado do grafo.
 
@@ -234,7 +247,7 @@ mkdir -p "$PRUMO_ROOT"
 
 Planos locais preservam o workspace original. `GRAPH_FOREMAN_HOME` localiza dados antigos para descoberta e migração; não escolhe o destino de planos novos. O armazenamento padrão é `~/.local/share/prumo`, configurável por `PRUMO_HOME`. Referências antigas em `GRAPH_ROOT`/`PRUMO_ROOT` acompanham um workspace central migrado quando o grafo antigo já não existe e o novo está presente.
 
-Claude Code, Kiro, Codex e DSH locais, executados pelo mesmo usuário, compartilham a pasta central do Prumo. Os comandos criam as pastas ausentes. O acesso depende das permissões de cada ambiente; sessões na nuvem não compartilham automaticamente os arquivos locais.
+Claude Code, Kiro, Codex, DSH, Antigravity, OpenCode e Grok Build locais, executados pelo mesmo usuário, compartilham a pasta central do Prumo. Os comandos criam as pastas ausentes. O acesso depende das permissões de cada ambiente; sessões na nuvem não compartilham automaticamente os arquivos locais.
 
 Os scripts ficam em `scripts/`, junto da skill. Resolva caminhos a partir dela. Consulte a [referência do motor](references/runtime.pt-BR.md) para comandos, contratos e estados.
 

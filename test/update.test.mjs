@@ -205,7 +205,7 @@ test('update detects installed harnesses and custom paths, preserves preferences
   assert.deepEqual(markers.map(read), before)
   const updated = run(false)
   assert.equal(updated.status, 0, updated.stdout + updated.stderr)
-  assert.match(updated.stdout, /Prumo updated successfully/)
+  assert.match(updated.stdout, /prumo updated successfully/)
   assert.match(updated.stdout, /Prumo v1\.0\.9/)
   assert.match(updated.stdout, /Fixed — Global updates and Codex skill roots/)
   assert.match(updated.stdout, new RegExp(`Prumo v${version.replaceAll('.', '\\.')}`))
@@ -233,6 +233,57 @@ test('update detects installed harnesses and custom paths, preserves preferences
   assert.throws(() => discoverInstallations({ home, cwd, env: {} }))
 })
 
+test('prévia de atualização anuncia o CLI primeiro e apenas harnesses realmente encontrados', t => {
+  const parent = realpathSync(tmpdir())
+  const home = mkdtempSync(join(parent, 'prumo-update-output-'))
+  t.after(() => {
+    assert.equal(dirname(home), parent)
+    assert.ok(home.startsWith(join(parent, 'prumo-update-output-')))
+    rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  })
+  const request = { dryRun: true, cwd: home, projects: [], updateCli: true, sourceVersion: version }
+  const env = { ...process.env, NODE_OPTIONS: absentDashboardOptions, HOME: home, USERPROFILE: home,
+    CLAUDE_CONFIG_DIR: join(home, '.claude'), KIRO_HOME: join(home, '.kiro'), CODEX_HOME: join(home, '.codex'),
+    DSH_HOME: join(home, '.dsh'), XDG_CONFIG_HOME: join(home, '.config'), OPENCODE_CONFIG_DIR: join(home, '.opencode'), GROK_HOME: join(home, '.grok'),
+    PRUMO_LANG: 'en' }
+  for (const key of Object.keys(env)) if (/^path$/i.test(key)) delete env[key]
+  env.PATH = home
+  const run = () => spawnSync(process.execPath, [join(source, 'bin', 'prumo.mjs'), '_update'], {
+    cwd: home, env: { ...env, PRUMO_UPDATE_REQUEST: JSON.stringify(request) }, encoding: 'utf8', timeout: 120000, windowsHide: true,
+  })
+  const cliOnly = run()
+  assert.equal(cliOnly.status, 0, cliOnly.stdout + cliOnly.stderr)
+  assert.match(cliOnly.stdout, /(^|\n)would update the cli(\r?\n|$)/)
+  assert.doesNotMatch(cliOnly.stdout, /(?:would )?update the harness|(?:would )?update (claude|kiro|codex|dsh|antigravity|opencode|grok)/)
+
+  for (const harness of ['codex', 'dsh']) {
+    const root = harness === 'codex' ? join(home, '.agents', 'skills') : join(home, '.dsh', 'skills')
+    put(join(root, 'prumo', '.prumo-install.json'), { product: 'prumo', harness, version })
+  }
+  const managedOnly = run()
+  assert.equal(managedOnly.status, 0, managedOnly.stdout + managedOnly.stderr)
+  assert.match(managedOnly.stdout, /would update the harness/)
+  assert.doesNotMatch(managedOnly.stdout, /would update (codex|dsh)/)
+  put(join(home, '.codex', 'config.toml'), '[model]\n')
+  put(join(home, '.dsh', 'profiles', 'headless', 'package.json'), { dsh: { profile: { bundles: [] } } })
+  const discovered = run()
+  assert.equal(discovered.status, 0, discovered.stdout + discovered.stderr)
+  const cli = discovered.stdout.indexOf('would update the cli')
+  const generic = discovered.stdout.indexOf('would update the harness')
+  const codex = discovered.stdout.indexOf('would update codex')
+  const dsh = discovered.stdout.indexOf('would update dsh')
+  assert.ok(cli >= 0 && generic >= 0 && codex >= 0 && dsh >= 0 && cli < generic && generic < codex && codex < dsh, discovered.stdout)
+  assert.doesNotMatch(discovered.stdout, /would update (claude|kiro|antigravity|opencode|grok)/)
+  env.PRUMO_LANG = 'pt-BR'
+  const portuguese = run()
+  assert.equal(portuguese.status, 0, portuguese.stdout + portuguese.stderr)
+  assert.match(portuguese.stdout, /(^|\n)atualizaria o cli(\r?\n|$)/)
+  assert.match(portuguese.stdout, /(^|\n)atualizaria o harness(\r?\n|$)/)
+  assert.match(portuguese.stdout, /(^|\n)atualizaria codex(\r?\n|$)/)
+  assert.match(portuguese.stdout, /(^|\n)atualizaria dsh(\r?\n|$)/)
+  assert.doesNotMatch(portuguese.stdout, /atualizaria (claude|kiro|antigravity|opencode|grok)/)
+})
+
 test('update recupera marcadores nulos dos quatro ambientes por meio de backups integros', t => {
   const home = mkdtempSync(join(realpathSync(tmpdir()), 'prumo-recover-update-'))
   t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
@@ -257,7 +308,7 @@ test('update recupera marcadores nulos dos quatro ambientes por meio de backups 
     encoding: 'utf8', windowsHide: true, timeout: 120000,
   })
   assert.equal(result.status, 0, result.stdout + result.stderr)
-  assert.match(result.stdout, /Prumo updated successfully/)
+  assert.match(result.stdout, /prumo updated successfully/)
   assert.match(result.stdout, /Prumo v1\.0\.9/)
   assert.doesNotMatch(result.stderr, /Invalid Prumo installation marker/)
   for (const marker of markers) assert.equal(JSON.parse(read(marker)).version, version)
@@ -323,7 +374,7 @@ test('update reports a corrupt harness marker and still updates the other instal
   })
   assert.equal(result.status, 2, result.stdout + result.stderr)
   assert.match(result.stderr, /Invalid Prumo installation marker.*claude/)
-  assert.doesNotMatch(result.stdout, /Prumo updated successfully/)
+  assert.doesNotMatch(result.stdout, /prumo updated successfully/)
   assert.match(result.stdout, /Update incomplete/)
   assert.match(result.stdout, /Prumo v1\.0\.9/)
   assert.ok(existsSync(join(home, '.local/share/prumo/update-pending.json')))

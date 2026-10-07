@@ -30,7 +30,7 @@ function fixture(t, harness = 'claude') {
   const skillRoot = harness === 'codex' ? join(home, '.agents', 'skills') : join(config, 'skills')
   function plan(extra = {}) {
     const result = planInstall({ ...options, ...extra })
-    // Fail before applying if a fixture accidentally discovers any real user installation.
+    // Falhe antes de aplicar se uma fixture descobrir acidentalmente alguma instalação real do usuário.
     for (const item of result.groups.flatMap(group => group.changes)) assert.ok(inside(home, item.file), item.file)
     return result
   }
@@ -59,6 +59,7 @@ test('dashboard root names keep the selected legacy workspace unambiguous', t =>
 
 function isolatedCli(f) {
   const env = { ...process.env, HOME: f.home, USERPROFILE: f.home, CLAUDE_CONFIG_DIR: join(f.home, '.claude'), CODEX_HOME: join(f.home, '.codex'), DSH_HOME: join(f.home, '.dsh'), PRUMO_HOME: join(f.home, 'data'), PRUMO_LANG: 'en',
+    GROK_HOME: join(f.home, '.grok'), OPENCODE_CONFIG_DIR: join(f.home, '.opencode'), XDG_CONFIG_HOME: join(f.home, '.config'),
     NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${new URL('./fixtures/dashboard-absent.mjs', import.meta.url).href}`.trim() }
   for (const key of Object.keys(env)) if (/^path$/i.test(key) || ['GRAPH_ROOT', 'PRUMO_ROOT', 'GRAPH_FOREMAN_HOME'].includes(key)) delete env[key]
   const commands = join(f.home, 'test-commands')
@@ -463,6 +464,9 @@ test('explicit install refuses each absent harness before writing anything', asy
     ['kiro', 'Kiro'],
     ['codex', 'Codex'],
     ['dsh', 'DeepSeek Harness'],
+    ['antigravity', 'Antigravity'],
+    ['opencode', 'OpenCode'],
+    ['grok', 'Grok Build'],
   ]) await t.test(`${harness} absent`, t => {
     const f = fixture(t)
     const cli = isolatedCli(f)
@@ -649,7 +653,8 @@ test('same-version CLI refresh persists new dashboard content across source remo
 
   const env = { ...process.env, HOME: home, USERPROFILE: home, PRUMO_HOME: join(home, 'data'), PRUMO_LANG: 'en',
     XDG_CONFIG_HOME: join(home, 'xdg'), npm_config_prefix: prefix, npm_config_cache: join(home, 'npm-cache'),
-    npm_config_userconfig: join(home, '.npmrc'), CLAUDE_CONFIG_DIR: join(home, '.claude'), CODEX_HOME: join(home, '.codex'), DSH_HOME: join(home, '.dsh') }
+    npm_config_userconfig: join(home, '.npmrc'), CLAUDE_CONFIG_DIR: join(home, '.claude'), CODEX_HOME: join(home, '.codex'), DSH_HOME: join(home, '.dsh'),
+    GROK_HOME: join(home, '.grok'), OPENCODE_CONFIG_DIR: join(home, '.opencode') }
   for (const key of ['PRUMO_ROOT', 'GRAPH_ROOT', 'GRAPH_FOREMAN_HOME']) delete env[key]
 
   const newContentId = packageIdentity('en', { packageRoot: checkout }).contentId
@@ -670,7 +675,7 @@ test('same-version CLI refresh persists new dashboard content across source remo
       try {
         const response = await fetch(url, { signal: AbortSignal.timeout(250) })
         if (response.ok) return response.json()
-      } catch { /* wait for the isolated server to start */ }
+      } catch { /* aguarde o servidor isolado iniciar */ }
       await setTimeout(40)
     }
     throw new Error('Isolated dashboard did not become ready')

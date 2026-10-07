@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync, mkdirSync, renameSync, rmSync, existsSync 
 import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { resolve, join, dirname } from 'node:path'
-import { planInstall, applyInstall, restoreInstall, installationStatus, discoverInstallations, detectHarnesses, reconcileDashboardInstall, readInstallationMarker, installedPoFirstLanguage, inspectInstallation } from '../lib/install.mjs'
+import { HARNESSES, planInstall, applyInstall, restoreInstall, installationStatus, discoverInstallations, detectHarnesses, reconcileDashboardInstall, readInstallationMarker, installedPoFirstLanguage, inspectInstallation } from '../lib/install.mjs'
 import { assertUpdateVersion, ensureGlobalCliContent, globalCliContentCurrent, globalCliState, launchUpdate, reconcileDashboardUpdate, updateGlobalCliFromPackage, updateRequest } from '../lib/update.mjs'
 import { releaseHistory } from '../lib/release-notes.mjs'
 import { dashboardNeedsRepair, dashboardStatus, disableDashboard, enableDashboard, readDashboardEvents, runDashboardForeground, stopDashboardForUpdate } from '../lib/autostart.mjs'
@@ -16,7 +16,12 @@ import { language, createTranslator, messages } from '../scripts/i18n.mjs'
 let t = createTranslator(messages, language())
 const print = (...parts) => console.log(...parts.map(part => t(part)))
 const color = (code, value, stream = process.stdout) => stream.isTTY && !('NO_COLOR' in process.env) ? `\x1b[${code}m${value}\x1b[0m` : value
-const harnessLabels = { claude: 'Claude Code', kiro: 'Kiro', codex: 'Codex', dsh: 'DeepSeek Harness' }
+const harnessLabels = {
+  claude: 'Claude Code', kiro: 'Kiro', codex: 'Codex', dsh: 'DeepSeek Harness',
+  antigravity: 'Antigravity', opencode: 'OpenCode', grok: 'Grok Build',
+}
+const harnessOptions = Object.fromEntries(HARNESSES.map(harness => [harness, { type: 'boolean' }]))
+const harnessFlags = HARNESSES.map(harness => `--${harness}`).join('|')
 const packageRoot = fileURLToPath(new URL('..', import.meta.url))
 
 function progressUi(enabled, stream = process.stdout) {
@@ -129,7 +134,7 @@ function registeredReports({ projects = [] } = {}) {
 try {
   if (Number(process.versions.node.split('.')[0]) < 22) throw new Error('Prumo requires Node.js 22 or newer')
   const { values, positionals } = parseArgs({ allowPositionals: true, options: {
-    claude: { type: 'boolean' }, kiro: { type: 'boolean' }, codex: { type: 'boolean' }, dsh: { type: 'boolean' }, all: { type: 'boolean' },
+    ...harnessOptions, all: { type: 'boolean' },
     lang: { type: 'string' }, 'dry-run': { type: 'boolean' }, project: { type: 'string', multiple: true },
     check: { type: 'boolean' }, run: { type: 'string' }, 'verify-install': { type: 'boolean' },
     help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'v' },
@@ -141,7 +146,7 @@ try {
   if (!values.version && !values.help && positionals.length) assertCliOptions(positionals[0], values)
   if (values.version) print(version)
   else if (values.help || positionals.length === 0) {
-    print(`Prumo ${version} — graph-foreman + PO First\n\nprumo install [--all | --claude|--kiro|--codex|--dsh] [--lang en|pt-BR] [--dry-run] [--project <path>]\nprumo update [--dry-run] [--lang en|pt-BR] [--project <path>]\nprumo status [--verify-install] [--project <path>]\nprumo migrate [--check] [--run <name>]\nprumo doctor --claude|--kiro|--codex|--dsh [--lang en|pt-BR] [--project <path>]\nprumo dashboard [enable|disable|status|logs]\nprumo restore <backup>\n`)
+    print(`Prumo ${version} — graph-foreman + PO First\n\nprumo install [--all | ${harnessFlags}] [--lang en|pt-BR] [--dry-run] [--project <path>]\nprumo update [--dry-run] [--lang en|pt-BR] [--project <path>]\nprumo status [--verify-install] [--project <path>]\nprumo migrate [--check] [--run <name>]\nprumo doctor ${harnessFlags} [--lang en|pt-BR] [--project <path>]\nprumo dashboard [enable|disable|status|logs]\nprumo restore <backup>\n`)
     print('Install opens a selection of detected environments; --all selects all without prompting')
   } else if (positionals[0] === 'status') {
     if (positionals.length !== 1) {
@@ -211,7 +216,7 @@ try {
       if (!stopped.ok) throw new Error(t('Dashboard restart failed: {0}', t(stopped.error)))
       let dashboardRestored = false
       try {
-        try { previousVersions.push(...JSON.parse(readFileSync(checkpoint, 'utf8')).fromVersions) } catch { /* no unfinished update */ }
+        try { previousVersions.push(...JSON.parse(readFileSync(checkpoint, 'utf8')).fromVersions) } catch { /* nenhuma atualização pendente */ }
         for (const entry of installed) for (const root of entry.roots) {
           previousVersions.push(readInstallationMarker(root, { harness: entry.harness }).version)
         }
@@ -222,11 +227,12 @@ try {
           renameSync(temporary, checkpoint)
         }
         const reported = new Set()
-        progress.update(10, t('Preparing Prumo update'))
+        const nativeHarnesses = new Set(detectHarnesses({ cwd: request.cwd, projects: request.projects, includeManaged: false }))
+        progress.update(10, t('preparing prumo update'))
         if (request.updateCli) {
-          if (request.dryRun) print(t('Would update global Prumo CLI to {0}', version))
+          if (request.dryRun) print(t('would update the cli'))
           else {
-            progress.update(30, t('Updating Prumo CLI'))
+            progress.update(30, t('updating the cli'))
             try {
               await updateGlobalCliFromPackage(packageRoot, { lang: request.lang ?? lang })
             } catch (error) {
@@ -235,6 +241,8 @@ try {
           }
         }
         if (!installed.length) print('No Prumo installations found; install an environment first')
+        else if (!quiet) print(t('would update the harness'))
+        else progress.update(40, t('updating the harness'))
         for (const [index, entry] of installed.entries()) {
           try {
             const variants = new Map()
@@ -251,11 +259,13 @@ try {
             const poFirstLang = request.lang ?? installedPoFirstLanguage(entry.harness, entry.config) ?? firstSavedLanguage ?? language(undefined)
             for (const [lang, roots] of variants) {
               t = createTranslator(messages, language(lang))
-              if (!quiet) print(t('Updating {0} with Prumo {1}', entry.harness, version))
-              else progress.update(45 + Math.round(45 * (index + 1) / Math.max(installed.length, 1)), t('Updating {0}', entry.harness))
+              if (nativeHarnesses.has(entry.harness)) {
+                if (!quiet) print(t('would update {0}', entry.harness))
+                else progress.update(45 + Math.round(45 * (index + 1) / Math.max(installed.length, 1)), t('updating {0}', entry.harness))
+              }
               const percent = 45 + Math.round(45 * (index + 1) / Math.max(installed.length, 1))
               runInstall({ harness: entry.harness, configRoot: entry.config, skillRoots: roots, onlyInstalled: true, cwd: request.cwd, projects: entry.projects, lang, poFirstLang }, { dryRun: request.dryRun, quiet, reported,
-                onProgress: event => progress.update(percent, t('Migrating workspace {0}', event.name)) })
+                onProgress: event => progress.update(percent, t('migrating workspace {0}', event.name)) })
             }
           } catch (error) { console.error(`[prumo] ${t(error.message)}`); process.exitCode = 2 }
         }
@@ -272,7 +282,7 @@ try {
         }
         if (quiet && !process.exitCode) {
           t = createTranslator(messages, lang)
-          progress.success(t('Prumo updated successfully'), version)
+          progress.success(t('prumo updated successfully'), version)
           printReleaseNotes(previousVersions, version)
           rmSync(checkpoint, { force: true })
         } else {
@@ -310,8 +320,8 @@ try {
   } else {
     const command = positionals[0]
     if (!['install', 'doctor'].includes(command) || positionals.length !== 1) throw new Error(t('Unknown command: {0}', positionals.join(' ')))
-    const selected = ['claude', 'kiro', 'codex', 'dsh'].filter(name => values[name])
-    if (selected.length > 1 || command === 'doctor' && selected.length !== 1) throw new Error('Choose exactly one of --claude, --kiro, --codex or --dsh')
+    const selected = HARNESSES.filter(name => values[name])
+    if (selected.length > 1 || command === 'doctor' && selected.length !== 1) throw new Error('Choose exactly one supported harness')
     if (values.all && (selected.length || command !== 'install')) throw new Error('Use --all only with install and without a harness flag')
     const options = { lang: values.lang, projects: values.project ?? [] }
     const detected = detectHarnesses(options)
@@ -320,7 +330,7 @@ try {
       throw new Error(t('{0} is not installed or configured; install or configure it before running prumo install {1}', harnessLabels[harness], `--${harness}`))
     }
     let harnesses = selected.length ? selected : detected
-    if (!harnesses.length) throw new Error('No supported environments detected; install or configure Claude Code, Kiro, Codex or DeepSeek Harness first')
+    if (!harnesses.length) throw new Error('No supported environments detected; install or configure a supported harness first')
     if (!selected.length) {
       print(t('Detected environments: {0}', harnesses.join(', ')))
       const allCurrent = command === 'install' && harnesses.every(harness => {

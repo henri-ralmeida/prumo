@@ -1420,7 +1420,7 @@ test('task-plan summaries are validated and their content digest is stable acros
   const firstDigest = initial.digest
   assert.match(firstDigest, /^[a-f0-9]{64}$/)
 
-  // A run written before plan digests existed can start; the engine fills the identity from content.
+  // Uma execução gravada antes da existência dos resumos criptográficos do plano pode iniciar; o motor preenche a identidade a partir do conteúdo.
   const legacy = f.state()
   legacy.tasks.T1.taskPlan.summary = 'A display-only summary changed after planning.'
   delete legacy.tasks.T1.taskPlan.digest

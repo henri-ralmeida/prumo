@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * Prumo — observability server. It renders state.json without writing it. Optional
- * --sync-plan delegates approved plan reconciliation to engine.mjs, the only state writer.
- * Kill it and execution is unaffected.
+ * Prumo — servidor de observabilidade. Ele renderiza state.json sem gravá-lo. Opcionalmente,
+ * --sync-plan delega a reconciliação do plano aprovado a engine.mjs, o único gravador de estado.
+ * Encerrá-lo não afeta a execução.
  *
- * Usage: node <skill>/scripts/serve.mjs [--port 4949] [--run <name>] [--sync-plan]
- * Then open http://localhost:4949
+ * Uso: node <skill>/scripts/serve.mjs [--port 4949] [--run <name>] [--sync-plan]
+ * Depois, abra http://localhost:4949
  */
 import { createServer } from 'node:http'
 import { randomUUID } from 'node:crypto'
@@ -155,8 +155,8 @@ const GRAPH_DIR = ROOT && join(ROOT, '.specs', 'graph')
 const ROOT_NAME = ROOT && basename(ROOT)
 const INDEX_ROOT = storageHome()
 
-/* The run name reaches join() as a path segment, so it is allowlisted, never trusted:
- * plain slug, no leading dot, no separators. Applies to ?run=, --run and CURRENT alike. */
+/* O nome da execução chega a join() como um segmento de caminho, então é validado por lista permitida, nunca confiável:
+ * slug simples, sem ponto inicial, sem separadores. Aplica-se igualmente a ?run=, --run e CURRENT. */
 function safeRun(name) {
   return name && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name) ? name : null
 }
@@ -184,8 +184,8 @@ function runProgress(state) {
     .find(status => effective.includes(status)) ?? null
   const activity = activityState === 'blocked' || activityState === 'failed' ? activityState : activityState ? 'working' :
     effective.filter(status => !['done', 'skipped'].includes(status)).every(status => status === 'waiting') ? 'idle' : null
-  // Complete = every task settled (done, or skipped by the user's decision) and at least one done:
-  // the same rule as the dashboard header and the gain card.
+  // Complete = todas as tarefas encerradas (done ou ignoradas por decisão do usuário) e pelo menos uma done:
+  // a mesma regra do cabeçalho do dashboard e do cartão de ganhos.
   return { taskCount: tasks.length, doneCount: done, skippedCount: skipped,
     complete: done > 0 && done + skipped === tasks.length, activity, activityState }
 }
@@ -212,7 +212,7 @@ function catalog() {
           updatedAt: state.updatedAt ?? statSync(statePath).mtime.toISOString(),
           ...runProgress(state),
         })
-      } catch { /* one damaged run must not hide the others */ }
+      } catch { /* uma execução danificada não deve ocultar as outras */ }
     }
     if (GLOBAL) {
       const currentPath = join(root.graphDir, 'CURRENT')
@@ -290,8 +290,8 @@ if (SYNC_PLAN) {
   setInterval(sync, 1000)
 }
 
-/** Same derivation the engine uses — duplicated on purpose so this stays dependency-free
- *  read-only (importing engine.mjs would run its CLI arg handling). Keep in sync. */
+/** A mesma derivação usada pelo engine — duplicada de propósito para manter isto sem dependências
+ *  e somente leitura (importar engine.mjs executaria o tratamento de argumentos da CLI). Mantenha sincronizado. */
 function phaseTargets(state, phaseId) {
   return Object.values(state.tasks).filter(task => task.phase === phaseId && !['done', 'skipped'].includes(task.state) && !isExternalBlock(task) && !task.individualPlanning &&
     usesCurrentPlanning(state, task) &&
@@ -449,7 +449,7 @@ function productVersion() {
     try {
       const metadata = JSON.parse(readFileSync(path, 'utf8'))
       if (typeof metadata.version === 'string') return metadata.version
-    } catch { /* try the next package layout */ }
+    } catch { /* tente o próximo layout de pacote */ }
   }
   return 'unknown'
 }
@@ -457,10 +457,10 @@ function productVersion() {
 const VERSION = productVersion()
 const PACKAGE_ROOT = dirname(HERE)
 
-/* Where the served files come from, decided by where the package lives — never by --global,
- * which only chooses WHICH runs are listed. A package inside node_modules is an npm install;
- * a folder with its own .git is a source checkout (commit when git answers); a copied skill
- * carries .prumo-install.json. Anything else is reported as unknown rather than guessed. */
+/* De onde vêm os arquivos servidos, decidido pelo local onde o pacote está — nunca por --global,
+ * que só escolhe QUAIS execuções são listadas. Um pacote dentro de node_modules é uma instalação npm;
+ * uma pasta com seu próprio .git é uma cópia do código-fonte (commit quando o git responder); uma skill
+ * copiada carrega .prumo-install.json. Qualquer outra coisa é informada como desconhecida, em vez de presumida. */
 function packageOrigin(root) {
   if (root.split(/[\\/]+/).includes('node_modules')) return { origin: 'global' }
   if (existsSync(join(root, '.git'))) {
@@ -470,7 +470,7 @@ function packageOrigin(root) {
         cwd: root, encoding: 'utf8', timeout: 2000, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'],
       }).trim()
       if (/^[0-9a-f]{4,40}$/i.test(out)) commit = out
-    } catch { /* git missing or not a repository: the origin still stands, without a commit */ }
+    } catch { /* git ausente ou não é um repositório: a origem ainda permanece, sem um commit */ }
     return commit ? { origin: 'repository', commit } : { origin: 'repository' }
   }
   if (existsSync(join(root, '.prumo-install.json'))) return { origin: 'installed' }
@@ -484,7 +484,7 @@ const originLabel = about => about.origin === 'global' ? tr('global package')
 const LANG = language(options.lang)
 let CONTENT_ID = null
 try { CONTENT_ID = contentId(LANG, { packageRoot: PACKAGE_ROOT }) }
-catch { /* a partial development fixture can serve runs while reporting unknown package identity */ }
+catch { /* uma estrutura parcial de desenvolvimento pode servir execuções enquanto informa uma identidade de pacote desconhecida */ }
 const diagnostic = GLOBAL ? dashboardDiagnostics({ version: VERSION, port: PORT }) : () => {}
 diagnostic('startup', { node: process.version, platform: process.platform })
 const EMPTY_STATE = { plan: { name: '', phases: [] }, tasks: {}, derived: {}, empty: true }
@@ -597,11 +597,11 @@ const server = createServer((req, res) => {
     res.writeHead(200, {
       'Content-Type': 'text/html; charset=utf-8',
       'Cache-Control': 'no-store',
-      /* Backstop for the dashboard's own escaping: state.json free text is agent-authored,
-       * and if any of it ever slipped into markup unescaped, this stops the page from
-       * reaching anything beyond its own origin — no external scripts, no cross-origin
-       * fetch (a different localhost PORT is a different origin), no remote images.
-       * 'unsafe-inline' is required: the dashboard is a single self-contained file. */
+      /* Respaldo para o próprio tratamento de escape do dashboard: o texto livre de state.json é escrito por agentes,
+       * e, se algum trecho dele escapar para a marcação sem ser escapado, isto impede a página de
+       * alcançar qualquer coisa além da própria origem — sem scripts externos, sem requisições
+       * entre origens (uma PORTA localhost diferente é uma origem diferente), sem imagens remotas.
+       * 'unsafe-inline' é necessário: o dashboard é um arquivo único autocontido. */
       'Content-Security-Policy':
         "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; " +
         "connect-src 'self'; frame-src 'self'; img-src 'self' data:; font-src data:; base-uri 'none'; form-action 'none'",
@@ -611,13 +611,13 @@ const server = createServer((req, res) => {
 
   res.writeHead(404)
   res.end(tr('not found'))
-  /* A corrupt state.json (or a mid-write read) must cost one response, never the process. */
+  /* Um state.json corrompido (ou uma leitura durante a gravação) deve custar uma resposta, nunca o processo. */
   } catch (e) {
     if (res.headersSent) res.destroy()
     else json(res, 500, { error: String(e?.message ?? e) })
   }
-/* Loopback ONLY: this is a read-only dashboard for the dev's own browser. Binding every
- * interface would expose run state to the local network for no benefit. */
+/* Somente loopback: este é um dashboard somente leitura para o navegador do desenvolvedor. Vincular todas
+ * as interfaces exporia o estado da execução à rede local sem benefício. */
 }).listen(PORT, '127.0.0.1', () => {
   diagnostic('listening', { port: server.address().port })
   let selected
@@ -637,7 +637,7 @@ const server = createServer((req, res) => {
         const about = await response.json()
         if (about?.product === 'prumo') occupant = about
       }
-    } catch { /* the port may belong to a non-HTTP or unknown process */ }
+    } catch { /* a porta pode pertencer a um processo não HTTP ou desconhecido */ }
     if (occupant) errorLog(tr('Port {0} is used by Prumo {1} ({2}; content {3}; path {4})', PORT,
       occupant.version ?? tr('unknown'), originLabel(occupant),
       occupant.contentId ?? tr('unknown'), occupant.path ?? tr('unknown')))

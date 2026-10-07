@@ -25,7 +25,8 @@ function fixture(t) {
   })
   const env = { ...process.env, HOME: home, USERPROFILE: home, PRUMO_HOME: home, PRUMO_ROOT: root,
     GRAPH_ROOT: root, GRAPH_FOREMAN_HOME: home, PRUMO_LANG: 'en', CODEX_HOME: join(home, '.codex'),
-    CLAUDE_CONFIG_DIR: join(home, '.claude'), DSH_HOME: join(home, '.dsh') }
+    CLAUDE_CONFIG_DIR: join(home, '.claude'), DSH_HOME: join(home, '.dsh'),
+    GROK_HOME: join(home, '.grok'), OPENCODE_CONFIG_DIR: join(home, '.opencode'), XDG_CONFIG_HOME: join(home, '.config') }
   const run = (script, ...args) => {
     const r = spawnSync(process.execPath, [script, ...args], { env, cwd: root, encoding: 'utf8', timeout: 20000, windowsHide: true })
     assert.ifError(r.error)

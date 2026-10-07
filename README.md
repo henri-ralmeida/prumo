@@ -24,9 +24,11 @@ These screenshots come from the built-in guide and use a fictional checkout plan
 
 ![Guide showing an open task card with its summary, validation and dependency link](https://raw.githubusercontent.com/henri-ralmeida/prumo/main/docs/images/guide-task.jpg)
 
+The built-in guide also shows the native planning and model-selection entry points for [Antigravity, OpenCode and Grok Build](references/harnesses.md).
+
 ## Install
 
-Requires **Node.js 22 or newer** and the chosen harness. The installer does not install Claude Code, Kiro, Codex or `@deepseek-ai/dsh`, or expand their execution permissions.
+Requires **Node.js 22 or newer** and the chosen harness. The installer does not install Claude Code, Kiro, Codex, DeepSeek Harness, Antigravity, OpenCode or Grok Build, or expand their execution permissions.
 
 Install the CLI, Prumo skill, PO First and the per-user dashboard service in one step:
 
@@ -48,10 +50,13 @@ You can also start the interactive installer, select a harness directly or previ
 | Kiro | `bunx @henri-ralmeida/prumo@latest install --kiro` |
 | Codex | `bunx @henri-ralmeida/prumo@latest install --codex` |
 | DeepSeek Harness (DSH) | `bunx @henri-ralmeida/prumo@latest install --dsh` |
+| Antigravity | `bunx @henri-ralmeida/prumo@latest install --antigravity` |
+| OpenCode | `bunx @henri-ralmeida/prumo@latest install --opencode` |
+| Grok Build | `bunx @henri-ralmeida/prumo@latest install --grok` |
 | Repair after disabled npm scripts | `prumo install --all` |
 | Preview harness and dashboard changes | `prumo install --all --dry-run` |
 
-It detects available environments from real configuration or commands on `PATH` (`claude`, `kiro-cli` / `kiro`, `codex`, `dsh`). DSH can also be detected from its official global structure under a nonempty `DSH_HOME`, which falls back to `~/.dsh`; an empty `.dsh` directory or a project-local `.dsh/AGENTS.md` alone is not enough. Empty `~/.claude`, `~/.kiro` and `~/.codex` directories are likewise insufficient. A checkbox menu shows only detected environments, initially all selected. Use the arrow keys to move, Space to toggle, A for all/none, Enter to install, or Esc to cancel. Installation is per user and available across projects; no changes are applied before selection.
+It detects available environments from real configuration or commands on `PATH` (`claude`, `kiro-cli` / `kiro`, `codex`, `dsh`, `agy` / `antigravity`, `opencode`, `grok`). DSH can also be detected from its official global structure under a nonempty `DSH_HOME`, which falls back to `~/.dsh`; Antigravity, OpenCode and Grok Build can be detected from their existing configuration roots. An empty `.dsh` directory or a project-local `.dsh/AGENTS.md` alone is not enough, and empty configuration directories are likewise insufficient. A checkbox menu shows only detected environments, initially all selected. Use the arrow keys to move, Space to toggle, A for all/none, Enter to install, or Esc to cancel. Installation is per user and available across projects; no changes are applied before selection.
 
 To install in every detected environment without prompting, including from scripts:
 
@@ -66,6 +71,9 @@ bunx @henri-ralmeida/prumo@latest install --claude --lang en
 bunx @henri-ralmeida/prumo@latest install --kiro --lang en
 bunx @henri-ralmeida/prumo@latest install --codex --lang en
 bunx @henri-ralmeida/prumo@latest install --dsh --lang en
+bunx @henri-ralmeida/prumo@latest install --antigravity --lang en
+bunx @henri-ralmeida/prumo@latest install --opencode --lang en
+bunx @henri-ralmeida/prumo@latest install --grok --lang en
 ```
 
 Language is detected from the **country/region configured in the operating system**: Brazil selects Brazilian Portuguese; other regions or an unavailable setting select English. This uses Windows home region, macOS regional preferences, or Linux address locale, independently of display/browser language. It does not use IP geolocation. To override it explicitly, choose `--lang en` or `--lang pt-BR`. For example:
@@ -92,6 +100,11 @@ bunx @henri-ralmeida/prumo@latest doctor --dsh --lang en
 | Kiro | `/prumo` | Always-included steering and explicit resources in discovered JSON agents |
 | Codex | `$prumo` / skill picker | Managed block in the effective global instructions file |
 | DeepSeek Harness (DSH) | `/prumo` | Skill in `<DSH_HOME>/skills/prumo` and managed PO First block in `<DSH_HOME>/AGENTS.md` |
+| Antigravity | `/prumo` | Skill in both Antigravity global roots and managed PO First in `~/.gemini/AGENTS.md` |
+| OpenCode | `skill({ name: "prumo" })` / skill picker | Skill in `~/.config/opencode/skills/prumo` and managed PO First in `~/.config/opencode/AGENTS.md` |
+| Grok Build | `/prumo` | Skill in `$GROK_HOME/skills/prumo` (or `~/.grok/skills/prumo`) and managed PO First in the same root's `AGENTS.md` |
+
+See the [harness integration guide](references/harnesses.md) for the different Antigravity IDE/CLI skill roots, OpenCode discovery paths, Grok Build project rules, native planning controls and model selectors. Prumo preserves the harness's model catalog and defaults; choose the current model in that harness after installation.
 
 For DSH, `DSH_HOME` takes precedence when it is nonempty; otherwise the root is `~/.dsh`. Prumo writes only its skill under `<DSH_HOME>/skills/prumo` and its managed PO First block in the global `<DSH_HOME>/AGENTS.md`; with the fallback root, those paths are `~/.dsh/skills/prumo` and `~/.dsh/AGENTS.md`. `install --all` and global `postinstall` include DSH only when it is detected. Update and repair reuse detected or registered Prumo installations, including custom `DSH_HOME` paths, without creating a DSH installation from scratch.
 
@@ -149,7 +162,7 @@ bunx @henri-ralmeida/prumo@latest install --all --dry-run
 bunx @henri-ralmeida/prumo@latest install --all
 ```
 
-Omit `--all` to choose with checkboxes, or use `--claude`, `--kiro`, `--codex` or `--dsh` to select one directly. For a project-local installation, run from that project or add `--project "<project-path>"`. This first switch uses `install`; `update` only refreshes environments already containing Prumo. After migration, use `/prumo` (or `$prumo` in Codex); the original `/graph-foreman` skill stays intact in its separate directory.
+Omit `--all` to choose with checkboxes, or use an explicit harness option such as `--claude`, `--kiro`, `--codex`, `--dsh`, `--antigravity`, `--opencode` or `--grok`. For a project-local installation, run from that project or add `--project "<project-path>"`. This first switch uses `install`; `update` only refreshes environments already containing Prumo. After migration, use the native skill invocation for the selected harness; the original `/graph-foreman` skill stays intact in its separate directory.
 
 A graph-foreman-only installation keeps its skill and plans intact. Prumo uses its own storage and does not automatically import those plans. Compatibility copying applies only when a previous Prumo installation is identified by its Prumo product and version marker.
 
@@ -182,7 +195,7 @@ prumo migrate --run <run-name>
 
 ## Run an approved plan
 
-Present and approve the global plan in Plan/Spec mode in your AI harness. If that mode blocks writes or agent dispatch, leave it after approval. Then invoke `/prumo <plan-or-run>` in Claude Code, Kiro or DSH, or `$prumo` in Codex. The engine records dispatches; the harness creates agents. If dedicated planners, executors or independent reviewers are unavailable, the workflow must report that limitation.
+Present and approve the global plan in the native planning mode of your AI harness. If that mode blocks writes or agent dispatch, leave it after approval. Then invoke the installed Prumo skill (`/prumo`, `$prumo` or the harness's skill picker/tool) for the approved plan. The engine records dispatches; the harness creates agents. If dedicated planners, executors or independent reviewers are unavailable, the workflow must report that limitation.
 
 The current workflow has two planning levels. Global Plan/Spec mode defines and approves the graph. Each phase then follows **discuss → plan → execute → review**: the orchestrator first records the phase as discussing, researches it and asks at least one contextual question in the principal conversation. When consequential gray areas are closed, inspect the actual tools and permissions before planning; never infer subagent or file-write capability from the harness name. A dedicated read-only planner researches each task and writes only its separate immutable `task-plan-<id>.json` artifact. If no planner subagent is available, report that limitation and let the orchestrator plan locally with read-only research. If a planner cannot write, it returns each complete JSON object in a fenced JSON block preceded by its exact filename; the orchestrator decodes HTML entities in string values, validates and writes the artifact, then finishes planning. Planning never implements product files or edits graph state.
 
@@ -234,7 +247,7 @@ New-Item -ItemType Directory -Force -Path $env:PRUMO_ROOT | Out-Null
 
 Project-local plans preserve their original workspace. `GRAPH_FOREMAN_HOME` locates legacy data for discovery and migration; it does not select the destination for new plans. The default store is `~/.local/share/prumo`, overridable with `PRUMO_HOME`. Old `GRAPH_ROOT`/`PRUMO_ROOT` references follow a migrated central workspace when its old graph is gone and the new graph exists.
 
-Local Claude Code, Kiro, Codex and DSH sessions running as the same user share the Prumo central store. These commands create missing directories. Access still depends on each harness's permissions; cloud sessions do not automatically share local files.
+Local Claude Code, Kiro, Codex, DSH, Antigravity, OpenCode and Grok Build sessions running as the same user share the Prumo central store. These commands create missing directories. Access still depends on each harness's permissions; cloud sessions do not automatically share local files.
 
 Scripts are under `scripts/` beside the installed skill. Resolve paths from that skill, not from the project directory. See the [engine reference](references/runtime.md) for commands, contracts and states.
 

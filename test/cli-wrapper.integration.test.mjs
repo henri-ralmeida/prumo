@@ -423,7 +423,7 @@ test('update informa ausência e reparo enquanto worker preserva checkpoint em f
       PRUMO_UPDATE_REQUEST: JSON.stringify(request) }, f.project)
     assert.notEqual(response.status, 0, response.output)
     assert.ok(existsSync(join(f.home, '.local/share/prumo/update-pending.json')))
-    assert.doesNotMatch(response.stdout, /Prumo updated successfully/)
+    assert.doesNotMatch(response.stdout, /prumo updated successfully/)
   }
 })
 
@@ -649,7 +649,7 @@ test('worker _update preserva o fluxo local quando updateCli está desabilitado'
     PRUMO_UPDATE_REQUEST: JSON.stringify(request),
   }, f.project)
   assert.equal(result.status, 0, result.output)
-  assert.match(result.output, /Prumo updated successfully/)
+  assert.match(result.output, /prumo updated successfully/)
   assert.equal(existsSync(join(f.home, '.local', 'share', 'prumo', 'update-pending.json')), false)
 
   const preview = runCli(f.home, ['_update'], {
@@ -682,7 +682,7 @@ test('worker _update preserva idiomas e dados ao recuperar atualização interro
     PRUMO_UPDATE_REQUEST: JSON.stringify(request),
   }, f.project)
   assert.equal(updated.status, 0, updated.output)
-  assert.match(updated.output, /Prumo updated successfully/)
+  assert.match(updated.output, /prumo updated successfully/)
   for (const [harness, lang] of [['claude', 'en'], ['kiro', 'pt-BR']]) {
     const marker = JSON.parse(readFileSync(join(f.home, `.${harness}`, 'skills', 'prumo', '.prumo-install.json'), 'utf8'))
     assert.equal(marker.lang, lang, 'a atualização mantém o idioma salvo de cada instalação')
@@ -708,7 +708,7 @@ test('worker _update mantém checkpoint e configuração conflitante para nova t
   assert.equal(failed.status, 2, failed.output)
   assert.match(failed.output, /Expected a settings object/)
   assert.match(failed.output, /Update incomplete/)
-  assert.doesNotMatch(failed.output, /Prumo updated successfully/)
+  assert.doesNotMatch(failed.output, /prumo updated successfully/)
   assert.equal(readFileSync(settings, 'utf8'), '[]\n')
   const checkpoint = JSON.parse(readFileSync(join(f.home, '.local', 'share', 'prumo', 'update-pending.json'), 'utf8'))
   assert.equal(checkpoint.toVersion, packageVersion)
@@ -723,7 +723,7 @@ test('worker _update em prévia sem instalação informa ausência sem criar che
     PRUMO_UPDATE_REQUEST: JSON.stringify({ dryRun: true, cwd: home, projects: [], updateCli: true, sourceVersion: packageVersion }),
   })
   assert.equal(result.status, 0, result.output)
-  assert.match(result.output, /Would update global Prumo CLI/)
+  assert.match(result.output, /would update the cli/)
   assert.match(result.output, /No Prumo installations found/)
   assert.equal(existsSync(join(home, '.local', 'share', 'prumo', 'update-pending.json')), false)
 })

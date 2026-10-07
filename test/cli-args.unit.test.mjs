@@ -1,14 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { assertCliOptions } from '../lib/cli-args.mjs'
+import { HARNESSES } from '../lib/install.mjs'
 
+const harnessFlags = [...HARNESSES]
 const options = {
-  install: ['claude', 'kiro', 'codex', 'dsh', 'all', 'lang', 'dry-run', 'project'],
-  doctor: ['claude', 'kiro', 'codex', 'dsh', 'lang', 'project'],
+  install: [...harnessFlags, 'all', 'lang', 'dry-run', 'project'],
+  doctor: [...harnessFlags, 'lang', 'project'],
   update: ['lang', 'dry-run', 'project'], status: ['verify-install', 'project'],
   migrate: ['check', 'run'], dashboard: [], restore: [],
 }
-const flags = ['claude', 'kiro', 'codex', 'dsh', 'all', 'lang', 'dry-run', 'project', 'check', 'run', 'verify-install']
+const flags = [...harnessFlags, 'all', 'lang', 'dry-run', 'project', 'check', 'run', 'verify-install']
 for (const [command, accepted] of Object.entries(options)) for (const flag of flags) test(`CLI ${command} ${accepted.includes(flag) ? 'aceita' : 'recusa'} --${flag}`, () => {
   const values = { [flag]: ['lang', 'run'].includes(flag) ? 'en' : flag === 'project' ? ['projeto'] : true }
   if (accepted.includes(flag)) assert.doesNotThrow(() => assertCliOptions(command, values))

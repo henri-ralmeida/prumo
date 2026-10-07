@@ -7,7 +7,7 @@ export function inside(parent, child) {
   return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
 }
 
-// Finish already-started legacy work before changing its planning lifecycle.
+// Conclua o trabalho antigo já iniciado antes de alterar seu ciclo de planejamento.
 export function legacyExecutionPending(state) {
   return !['phase', 'task'].includes(state.plan?.planningMode) && Object.values(state.tasks ?? {}).some(task =>
     !['done', 'skipped'].includes(task.state) && (task.attempts?.length || !['pending', 'failed'].includes(task.state)))
@@ -23,7 +23,7 @@ export function findRoot(env = process.env, cwd = process.cwd(), home = homedir(
   const explicit = env.PRUMO_ROOT || env.GRAPH_ROOT
   if (explicit) {
     const root = resolve(explicit)
-    // Old sessions retain GRAPH_ROOT/PRUMO_ROOT after a verified installation move.
+    // Sessões antigas conservam GRAPH_ROOT/PRUMO_ROOT após uma mudança de instalação verificada.
     const legacy = resolve(env.GRAPH_FOREMAN_HOME || join(home, '.local', 'share', 'graph-foreman'))
     const migrated = join(central, basename(root))
     if (!existsSync(join(root, '.specs', 'graph')) && dirname(root) === legacy && existsSync(join(migrated, '.specs', 'graph'))) return migrated
@@ -33,7 +33,7 @@ export function findRoot(env = process.env, cwd = process.cwd(), home = homedir(
   }
   cwd = resolve(cwd)
   if (cwd !== central && inside(central, cwd)) return join(central, relative(central, cwd).split(sep)[0])
-  // Existing project-local runs remain usable; never create new project-local state.
+  // Execuções existentes no projeto continuam utilizáveis; não crie novos estados locais no projeto.
   for (let current = cwd; ; current = dirname(current)) {
     if (existsSync(join(current, '.specs', 'graph'))) return current
     if (dirname(current) === current) break
@@ -42,8 +42,8 @@ export function findRoot(env = process.env, cwd = process.cwd(), home = homedir(
 }
 
 export function graphRoots(root, central) {
-  // The selected legacy workspace owns its existing URL name even when a central
-  // workspace has the same basename. Give the other root a stable display alias.
+  // O workspace antigo selecionado conserva o nome da URL mesmo quando um workspace central
+  // possui o mesmo nome de diretório. A outra raiz recebe um identificador de exibição estável.
   const roots = new Map([[root, { name: basename(root), path: root, graphDir: join(root, '.specs', 'graph') }]])
   const names = new Set([basename(root)])
   if (existsSync(central)) for (const entry of readdirSync(central, { withFileTypes: true })) {

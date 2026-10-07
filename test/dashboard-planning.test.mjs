@@ -2624,8 +2624,8 @@ test('Gravidade cards and agent panels show measured activity in the compact das
   assert.match(html, /#pop \.pk \{[^}]*10px[^}]*var\(--font-mono\)/)
   assert.match(html, /#pop \.lead \{ font: 400 16px\/1\.45 var\(--font-display\)/)
   assert.match(html, /#pop \.detail-head \{ display: flex; align-items: baseline; flex-wrap: nowrap/)
-  // detail design: main-column sections are Bricolage 16 titles; the side column and the Summary
-  // box keep the mono 10px label; plan labels are mono grey; attempt dots are 13px; the pill is mono
+  // Design detalhado: as seções da coluna principal têm títulos Bricolage de 16; a coluna lateral e a caixa Summary
+  // mantêm o rótulo mono de 10px; os rótulos de plano são mono cinza; os pontos de tentativa têm 13px; a pílula é mono
   assert.match(html, /#pop\.expanded \.pmain > dt \{[^}]*font: 600 16px\/1\.25 var\(--font-display\)/)
   assert.match(html, /#pop\.expanded \.pside > dt \{[^}]*font: 500 10px\/1\.4 var\(--font-mono\)[^}]*text-transform: uppercase/)
   assert.match(html, /#pop \.summary-block \.pk \{[^}]*font: 500 10px\/1\.4 var\(--font-mono\)[^}]*text-transform: uppercase/)
@@ -2776,7 +2776,7 @@ test('o seletor separa planos em andamento dos concluidos', () => {
   assert.match(options, /aria-label="em andamento: 2"[^>]*>em andamento<small>2<\/small>/, 'each group shows its count')
   assert.match(options, /aria-label="no prumo: 1"[^>]*>no prumo<small>1<\/small>/)
 
-  // selecting a group replaces the prior filter so completed plans stay out of "in progress"
+  // Selecionar um grupo substitui o filtro anterior, para que os planos concluídos fiquem fora de "in progress"
   ui.run("toggleRunFilter('complete')")
   options = ui.nodes.get('#runOptions').innerHTML
   assert.equal(pressed(options, 'progress'), 'false')
@@ -2794,13 +2794,13 @@ test('o seletor separa planos em andamento dos concluidos', () => {
   assert.ok(options.includes('data-run="root/paused"'))
   assert.equal(options.includes('data-run="root/finished"'), false)
 
-  // selecting the active group again leaves it selected
+  // Selecionar o grupo ativo novamente o mantém selecionado
   ui.run("toggleRunFilter('progress')")
   options = ui.nodes.get('#runOptions').innerHTML
   assert.equal(pressed(options, 'progress'), 'true')
   assert.equal(pressed(options, 'complete'), 'false')
 
-  // clicking a group tab reaches the same exclusive selection
+  // Clicar em uma aba de grupo alcança a mesma seleção exclusiva
   ui.dispatchElement('#runOptions', 'click', { target: { closest: selector => selector === '[data-run-filter]' ? { dataset: { runFilter: 'complete' } } : null } })
   options = ui.nodes.get('#runOptions').innerHTML
   assert.equal(pressed(options, 'progress'), 'false')
@@ -3018,14 +3018,14 @@ test('lean popover without a summary shows the notice once and never repeats the
   assert.equal((lean.match(/class="nosum"/g) ?? []).length, 1, 'a blank summary counts as absent and the notice appears once')
   assert.equal((lean.match(/No summary recorded/g) ?? []).length, 2, 'one notice: its i18n key and its text')
 
-  // with a short label in the header, the original text is new information: first 3 lines only
+  // Com um rótulo curto no cabeçalho, o texto original é uma informação nova: somente as 3 primeiras linhas
   ui.run("fillPop('L')")
   lean = ui.nodes.get('#popBody').innerHTML
   const preview = lean.match(/class="psec nosum-box">[\s\S]*?<div class="lead">([\s\S]*?)<\/div>/)?.[1] ?? ''
   assert.equal(preview, 'Linha original 1\nLinha original 2\nLinha original 3')
   assert.equal((lean.match(/class="nosum"/g) ?? []).length, 1)
 
-  // expanded/detail follows the same rule, but keeps every line
+  // O detalhamento expandido segue a mesma regra, mas mantém todas as linhas
   ui.run("POP_EXPANDED = true; fillPop('T')")
   let detail = ui.nodes.get('#popBody').innerHTML
   assert.equal((detail.match(/Task T/g) ?? []).length, 2, 'the detail header alone carries the title (text and tooltip)')
@@ -3040,7 +3040,7 @@ test('lean popover without a summary shows the notice once and never repeats the
 })
 
 test('the hub (orchestrator and roles) stays inside the viewport while the board scrolls down', () => {
-  for (const width of [1110, 30]) { // 1440 and 360 wide windows (the harness adds 330px of sidebar)
+  for (const width of [1110, 30]) { // Janelas de 1440 e 360 de largura (o teste adiciona 330px de barra lateral)
     const ui = dashboard('en', width)
     ui.render(graphState(120, 6))
     const hubTop = ui.run('HUB_TOP')
@@ -3063,7 +3063,7 @@ test('the hub (orchestrator and roles) stays inside the viewport while the board
     ui.run('VIEW.y = 0; applyView()')
     assert.equal(ui.nodes.get('#hub').style.transform, '', 'scrolling back returns it to its place')
   }
-  // the frame lines move with the hub; the base line and plumb stay with the phases
+  // As linhas da moldura se movem com o hub; a linha de base e o prumo permanecem com as fases
   const ui = dashboard('en', 1110)
   ui.render(graphState(3, 1))
   assert.match(ui.nodes.get('#hubPaths').innerHTML, /class="s-frame"/)
@@ -4988,8 +4988,8 @@ test('expandir e seguir dependencias mantem o card aberto sem duplicar a tarefa 
   ui.render({ run: 'x', plan: {}, tasks: { T: task('T'), U: task('U', 'pending', { deps: ['T'] }) },
     derived: { T: { effective: 'ready' }, U: { effective: 'waiting' } } })
   const pop = { matches: selector => selector === '#pop' }
-  // the clicked control was replaced by fillPop: it is detached, so closest() finds nothing,
-  // but the dispatch path captured before the re-render still contains #pop
+  // O controle clicado foi substituído por fillPop: está desanexado, então closest() não encontra nada,
+  // mas o caminho de despacho capturado antes da nova renderização ainda contém #pop
   const detached = path => ({ target: { closest: () => null }, composedPath: () => [{ matches: () => false }, ...path] })
 
   ui.run("POP_EXPANDED = false; openPop('T', true)")

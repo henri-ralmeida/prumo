@@ -8,36 +8,37 @@ import { spawnSync, spawn, fork } from 'node:child_process'
 import { createConnection, createServer } from 'node:net'
 import { initializeLegacyPlanFixture } from '../test/fixtures/legacy-plan-init.mjs'
 
-// Exercise an actual published updater against a local registry serving the candidate.
+// Exercite um atualizador publicado contra um registro local que fornece o pacote candidato.
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const pkg = JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8'))
 const fromVersion = process.argv[2] ?? '1.0.8'
 assert.match(fromVersion, /^\d+\.\d+\.\d+$/)
 const archive = process.argv[3] ?? join(repo, `henri-ralmeida-prumo-${fromVersion}.tgz`)
-// From 1.1.0 prose validation is accepted only for a justified inspection task.
+// Desde 1.1.0, validação em texto é aceita somente em tarefas com inspeção justificada.
 const since = version => fromVersion.split('.').map(Number).reduce((result, value, index) => result || value - version.split('.').map(Number)[index], 0) >= 0
 const phaseEra = since('1.3.0')
 const inspectionEra = since('1.1.0')
-// 1.2.x planned each task before execution; 1.2.1 added the discovery context.
+// A série 1.2.x planejava cada tarefa antes de executar; 1.2.1 acrescentou o contexto da descoberta.
 const taskEra = since('1.2.0') && !phaseEra
-// A tag-built archive can replace the repository-root candidate produced by `npm pack`.
+// Um pacote criado a partir da tag pode substituir o candidato gerado por `npm pack` na raiz do repositório.
 const candidate = process.env.PRUMO_CANDIDATE_ARCHIVE ?? join(repo, `henri-ralmeida-prumo-${pkg.version}.tgz`)
 const home = realpathSync(mkdtempSync(join(tmpdir(), 'prumo-legacy-smoke-')))
 const project = join(home, 'project'), prefix = join(home, 'npm-global')
 const installed = join(prefix, process.platform === 'win32' ? 'node_modules' : 'lib/node_modules', '@henri-ralmeida/prumo')
 const cli = join(installed, 'bin/prumo.mjs'), engine = join(installed, 'scripts/engine.mjs')
-// From 2.3.0, Prumo already owns its data namespace; an update preserves that location.
+// Desde 2.3.0, o Prumo possui seu próprio espaço de dados; a atualização preserva esse local.
 const modernNamespace = since('2.3.0')
 const oldRoot = join(home, modernNamespace ? '.local/share/prumo/legacy' : '.local/share/graph-foreman/legacy')
 const newRoot = join(home, '.local/share/prumo/legacy')
 const env = { ...process.env, HOME: home, USERPROFILE: home, APPDATA: join(home, 'AppData/Roaming'),
   LOCALAPPDATA: join(home, 'AppData/Local'), CODEX_HOME: join(home, '.codex'),
   DSH_HOME: join(home, '.dsh'), CLAUDE_CONFIG_DIR: join(home, '.claude'), PRUMO_HOME: join(home, '.local/share/prumo'),
+  GROK_HOME: join(home, '.grok'), OPENCODE_CONFIG_DIR: join(home, '.opencode'), XDG_CONFIG_HOME: join(home, '.config'),
   PRUMO_LANG: 'en', npm_config_prefix: prefix, npm_config_cache: join(home, 'npm-cache'),
   npm_config_userconfig: join(home, 'npmrc'), npm_config_fetch_retries: '0' }
 for (const key of ['PRUMO_ROOT', 'GRAPH_ROOT', 'GRAPH_FOREMAN_HOME', 'NODE_OPTIONS']) delete env[key]
-// Every process of the scenario serves and probes the fixed dashboard port on an isolated one, so the
-// old release's autostart and the updater's restart run for real without touching the user's dashboard.
+// Todos os processos do cenário redirecionam a porta fixa do dashboard para uma porta isolada; assim,
+// a inicialização da versão antiga e o reinício pelo atualizador são reais, sem afetar o dashboard do usuário.
 let dashboardPort = await freePort()
 env.PRUMO_TEST_DASHBOARD_PORT = String(dashboardPort)
 const dashboardShutdownToken = randomBytes(16).toString('hex')
@@ -61,7 +62,7 @@ async function waitForDashboard(accept, preparation = '') {
     if (body && accept(body)) return body
     if (Date.now() > deadline) {
       let events = ''
-      try { events = readFileSync(join(home, '.local/share/prumo/dashboard-events.ndjson'), 'utf8').trim().split('\n').slice(-10).join('\n') } catch { /* no events */ }
+      try { events = readFileSync(join(home, '.local/share/prumo/dashboard-events.ndjson'), 'utf8').trim().split('\n').slice(-10).join('\n') } catch { /* Nenhum evento. */ }
       throw new Error(`dashboard did not reach the expected state: ${JSON.stringify(body)}\n${events}\n${typeof preparation === 'function' ? preparation() : preparation}`)
     }
     await new Promise(resolve => setTimeout(resolve, 200))
@@ -107,7 +108,7 @@ async function dashboardPortClosed() {
     socket.once('timeout', () => { socket.destroy(); reject(new Error('isolated dashboard port did not respond')) })
   })
 }
-// The updated global dashboard must read untouched legacy state files without errors.
+// O dashboard global atualizado precisa ler os estados antigos intactos sem erros.
 async function checkDashboard(labels) {
   const port = await freePort()
   const server = spawn(process.execPath, [join(installed, 'scripts/serve.mjs'), '--global', '--port', String(port)],
@@ -124,7 +125,7 @@ async function checkDashboard(labels) {
     const deadline = Date.now() + 30000
     for (;;) {
       if (server.exitCode !== null) throw new Error(`dashboard exited early: ${output}`)
-      try { if ((await get('/api/health')).status === 200) break } catch { /* not listening yet */ }
+      try { if ((await get('/api/health')).status === 200) break } catch { /* Ainda não está escutando a porta. */ }
       if (Date.now() > deadline) throw new Error(`dashboard did not start: ${output}`)
       await new Promise(resolve => setTimeout(resolve, 200))
     }
@@ -146,8 +147,8 @@ async function checkDashboard(labels) {
     await exited
   }
 }
-// Starts DONE; a 1.2 task-planned task without a current plan follows the adopted phase
-// workflow that the engine names, which is the path a user takes after the update.
+// Começa em DONE; uma tarefa planejada na série 1.2 sem plano atual segue o fluxo de fase
+// indicado pelo motor, reproduzindo o caminho do usuário após a atualização.
 function startDone(root, label) {
   const resume = (...args) => run(process.execPath, [engine, ...args, '--run', 'legacy'], { PRUMO_ROOT: root })
   const stateFile = join(root, '.specs/graph/legacy/state.json')
@@ -159,7 +160,7 @@ function startDone(root, label) {
     assert.ok(taskEra, first.stdout + first.stderr)
     assert.match(first.stderr, /DONE needs completed current planning for phase F1 — run begin-phase-discussion F1, finish-phase-discussion, plan-phase and finish-phase-planning before start/)
     const current = () => JSON.parse(readFileSync(stateFile, 'utf8'))
-    // The fixture removes SKIP from scope; record that before discussing the phase's remaining work.
+    // O cenário remove SKIP do escopo; registre isso antes de discutir o trabalho restante da fase.
     if (!['done', 'skipped'].includes(current().tasks.SKIP.state)) resume('skip', 'SKIP', '--reason', 'Approved scope removal')
     resume('begin-phase-discussion', 'F1')
     const round = current().phaseWorkflows.F1.discussionAttempts.at(-1)
@@ -200,8 +201,8 @@ try {
   env.npm_config_registry = oldAddress.url
   env.npm_config_fetch_retries = '0'
   for (const harness of ['claude', 'kiro', 'codex']) run(process.execPath, [cli, 'install', `--${harness}`, '--lang', 'en'])
-  // A release with autostart keeps its dashboard running through the update, as a user has it. The
-  // per-user Startup entry (Windows) or XDG entry (Linux) lives in this temporary home.
+  // Uma versão com inicialização automática mantém o dashboard em execução durante a atualização, como no uso real.
+  // O registro de Startup do Windows ou XDG do Linux fica no diretório temporário do usuário simulado.
   const autostartEra = ['win32', 'linux'].includes(process.platform) && existsSync(join(installed, 'lib/autostart.mjs'))
   let dashboardBefore
   if (autostartEra) {
@@ -220,7 +221,7 @@ try {
     await waitForDashboard(body => body.product === 'prumo' && body.version === fromVersion,
       () => `dashboard (${fromVersion}): exit=${previousDashboard.exitCode}\n${previousOutput}`)
     const enable = spawnSync(process.execPath, [cli, 'dashboard', 'enable'], { cwd: project, env, encoding: 'utf8', windowsHide: true, timeout: 60000 })
-    // The old release may not confirm the pid it started (seen on Windows); the dashboard must still serve.
+    // A versão antiga pode não confirmar o PID iniciado, como observado no Windows; o dashboard ainda precisa responder.
     evidence.push({ args: ['dashboard', 'enable'], status: enable.status, stdout: enable.stdout, stderr: enable.stderr })
     if (enable.error?.code !== 'ETIMEDOUT') assert.ifError(enable.error)
     const health = await waitForDashboard(body => body.product === 'prumo' && body.version === fromVersion,
@@ -234,7 +235,7 @@ try {
     }
     assert.equal(preference.enabled, true, 'O dashboard antigo deve estar habilitado e servindo antes da atualização.')
     dashboardBefore = { pid: health.pid ?? preference.pid ?? previousDashboard.pid }
-    // The state a failed restart left on the user's machine: enabled, without a recorded pid.
+    // Estado deixado por um reinício que falhou: inicialização habilitada, sem PID registrado.
     delete preference.pid
     put(dashboardPreference, preference)
     evidence.push({ dashboardBefore: { health, preference } })
@@ -404,8 +405,8 @@ try {
       startDone(root, label)
     }
     if (['running', 'failed', 'discussing', 'planning', 'task-planning'].includes(label)) resume('review', 'DONE', '--agent', 'reviewer')
-    // An old validation receipt may require fresh verification under the new gate. Structured
-    // inspection criteria must first be traversed by the reviewer; the engine names the command.
+    // Uma validação antiga pode exigir nova verificação sob as regras atuais. Critérios de inspeção
+    // estruturados precisam ser percorridos pelo revisor; o motor informa o comando.
     const validate = ['validate', 'DONE', '--ok', '--evidence', 'Documentation inspected after update', '--run', 'legacy']
     const gated = spawnSync(process.execPath, [engine, ...validate], { cwd: project, env: { ...env, PRUMO_ROOT: root }, encoding: 'utf8', windowsHide: true, timeout: 120000 })
     evidence.push({ args: validate, status: gated.status, stdout: gated.stdout, stderr: gated.stderr })

@@ -88,7 +88,7 @@ test('language selection and interpolation preserve data and placeholders', () =
   assert.equal(pt('2h'), '2 h')
   assert.equal(pt('{0} requires a fresh answered contract confirmation; begin-discussion and ask the user before skipping discussion', 'T1'),
     'T1 exige uma nova confirmação respondida do contrato; execute begin-discussion e pergunte ao usuário antes de pular a discussão')
-  // The most specific template wins over generic ones, and a slot never absorbs the "[prumo] " prefix.
+  // O modelo mais específico vence os genéricos, e um slot nunca absorve o prefixo "[prumo] ".
   assert.equal(pt('[prumo] WARNING: executor progress stayed at 2/3; the position is not proof of completed work'),
     '[prumo] AVISO: o progresso do executor permaneceu em 2/3; a posição não comprova trabalho concluído')
   assert.equal(pt('[prumo] A validation recorded by review: OK'), '[prumo] validação de A registrada por review: OK')

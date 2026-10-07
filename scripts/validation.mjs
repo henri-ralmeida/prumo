@@ -55,7 +55,7 @@ export function discoveryDigest(context) {
   return createHash('sha256').update(JSON.stringify(canonical(persisted))).digest('hex')
 }
 
-// The principal conversation supplies this evidence before a planner is dispatched.
+// A conversa principal fornece esta evidência antes de um planejador ser despachado.
 export function assertDiscovery(context) {
   insist(context && typeof context === 'object' && !Array.isArray(context), 'discovery context must be a JSON object')
   insist(Array.isArray(context.research) && context.research.length > 0 &&
@@ -101,7 +101,7 @@ export function assertDiscussionBoundary(context, targetIds, { acceptPremature =
     'premature task work was reported; stop and obtain explicit user approval, then repeat with --accept-premature-work so the executor still redoes it')
 }
 
-// The plan classifies checks; only the reviewer can judge their behavioral coverage.
+// O plano classifica as verificações; somente o revisor pode julgar sua cobertura comportamental.
 export function validationContract(task) {
   assertUnavailableResources(task)
   const mode = task.validationMode ?? 'functional'
@@ -145,7 +145,7 @@ export function validationContract(task) {
   return { mode, steps, key: JSON.stringify([mode, task.inspectionReason ?? '', task.validation]) }
 }
 
-// Evidence is supplied by the planner; this gate checks completeness, not the truth of research.
+// A evidência é fornecida pelo planejador; este portão verifica completude, não a veracidade da pesquisa.
 export function assertTaskPlan(task, plan) {
   insist(plan && typeof plan === 'object' && !Array.isArray(plan), 'task plan must be a JSON object')
   if (plan.summary !== undefined)
@@ -217,8 +217,8 @@ const TASK_PLAN_CONTENT_FIELDS = [
   'phaseBinding', 'unresolvedInputs',
 ]
 
-// Hash executable planning content. Presentation summaries and recording metadata do not
-// change the plan identity or its authorization.
+// Calcule o hash do conteúdo executável de planejamento. Resumos de apresentação e metadados de registro não
+// alteram a identidade do plano nem sua autorização.
 export function taskPlanDigest(plan) {
   const value = plan && typeof plan === 'object' && !Array.isArray(plan) ? plan : {}
   const content = Object.fromEntries(TASK_PLAN_CONTENT_FIELDS
@@ -227,8 +227,8 @@ export function taskPlanDigest(plan) {
   return digest(content)
 }
 
-// Phase planning is intentionally contract-only: delivery progress may satisfy an input,
-// but must never rewrite an already approved plan.
+// O planejamento de fase é intencionalmente apenas contratual: o progresso da entrega pode satisfazer uma entrada,
+// mas nunca deve reescrever um plano já aprovado.
 export function phasePlanningContext(state, task) {
   const dependencies = new Set()
   const visit = id => {
@@ -298,7 +298,7 @@ export function executionInputReceipt(state, task) {
   return { inputs, digest: digest(inputs) }
 }
 
-// Shared by the engine and read-only dashboard: readiness must use exactly the same evidence.
+// Compartilhado pelo engine e pelo dashboard somente leitura: a prontidão deve usar exatamente a mesma evidência.
 export function planningContext(state, task, {
   scopeOnly = false, attempt = task.attempts.length + (task.planningReturn ? 0 : 1),
 } = {}) {
@@ -321,19 +321,19 @@ export function planningContext(state, task, {
   ])).digest('hex')
 }
 
-// Whether this task belongs to the current planning workflow. During a
-// structural migration, tasks without the marker are still interpreted from
-// their persisted history: an old attempt stays legacy, while unstarted work
-// waits for the migration to assign the current workflow explicitly.
+// Indica se esta tarefa pertence ao fluxo de planejamento atual. Durante uma
+// migração estrutural, tarefas sem o marcador ainda são interpretadas a partir de
+// seu histórico persistido: uma tentativa antiga permanece legada, enquanto o trabalho não iniciado
+// aguarda a migração atribuir explicitamente o fluxo atual.
 export function usesCurrentPlanning(state, task) {
   if (task.planningRequired === true) return true
   if (task.planningRequired === false) return false
   return !['phase', 'task'].includes(state.plan?.planningMode) && !(task.attempts?.length)
 }
 
-// An explicit user decision may waive the phase/task planning artifact without
-// turning the task into a legacy lifecycle. The decision remains current only
-// while the approved contract and dependency contracts are unchanged.
+// Uma decisão explícita do usuário pode dispensar o artefato de planejamento de fase/tarefa sem
+// transformar a tarefa em um ciclo de vida legado. A decisão permanece atual somente
+// enquanto o contrato aprovado e os contratos das dependências não mudarem.
 export function currentPlanningSkip(state, task) {
   const decision = task.planningSkips?.at(-1)
   if (decision?.decision !== 'skipped' || decision.confirmedByUser !== true) return null
@@ -342,9 +342,9 @@ export function currentPlanningSkip(state, task) {
 
 export function hasCurrentTaskPlan(state, task) {
   if (state.legacyPhaseAdoption && !state.phaseWorkflows?.[task.phase]?.adoptedLegacy) return false
-  // Legacy tasks keep the lifecycle they were already using.  The global
-  // planning mode may have been introduced by a structural migration, but it
-  // must not retroactively manufacture a task plan for an active attempt.
+  // Tarefas legadas mantêm o ciclo de vida que já usavam. O modo de
+  // planejamento pode ter sido introduzido por uma migração estrutural, mas
+  // não deve fabricar retroativamente um plano de tarefa para uma tentativa ativa.
   if (!usesCurrentPlanning(state, task)) return true
   if (currentPlanningSkip(state, task)) return true
   try { assertTaskPlan(task, task.taskPlan) } catch { return false }
@@ -376,11 +376,11 @@ export function hasCurrentTaskPlan(state, task) {
   return discoveryCurrent && hasCurrentTaskScope(state, task, task.attempts.length + 1)
 }
 
-// Validation-only refreshes do not invalidate the research behind an active execution attempt.
+// Atualizações somente de validação não invalidam a pesquisa por trás de uma tentativa de execução ativa.
 export function hasCurrentTaskScope(state, task, attempt = task.attempts.length) {
   if (state.legacyPhaseAdoption && !state.phaseWorkflows?.[task.phase]?.adoptedLegacy) return false
-  // See hasCurrentTaskPlan: per-task compatibility takes precedence over the
-  // run-wide planning mode while legacy work is being completed.
+  // Consulte hasCurrentTaskPlan: a compatibilidade por tarefa tem precedência sobre o
+  // modo de planejamento da execução enquanto o trabalho legado é concluído.
   if (!usesCurrentPlanning(state, task)) return true
   if (currentPlanningSkip(state, task)) return true
   const plan = task.taskPlan
@@ -439,7 +439,7 @@ function execute(run, options, timeoutMs) {
       if (error) return
       error = reason
       if (!child.pid) return
-      // Stop the owned process tree before its shell disappears, so checks cannot outlive a timeout.
+      // Pare a árvore de processos pertencente antes que o shell desapareça, para que as verificações não sobrevivam a um tempo limite.
       if (process.platform === 'win32') {
         const killed = spawnSync('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, encoding: 'utf8', timeout: 10000 })
         if (killed.error || killed.status !== 0) {

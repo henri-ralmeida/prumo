@@ -1,0 +1,71 @@
+# Harness integration guide
+
+Prumo installs the same `prumo` skill and the PO First instructions in each selected harness. The harness remains responsible for authentication, permissions, native planning, model selection and agent creation. Prumo does not install a harness, create an API key, replace a default model or create native agents.
+
+Use the native planning surface first. Review and approve the plan, then load the Prumo skill so the approved work becomes a Prumo run. Native plan approval and a Prumo run are separate stages: the first authors the approved intent, and the second records discussion, planning, execution, review and evidence.
+
+## Install a target
+
+The installer accepts one explicit target or all detected targets:
+
+```sh
+prumo install --antigravity
+prumo install --opencode
+prumo install --grok
+prumo install --all
+```
+
+The commands integrate with an existing local installation. They do not download Antigravity, OpenCode or Grok Build, and they do not configure credentials or provider endpoints. See the [installation section](../README.md#install) for detection, dry runs, backups and conflict handling.
+
+## Antigravity
+
+Antigravity has different global skill roots for the 2.0/IDE surface and the CLI. Prumo keeps both available and also supports the shared workspace skill root:
+
+| Scope | Prumo destination |
+|---|---|
+| Antigravity 2.0 or IDE | `~/.gemini/config/skills/prumo/SKILL.md` |
+| Antigravity CLI (`agy`) | `~/.gemini/antigravity-cli/skills/prumo/SKILL.md` |
+| Workspace | `.agents/skills/prumo/SKILL.md` |
+| Global PO First | `~/.gemini/AGENTS.md` |
+
+Use `/plan` in the prompt surface. With the CLI, `agy --mode=plan` starts in planning mode. After approval, invoke `/prumo <plan-or-run>`. Pick the reasoning model from the model selector under the prompt; availability depends on the account or organization plan and can change.
+
+Official references: [skills and locations](https://antigravity.google/docs/skills/), [plan command](https://antigravity.google/docs/plan/), [execution modes](https://www.antigravity.google/docs/cli/modes/), and [models](https://antigravity.google/docs/models).
+
+## OpenCode
+
+OpenCode discovers skills from project and global roots. The default global integration is under `~/.config/opencode`; `OPENCODE_CONFIG_DIR` can provide an additional configured root.
+
+| Scope | Prumo destination |
+|---|---|
+| Global skill | `~/.config/opencode/skills/prumo/SKILL.md` |
+| Workspace skill | `.opencode/skills/prumo/SKILL.md` |
+| Global PO First | `~/.config/opencode/AGENTS.md` |
+
+Select the built-in `Plan` primary agent with `Tab` before asking for the approved plan. Load Prumo through OpenCode's native skill tool, for example `skill({ name: "prumo" })`. Choose a model with `/models`, or configure a full `provider/model-id` only when that choice is deliberate. The catalog and provider availability are not fixed by Prumo.
+
+Installation uses OpenCode's canonical directories. The documentation also mentions `.agents/skills` compatibility, but this discovery was not observed in the isolated OpenCode 1.4.10 diagnostic; do not depend on that path for this integration.
+
+OpenCode's `AGENTS.md` rules provide project instructions, while `SKILL.md` files provide reusable task behavior. Their precedence and permission settings remain controlled by OpenCode.
+
+Official references: [skills](https://opencode.ai/docs/skills/), [rules](https://opencode.ai/docs/rules/), [agents and Plan](https://opencode.ai/docs/agents/), [models and `/models`](https://opencode.ai/docs/models/), and [providers](https://opencode.ai/docs/providers/).
+
+## Grok Build
+
+Grok Build uses project `.grok/skills` and a user skill root. When `GROK_HOME` is set, Prumo uses that directory as the user root; otherwise it uses `~/.grok`.
+
+| Scope | Prumo destination |
+|---|---|
+| Global skill | `$GROK_HOME/skills/prumo/SKILL.md` or `~/.grok/skills/prumo/SKILL.md` |
+| Workspace skill | `.grok/skills/prumo/SKILL.md` |
+| Global PO First | `$GROK_HOME/AGENTS.md` or `~/.grok/AGENTS.md` |
+
+Enter `/plan` or cycle to Plan with `Shift+Tab`; review and approve the plan before editing. After approval, invoke `/prumo <plan-or-run>`. Run `grok models` to inspect available models, use `/model <name>` in the TUI or pass `-m <name>` for a headless run. `grok inspect` shows the configuration, rules and skills discovered for the current directory.
+
+Grok reads the `AGENTS.md` family while walking from the current directory to the repository root, and it also discovers skills from `.grok/skills`, the user root and enabled plugins. Project rules, permissions and plugin configuration remain under Grok's own precedence rules.
+
+Official references: [Grok Build overview](https://docs.x.ai/build/overview), [skills, plugins and marketplaces](https://docs.x.ai/build/features/skills-plugins-marketplaces), [project rules](https://docs.x.ai/build/features/project-rules), [Plan Mode](https://docs.x.ai/build/features/plan-mode), and [CLI/model selection](https://docs.x.ai/build/cli/reference).
+
+## Shared operating rule
+
+For all three harnesses, select the model and enter the native planning surface before invoking Prumo. Keep the approved plan as the source of scope. The dashboard then shows the resulting Prumo run and its independent review evidence; it does not execute the harness or change its model choice.

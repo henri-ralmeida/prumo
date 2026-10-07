@@ -18,6 +18,7 @@ mkdirSync(join(cwd, '.git'), { recursive: true })
 writeFileSync(join(cwd, 'package.json'), JSON.stringify({ name: 'prumo-package-smoke', private: true, dependencies: { [name]: `file:${archive.replace(/\\/g, '/')}` } }))
 const env = { ...process.env, HOME: home, USERPROFILE: home, CODEX_HOME: join(home, '.codex'), DSH_HOME: join(home, '.dsh'), CLAUDE_CONFIG_DIR: join(home, '.claude'), PRUMO_HOME: join(home, 'data'), PRUMO_LANG: 'en',
   APPDATA: join(home, 'AppData', 'Roaming'), LOCALAPPDATA: join(home, 'AppData', 'Local'),
+  GROK_HOME: join(home, '.grok'), OPENCODE_CONFIG_DIR: join(home, '.config', 'opencode'), XDG_CONFIG_HOME: join(home, '.config'),
   npm_config_cache: join(home, 'npm-cache'), npm_config_userconfig: join(home, 'npmrc'), npm_config_prefix: globalPrefix, BUN_INSTALL_CACHE_DIR: join(home, 'bun-cache') }
 // As instalações sem dashboard não consultam nem encerram o serviço real na porta do usuário.
 env.NODE_OPTIONS = `${env.NODE_OPTIONS ?? ''} --import="${pathToFileURL(join(root, 'test', 'fixtures', 'dashboard-absent.mjs')).href}"`.trim()
@@ -27,7 +28,7 @@ delete env.GRAPH_FOREMAN_HOME
 const evidence = []
 let registry
 function run(executable, args, success = true, runEnv = env, runCwd = cwd) {
-  // npm.cmd needs cmd.exe on Windows. Arguments here are fixed test literals.
+  // npm.cmd exige cmd.exe no Windows. Os argumentos usados aqui são literais fixos de teste.
   const command = process.platform === 'win32' && (executable === 'npm' || executable.endsWith('.cmd'))
     ? { executable: process.env.ComSpec ?? process.env.COMSPEC ?? 'cmd.exe', args: ['/d', '/s', '/c', executable, ...args] }
     : { executable, args }
@@ -167,7 +168,7 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
   const legacyCodex = join(home, '.agents', 'skills', 'prumo')
   mkdirSync(legacyCodex, { recursive: true })
   writeFileSync(join(legacyCodex, '.prumo-install.json'), JSON.stringify({ product: 'prumo', version: '0.0.9', harness: 'codex', lang: 'en' }))
-  assert.match(run('npm', ['exec', '--', 'prumo', 'update', '--dry-run']), /Would update global Prumo CLI/)
+  assert.match(run('npm', ['exec', '--', 'prumo', 'update', '--dry-run']), /would update the cli/)
   assert.equal(existsSync(globalPackage), false)
   run('npm', ['exec', '--', 'prumo', 'update'])
   assert.equal(JSON.parse(readFileSync(join(globalPackage, 'package.json'), 'utf8')).version, version)
@@ -178,7 +179,17 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
     ['kiro', join(home, '.kiro', 'steering', 'po-first.md')],
     ['codex', join(home, '.codex', 'AGENTS.md')],
     ['dsh', join(home, '.dsh', 'AGENTS.md')],
+    ['antigravity', join(home, '.gemini', 'AGENTS.md')],
+    ['opencode', join(home, '.config', 'opencode', 'AGENTS.md')],
+    ['grok', join(home, '.grok', 'AGENTS.md')],
   ]
+  const newHarnessRoots = [join(home, '.gemini', 'config', 'skills', 'prumo'), join(home, '.gemini', 'antigravity-cli', 'skills', 'prumo'),
+    join(home, '.config', 'opencode', 'skills', 'prumo'), join(home, '.grok', 'skills', 'prumo')]
+  for (const [file, text] of [
+    [join(home, '.gemini', 'antigravity-cli', 'config.json'), '{}'],
+    [join(home, '.config', 'opencode', 'opencode.json'), '{}'],
+    [join(home, '.grok', 'config.toml'), '[models]\n'],
+  ]) { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, text) }
   const assertInstalledPoFirst = (pattern, language) => {
     for (const [harness, file] of poFirstTargets)
       assert.match(readFileSync(file, 'utf8'), pattern, language + ' PO First reaches ' + harness)
@@ -220,6 +231,11 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
     assert.match(marker.contentId, /^[a-f0-9]{12}$/)
     assert.match(marker.engineHash, /^[a-f0-9]{64}$/)
   }
+  for (const skill of newHarnessRoots) {
+    for (const file of ['SKILL.md', 'references/harnesses.md', 'references/harnesses.pt-BR.md', 'references/planning.md', 'scripts/engine.mjs'])
+      assert.ok(existsSync(join(skill, file)), `a nova integração deve conter ${file}`)
+    assert.match(JSON.parse(readFileSync(join(skill, '.prumo-install.json'), 'utf8')).contentId, /^[a-f0-9]{12}$/)
+  }
   rmSync(join(home, '.dsh', 'skills', 'prumo'), { recursive: true, force: true })
   run('npm', ['install', '--global', '--force', '--offline', '--no-audit', '--no-fund', archive])
   assert.ok(existsSync(join(home, '.dsh', 'skills', 'prumo', 'SKILL.md')), 'global postinstall repairs detected DSH')
@@ -227,7 +243,7 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
   assert.match(run(globalExecutable, ['install', '--all']), new RegExp(`Prumo v${version.replaceAll('.', '\\.')} is already installed`))
   assert.equal(readdirSync(join(home, '.local', 'share', 'prumo', 'backups')).length, reinstallBackups)
   console.log('Packaged npm and Bun entrypoints configured all adapters and exercised safe automatic dashboard startup in an isolated home')
-  const installedRoots = [join(home, '.claude', 'skills', 'prumo'), join(home, '.kiro', 'skills', 'prumo'), join(home, '.agents', 'skills', 'prumo'), join(home, '.dsh', 'skills', 'prumo')]
+  const installedRoots = [join(home, '.claude', 'skills', 'prumo'), join(home, '.kiro', 'skills', 'prumo'), join(home, '.agents', 'skills', 'prumo'), join(home, '.dsh', 'skills', 'prumo'), ...newHarnessRoots]
   for (const destination of installedRoots) {
     const markerPath = join(destination, '.prumo-install.json')
     const marker = JSON.parse(readFileSync(markerPath, 'utf8'))
@@ -246,7 +262,7 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
   }
   assert.equal(JSON.parse(readFileSync(globalPackageJson, 'utf8')).version, '0.0.9')
   const updateOutput = run(globalExecutable, ['update'])
-  assert.match(updateOutput, /Prumo updated successfully|Prumo atualizado com sucesso/)
+  assert.match(updateOutput, /prumo updated successfully|prumo atualizado com sucesso/)
   assert.match(updateOutput, new RegExp(`Prumo v${version.replaceAll('.', '\\.')}`))
   assert.doesNotMatch(updateOutput, /Changes \/|Existing data stays|Backup:/)
   assert.doesNotMatch(evidence.at(-1).stderr, /DEP0190|npm notice/)
@@ -266,11 +282,11 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
     assert.equal(readFileSync(join(destination, 'scripts', 'engine.mjs'), 'utf8'), readFileSync(join(root, 'scripts', 'engine.mjs'), 'utf8'))
     assert.equal(readFileSync(join(destination, 'SKILL.md'), 'utf8'), readFileSync(join(root, 'SKILL.md'), 'utf8'))
   }
-  console.log('Public update refreshed the global CLI and four installed adapters from an isolated registry; preview and registry failure preserved existing files')
+  console.log('A atualização do pacote validou sete harnesses em oito raízes isoladas; prévia e falha do registro preservaram os arquivos existentes')
 } finally {
   if (registry && registry.exitCode === null && registry.signalCode === null) { const closed = new Promise(resolve => registry.once('exit', resolve)); registry.kill(); await closed }
   mkdirSync(join(root, '.test-output'), { recursive: true })
-  // Paths in transient command output are local evidence, excluded from the published package.
+  // Caminhos presentes na saída temporária dos comandos são evidências locais, fora do pacote publicado.
   writeFileSync(join(root, '.test-output', 'package-smoke.json'), JSON.stringify({ platform: process.platform, node: process.version, evidence }, null, 2))
   assert.equal(dirname(home), base)
   assert.ok(home.startsWith(join(base, 'prumo-package-')))

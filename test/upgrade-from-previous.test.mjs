@@ -31,9 +31,9 @@ test('versões publicadas no npm atualizam para o candidato e preservam seus dad
   process.stdout.write(result.output)
 })
 
-// Recorded with the 1.2.2 engine: DONE was planned per task (planningRequired: true) and started.
-// Before the fix, the structural migration treated this attempt as unsafe planning and refused
-// even review, validate and done, so the run could not continue after `prumo update`.
+// Registrado com o motor 1.2.2: DONE foi planejada por tarefa (planningRequired: true) e iniciada.
+// Antes da correção, a migração estrutural tratava esta tentativa como planejamento inseguro e recusava
+// até review, validate e done, então a execução não podia continuar após `prumo update`.
 test('a 1.2 task-planned attempt continues after update and the run then adopts phase planning', t => {
   const base = realpathSync(tmpdir())
   const home = mkdtempSync(join(base, 'prumo-upgrade-state-'))

@@ -30,7 +30,7 @@ npm install -g @henri-ralmeida/prumo
 The global npm `postinstall` configures detected supported harnesses and starts the dashboard with its read-only state view.
 A local npm install is inert. Use `prumo install --all` after disabled npm scripts or to repair a new harness.
 `prumo update` refreshes the CLI, skill, both READMEs, references, scripts and PO First configuration in
-every registered Claude Code, Kiro, Codex and DSH installation. It compares managed contents, resumes a pending
+every registered Claude Code, Kiro, Codex, DSH, Antigravity, OpenCode and Grok Build installation. It compares managed contents, resumes a pending
 activation and never downgrades a global CLI newer than npm `latest`. A damaged marker is recovered only
 for its exact registered harness/path and only from a byte-verified Prumo backup.
 Installation and update restart the dashboard when it is enabled, so it serves the installed version, and
@@ -43,6 +43,23 @@ an approved plan.
 DSH must already be installed and detected before `prumo install --dsh`; Prumo never installs the external `@deepseek-ai/dsh` package. A nonempty `DSH_HOME` takes precedence, otherwise `~/.dsh` is used. The managed destinations are `<DSH_HOME>/skills/prumo` and the PO First block in the global `<DSH_HOME>/AGENTS.md`. Explicit installation exits nonzero without writes when DSH is absent; `--all` and `postinstall` act only on detected harnesses, while update can repair an exact detected or registered Prumo installation.
 
 `prumo install --dsh` integrates only with an already detected external DSH installation and `prumo doctor --dsh` diagnoses that integration. It never installs `@deepseek-ai/dsh`; explicit installation fails without writes when DSH is absent. The upstream version validated for this adapter was `0.1.6-alpha.2`, still alpha/developer preview. DSH already supplies skills, instructions, subagents and workflows in applicable profiles, so Prumo does not create or edit Cordis configuration, profiles, plugins, subagents, workflows or credentials. Structural install, doctor and `dsh --profile headless --dump-config` checks do not establish a real model conversation.
+
+### Additional harnesses
+
+Use `prumo install --antigravity`, `prumo install --opencode` or `prumo install --grok` only after installing that harness. `prumo doctor` accepts the same flag. Automatic installation acts only on detected harnesses. Prumo installs its skill and adds a managed PO First block without replacing personal instructions or selecting a model.
+
+| Harness | Global Prumo skill | Global PO First rules |
+| --- | --- | --- |
+| Antigravity IDE / 2.0 | `~/.gemini/config/skills/prumo` | `~/.gemini/AGENTS.md` |
+| Antigravity CLI | `~/.gemini/antigravity-cli/skills/prumo` | `~/.gemini/AGENTS.md` |
+| OpenCode | `~/.config/opencode/skills/prumo` | `~/.config/opencode/AGENTS.md` |
+| Grok Build | `~/.grok/skills/prumo` | `~/.grok/AGENTS.md` |
+
+Antigravity installation covers both global skill locations. OpenCode respects `XDG_CONFIG_HOME` and also copies the skill into `OPENCODE_CONFIG_DIR/skills` when configured; PO First remains in the global rules location. Grok respects `GROK_HOME`. Existing project skills are refreshed only for their own registered harness; Codex and Antigravity never overwrite each other's managed `.agents/skills/prumo`.
+
+Choose the harness's native planning mode when available, and load the Prumo skill explicitly. A read-only mode may prevent writing a plan artifact: obtain permission for that designated artifact or hand it back to the orchestrator, rather than granting broad write access or beginning execution. Prumo's discussion, planning, execution and independent review gates continue to apply regardless of model or native mode.
+
+Official references: [Antigravity skills](https://antigravity.google/docs/skills/), [Antigravity rules](https://antigravity.google/docs/rules/), [OpenCode skills](https://opencode.ai/docs/skills/), [OpenCode rules](https://opencode.ai/docs/rules/), [Grok skills](https://docs.x.ai/build/features/skills-plugins-marketplaces), [Grok rules](https://docs.x.ai/build/features/project-rules).
 
 ## What it does
 

@@ -22,7 +22,7 @@ const releaseBaseline = JSON.parse(readFileSync(join(root, 'scripts', 'release-b
 assert.equal(releaseBaseline.source, `npm registry tarball @henri-ralmeida/prumo@${releaseBaseline.version}`)
 assert.match(releaseBaseline.integrity, /^sha512-[A-Za-z0-9+/]+={0,2}$/)
 assertReleaseContentVersion(pkg.version, releaseBaseline, packageContentManifest(root))
-// SKILL.md is the router; each step's detail lives in a reference with a complete Portuguese pair.
+// SKILL.md direciona o fluxo; os detalhes de cada etapa ficam em uma referência com sua tradução completa em português.
 const stepReferences = ['contracts', 'discussion', 'dispatch', 'planning', 'recovery', 'review']
 const pairedReferences = ['po-first', 'runtime', ...stepReferences]
 for (const file of ['SKILL.md', 'README.md', 'README.pt-BR.md', 'CHANGELOG.md', 'LICENSE', ...pairedReferences.flatMap(name => [`references/${name}.md`, `references/${name}.pt-BR.md`])]) assert.ok(existsSync(join(root, file)), file)

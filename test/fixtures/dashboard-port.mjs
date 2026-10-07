@@ -1,6 +1,6 @@
-// Preloaded with NODE_OPTIONS=--import by the upgrade smoke: every Prumo process of the scenario
-// (old CLI, npm exec updater and the dashboard it launches) uses an isolated port in place of the
-// fixed dashboard port, so the user's real dashboard on 4949 is never contacted.
+// Pré-carregado com NODE_OPTIONS=--import pelo teste de atualização: cada processo Prumo do cenário
+// (CLI antiga, atualizador npm exec e o dashboard que ele inicia) usa uma porta isolada em vez da
+// porta fixa do dashboard, para que o dashboard real do usuário em 4949 nunca seja contatado.
 import net from 'node:net'
 import { appendFileSync } from 'node:fs'
 

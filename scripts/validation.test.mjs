@@ -9,8 +9,8 @@ import { setTimeout } from 'node:timers/promises'
 
 const engine = resolve(process.env.GRAPH_TEST_ENGINE ?? join(dirname(fileURLToPath(import.meta.url)), 'engine.mjs'))
 
-// The slow check signals that it started and then waits for the test to release it, so the concurrent
-// state change always lands while the check is still running, however loaded the machine is.
+// A checagem lenta sinaliza que começou e então espera o teste liberá-la, para que a mudança de estado
+// concorrente sempre ocorra enquanto a checagem ainda está em execução, por mais carregada que esteja a máquina.
 const gatedCheck = "const fs = require('node:fs'); fs.writeFileSync('started', 'yes'); const limit = Date.now() + 60000; " +
   "const wait = () => fs.existsSync('release') || Date.now() > limit ? require('./delivery.test.cjs') : setTimeout(wait, 20); wait();\n"
 
@@ -75,7 +75,7 @@ function fixture(t, task = {}, planOptions = {}, { init = true, lang = 'en' } = 
   }
   if (init) {
     ok('init', '--plan', planPath, '--run', 'regression')
-    // These regressions exercise pre-1.3 active runs; planner gates have their own CLI suite.
+    // Estas regressões exercitam execuções ativas anteriores à 1.3; as barreiras do planejador têm sua própria suíte de CLI.
     const legacy = state()
     for (const task of Object.values(legacy.tasks)) {
       delete task.planningRequired
@@ -950,7 +950,7 @@ test('real rejection and approved contract change preserve history and verify th
   f.ok('start', 'T1', '--agent', 'executor-v2')
   f.ok('review', 'T1', '--agent', 'reviewer-v2')
 
-  // Fixing only the old defect is insufficient for the newly approved contract.
+  // Corrigir apenas o defeito antigo é insuficiente para o contrato recém-aprovado.
   writeFileSync(join(f.project, 'delivery.cjs'), 'exports.days = express => express ? 1 : 3;\n')
   assert.notEqual(f.validate().status, 0)
   f.rejected(/no passing validation/, 'done', 'T1')

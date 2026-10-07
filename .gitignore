@@ -9,7 +9,7 @@ node_modules/
 /.ai-memory.toml
 /.serena/
 
-# Local agent and orchestration workspaces: worktrees, preview config and run scratch files stay per machine.
+# Áreas locais de agentes e orquestração: worktrees, configuração de prévia e arquivos temporários ficam por máquina.
 .claude/worktrees/
 .claude/launch.json
 .prumo-tmp/

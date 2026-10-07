@@ -6,7 +6,7 @@ export const messages = JSON.parse(readFileSync(new URL('./messages.json', impor
 export function language(requested, env = process.env, detect = regionalLanguage) {
   if (requested !== undefined && !['en', 'pt-BR'].includes(requested)) throw new Error('Language must be en or pt-BR')
   let installed
-  try { installed = JSON.parse(readFileSync(new URL('../.prumo-install.json', import.meta.url), 'utf8')).lang } catch { /* source checkout or unconfigured language */ }
+  try { installed = JSON.parse(readFileSync(new URL('../.prumo-install.json', import.meta.url), 'utf8')).lang } catch { /* Código-fonte local ou idioma não configurado. */ }
   const detected = requested ?? env.PRUMO_LANG ?? installed ?? detect({ env })
   return /^pt(?:[-_]|$)/i.test(detected) ? 'pt-BR' : 'en'
 }
@@ -15,7 +15,7 @@ export function localizeDashboard(html, lang) {
   return html.replace(/\/\*PRUMO_LANGUAGE\*\/"(?:en|pt-BR)"/, () => JSON.stringify(lang))
 }
 
-// Pure function: the same translator is embedded in the self-contained dashboard.
+// Função pura: o mesmo tradutor é incorporado ao dashboard autossuficiente.
 export function createTranslator(dictionary, lang) {
   const templates = Object.entries(dictionary).filter(([key]) => /\{\d+\}/.test(key)).map(([key, translated]) => {
     const slots = []
@@ -26,8 +26,8 @@ export function createTranslator(dictionary, lang) {
     }).join('')
     return { pattern: new RegExp(`^${pattern}$`, 's'), slots, translated, literal: key.replace(/\{\d+\}/g, '').length }
   })
-  // The most specific template wins: a generic key such as "{0} of {1}" must not swallow a sentence that
-  // has its own key merely because it contains " of ". Sorting by literal text keeps catalog order as tiebreak.
+  // O modelo mais específico prevalece: uma chave genérica como "{0} of {1}" não pode absorver uma frase
+  // com chave própria apenas por conter " of ". Ordenar pelo texto literal mantém a ordem do catálogo no desempate.
   templates.sort((a, b) => b.literal - a.literal)
   function translate(value, ...parameters) {
     if (typeof value !== 'string') return value
@@ -37,7 +37,7 @@ export function createTranslator(dictionary, lang) {
     if (Object.hasOwn(dictionary, value)) return dictionary[value]
     for (const { pattern, slots, translated } of templates) {
       const match = pattern.exec(value)
-      // A slot never absorbs the "[prumo] " log prefix; that prefix is stripped below and the rest retried.
+      // Um campo nunca absorve o prefixo "[prumo] " do log; o prefixo é removido abaixo e o restante é processado novamente.
       if (match && !match.slice(1).some(part => /^\s*\[prumo\] /.test(part))) return translated.replace(/\{(\d+)\}/g, (_, index) => match[slots.indexOf(Number(index)) + 1])
     }
     const prefix = /^(\s*\[prumo\] )(ERROR: )?([\s\S]*)$/.exec(value)

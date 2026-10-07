@@ -81,7 +81,7 @@ export function contractDrift(state, { plan: suppliedPlan } = {}) {
   return { available: true, planFields, tasks }
 }
 
-/** A human-readable contract view that never includes executable validation commands. */
+/** Exibe o contrato em formato legível sem incluir comandos executáveis de validação. */
 export function businessContract(plan, task) {
   const value = sourceTask(task)
   const validation = Array.isArray(value.validation)

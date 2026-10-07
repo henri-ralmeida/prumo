@@ -1,5 +1,4 @@
-/* Pure helpers for the sync-plan audit.  The engine owns state changes; this module only
- * describes contract differences and diagnostics for the event log and CLI output. */
+/* Funções puras para auditar sync-plan. O motor controla as mudanças de estado; este módulo descreve diferenças de contrato e diagnósticos para os eventos e a CLI. */
 
 export const CONTRACT_FIELDS = [
   'phase', 'title', 'deps', 'validation', 'validationMode', 'inspectionReason',
@@ -109,13 +108,13 @@ function taskIdsInSegment(segment, knownIds) {
   return [...found].map(key => known.get(key) ?? key.replace(/^./u, char => char.toUpperCase()))
 }
 
-/** Extract only task IDs in a sentence/segment that explicitly expresses waiting. */
+/** Extrai IDs de tarefas somente de trechos que declaram explicitamente uma espera. */
 export function citedWaitingTasks(blockReason, knownIds = []) {
   if (typeof blockReason !== 'string' || !blockReason.trim()) return []
   const ids = new Set(knownIds)
   const result = new Set()
-  // Keep punctuation as the boundary: a reason may contain several clauses, but a
-  // free-standing task mention must not become a dependency merely because it is nearby.
+  // A pontuação delimita os trechos: um motivo pode conter várias orações, mas a menção
+  // isolada de uma tarefa não cria dependência apenas por estar próxima.
   for (const segment of blockReason.split(/[.!?;\n]+/u)) {
     if (!WAITING_CONTEXT.test(segment)) continue
     for (const id of taskIdsInSegment(segment, ids)) result.add(id)
@@ -197,12 +196,7 @@ function planTaskMap(tasks) {
   }]))
 }
 
-/**
- * Audit the persisted graph before sync and the graph requested by the approved plan.
- * Missing dependencies are intentionally reported against the persisted graph: that is
- * the stale contract the sync is repairing. Back-edges are checked in both graphs so a
- * single sync cannot silently introduce the semantic cycle it is meant to reveal.
- */
+/** Audita o grafo persistido antes da sincronização e o solicitado pelo plano aprovado. Dependências ausentes são apontadas no grafo persistido, pois é o contrato desatualizado a corrigir. Verifica arestas de retorno nos dois grafos para impedir que a sincronização introduza silenciosamente um ciclo semântico. */
 function functionalChecks(validation) {
   if (!Array.isArray(validation)) return []
   return validation.map((step, index) => ({ step, index: index + 1 })).filter(({ step }) =>
@@ -273,8 +267,8 @@ export function auditSyncPlan({ stateTasks = {}, planTasks = [], added = [], eff
   return { blockReasonContradictions, newLeaves, preDiscussionFunctionalContracts }
 }
 
-// `added` is normally a list of IDs. Keep the helper tolerant of callers passing plan
-// task objects, which makes it useful in focused tests without coupling it to the engine.
+// `added` normalmente contém IDs. A função também aceita objetos de tarefas do plano
+// para atender testes focados sem criar dependência do motor.
 function taskIdFromAdded(value) {
   return typeof value === 'string' ? value : value?.id
 }

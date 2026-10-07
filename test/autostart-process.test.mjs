@@ -24,12 +24,12 @@ test('Windows Startup launches and restarts a real isolated dashboard process', 
   const port = reserve.address().port
   await new Promise(resolve => reserve.close(resolve))
   const script = join(home, 'dashboard.mjs')
-  // Keep the production command line for ownership checks, but serve on an isolated port.
+  // Mantenha a linha de comando de produção para as verificações de posse, mas sirva em uma porta isolada.
   writeFileSync(script, `process.argv[process.argv.indexOf('--port') + 1] = '${port}';\nawait import(${JSON.stringify(new URL('../scripts/serve.mjs', import.meta.url).href)});\n`)
   const env = { ...process.env, HOME: home, USERPROFILE: home, PRUMO_HOME: join(home, 'data'),
     APPDATA: join(home, 'AppData/Roaming'), CODEX_HOME: join(home, '.codex'), DSH_HOME: join(home, '.dsh'),
     CLAUDE_CONFIG_DIR: join(home, '.claude'), KIRO_HOME: join(home, '.kiro'), PRUMO_ROOT: '', GRAPH_ROOT: '', GRAPH_FOREMAN_HOME: '', PRUMO_LANG: 'en' }
-  // Exercise the default launcher with an existing fallback registration, no injected exec.
+  // Exercite o lançador padrão com um registro de fallback existente, sem exec injetado.
   const preferencePath = join(home, '.local/share/prumo/dashboard.json')
   mkdirSync(join(home, '.local/share/prumo'), { recursive: true })
   writeFileSync(preferencePath, JSON.stringify({ enabled: true, mechanism: 'windows-startup' }))
@@ -38,7 +38,7 @@ test('Windows Startup launches and restarts a real isolated dashboard process', 
     fetch: (url, init) => fetch(String(url).replace(':4949/', `:${port}/`), dashboardRequestInit(init)),
     portAvailable: () => isolatedPortAvailable(port) }
   const pids = new Set()
-  // Track even a process whose ownership registration fails, so failures cannot leak it.
+  // Rastreie também um processo cujo registro de posse falha, para que as falhas não o deixem escapar.
   options.fetch = async (url, init) => {
     const response = await fetch(String(url).replace(':4949/', `:${port}/`), dashboardRequestInit(init))
     if (response.ok) { const body = await response.clone().json(); if (body.pid) pids.add(body.pid) }
@@ -68,7 +68,7 @@ test('Windows Startup launches and restarts a real isolated dashboard process', 
   const firstAbout = await (await fetch(`http://127.0.0.1:${port}/api/about`)).json()
   assert.equal(first.contentCurrent, true)
   assert.equal(first.contentId, firstAbout.contentId)
-  // The origin follows where the served package lives, not the --global run listing.
+  // A origem segue o local onde o pacote servido está, e não a listagem da execução --global.
   const packageRoot = options.packageRoot
   const expectedOrigin = packageRoot.split(/[\\/]+/).includes('node_modules') ? 'global'
     : existsSync(join(packageRoot, '.git')) ? 'repository' : 'installed'
@@ -86,7 +86,7 @@ test('Windows Startup launches and restarts a real isolated dashboard process', 
   assert.equal(restarted.contentId, firstAbout.contentId)
   assert.notEqual(preference().pid, firstPid)
   assert.equal((await (await fetch(`http://127.0.0.1:${port}/api/runs`)).json()).runs.length, 1)
-  // Invoke the exact per-user login entry without rebooting or touching the real Startup folder.
+  // Invoque a entrada exata de login por usuário sem reiniciar nem tocar na pasta Startup real.
   const stoppedPid = preference().pid
   process.kill(stoppedPid)
   let stopped = false
@@ -117,8 +117,8 @@ test('Windows Startup launches and restarts a real isolated dashboard process', 
   assert.equal(disabled.registered, false)
 })
 
-// Real processes on an isolated port. The recorded state reproduces `prumo update` on Windows after an
-// earlier restart erased `pid` from dashboard.json; the default process inspection is exercised.
+// Processos reais em uma porta isolada. O estado registrado reproduz `prumo update` no Windows depois que uma
+// reinicialização anterior apagou `pid` de dashboard.json; a inspeção padrão do processo é exercitada.
 const repo = fileURLToPath(new URL('..', import.meta.url))
 async function freePort() {
   const probe = createServer()
@@ -151,7 +151,7 @@ async function isolatedDashboard(t) {
   const port = await freePort()
   const target = join(home, 'target.txt')
   const script = join(home, 'dashboard.mjs')
-  // The managed command line stays `<node> <script> --global --port 4949`; the wrapper serves elsewhere.
+  // A linha de comando gerenciada permanece `<node> <script> --global --port 4949`; o wrapper serve em outro local.
   writeFileSync(script, [
     "import { readFileSync } from 'node:fs'",
     "import { pathToFileURL } from 'node:url'",
@@ -182,7 +182,7 @@ async function isolatedDashboard(t) {
     try { return await (await redirect('http://127.0.0.1:4949/api/health', { signal: AbortSignal.timeout(1000) })).json() }
     catch { return null }
   }
-  // `managed` starts the dashboard with the managed command line; otherwise `args` run as given.
+  // `managed` inicia o dashboard com a linha de comando gerenciada; caso contrário, `args` são executados como fornecidos.
   const start = (args, managed = false) => {
     const child = spawn(process.execPath, managed ? [script, '--global', '--port', '4949'] : args,
       { env, detached: managed, stdio: 'ignore', windowsHide: true })
@@ -193,12 +193,12 @@ async function isolatedDashboard(t) {
     preference: () => JSON.parse(readFileSync(file, 'utf8')),
     write: value => writeFileSync(file, JSON.stringify(value)) }
 }
-// The previous release is served from its tag when available, as the user had before updating.
+// A versão anterior é servida a partir de sua tag quando disponível, como estava para o usuário antes da atualização.
 function previousRelease(home) {
   mkdirSync(join(home, 'previous'))
   const archive = spawnSync('git', ['archive', '--format=tar', '-o', join(home, 'previous.tar'), 'v2.0.0'], { cwd: repo, windowsHide: true, timeout: 60000 })
   if (archive.status !== 0) return null
-  // Relative paths keep GNU tar from reading a Windows drive letter as a remote host.
+  // Caminhos relativos impedem que o GNU tar interprete uma letra de unidade do Windows como um host remoto.
   const extract = spawnSync('tar', ['-xf', 'previous.tar', '-C', 'previous'], { cwd: home, windowsHide: true, timeout: 60000 })
   return extract.status === 0 ? join(home, 'previous') : null
 }
@@ -212,7 +212,7 @@ for (const recorded of ['missing', 'stale', 'missing identity']) {
     const before = await waitFor(async () => { const body = await f.health(); return body?.pid === old.pid && body })
     assert.ok(before, 'the previous dashboard serves the isolated port')
     if (previous) assert.equal(before.version, '2.0.0')
-    // A stale pid that now belongs to an unrelated live process must not be stopped either.
+    // Um `pid` obsoleto que agora pertence a um processo ativo não relacionado também não pode ser encerrado.
     const unrelated = f.start(['-e', 'setInterval(() => {}, 1000)'])
     f.write({ enabled: true, mechanism: 'windows-startup', ...(recorded === 'stale' && { pid: unrelated.pid }),
       ...(recorded !== 'missing identity' && { node: process.execPath, script: f.script }) })
@@ -284,7 +284,7 @@ test('update restart never stops a port occupant that is not the managed Prumo d
   const pt = createTranslator(messages, 'pt-BR')
   const server = body => `require('node:http').createServer((q, s) => { s.setHeader('content-type', 'application/json'); s.end(JSON.stringify(${body})) }).listen(${f.port}, '127.0.0.1')`
   const recordedPreference = { enabled: true, mechanism: 'windows-startup', pid: 424242, node: process.execPath, script: f.script }
-  // Another program on the port is a conflict.
+  // Outro programa na porta representa um conflito.
   const foreign = f.start(['-e', server(`{ product: 'other' }`)])
   assert.ok(await waitFor(async () => (await f.health())?.product === 'other'))
   f.write(recordedPreference)
@@ -297,7 +297,7 @@ test('update restart never stops a port occupant that is not the managed Prumo d
   assert.equal(alive(foreign.pid), true)
   foreign.kill()
   assert.ok(await waitFor(async () => !(await f.health())))
-  // A process that claims to be the Prumo dashboard without running the managed command line.
+  // Um processo que afirma ser o dashboard do Prumo, mas não executa a linha de comando gerenciada.
   const impostor = f.start(['-e', server(`{ product: 'prumo', mode: 'global', readOnly: true, version: '2.0.0', pid: process.pid }`)])
   assert.ok(await waitFor(async () => (await f.health())?.pid === impostor.pid))
   const refused = await restartDashboard(f.options)

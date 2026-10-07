@@ -100,7 +100,7 @@ test('catálogo usa ações efetivas, prioridades e bloqueios sem alterar planos
   for (const [file, content] of originals) assert.equal(readFileSync(file, 'utf8'), content)
   assert.equal((await request('/api/health')).status, 200, 'o servidor continua disponível após listar os planos')
 })
-/** The short commit git reports for this checkout, or undefined when git cannot answer. */
+/** O commit curto que o git informa para este checkout, ou undefined quando o git não consegue responder. */
 function checkoutCommit(root = packageRoot) {
   try {
     return execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: root, encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }).trim() || undefined
@@ -284,14 +284,14 @@ test('/api/about reports where the package lives, not the --global serving mode'
   const home = dashboardHome(t, 'prumo-origin-')
   const env = { ...process.env, HOME: home, USERPROFILE: home, PRUMO_HOME: join(home, 'central'), PRUMO_LANG: 'en' }
 
-  // the source checkout served with --global is still the repository
+  // O checkout de código-fonte servido com --global ainda é o repositório
   const fromCheckout = await startDashboard(t, join(packageRoot, 'scripts', 'serve.mjs'), ['--global'], env)
   const checkout = await (await fromCheckout('/api/about')).json()
   assert.equal(checkout.origin, 'repository')
   assert.equal(checkout.commit, checkoutCommit())
   assert.equal(checkout.path, packageRoot)
 
-  // the same files installed under node_modules are the global package, with no commit
+  // Os mesmos arquivos instalados em node_modules são o pacote global, sem commit
   const installed = join(home, 'npm', 'node_modules', '@henri-ralmeida', 'prumo')
   for (const entry of ['bin', 'lib', 'scripts', 'references', 'SKILL.md', 'package.json'])
     cpSync(join(packageRoot, entry), join(installed, entry), { recursive: true })
@@ -436,8 +436,8 @@ test('dashboard selects legacy and central data without writes or translation of
   assert.equal(planningRun.activity, 'working')
   assert.equal(planningRun.complete, false)
   const graph = join(root, '.specs', 'graph')
-  // A run whose remaining task was skipped by the user's decision is finished, as the header and gain card say;
-  // only a run with pending work, or with nothing done at all, stays out of "in prumo".
+  // Uma execução cuja tarefa restante foi ignorada por decisão do usuário é concluída, como indicam o cabeçalho e o cartão de ganho;
+  // somente uma execução com trabalho pendente, ou sem nada concluído, fica fora de "in prumo".
   for (const [name, states] of [['complete-demo', ['done', 'done']], ['skipped-demo', ['done', 'skipped']],
     ['all-skipped-demo', ['skipped', 'skipped']], ['almost-demo', ['done', 'pending']]]) {
     const directory = join(graph, name)

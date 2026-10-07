@@ -50,6 +50,11 @@ is fixed under the central Prumo workspace.
 
 Apply [PO First](references/po-first.md), also configured globally by the installer, in every role. Respond in the user's language. A functional check means evidence of the requested effect, whether the work concerns data, automation, migration, software, or another domain. Use the host's native subagent tools; if dedicated planning, execution or independent review are unavailable, report that limitation rather than inventing agent dispatch. The engine records transitions; it does not create agents. In Codex invoke this skill as `$prumo`; Claude Code, Kiro and DeepSeek Harness (DSH) use `/prumo`. DSH integration (`prumo install --dsh`, `prumo doctor --dsh`, `DSH_HOME`) is described in [runtime.md](references/runtime.md#dsh-integration).
 
+Antigravity e Grok Build também permitem `/prumo`. No OpenCode, peça ao agente para carregar a skill
+`prumo` com sua ferramenta nativa de skills. Os modos nativos de planejamento não substituem os gates
+do Prumo nem autorizam gravações: confira as permissões reais antes de produzir os artefatos aprovados.
+Consulte [as integrações](references/runtime.md#additional-harnesses) para os diretórios de instalação.
+
 **Open the discussion before asking its questions.** When creating or updating tasks from an approved
 global plan, collect unresolved phase/task questions instead of starting discovery during graph authoring.
 Keep them with the plan context; after `init` or `sync-plan`, persist them with `note <task> --text`.

@@ -1,34 +1,34 @@
 #!/usr/bin/env node
 /**
- * Prumo — generic task-graph execution state for agent-driven plans.
+ * Prumo — estado genérico de execução de grafos de tarefas para planos conduzidos por agentes.
  *
- * The ENGINE is reusable and knows nothing about any particular project. What changes
- * between projects is the PLAN (a JSON file: phases + tasks + deps + how to validate).
- * The orchestrator (a human or an agent) drives it through this CLI; the dashboard
- * (serve.mjs) only READS the same state — it is observability, never a second brain.
+ * O ENGINE é reutilizável e não conhece nenhum projeto específico. O que muda entre projetos
+ * é o PLAN (um arquivo JSON: fases + tarefas + deps + como validar).
+ * O orquestrador (uma pessoa ou um agente) o conduz por esta CLI; o dashboard
+ * (serve.mjs) apenas LÊ o mesmo estado — é observabilidade, nunca um segundo cérebro.
  *
- * State lives under ~/.local/share/prumo/<workspace>/.specs/graph/<run>/:
- *   state.json     — the single source of truth (plan snapshot + per-task state)
- *   events.ndjson  — append-only history of every transition (feeds the dashboard log)
+ * O estado fica em ~/.local/share/prumo/<workspace>/.specs/graph/<run>/:
+ *   state.json     — a única fonte de verdade (instantâneo do plano + estado por tarefa)
+ *   events.ndjson  — histórico somente de acréscimo de cada transição (alimenta o log do dashboard)
  *
- * Task lifecycle (enforced):
- *   pending ─begin-discussion→ discussing ─finish-discussion→ pending (ready to plan)
- *   pending ─plan-task→ planning ─finish-planning→ pending (ready) ─start→ running
+ * Ciclo de vida da tarefa (imposto):
+ *   pending ─begin-discussion→ discussing ─finish-discussion→ pending (pronto para planejar)
+ *   pending ─plan-task→ planning ─finish-planning→ pending (pronto) ─start→ running
  *   running ─review→ reviewing ─validate(ok)→ ─done→ done
- *      │                │                  │└─validate(failed)→ stays reviewing
+ *      │                │                  │└─validate(failed)→ permanece reviewing
  *      │                │└─fail→ failed ─retry→ pending
- *      │                └─(done straight from running is refused when review is required)
+ *      │                └─(done a partir de running é recusado quando a revisão é obrigatória)
  *      ├─block→ blocked ─unblock→ pending
- *      └─skip→ skipped (with reason)
+ *      └─skip→ skipped (com motivo)
  *
- * AUTHOR ≠ VERIFIER: the executor writes, a REVIEWER agent bangs the gavel. `done` demands a
- * passing validation recorded during review, by an agent other than the one that did the work.
+ * AUTOR ≠ VERIFICADOR: o executor escreve, um agente REVIEWER bate o martelo. `done` exige uma
+ * validação aprovada registrada durante a revisão, por um agente diferente daquele que fez o trabalho.
  *
- * Readiness is DERIVED: satisfied deps → ready_to_plan; current task plan → ready.
- * Tasks without planningRequired (or explicitly marked false during migration)
- * retain their original lifecycle.
+ * A prontidão é DERIVED: deps satisfeitas → ready_to_plan; plano atual da tarefa → ready.
+ * Tarefas sem planningRequired (ou marcadas explicitamente como false durante a migração)
+ * mantêm seu ciclo de vida original.
  *
- * Usage (ENGINE = path to this file, wherever the skill is installed):
+ * Uso (ENGINE = caminho para este arquivo, onde quer que a skill esteja instalada):
  *   node $ENGINE init --plan <plan.json> --run <name>
  *   node $ENGINE sync-plan --plan <plan.json> [--run <name>] [--cwd <project>]
  *   node $ENGINE migrate [--check] [--run <name>]
@@ -100,10 +100,10 @@ const MAX_ATTEMPTS_SOFT = 3
 const DEFAULT_MAX_PARALLEL = 4
 const DEFAULT_MAX_EXECUTORS = 3   // Metadado legado; maxAgents governa todos os papéis.
 const STATE_SCHEMA_VERSION = 1
-const LOCK_WAIT_MS = 5000         // how long a command waits for the run's lock
-const LOCK_STALE_MS = 30000       // a lock older than this belonged to a process that died
+const LOCK_WAIT_MS = 5000         // quanto tempo um comando aguarda pelo bloqueio da execução
+const LOCK_STALE_MS = 30000       // um bloqueio mais antigo que isso pertencia a um processo que morreu
 
-// ---------- tiny arg parser ----------
+// ---------- analisador minúsculo de argumentos ----------
 const [, , cmd, ...rest] = process.argv
 let args
 let metricRunName
@@ -159,10 +159,10 @@ function runName() {
   die('no run selected — pass --run <name> or init one')
 }
 
-/* The run name reaches join() as a path segment, so it is allowlisted, never trusted:
- * plain slug, no leading dot, no separators — same rule as serve.mjs, keep in sync.
- * Enforced HERE because runDir is the one chokepoint every filesystem use goes through
- * (state, events, lock, init) — a CURRENT edited to "../../x" must die, not traverse. */
+/* O nome da execução chega a join() como um segmento de caminho, então é validado por lista permitida, nunca confiável:
+ * slug simples, sem ponto inicial, sem separadores — mesma regra de serve.mjs; mantenha sincronizado.
+ * Imposto AQUI porque runDir é o único ponto de controle por onde passam todos os usos do sistema de arquivos
+ * (state, events, lock, init) — um CURRENT editado para "../../x" deve morrer, não percorrer diretórios. */
 function safeRun(name) {
   if (!name || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name))
     die(`invalid run name "${name}" — letters, digits, ".", "_" and "-" only (no leading dot, no path separators)`)
@@ -231,11 +231,11 @@ function migrationStatus(state) {
       const openDiscussion = task.discussionAttempts?.some(round => !round.endedAt)
       const openPlanning = task.planningAttempts?.some(round => !round.endedAt)
       const executionStarted = (task.attempts?.length ?? 0) > 0
-      // A task with an open current workflow cannot be moved between the task
-      // and phase planners while that workflow is in flight. An already
-      // started legacy attempt is safe to keep on its old lifecycle, however;
-      // making it a migration blocker is what used to freeze unrelated work.
-      // A 1.2 task-mode attempt also closed its own task plan before execution.
+      // Uma tarefa com um fluxo atual aberto não pode ser movida entre os planejadores de tarefas
+      // e de fases enquanto esse fluxo estiver em andamento. Uma tentativa legada já
+      // iniciada pode continuar no ciclo de vida antigo, porém;
+      // transformá-la em bloqueio de migração era o que congelava trabalho não relacionado.
+      // Uma tentativa no modo de tarefa 1.2 também encerrava seu próprio plano de tarefa antes da execução.
       const currentPlanning = !executionStarted && task.planningRequired !== false
       if (currentPlanning && !['pending', 'failed', 'blocked'].includes(task.state)) reasons.push(`state ${task.state}`)
       if (openDiscussion) reasons.push('open discussion')
@@ -293,14 +293,14 @@ function migrateState(name, { check = false, quiet = false } = {}) {
     const legacy = task.planningRequired === false || started ||
       (task.planningRequired === undefined && ['running', 'reviewing'].includes(task.state))
     if (legacy) {
-      // This marker is the per-task compatibility boundary. It lets the
-      // global run adopt the current graph structure without forcing an
-      // existing attempt through a new discussion/planning round.
+      // Este marcador é o limite de compatibilidade por tarefa. Ele permite que a
+      // execução global adote a estrutura atual do grafo sem forçar uma
+      // tentativa existente a passar por uma nova rodada de discussão/planejamento.
       if (adoptingLegacy && task.planningRequired === undefined) task.planningRequired = false
       continue
     }
-    // A malformed open workflow is rejected by migrationStatus above. Keep
-    // its fields untouched if a future caller reaches this branch anyway.
+    // Um fluxo aberto malformado é rejeitado por migrationStatus acima. Mantenha
+    // seus campos intactos caso uma chamada futura ainda chegue a este ramo.
     if (openWorkflow) continue
     if (task.planningRequired === undefined) {
       task.discussionRequired = true
@@ -324,29 +324,30 @@ function migrateState(name, { check = false, quiet = false } = {}) {
   return { ...status, migrated: true, backup }
 }
 
-/* Every mutating command is a read-modify-write of state.json from its OWN short-lived
- * process, and the orchestrator is told to dispatch several in the SAME message — so they
- * really do run at once. Unlocked, the last writer wins: a `start` prints "running" and
- * appends its event while its change to state.json is overwritten by a sibling, leaving a
- * task the graph thinks is pending and an agent already working on it. The atomic rename in
- * saveState prevents a torn file; only this prevents a lost one.
+/* Cada comando mutável faz uma leitura-modificação-gravação de state.json a partir de seu próprio
+ * processo de curta duração, e o orquestrador recebe a instrução de despachar vários na MESMA
+ * mensagem — portanto eles realmente executam ao mesmo tempo. Sem bloqueio, vence o último
+ * gravador: um `start` imprime "running" e acrescenta seu evento enquanto sua alteração em state.json
+ * é sobrescrita por um irmão, deixando uma tarefa que o grafo considera pending e um agente já trabalhando
+ * nela. A renomeação atômica em saveState impede um arquivo truncado; somente isto evita uma gravação perdida.
  *
- * The lock is a DIRECTORY: mkdir is atomic and fails loudly when it exists, on every
- * platform, with no O_EXCL caveats. One lock per run, so two runs never wait on each other.
+ * O bloqueio é um DIRETÓRIO: mkdir é atômico e falha claramente quando ele existe, em todas as
+ * plataformas, sem as ressalvas de O_EXCL. Um bloqueio por execução, então duas execuções nunca
+ * aguardam uma pela outra.
  */
 function sleepSync(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 }
 
 let heldLock = null
-/* die() exits the process from INSIDE the locked section (a refused transition is the
-   normal path, not an exception), and process.exit skips finally blocks — so the release
-   must also live on the exit event or every refusal would strand its lock. */
+/* die() encerra o processo DENTRO da seção bloqueada (uma transição recusada é o
+   caminho normal, não uma exceção), e process.exit ignora blocos finally — portanto a liberação
+   também precisa ficar no evento exit ou cada recusa deixaria seu bloqueio preso. */
 process.on('exit', () => { if (heldLock) rmSync(heldLock, { recursive: true, force: true }) })
 
 function withLock(name, fn) {
   const dir = runDir(name)
-  mkdirSync(dir, { recursive: true })   // init locks before the run directory exists
+  mkdirSync(dir, { recursive: true })   // init adquire o bloqueio antes de o diretório da execução existir
   const lock = join(dir, '.lock')
   const deadline = Date.now() + LOCK_WAIT_MS
   for (;;) {
@@ -356,9 +357,9 @@ function withLock(name, fn) {
       break
     } catch (e) {
       if (e.code !== 'EEXIST') throw e
-      /* A process killed mid-command leaves its lock behind. Age is the only evidence
-         available, so an old one is presumed abandoned and broken — a run that can never
-         write again would be a worse failure than the collision this guards against. */
+      /* Um processo encerrado no meio do comando deixa seu bloqueio para trás. A idade é a única evidência
+         disponível, então um bloqueio antigo é presumido abandonado e rompido — uma execução que nunca
+         mais pudesse gravar seria uma falha pior que a colisão que isto protege. */
       let age
       try { age = Date.now() - statSync(lock).mtimeMs } catch (error) {
         // Outro comando pode liberar o bloqueio entre a disputa e a leitura; tente adquiri-lo novamente.
@@ -476,7 +477,7 @@ function printValidationTail(checks, limit) {
   }
 }
 
-/** Can `from` reach `to` through deps? Two tasks so related are ORDERED, never concurrent. */
+/** `from` pode alcançar `to` pelas deps? Duas tarefas tão relacionadas são ORDERED, nunca concorrentes. */
 function reaches(byId, from, to, seen = new Set()) {
   if (from === to) return true
   if (seen.has(from)) return false
@@ -484,7 +485,7 @@ function reaches(byId, from, to, seen = new Set()) {
   return (byId[from]?.deps ?? []).some((d) => reaches(byId, d, to, seen))
 }
 
-/** Path prefixes collide when either contains the other. */
+/** Os prefixos de caminho colidem quando um contém o outro. */
 function pathsCollide(a, b) {
   return a.startsWith(b) || b.startsWith(a)
 }
@@ -611,9 +612,9 @@ function warnTaskPlan(task, plan) {
   }
 }
 
-/* Identifies the code actually running. The installer writes .prumo-install.json beside
-   scripts/; a source checkout has package.json there instead. The harness is only reported
-   when the marker records it, never inferred. */
+/* Identifica o código que está de fato em execução. O instalador grava .prumo-install.json ao lado de
+   scripts/; uma cópia do código-fonte tem package.json ali. A infraestrutura de testes só é informada
+   quando o marcador a registra, nunca inferida. */
 async function printEngineIdentity() {
   const engineFile = fileURLToPath(import.meta.url)
   const skillDir = dirname(dirname(engineFile))
@@ -622,11 +623,11 @@ async function printEngineIdentity() {
   try {
     const value = JSON.parse(readFileSync(join(skillDir, '.prumo-install.json'), 'utf8').replace(/^﻿/, ''))
     if (value?.product === 'prumo') marker = value
-  } catch { /* source checkout or copied scripts */ }
+  } catch { /* cópia do código-fonte ou scripts copiados */ }
   if (!marker) {
     let version = tr('unknown version'), id = null
-    try { version = JSON.parse(readFileSync(join(skillDir, 'package.json'), 'utf8')).version ?? version } catch { /* copied scripts */ }
-    try { id = (await import('./installation-bundle.mjs')).contentId('en', { packageRoot: skillDir }) } catch { /* incomplete copy */ }
+    try { version = JSON.parse(readFileSync(join(skillDir, 'package.json'), 'utf8')).version ?? version } catch { /* scripts copiados */ }
+    try { id = (await import('./installation-bundle.mjs')).contentId('en', { packageRoot: skillDir }) } catch { /* cópia incompleta */ }
     log('[prumo] ' + tr('Prumo {0} ({1}) — source checkout without an installation marker; harness not recorded',
       version, id ?? tr('content identifier unavailable')))
     return
@@ -635,7 +636,7 @@ async function printEngineIdentity() {
   if (marker.contentId) log(`[prumo] Prumo ${marker.version} (${marker.contentId}) — ${harness}`)
   else log('[prumo] ' + tr('Prumo {0} (content identifier missing — run prumo update) — {1}', marker.version, harness))
   let engineHash = null
-  try { engineHash = sha256(readFileSync(engineFile)) } catch { /* unreadable engine file */ }
+  try { engineHash = sha256(readFileSync(engineFile)) } catch { /* arquivo do engine ilegível */ }
   if (marker.engineHash && engineHash && marker.engineHash !== engineHash)
     log('[prumo] ' + tr('WARNING: the running engine.mjs differs from the installation marker ({0} {1}); run prumo status --verify-install, then prumo update',
       marker.version, marker.contentId ?? tr('content identifier missing')))
@@ -644,7 +645,7 @@ async function printEngineIdentity() {
   try {
     const lang = ['en', 'pt-BR'].includes(marker.lang) ? marker.lang : 'en'
     current = (await import('./installation-bundle.mjs')).contentId(lang, { packageRoot: skillDir })
-  } catch { /* incomplete installation */ }
+  } catch { /* instalação incompleta */ }
   if (current && current === marker.contentId) log('[prumo] ' + tr('installed files match the installation marker ({0})', current))
   else log('[prumo] ' + tr('WARNING: installed files differ from the installation marker (marker {0}, files {1}); run prumo update',
     marker.contentId ?? tr('content identifier missing'), current ?? tr('content identifier unavailable')))
@@ -683,9 +684,9 @@ function ageLabel(startedAt) {
 }
 
 function printPlanningRoundProgress(state) {
-  // A round still open when a later contract change (sync-plan) demanded confirmation no longer counts
-  // as work in progress: it must not read as "open", or the orchestrator waits for artifacts that
-  // finish-planning would refuse.
+  // Uma rodada ainda aberta quando uma alteração posterior de contrato (sync-plan) exigiu confirmação não conta mais
+  // como trabalho em andamento: ela não pode aparecer como "open", ou o orquestrador aguardará artefatos que
+  // finish-planning recusaria.
   const invalidated = (owner, round) => !round.endedAt && typeof owner.contractConfirmationRequired?.at === 'string' &&
     Date.parse(owner.contractConfirmationRequired.at) >= Date.parse(round.startedAt)
   const line = (id, round, recorded, total, owner) => round.endedAt
@@ -699,7 +700,7 @@ function printPlanningRoundProgress(state) {
     const round = phase.planningAttempts?.at(-1)
     if (!round || (round.endedAt && round.result !== 'planned')) continue
     const total = round.targets?.length ?? 0
-    // An open round that knows its artifact directory counts files already written there.
+    // Uma rodada aberta que conhece seu diretório de artefatos contabiliza os arquivos já gravados ali.
     const recorded = Number.isSafeInteger(round.artifactCount) ? round.artifactCount :
       !round.endedAt && typeof round.planDir === 'string' ?
         (round.targets ?? []).filter(id => existsSync(join(round.planDir, `task-plan-${id}.json`))).length :
@@ -742,9 +743,9 @@ function manualInspectionPending(state, task) {
     receipt.attempt === task.attempts?.length && currentScope)
 }
 
-/* Optional human estimate for doing the task by hand, stored as whole minutes so every reader
-   compares the same value. Accepts minutes (45), "4h", "4h30", "90m", "45min" or ISO "PT4H30M".
-   It is display metadata for the gains view, never a measurement and never part of the contract. */
+/* Estimativa humana opcional para fazer a tarefa manualmente, armazenada em minutos inteiros para que cada leitor
+   compare o mesmo valor. Aceita minutos (45), "4h", "4h30", "90m", "45min" ou ISO "PT4H30M".
+   É metadado de exibição para a visão de ganhos, nunca uma medição e nunca parte do contrato. */
 function manualEstimateMinutes(value) {
   if (typeof value === 'number') return Number.isSafeInteger(value) && value > 0 ? value : null
   if (typeof value !== 'string') return null
@@ -846,9 +847,9 @@ function historicalTasks(state) {
 }
 
 function printSyncPlanAudit(changes, diagnostics) {
-  // Applied changes are the actionable CLI result. Preserved terminal diffs stay
-  // structured in the event and are summarized by task ID below, avoiding a wall
-  // of historical fields when an old run contains many completed contracts.
+  // Alterações aplicadas são o resultado acionável da CLI. Diferenças terminais preservadas permanecem
+  // estruturadas no evento e são resumidas pelo ID da tarefa abaixo, evitando uma parede
+  // de campos históricos quando uma execução antiga contém muitos contratos concluídos.
   for (const change of changes.filter(item => !item.preserved)) {
     const details = change.fields.map(formatContractChange).join('; ')
     log('[prumo] ' + tr('sync-plan task {0} changed: {1}', displayIdentifier(change.task), details))
@@ -1172,9 +1173,9 @@ function printQuestionsForTarget(state, taskId, phaseId) {
     log(`[prumo] ${item.ref} (from ${item.sourceTask}): ${item.question.question}`)
 }
 
-/* After a plan is recorded, tell the orchestrator which open questions go to the user now and which
-   wait for a later task or phase, so a future decision is not brought forward with the execution
-   authorization. Questions the executor applies from the proposed answer are not listed. */
+/* Depois que um plano é registrado, informe ao orquestrador quais perguntas abertas vão ao usuário agora e quais
+   aguardam uma tarefa ou fase posterior, para que uma decisão futura não seja trazida junto com a
+   autorização de execução. Perguntas que o executor aplica a partir da resposta proposta não são listadas. */
 function printPlannedQuestionSummary(tasks) {
   const now = [], later = [], unanswered = []
   for (const task of tasks) {
@@ -1225,11 +1226,11 @@ function printQuestionStatus(state) {
 
 
 
-// A run only restricts dispatch after the user's scope has been recorded at least once.
-// Runs created before authorization existed, or never authorized, keep the earlier behavior.
+// Uma execução só restringe o despacho depois que o escopo do usuário foi registrado pelo menos uma vez.
+// Execuções criadas antes de existir autorização, ou nunca autorizadas, mantêm o comportamento anterior.
 
 
-/** Returns true when start proceeds under the earlier, unscoped behavior. */
+/** Retorna true quando start prossegue sob o comportamento anterior, sem escopo. */
 function assertTaskExecutionAuthorized(state, task) {
   if (taskAuthorization(task)) return false
   if (task.authorizationHistory?.length || runHasAuthorizationScope(state))
@@ -1364,7 +1365,7 @@ function printDispatchSuggestions(state, tasks = null) {
   }
 }
 
-/** Records that a review or completion opened execution capacity for authorized ready work. */
+/** Registra que uma revisão ou conclusão abriu capacidade de execução para trabalho pronto autorizado. */
 function announceFreedSlot(name, state, freedBy, cause, slotsBefore) {
   const slots = executionSlots(state)
   if (slots <= slotsBefore) return
@@ -1374,7 +1375,7 @@ function announceFreedSlot(name, state, freedBy, cause, slotsBefore) {
     if (task.effective === 'ready' && taskAuthorization(task)?.mode === 'auto' &&
         !overdueQuestions(state, task.id, task.phase).length) next.push(task.id)
   }
-  // Without authorized ready work there is nothing to signal; the dispatch suggestions still explain why.
+  // Sem trabalho pronto autorizado, não há nada a sinalizar; as sugestões de despacho ainda explicam o motivo.
   if (!next.length) return
   emit(name, 'slot_freed', null, { freedBy, cause, slots, next })
   log('[prumo] ' + tr('execution slot freed by {0} ({1}); authorized next: {2}', freedBy, tr(cause),
@@ -1466,7 +1467,7 @@ function latestPlanSyncAuditAt(name) {
   return null
 }
 
-/** Contract fields that sync-plan changed per task since a round opened, read from the event log. */
+/** Campos do contrato que sync-plan alterou por tarefa desde a abertura de uma rodada, lidos do log de eventos. */
 function syncChangedFieldsSince(name, since) {
   const fields = new Map()
   if (typeof since !== 'string') return fields
@@ -1774,7 +1775,7 @@ function assertCurrentExecutionInputs(state, task) {
     die(task.id + ' dependency input receipt changed after execution started')
 }
 
-/** Derived view: effective state per task (ready is computed, never stored). */
+/** Visão derivada: estado efetivo por tarefa (ready é calculado, nunca armazenado). */
 export function derive(state) {
   const out = {}
   const migrationPending = !['phase', 'task'].includes(state.plan?.planningMode)
@@ -1838,10 +1839,10 @@ export function derive(state) {
   return out
 }
 
-/** Who is busy right now, split by role — the cap is enforced per role, not in bulk. */
+/** Quem está ocupado agora, separado por papel — o limite é imposto por papel, não em bloco. */
 
 
-/** An agent name may hold only one task at a time, whatever the role. */
+/** Um nome de agente pode manter somente uma tarefa por vez, qualquer que seja o papel. */
 function recordConcurrentScopes(state, task, resume = false) {
   const scopes = resume ? [...(task.attempts.at(-1)?.concurrentScopes ?? [])] : []
   if (state.plan.scopePolicy === 'explicit') for (const other of Object.values(state.tasks).filter(other => other.id !== task.id && ['running', 'reviewing'].includes(other.state))) {
@@ -1856,7 +1857,7 @@ function agentBusy(state, agent) {
   return occupancy(state).busy.find((t) => (t.state === 'reviewing' ? t.reviewer : t.state === 'planning' ? t.planner : t.agent) === agent)
 }
 
-// Starting and resuming both acquire a slot; a paused task no longer owns one.
+// Iniciar e retomar adquirem uma vaga; uma tarefa pausada não possui mais uma.
 function assertAvailable(state, task, role, agent) {
   if (typeof agent !== 'string' || !agent.trim()) die('active work needs a recorded agent')
   const blockedBy = task.deps.filter((id) => !['done', 'skipped'].includes(state.tasks[id]?.state))
@@ -1887,7 +1888,7 @@ function progress(state) {
   return { total, done: by.done ?? 0, by }
 }
 
-// ---------- commands ----------
+// ---------- comandos ----------
 const commands = {
   init() {
     const planPath = args.plan ?? die('init needs --plan <plan.json>')
@@ -2211,9 +2212,9 @@ const commands = {
     for (const entry of readdirSync(GRAPH_DIR, { withFileTypes: true })) {
       const d = entry.name
       if (!entry.isDirectory() || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(d)) continue
-      /* Probed, not caught: `loadState` answers a missing state.json with `die()`, which
-         exits the process — so a `try/catch` around it can never run. `plans/` lives in
-         this directory and is not a run; so does anything else a person drops here. */
+      /* Verificado, não capturado: `loadState` responde a um state.json ausente com `die()`, que
+         encerra o processo — portanto um `try/catch` ao redor dele nunca pode ser executado. `plans/` fica
+         neste diretório e não é uma execução; o mesmo vale para qualquer outra coisa que uma pessoa deixe aqui. */
       if (!existsSync(join(GRAPH_DIR, d, 'state.json'))) continue
       try {
         const s = loadState(d)
@@ -2306,8 +2307,8 @@ const commands = {
       console.log(`\n${phase.id} — ${phase.title}`)
       Object.values(d).filter((t) => t.phase === phase.id).forEach(row)
     }
-    /* phases is OPTIONAL in a plan — tasks with no phase (or one no phase entry names)
-       must still be listed, or status silently hides part of the run. */
+    /* phases é OPCIONAL em um plano — tarefas sem fase (ou com uma entrada que não nomeia fase)
+       ainda precisam ser listadas, ou status ocultará silenciosamente parte da execução. */
     const known = new Set(state.plan.phases.map((p) => p.id))
     const orphans = Object.values(d).filter((t) => !known.has(t.phase))
     if (orphans.length) {
@@ -3119,8 +3120,8 @@ const commands = {
     log(`[prumo] ${id} execution position recorded at ${current}/${total} (agent ${t.agent}, attempt ${t.attempts.length}); position is not completion evidence`)
   },
 
-  /** Hand a finished task to a REVIEWER — a different agent, fresh context, that never
-   *  saw the work being written. This is the gate that makes `done` mean something. */
+  /** Entregue uma tarefa concluída a um REVIEWER — um agente diferente, com contexto novo, que nunca
+   *  viu o trabalho sendo escrito. Este é o portão que faz `done` significar algo. */
   review() {
     const name = runName()
     const id = args._[0] ?? die('review <task> --agent <name>')
@@ -3268,7 +3269,7 @@ const commands = {
       if (requestedOk) {
         try { validationDirectories(t, args.cwd) } catch (error) { die(error.message) }
       }
-      // Invalidate any previous pass before running commands, including on interruption.
+      // Invalide qualquer aprovação anterior antes de executar comandos, inclusive em caso de interrupção.
       t.validations.push({ ok: false, by, agent: by === 'review' ? t.reviewer : t.agent,
         evidence: args.evidence, ...(args.summary === undefined ? {} : { summary: args.summary }),
         at: new Date().toISOString(), attempt: t.attempts.length, token,
@@ -3277,7 +3278,7 @@ const commands = {
       emit(name, 'task_validation_started', id, { token, attempt: t.attempts.length })
       return { ...t, explicitScopeRequired: state.plan.scopePolicy === 'explicit' }
     })
-    // Tests must not hold the run lock: other tasks and the dashboard remain usable.
+    // Testes não devem manter o bloqueio da execução: outras tarefas e o dashboard continuam utilizáveis.
     let result = {}
     let error = null
     if (requestedOk) {
@@ -3344,8 +3345,8 @@ const commands = {
       die(`${id} has no passing validation for the current attempt — validate first`)
     if (t.planningRequired && last.planningScope !== currentPlanningScope(state, t))
       die('execution scope changed after validation — validate the current scope again')
-    /* The gavel belongs to the reviewer. A validation the executor recorded about its own
-       work is a self-report, and the whole point of the role split is that it does not count. */
+    /* O martelo pertence ao revisor. Uma validação que o executor registrou sobre seu próprio
+       trabalho é um autorrelato, e esse é exatamente o motivo pelo qual a divisão de papéis não o considera. */
     if ((t.requireReview ?? state.plan.requireReview) !== false && last.by !== 'review')
       die(`${id} was validated by the ${last.by ?? 'executor'}, not a reviewer — run \`review ${id} --agent <name>\` first`)
     if (last.by === 'review' && (!t.reviewer || last.agent !== t.reviewer || t.reviewer === t.agent))
@@ -3500,7 +3501,7 @@ const commands = {
       typeof args.answer === 'string' && args.answer.trim() ? args.answer.trim() : die(tr('unblock --answer must be nonempty'))
     if (t.blockQuestion && answer === undefined) die(tr('unblock needs --answer to resolve the current block question'))
     if (!t.blockQuestion && answer !== undefined) die(tr('unblock --answer requires a current block question'))
-    // Legacy unstarted tasks can return to pending; never guess the phase of an existing attempt.
+    // Tarefas legadas não iniciadas podem voltar a pending; nunca adivinhe a fase de uma tentativa existente.
     const previous = t.stateBeforeBlock ?? (t.attempts.length === 0 ? 'pending' : null)
     if (!['pending', 'discussing', 'planning', 'running', 'reviewing', 'failed'].includes(previous))
       die('cannot restore stateBeforeBlock; inspect the recorded history before repairing this task')
@@ -3674,10 +3675,10 @@ if (!cmd || !Object.hasOwn(commands, cmd)) {
   process.exit(1)
 }
 
-/* Readers need no lock: saveState renames a complete file into place, so a reader sees
-   either the previous state or the next one, never a half-written one. Everything else
-   takes the run's lock for its whole read-modify-write; validate locks its state updates
-   separately so command execution cannot outlive the short lock lease. */
+/* Leitores não precisam de bloqueio: saveState renomeia um arquivo completo para o lugar, então um leitor vê
+   ou o estado anterior ou o próximo, nunca um arquivo meio gravado. Todo o restante
+   usa o bloqueio da execução durante toda a leitura-modificação-gravação; validate bloqueia suas atualizações de estado
+   separadamente para que a execução de comandos não sobreviva ao curto período do bloqueio. */
 const READ_ONLY = new Set(['runs', 'status', 'ready', 'graph', 'show-contract', 'show-check'])
 const LEGACY_MIGRATION_CONTINUATIONS = new Set([
   'start', 'progress', 'review', 'review-progress', 'validate', 'done', 'fail', 'retry', 'block', 'unblock', 'skip', 'refresh-contract',
@@ -3701,8 +3702,8 @@ function assertMigrationCommandAllowed(state, command) {
   }
   if (command === 'finish-phase-discussion' && phase?.discussionAttempts?.some(round => !round.endedAt)) return
   if (command === 'finish-phase-planning' && phase?.planningAttempts?.some(round => !round.endedAt)) return
-  // A 1.2 task-mode attempt carries planningRequired, but its task plan closed before execution:
-  // it continues on that recorded plan while other blockers defer the structural migration.
+  // Uma tentativa no modo de tarefa 1.2 carrega planningRequired, mas seu plano de tarefa foi encerrado antes da execução:
+  // ela continua nesse plano registrado enquanto outros bloqueios adiam a migração estrutural.
   const openWorkflow = task?.discussionAttempts?.some(round => !round.endedAt) || task?.planningAttempts?.some(round => !round.endedAt)
   const legacyAttempt = task && (task.attempts?.length ?? 0) > 0 && (task.planningRequired !== true || !openWorkflow)
   if (legacyAttempt && LEGACY_MIGRATION_CONTINUATIONS.has(command)) return

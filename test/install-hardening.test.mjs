@@ -26,6 +26,9 @@ function fixture(t, prefix = 'prumo-install-hardening-', apply = true) {
     HOME: home,
     USERPROFILE: home,
     CLAUDE_CONFIG_DIR: config,
+    GROK_HOME: join(home, '.grok'),
+    OPENCODE_CONFIG_DIR: join(home, '.opencode'),
+    XDG_CONFIG_HOME: join(home, '.config'),
     PRUMO_HOME: join(home, 'data'),
     PRUMO_LANG: 'en',
   }

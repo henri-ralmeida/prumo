@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { downloadPublishedFile } from '../test/fixtures/published-download.mjs'
 
-// Query npm instead of keeping a hand-picked list that misses published releases.
+// Consulte o npm para não manter uma lista manual que deixe versões publicadas de fora.
 const directory = new URL('../.test-output/npm-versions/', import.meta.url)
 mkdirSync(directory, { recursive: true })
 const repo = fileURLToPath(new URL('../', import.meta.url))

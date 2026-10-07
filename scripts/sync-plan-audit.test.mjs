@@ -237,7 +237,7 @@ test('sync-plan records per-task changes and diagnostics in plan_sync', (t) => {
   assert.equal(authorization.status, 0, authorization.stdout + authorization.stderr)
   const statePath = join(root, '.specs', 'graph', 'audit', 'state.json')
   const state = JSON.parse(readFileSync(statePath, 'utf8'))
-  // Model a legacy run with the old lifecycle; the sync itself remains the state owner.
+  // Modele uma execução legada com o ciclo de vida antigo; a própria sincronização continua sendo a dona do estado.
   for (const task of Object.values(state.tasks)) {
     delete task.planningRequired
     delete task.planner

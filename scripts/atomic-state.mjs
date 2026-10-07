@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import { randomUUID } from 'node:crypto'
 
-// The caller holds the run lock. Never delete the destination to work around a lock.
+// O chamador mantém o bloqueio da execução. Nunca apague o destino para contornar um bloqueio.
 export function writeAtomicState(file, contents) {
   const temporary = `${file}.${randomUUID()}.tmp`
   try {
@@ -15,7 +15,7 @@ export function writeAtomicState(file, contents) {
     }
   /* c8 ignore next -- O laço sempre retorna ou lança; esta passagem até finally não é executável. */
   } finally {
-    // Best effort: preserve the original error if Windows also locks the temporary file.
+    // Preserve o erro original caso o Windows também bloqueie o arquivo temporário.
     try { fs.rmSync(temporary, { force: true }) } catch {}
   }
 }

@@ -30,7 +30,7 @@ npm install -g @henri-ralmeida/prumo
 O `postinstall` global do npm configura os ambientes suportados detectados e inicia o dashboard com sua visão de estado somente leitura.
 Uma instalação npm local é inerte. Use `prumo install --all` quando os scripts do npm estavam desabilitados ou para reparar um novo ambiente.
 `prumo update` atualiza a CLI, a skill, os dois READMEs, as referências, os scripts e a configuração PO First em
-todas as instalações registradas do Claude Code, Kiro, Codex e DSH. Ele compara o conteúdo gerenciado, retoma ativação
+todas as instalações registradas do Claude Code, Kiro, Codex, DSH, Antigravity, OpenCode e Grok Build. Ele compara o conteúdo gerenciado, retoma ativação
 pendente e nunca rebaixa uma CLI global mais nova que o `latest` do npm. Um marcador danificado só é recuperado
 para seu ambiente/caminho exato registrado e somente a partir de um backup Prumo conferido byte a byte.
 Instalação e atualização reiniciam o dashboard quando ele está habilitado, para que sirva a versão instalada, e
@@ -43,6 +43,23 @@ o controle explícito de cota de agentes confirmado pelo usuário; apenas uma ch
 O DSH precisa estar instalado e detectado antes de `prumo install --dsh`; o Prumo nunca instala o pacote externo `@deepseek-ai/dsh`. Um `DSH_HOME` não vazio prevalece; caso contrário, usa-se `~/.dsh`. Os destinos gerenciados são `<DSH_HOME>/skills/prumo` e o bloco PO First no `<DSH_HOME>/AGENTS.md` global. A instalação explícita retorna código diferente de zero sem gravar quando o DSH está ausente; `--all` e `postinstall` atuam apenas nos ambientes detectados, enquanto update pode reparar uma instalação Prumo exata detectada ou registrada.
 
 `prumo install --dsh` integra-se apenas a uma instalação externa do DSH já detectada, e `prumo doctor --dsh` diagnostica essa integração. Ele nunca instala `@deepseek-ai/dsh`; a instalação explícita falha sem gravar quando o DSH está ausente. A versão upstream validada para este adaptador foi `0.1.6-alpha.2`, ainda alpha/prévia para desenvolvedores. O DSH já fornece skills, instruções, subagentes e workflows nos perfis aplicáveis, por isso o Prumo não cria nem edita configuração, perfis, plugins, subagentes, workflows ou credenciais do Cordis. As checagens estruturais de instalação, de doctor e de `dsh --profile headless --dump-config` não comprovam uma conversa real com um modelo.
+
+### Outros harnesses
+
+Use `prumo install --antigravity`, `prumo install --opencode` ou `prumo install --grok` após instalar o harness correspondente. `prumo doctor` aceita a mesma opção. A instalação automática age apenas nos harnesses detectados. O Prumo instala sua skill e acrescenta um bloco PO First gerenciado sem substituir instruções pessoais nem escolher um modelo.
+
+| Harness | Skill Prumo global | Regras PO First globais |
+| --- | --- | --- |
+| Antigravity IDE / 2.0 | `~/.gemini/config/skills/prumo` | `~/.gemini/AGENTS.md` |
+| Antigravity CLI | `~/.gemini/antigravity-cli/skills/prumo` | `~/.gemini/AGENTS.md` |
+| OpenCode | `~/.config/opencode/skills/prumo` | `~/.config/opencode/AGENTS.md` |
+| Grok Build | `~/.grok/skills/prumo` | `~/.grok/AGENTS.md` |
+
+A instalação do Antigravity atende aos dois diretórios globais de skills. O OpenCode respeita `XDG_CONFIG_HOME` e também recebe a skill em `OPENCODE_CONFIG_DIR/skills` quando configurado; PO First permanece no local das regras globais. O Grok respeita `GROK_HOME`. Skills existentes no projeto só são atualizadas para seu próprio harness registrado; Codex e Antigravity nunca sobrescrevem a instalação gerenciada um do outro em `.agents/skills/prumo`.
+
+Escolha o modo nativo de planejamento quando disponível e carregue a skill Prumo explicitamente. Um modo somente leitura pode impedir a gravação do artefato do plano: obtenha permissão para aquele artefato ou devolva-o ao orquestrador, sem conceder gravação ampla nem iniciar execução. Os gates de discussão, planejamento, execução e revisão independente do Prumo continuam valendo, qualquer que seja o modelo ou modo nativo.
+
+Referências oficiais: [skills do Antigravity](https://antigravity.google/docs/skills/), [regras do Antigravity](https://antigravity.google/docs/rules/), [skills do OpenCode](https://opencode.ai/docs/skills/), [regras do OpenCode](https://opencode.ai/docs/rules/), [skills do Grok](https://docs.x.ai/build/features/skills-plugins-marketplaces), [regras do Grok](https://docs.x.ai/build/features/project-rules).
 
 ## O que ele faz
 

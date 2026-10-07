@@ -395,7 +395,7 @@ test('dados ficticios independem do plano real e nao compartilham estado entre a
   assert.equal(results.tasks.T1.state,'done')
 })
 
-test('guia reutiliza as interfaces reais em vez de copias de cards e tem quatro ambientes', () => {
+test('guia reutiliza as interfaces reais, documenta os sete ambientes e oferece fontes oficiais', () => {
   const html = readFileSync(new URL('../scripts/dashboard.html', import.meta.url),'utf8')
   const section = html.match(/<section id="onboarding"[\s\S]*?<\/section>\s*(?=<div id="results")/)?.[0]
   assert.ok(section)
@@ -408,7 +408,11 @@ test('guia reutiliza as interfaces reais em vez de copias de cards e tem quatro 
   assert.match(section,/id="guideBoardFrame"/)
   assert.match(section,/id="guideResultsFrame"/)
   assert.doesNotMatch(section,/guide-mock-card|Exemplo ilustrativo|no prumo|Legend/)
-  for(const name of ['Claude Code','Codex','Kiro','DSH']) assert.match(section,new RegExp('<h3>'+name+'</h3>'))
+  for(const name of ['Claude Code','Codex','Kiro','DSH','Antigravity','OpenCode','Grok Build']) assert.match(section,new RegExp('<h3>'+name+'</h3>'))
+  for (const href of ['https://antigravity.google/docs/skills/', 'https://opencode.ai/docs/skills/', 'https://docs.x.ai/build/features/skills-plugins-marketplaces']) {
+    assert.ok(section.includes(`href="${href}"`), `fonte oficial ausente: ${href}`)
+  }
+  for (const fragment of ['agy --mode=plan', 'separate global skill roots', '/models', 'grok models', '.grok/skills']) assert.ok(section.includes(fragment), `orientação ausente: ${fragment}`)
   assert.match(section,/id="guideStepTitle"/)
   assert.ok(section.indexOf('id="guideStepTitle"') < section.indexOf('id="guideCount"'))
   assert.match(section,/id="guideSkip"[^>]*data-i18n="Exit guide"/)
