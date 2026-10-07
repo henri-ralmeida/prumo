@@ -191,3 +191,13 @@ Uma implementação reprovada pelo revisor com contrato aprovado inalterado deve
 atual em toda correção, independentemente do número de novas tentativas, enquanto o contexto completo de planejamento registrado ainda
 corresponder. O feedback da revisão segue para o próximo executor; ele não dispara um planejador. Somente uma mudança
 material de contrato explicitamente aprovada exige novo planejamento, preservando planos e evidências anteriores.
+
+## Checklist de briefing e procedência
+
+Gere `brief <task> --role reviewer` após a passagem, inclusive após `unblock --reviewer`.
+Confira o contrato persistido e o diff atual; recibos antigos não são inspeção do novo revisor.
+Confira nomes/linhas novas e exceções específicas de texto dentro do escopo aprovado.
+Para sínteses numéricas, verifique cada fonte/caminho e localização, o valor declarado,
+a regra explícita de soma/contagem e a localização do resultado. Execute `verify-provenance`
+ou o gate de `validate`; não aceite um recibo de dependência como prova da contagem.
+Valores de modelo/esforço e tokens/ferramentas são informados, não medições independentes.

@@ -191,3 +191,13 @@ A reviewer-rejected implementation with an unchanged approved contract must reus
 plan for every correction, regardless of retry count, while the complete recorded planning context still
 matches. Review feedback travels to the next executor; it does not dispatch a planner. Only an explicitly
 approved material contract change requires fresh planning while preserving prior plans and evidence.
+
+## Briefing and provenance checklist
+
+Generate `brief <task> --role reviewer` after handoff, including unblock --reviewer.
+Inspect current contract/diff; old receipts are not the new reviewer's inspection.
+Check new delivery names/lines and specific text exceptions inside approved scope.
+For numeric summaries, inspect source paths/locations, declared values, explicit
+sum/count rules and result locations. Run verify-provenance or the validate gate;
+a dependency receipt is not a counting proof. Model/effort and token/tool counts
+are reported values, not independent measurements.

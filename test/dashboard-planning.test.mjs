@@ -177,6 +177,36 @@ const task = (id, state = 'pending', fields = {}) => ({
   id, title: `Task ${id}`, phase: 'P1', state, deps: [], attempts: [], validations: [], notes: [], ...fields,
 })
 
+test('painel soma os três planejadores e congela o relógio na pausa sem multiplicar o paralelismo', () => {
+  const ui = dashboard('pt-BR'), state = graphState(3, 1)
+  ui.run('Date.now = () => Date.parse(now)', { now: instant(600) })
+  for (const value of Object.values(state.tasks)) { value.state = 'pending'; state.derived[value.id].effective = 'pending' }
+  state.phaseWorkflows = { P1: { id: 'P1', state: 'planning', planningAttempts: [{ n: 1, startedAt: instant(0), activityTiming: 'explicit', activityIntervals: [], workers: Object.fromEntries(['T001', 'T002', 'T003'].map(id => [id, { agent: `planner-${id}`, startedAt: instant(0), activityTiming: 'explicit', activityIntervals: [] }])) }] } }
+  ui.render(state)
+  let timing = ui.run('analyse(STATE, [], true)')
+  assert.equal(timing.recordedTiming.roles.planning.durationMs, 1800000)
+  assert.equal(timing.recordedTiming.roles.planning.measuredMs, 0)
+  assert.equal(timing.liveElapsed, 600000)
+  ui.run('FULL_EVENTS = []; EVENTS_COMPLETE = true; renderResults(STATE)')
+  assert.match(ui.nodes.get('#results').innerHTML, /Duração registrada da etapa/)
+  assert.match(ui.nodes.get('#results').innerHTML, /não é trabalho ativo nem economia aferida/)
+  state.runPause = { startedAt: instant(300), reason: 'Revisar orçamento <externo>', until: instant(1200) }
+  state.runPauseHistory = [state.runPause]
+  ui.render(state)
+  timing = ui.run('analyse(STATE, [], true)')
+  assert.equal(timing.recordedTiming.roles.planning.durationMs, 900000)
+  assert.equal(timing.liveElapsed, 300000)
+  assert.equal(ui.run('LIVE_CLOCK.advancing'), false)
+  assert.match(ui.nodes.get('#orch').innerHTML, /Execução pausada: Revisar orçamento &lt;externo&gt;/)
+  assert.ok(ui.nodes.get('#orch').innerHTML.includes(instant(1200)))
+  state.runPause.endedAt = instant(500)
+  ui.render(state)
+  timing = ui.run('analyse(STATE, [], true)')
+  assert.equal(timing.recordedTiming.roles.planning.durationMs, 1200000)
+  assert.equal(timing.liveElapsed, 400000)
+  assert.equal(ui.run('LIVE_CLOCK.advancing'), true)
+})
+
 test('resumo aplica o limite compartilhado a todos os papéis e acompanha a alteração do board', () => {
   const ui = dashboard('pt-BR')
   const roles = ['discussing', 'planning', 'running', 'reviewing']
@@ -1017,6 +1047,7 @@ test('guia usa os mesmos segmentos e mantém atividade fora do percentual conclu
   ui.render(createGuideDemoData('board'))
   assert.equal(ui.nodes.get('#bar .seg-done').style.width, `${200 / 13}%`)
   for (const status of ['discussing', 'planning', 'running', 'reviewing']) assert.equal(ui.nodes.get(`#bar .seg-${status}`).style.width, `${100 / 13}%`)
+  ui.run('Date.now = () => current', { current: Date.UTC(2026, 0, 2) })
   ui.render(createGuideDemoData('results'))
   assert.equal(ui.nodes.get('#bar .seg-done').style.width, '100%')
   for (const status of ['discussing', 'planning', 'running', 'reviewing']) assert.equal(ui.nodes.get(`#bar .seg-${status}`).style.width, '0%')
@@ -3279,7 +3310,7 @@ test('resultados separam ganho, atividade por papel e estimativa dos tres papeis
   }
 })
 
-test('discussão sem registros de progresso não transforma o tempo decorrido em horas de agente', () => {
+test('discussão sem atividade aferida exibe duração registrada sem inflar ganhos', () => {
   const ui = dashboard('pt-BR')
   const state = { run: 'discussion-time', createdAt: instant(0), plan: { phases: [] },
     tasks: { A: task('A', 'done', { discussionAttempts: [{ startedAt: instant(-115 * 3600), endedAt: instant(0) }], attempts: [] }) }, derived: {} }
@@ -3288,8 +3319,10 @@ test('discussão sem registros de progresso não transforma o tempo decorrido em
   assert.equal(analysis.discussionMeasured, false)
   assert.equal(analysis.unmeasuredActivity, true)
   assert.equal(analysis.agentTotal, 0)
-  assert.match(ui.nodes.get('#results').innerHTML, /Discussão<\/span><strong>Não aferido/)
-  assert.doesNotMatch(ui.nodes.get('#results').innerHTML, /115h/)
+  const results = ui.nodes.get('#results').innerHTML
+  assert.match(results, /Discussão<\/span><strong>115h00/)
+  assert.match(results, /Trabalho ativo aferido: 0s · Duração registrada da etapa: 115h00/)
+  assert.doesNotMatch(results.split('class="gcard agent-activity"')[0], /115h/)
 })
 
 test('START e STOP medem os quatro papeis sem contar espera e fases compartilhadas duas vezes', () => {
@@ -3515,7 +3548,9 @@ test('gain card omits a long phase-planning envelope without active telemetry', 
   assert.doesNotMatch(measured, /gain-status|até agora/)
   assert.match(measured, /Não aferido/)
   assert.doesNotMatch(measured, /115h/)
-  assert.doesNotMatch(results, /115h|115:23/)
+  assert.match(results, /Planejamento<\/span><strong>115h23/)
+  assert.match(results, /Duração registrada da etapa: 115h23/)
+  assert.doesNotMatch(results.split('class="gcard agent-activity"')[0], /115h|115:23/)
 })
 
 test('o tour só resume o ganho real do #39 com run concluída e medição íntegra', () => {
@@ -4038,6 +4073,7 @@ test('o ponto final considera todas as tarefas mesmo sem fases ou com tarefas fo
 
 test('resultados do guia usam o calculo real com dados ficticios e os tres tipos de comando', () => {
   const ui = dashboard('pt-BR')
+  ui.run('Date.now = () => current', { current: Date.UTC(2026, 0, 2) })
   ui.render(createGuideDemoData('results'))
   ui.run('FULL_EVENTS = []; EVENTS_COMPLETE = true; renderResults(STATE)')
   const markup = ui.nodes.get('#results').innerHTML
@@ -5072,7 +5108,8 @@ test('115h23 phase envelope stays out of displayed time while measured work and 
     const results = ui.nodes.get('#results').innerHTML
     assert.match(results, /Ganho com prumo e paralelismo/)
     assert.doesNotMatch(results, /Caminho crítico/, 'an unmeasured critical path is not shown')
-    assert.doesNotMatch(results, /115h|76h|192h|115h23|aberta por|decorrido/)
+    assert.match(results, /Duração registrada da etapa: 115h23/)
+    assert.doesNotMatch(results.split('class="gcard agent-activity"')[0], /115h|76h|192h|115h23|aberta por|decorrido/)
   }
 })
 
@@ -5149,7 +5186,8 @@ test('more than 120 events preserve long pauses and never display unmeasured env
   ui.run('FULL_EVENTS = inputEvents; RESULTS_OPEN = true; renderResults(STATE)', { inputEvents: truncated })
   const incompleteResults = ui.nodes.get('#results').innerHTML
   assert.match(incompleteResults, /Event history is incomplete; technical gain is not measured\./)
-  assert.doesNotMatch(incompleteResults, /115h|115:23|415390s/)
+  assert.match(incompleteResults, /Recorded stage duration: 115h23[^]*Partial history/)
+  assert.doesNotMatch(incompleteResults.split('class="gcard agent-activity"')[0], /115h|115:23|415390s/)
 
   ui.run('EVENTS_COMPLETE = true; FULL_EVENTS = inputEvents; EVENTS = inputEvents; render(STATE, inputEvents); renderResults(STATE)',
     { input: state, inputEvents: events })
@@ -5649,7 +5687,8 @@ test('115h task planning envelopes stay unmeasured and cannot inflate the critic
   ui.run('FULL_EVENTS = inputEvents; renderResults(input)', { input: state, inputEvents: events })
   const results = ui.nodes.get('#results').innerHTML
   assert.match(results, /períodos não aferidos ficam fora/)
-  assert.doesNotMatch(results, /Caminho crítico|115h|115:23|415390s/, 'an unmeasured critical path is not shown')
+  assert.match(results, /Duração registrada da etapa: 115h22/)
+  assert.doesNotMatch(results.split('class="gcard agent-activity"')[0], /Caminho crítico|115h|115:23|415390s/, 'an unmeasured critical path is not shown')
   ui.run("POP = { id: 'P', pinned: true }; POP_EXPANDED = false; fillPop('P')")
   assert.match(ui.nodes.get('#popBody').innerHTML, /Agent time[\s\S]*· 5s · não aferido/)
   assert.doesNotMatch(ui.nodes.get('#popBody').innerHTML, /115h|115:23|415390s/)
@@ -5751,7 +5790,9 @@ test('large gaps between activity milestones are unknown and never counted as ag
       { inputEvents: item.events })
     const visible = ['#orch', '#doneCount', '#parallel', '#nodes', '#results', '#popBody']
       .map((selector) => ui.nodes.get(selector).innerHTML + ui.nodes.get(selector).textContent).join('\n')
-    assert.doesNotMatch(visible, /115h|115:23|415390s/, item.name)
+    const activity = ui.nodes.get('#results').innerHTML.split('class="gcard agent-activity"')[1].split('</section>')[0]
+    assert.match(activity, /Duração registrada da etapa: 115h23/, item.name)
+    assert.doesNotMatch(visible.replace(activity, ''), /115h|115:23|415390s/, item.name)
     assert.match(ui.nodes.get('#popBody').innerHTML, /Agent time[\s\S]*não aferido/, item.name)
     if (item.expected === 0) assert.doesNotMatch(ui.nodes.get('#popBody').innerHTML, />0s</, item.name)
   }
@@ -5804,7 +5845,9 @@ test('open execution without progress telemetry stays unmeasured in every visibl
   assert.doesNotMatch(graph, /115h|76h|192h|115:23|24h/)
   ui.run('FULL_EVENTS = inputEvents; renderResults(STATE)', { inputEvents: events })
   assert.match(ui.nodes.get('#results').innerHTML, /Não aferido/)
-  assert.doesNotMatch(ui.nodes.get('#results').innerHTML, /115h|76h|192h|115:23|24h/)
+  const results = ui.nodes.get('#results').innerHTML
+  assert.match(results, /Duração registrada da etapa: 115h23/)
+  assert.doesNotMatch(results.split('class="gcard agent-activity"')[0], /115h|76h|192h|115:23|24h/)
   ui.run("POP = { id: 'A', pinned: true }; POP_EXPANDED = false; fillPop('A')")
   assert.match(ui.nodes.get('#popBody').innerHTML, /não aferido/)
   assert.doesNotMatch(ui.nodes.get('#popBody').innerHTML, /115h|76h|192h|115:23|24h/)
@@ -5889,4 +5932,18 @@ test('task labels, summaries and plan identities stay visible across concise and
   const history = ui.nodes.get('#popBody').innerHTML
   assert.ok(history.includes('A conta ainda mostra o status anterior.'), 'the detail view keeps the validation summary')
   assert.ok(history.includes('Complete observation two.'), 'the detail view retains the full evidence')
+})
+
+test('retomada do run avança duração e relógio após fechar checkpoint sem afirmar atividade nova', () => {
+  const ui = dashboard('pt-BR'), state = graphState(1, 1), value = state.tasks.T001
+  ui.run('Date.now = () => Date.parse(now)', { now: instant(360) })
+  value.state = 'running'; state.derived.T001.effective = 'running'
+  value.attempts = [{ n: 1, agent: 'executor', startedAt: instant(0), activityTiming: 'explicit', activityIntervals: [{ role: 'execution', agent: 'executor', startedAt: instant(0), endedAt: instant(120), closedBy: 'run-pause' }] }]
+  state.runPause = { reason: 'Retorno explícito', startedAt: instant(120), endedAt: instant(240) }; state.runPauseHistory = [state.runPause]
+  ui.render(state)
+  const result = ui.run('analyse(STATE, [], true)')
+  assert.equal(result.liveElapsed, 240000)
+  assert.equal(result.recordedTiming.roles.execution.measuredMs, 120000)
+  assert.equal(result.recordedTiming.roles.execution.stageMs, 120000)
+  assert.equal(ui.run('LIVE_CLOCK.advancing'), true)
 })

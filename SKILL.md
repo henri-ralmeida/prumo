@@ -425,3 +425,16 @@ above the median cost without ever being rejected. That last list is the input t
 plan's `requireReview` — a field the dev authors and the engine never decides for itself. Never
 propose turning a gate off from your own impression of a task's difficulty; cite the tab or
 leave it on.
+
+## Engine-generated context and optional controls
+
+Use `brief <task> --role executor|reviewer` from the current persisted run instead of
+reconstructing handoff context. A new reviewer independently inspects and validates the
+current delivery; historical receipts never replace that review. Review handoff checks
+new delivery identifiers inside approved scope before changing state.
+Optional model/effort preferences, reported token/tool counts, numeric provenance,
+whole-run pause/resume, run selection shortcuts and check discovery are documented in
+[runtime.md](references/runtime.md#optional-evidence-and-run-controls). A paused run waits
+for explicit resume-run; --until is a forecast. Recording a pause does not interrupt
+external agents. Recorded stage duration may include waiting; never call it measured
+active work or use it as measured savings.

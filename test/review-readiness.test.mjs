@@ -23,6 +23,13 @@ test('STOP de execucao abre espera por revisao sem criar atividade de Revisor', 
   ready.state='reviewing';ready.attempts[0].reviewStartedAt='2026-01-01T10:00:00Z'
   assert.equal(isReadyForReview(ready),false)
 })
+test('fechamento pela pausa conserva execução e um STOP posterior ainda libera revisão', () => {
+  const value = task(), interval = value.attempts[0].activityIntervals[0]
+  interval.closedBy = 'run-pause'
+  assert.equal(isReadyForReview(value), false)
+  value.attempts[0].activityIntervals.push({ role: 'execution', startedAt: '2026-01-01T09:20:00Z', endedAt: '2026-01-01T09:30:00Z' })
+  assert.equal(isReadyForReview(value), true)
+})
 test('espera nao e inferida sem STOP comprovado ou para tarefas fora da execucao', () => {
   for (const state of ['blocked','failed','done','pending','skipped']) { const input=task();input.state=state;assert.equal(isReadyForReview(input),false) }
   for (const intervals of [[],[{role:'planning',startedAt:'2026-01-01T09:00:00Z',endedAt:'2026-01-01T09:10:00Z'}],[{role:'execution',startedAt:'invalido',endedAt:'2026-01-01T09:10:00Z'}]]) { const input=task();input.attempts[0].activityIntervals=intervals;assert.equal(isReadyForReview(input),false) }

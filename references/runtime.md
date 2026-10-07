@@ -1024,9 +1024,100 @@ the engine deliberately never decides it — an orchestrator that picks which of
 skip verification is the gate guarding itself. The tab's job is to replace the guess with the
 previous run's evidence. It names candidates; the dev marks them.
 
-Tokens are absent on purpose: the engine makes no model calls and never sees them. Read those
-from the agent harness.
+The engine does not measure tokens or call models. Read consumption from the harness;
+optional `report-usage` receipts store explicitly supplied counts, identified as reported.
 
 ## License
 
 [MIT](../LICENSE)
+
+## Optional evidence and run controls
+
+Existing plans remain valid. No new field is mandatory, no update recreates a run or
+fabricates attempts, and stored contracts, authorization, dependencies and history are preserved.
+
+| Feature | Interface | Default and behavior |
+|---|---|---|
+| Run selection | `--run name`, `-r name`, `PRUMO_RUN`, `CURRENT` | Precedence in that order; both CLI flags are the same option (duplicates refused). Same safe slug validation applies to all sources and init. Init keeps CURRENT selection. |
+| Engine briefing | `brief T1 --role executor\|reviewer` | Current persisted contract, checks, task-plan or skip receipts, dependency deliveries if recorded, relevant receipts and last rejection. Shell-appropriate quoted commands. No executor persuasion, invented paths or borrowed reviewer experiences. |
+| Role preferences | Optional `rolePreferences` in plan; `set-role --role review --model name --effort high` | Roles: discussion, planning, execution, review. Applies to future dispatches only, with history; authorization and contracts are unchanged. |
+| Dispatch metadata | `--model name --effort high` on assignment commands | `modelDispatches` records requested preference and supplied dispatch values on attempts/workers. Missing values are null; these are reports, not verified model calls. Status/brief show both. |
+| Whole-run pause | `pause-run --reason text [--until future-ISO-timestamp]` | Preserves task states, rounds, queue and external blockers. Closes open activity, discounts recorded pause and stops new dispatch/ready suggestions. Until is a forecast, never automatic resume. Does not stop external harness processes. |
+| Explicit resume | `resume-run` | Keeps history/attempts and applies current agent limits on subsequent dispatch. Does not implicitly restart measured activity. |
+| Reported usage | `report-usage T1 --role execution --attempt 1 --receipt id --tokens 100 --tools 3` | Optional nonnegative integer counts on an attempt/worker. Same receipt is idempotent, conflicting reports refused. Summed by task/run without validate/done duplication; no financial cost or independent measurement claim. Specify phase round attempt explicitly for workers. |
+| Check query | `show-check T1 [--attempt K] [--check N]` | No check lists attempts/checks with exact commands. Without attempt, a selected check uses the latest recorded execution attempt, never an older validation fallback. Missing current receipts and invalid indices explain available choices. Full receipt output is preserved. |
+
+### Delivery identifiers
+
+Before review or direct reviewer handoff, inspect new/changed or explicitly declared delivery filenames and added lines inside
+approved touches against the pre-start baseline. Task/phase ids, run and plan names are
+case-insensitive literals with letter/digit boundaries (underscore separates identifiers).
+Common role words are not indiscriminately prohibited. Baseline stores line hashes, not source text;
+identical pre-existing lines are discounted by occurrence. Review remains independent.
+
+Optional task fields: `deliveries: ["out/result.json"]` includes declared ignored artifacts;
+`textRules: { "patterns": ["internal-literal"], "exceptions": [{ "path": "out/example.json", "line": 4, "identifier": "T6" }] }`.
+Patterns/exceptions are bounded to 64; literal strings to 128 characters. Exceptions match
+one path, line and identifier; line 0 means filename. All declared paths must be inside touches.
+These are contract fields, updated through approved sync-plan and existing gates.
+Links and linked parents are refused. Binary content is omitted with a recorded limitation.
+Reading limits: 256 files, 1 MiB per file, 8 MiB total. Errors contain path/line, never source content.
+Without Git, traversal stays under approved touches and visits at most 4096 entries.
+Legacy attempts without a baseline check only explicitly recorded deliveries and report that
+limitation. Missing file scope/cwd never invents a baseline. validate/done check freshness again.
+
+### Executable numeric provenance
+
+Optional task contract: `numericProvenance: { "manifest": "out/provenance.json", "sources": ["data/input.json"] }`.
+The delivered JSON manifest has 1–256 `claims`, each with `source`, JSON Pointer `pointer`,
+`operation` (`value`, numeric array `sum`, array `count`), numeric declared `value`, and
+`result: { "source": "out/result.json", "pointer": "/total" }`.
+Origin must be explicitly approved; manifest/results must be inside touches. Empty pointer
+selects the document, `~0`/`~1` escape tilde/slash. Missing evidence, invalid reference,
+malformed JSON or divergent source/calculation/result is refused by `verify-provenance T1`
+and validate. Sources are fingerprinted before/after executable checks and again at done;
+even a concurrent edit preserving the total invalidates obsolete evidence. The checker does
+not infer every number in prose or treat a dependency receipt as proof of a count.
+Without this field, historical contracts gain no mandatory numeric gate.
+Explicit `verify-provenance` refuses a missing numeric contract; ordinary historical validation remains unchanged.
+
+### Recorded durations
+
+The activity panel sums each agent by role; phase workers replace, rather than add to,
+the phase envelope. Explicit intervals show measured active work. Empty intervals with
+valid stage timestamps show recorded stage duration, which may include waiting and is
+not measured work or measured savings. The live clock unions stage intervals across roles
+and discounts recorded pauses/blocks: three workers for ten minutes means thirty summed
+minutes and ten elapsed. Missing evidence/partial history is labeled honestly.
+
+### Shell filter diagnostics
+
+Doctor accepts `--lean-ctx-config file.json` and `--shell-block-evidence file.json`, each
+bounded to 64 KiB. Accessible configuration shape:
+`{"plugins":{"lean-ctx":{"allowedCommands":["approved command"]}}}`. This identifies the
+list but does not establish a runtime block. Recorded evidence shape:
+`{"plugin":"lean-ctx","decision":"blocked","command":"node scripts/engine.mjs ready"}`.
+Relevant block evidence permits advising an allowed-list adjustment, never bypassing the
+filter. The report's origin is not authenticated. With neither, no detection is claimed.
+
+### Planning feedback and artifact identity
+
+Finishing planning warns when an open question literally repeats an answered discussion
+question or decision, ignoring case and whitespace. It is advisory: no answer, semantic
+equivalence or resolution is inferred, and the original question stays recorded. Contract
+decisions phrased differently still require human inspection of the current briefing.
+
+New task plans record the artifact's actual `sourcePath`. Start, corrective retry and brief
+show the approved embedded plan's full digest, source attempt and phase planner round.
+An old plan with no source path reports null; the engine does not invent one or reload a
+changed artifact to silently replace the approved plan. Source path is provenance metadata,
+not evidence that the file's present contents still match the embedded plan.
+
+If the planner cannot write, return complete JSON on stdout with the designated
+`task-plan-<task>.json` filename. The orchestrator saves that exact artifact and invokes
+the existing finish command. Empty output is not a plan; normal schema, binding, freshness,
+authorization and independent review gates still apply. Phase dispatch prints this route.
+
+Declared deliveries are inspected in full, including preexisting contents; unrelated unchanged baseline lines stay discounted. For historical phase rounds without workers, usage can be attached to the existing round only when its recorded targets include the task; `--phase` disambiguates phase history. Aggregate tokens/tools must stay within safe integer limits.
+
+After explicit run resume, a checkpoint closed by pause contributes new recorded stage duration until the next checkpoint or stage end; it does not create measured work. Stored task-plan timestamps can supply a partial historical planning duration when no planning round exists; no attempts are invented.

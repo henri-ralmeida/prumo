@@ -10,6 +10,7 @@ import { assertUpdateVersion, ensureGlobalCliContent, globalCliContentCurrent, g
 import { releaseHistory } from '../lib/release-notes.mjs'
 import { dashboardNeedsRepair, dashboardStatus, disableDashboard, enableDashboard, readDashboardEvents, runDashboardForeground, stopDashboardForUpdate } from '../lib/autostart.mjs'
 import { selectHarnesses } from '../lib/prompt.mjs'
+import { diagnoseShellFilter } from '../lib/shell-diagnostics.mjs'
 import { assertCliOptions } from '../lib/cli-args.mjs'
 import { language, createTranslator, messages } from '../scripts/i18n.mjs'
 
@@ -134,9 +135,9 @@ function registeredReports({ projects = [] } = {}) {
 try {
   if (Number(process.versions.node.split('.')[0]) < 22) throw new Error('Prumo requires Node.js 22 or newer')
   const { values, positionals } = parseArgs({ allowPositionals: true, options: {
-    ...harnessOptions, all: { type: 'boolean' },
+    ...harnessOptions, 'lean-ctx-config': { type: 'string' }, 'shell-block-evidence': { type: 'string' }, all: { type: 'boolean' },
     lang: { type: 'string' }, 'dry-run': { type: 'boolean' }, project: { type: 'string', multiple: true },
-    check: { type: 'boolean' }, run: { type: 'string' }, 'verify-install': { type: 'boolean' },
+    check: { type: 'boolean' }, run: { type: 'string', short: 'r' }, 'verify-install': { type: 'boolean' },
     help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'v' },
   } })
   const lang = language(values.lang)
@@ -339,6 +340,7 @@ try {
       })
       if (!allCurrent && !values.all && (process.stdin.isTTY && process.stdout.isTTY || !values['dry-run'])) harnesses = await selectHarnesses(harnesses, { t })
     }
+    if (command === 'doctor') print(diagnoseShellFilter({ config: values['lean-ctx-config'], evidence: values['shell-block-evidence'] }))
     let successfulHarnesses = 0
     let doctorLang = lang
     if (command === 'install') {

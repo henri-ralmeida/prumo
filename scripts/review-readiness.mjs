@@ -21,6 +21,7 @@ export function isReadyForReview(task, plan = {}) {
   const intervals = attempt.activityIntervals ?? []
   if (intervals.some(interval => !interval.endedAt)) return false
   const execution = intervals.filter(interval => interval.role === 'execution').at(-1)
+  if (execution?.closedBy === 'run-pause') return false
   const start = Date.parse(execution?.startedAt ?? ''), stop = Date.parse(execution?.endedAt ?? '')
   return Number.isFinite(start) && Number.isFinite(stop) && stop >= start
 }

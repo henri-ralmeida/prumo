@@ -1134,9 +1134,6 @@
   "Cycle to Plan mode before requesting the plan.": "No terminal, use Shift+Tab até chegar ao modo plano e peça o planejamento.",
   "CLI or app: enter /plan to switch to Plan mode.": "No CLI ou aplicativo, digite /plan para entrar no modo Planejamento.",
   "Use /plan in a profile with Plan mode enabled.": "Digite /plan em um perfil com Plan mode habilitado.",
-  "Use /plan or agy --mode=plan; IDE/2.0 and CLI use separate global skill roots, and the model selector stays in the prompt panel.": "Use /plan ou agy --mode=plan; o IDE/2.0 e a CLI usam raízes globais de skills separadas, e o seletor de modelo fica no painel do prompt.",
-  "Select the built-in Plan agent with Tab; skills load from .opencode/skills or ~/.config/opencode/skills, and /models chooses the model.": "Selecione o agente Plan integrado com Tab; as skills vêm de .opencode/skills ou ~/.config/opencode/skills, e /models escolhe o modelo.",
-  "Enter /plan or use Shift+Tab; skills load from .grok/skills or $GROK_HOME/skills, and grok models or /model selects the model.": "Digite /plan ou use Shift+Tab; as skills vêm de .grok/skills ou $GROK_HOME/skills, e grok models ou /model seleciona o modelo.",
   "After approval": "depois da aprovação",
   "Documentation": "documentação",
   "After the plan is approved, invoke the Prumo skill and watch the plan come alive in the dashboard.": "Depois do plano aprovado, invoque a skill do Prumo e veja o plano ganhar vida no dashboard.",
@@ -1638,5 +1635,11 @@
   "Fixed — Continuous elapsed live clock": "Corrigido — Relógio ao vivo contínuo",
   "Preserve elapsed work before the first activity checkpoint and across discussion, planning, execution and review": "Preserve o tempo de trabalho anterior ao primeiro checkpoint e entre discussão, planejamento, execução e revisão",
   "Count overlapping activities once in project elapsed time while retaining individual agent metrics": "Conte atividades simultâneas uma única vez no tempo do projeto, preservando as métricas individuais dos agentes",
-  "Keep the last displayed clock during temporary history or server failures": "Mantenha o último relógio exibido durante falhas temporárias no histórico ou no servidor"
+  "Keep the last displayed clock during temporary history or server failures": "Mantenha o último relógio exibido durante falhas temporárias no histórico ou no servidor",
+  "Run paused": "Execução pausada",
+  "Measured active work": "Trabalho ativo aferido",
+  "Recorded stage duration": "Duração registrada da etapa",
+  "Partial history": "Histórico parcial",
+  "Totals sum each agent. Stage duration may include waiting and is not measured active work or measured savings.": "Os totais somam cada agente. A duração da etapa pode incluir espera e não é trabalho ativo nem economia aferida.",
+  "Recorded stage elapsed time; may include waiting. Parallel periods count once.": "Tempo corrido registrado das etapas; pode incluir espera. Períodos paralelos contam uma vez."
 }

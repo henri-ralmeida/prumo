@@ -206,6 +206,7 @@ export function planTaskFromState(t) {
     touches: t.touches,
     ...(t.writeScope === undefined ? {} : { writeScope: t.writeScope }),
     ...(t.sharedResources === undefined ? {} : { sharedResources: t.sharedResources }),
+    ...Object.fromEntries(['textRules', 'deliveries', 'numericProvenance'].filter(key => t[key] !== undefined).map(key => [key, t[key]])),
     unavailable: t.unavailable,
   }
 }

@@ -2079,7 +2079,7 @@ test('sync-plan warns without blocking when it invalidates an open discussion or
 test('phase plans persist summaries and bind a separate plan digest at start', t => {
   const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Deliver phase output' }])
   f.ok('skip-phase-discussion', 'F1', '--reason', 'The approved phase contract is settled', '--confirmed-by-user')
-  f.ok('plan-phase', 'F1', '--agent', 'phase-planner')
+  assert.match(f.ok('plan-phase', 'F1', '--agent', 'phase-planner').stdout, /complete task-plan-<task>\.json JSON on stdout[\s\S]*all artifact gates still apply/)
   f.writeArtifacts('F1')
 
   const artifactPath = join(f.plans, 'task-plan-A.json')
@@ -2090,8 +2090,12 @@ test('phase plans persist summaries and bind a separate plan digest at start', t
 
   const planned = f.state().tasks.A
   assert.equal(planned.taskPlan.summary, artifact.summary)
+  assert.equal(planned.taskPlan.sourcePath, artifactPath)
   assert.match(planned.taskPlan.digest, /^[a-f0-9]{64}$/)
-  f.ok('start', 'A', '--agent', 'executor')
+  const startOutput = f.ok('start', 'A', '--agent', 'executor').stdout
+  assert.match(startOutput, /current recorded plan/)
+  assert.ok(startOutput.includes(planned.taskPlan.digest))
+  assert.ok(startOutput.includes(JSON.stringify(artifactPath)))
 
   const started = f.state().tasks.A
   assert.equal(started.attempts[0].planDigest, planned.taskPlan.digest)
@@ -2101,4 +2105,19 @@ test('phase plans persist summaries and bind a separate plan digest at start', t
   assert.equal(event.type, 'task_start')
   assert.equal(event.planDigest, planned.taskPlan.digest.slice(0, 4))
   assert.match(f.ok('status').stdout, new RegExp(`Plan ${planned.taskPlan.digest.slice(0, 4)}`))
+})
+
+test('literal answered planning questions warn without inventing an answer or discarding the question', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Deliver approved output' }])
+  f.ok('skip-phase-discussion', 'F1', '--reason', 'Approved current contract', '--confirmed-by-user')
+  f.ok('plan-phase', 'F1', '--agent', 'planner')
+  f.writeArtifacts('F1')
+  const path = join(f.plans, 'task-plan-A.json'), artifact = JSON.parse(readFileSync(path, 'utf8'))
+  artifact.decisions = [{ question: 'Include only non-blockers?', answer: 'Yes, as approved.' }]
+  artifact.openQuestions = [{ question: ' include  ONLY non-blockers? ', blocking: false, decideBy: 'user-now' }]
+  writeFileSync(path, JSON.stringify(artifact))
+  assert.match(f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans).stdout, /openQuestions\[1\] repeats a literally answered[\s\S]*No answer or resolution was inferred/)
+  assert.equal(f.state().tasks.A.taskPlan.openQuestions[0].question, artifact.openQuestions[0].question)
+  assert.equal(f.state().tasks.A.taskPlan.openQuestions[0].answer, undefined)
+  assert.equal(f.state().questionResolutions?.length ?? 0, 0)
 })

@@ -106,3 +106,13 @@ nem aumente uma janela de dados apenas para satisfazer a etapa. Veja references/
 
 Isso vale também no Windows. Mantenha o diretório de trabalho real no passo de validação aprovado; não traduza nem
 reescreva seus comandos.
+
+## Modelo para sínteses numéricas
+
+Quando o aceite exigir números de uma síntese, declare `numericProvenance` na tarefa
+([schema e exemplo](runtime.pt-BR.md#procedência-executável-de-sínteses-numéricas)).
+O contrato exige fontes preservadas, caminho e JSON Pointer de cada origem, valor declarado,
+regra explícita de soma/contagem e localização do resultado entregue. Use uma checagem
+funcional relevante além da procedência: a conciliação de números não prova todas as regras
+de negócio. O motor recusa manifesto ausente/referência inválida/divergência e evidencia
+fontes alteradas entre validação e conclusão; recibos de dependência não substituem a origem.

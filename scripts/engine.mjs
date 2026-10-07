@@ -90,6 +90,8 @@ import {
 import { businessContract, contractDrift, GLOBAL_PLAN_FIELDS, TASK_CONTRACT_FIELDS } from './contract-drift.mjs'
 import { parseEngineArgs } from './engine-args.mjs'
 import { taskIdentifierProblem, phaseIdentifierProblem } from './task-identifiers.mjs'
+import { captureDelivery, checkDelivery, verifyNumericProvenance, assertEvidenceContract } from './delivery-evidence.mjs'
+import { assertRolePreferences, recordDispatchMetadata, dispatchOwners, reportedUsageTotals, pauseRun, resumeRun, shellCommand, taskBrief, agentRoles, repeatedPlanQuestions, recordedPlanIdentity } from './run-metadata.mjs'
 import { newCommandRecord, recordCommand } from './command-metrics.mjs'
 
 let ROOT
@@ -117,7 +119,7 @@ if (recognizedCommand) {
     try {
       const runFlag = rest.lastIndexOf('--run')
       if (runFlag >= 0 && rest[runFlag + 1] === undefined) return
-      const requestedRun = args?.run ?? (runFlag >= 0 ? rest[runFlag + 1] : undefined)
+      const requestedRun = args?.run ?? process.env.PRUMO_RUN ?? (runFlag >= 0 ? rest[runFlag + 1] : undefined)
       const name = requestedRun ?? (cmd === 'init' ? undefined : (metricRunName ?? currentRunAtStart))
       if (typeof name !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) return
       recordCommand(join(GRAPH_DIR, name), metric, code)
@@ -154,7 +156,8 @@ function planningArtifactError(filename, error) {
 }
 
 function runName() {
-  if (args.run) return (metricRunName = args.run)
+  if (args.run !== undefined) return (metricRunName = safeRun(args.run))
+  if (process.env.PRUMO_RUN !== undefined) return (metricRunName = safeRun(process.env.PRUMO_RUN))
   if (existsSync(CURRENT_FILE)) return (metricRunName = readFileSync(CURRENT_FILE, 'utf8').trim())
   die('no run selected — pass --run <name> or init one')
 }
@@ -187,6 +190,10 @@ function loadState(name) {
 
 function saveState(name, state) {
   state.updatedAt = new Date().toISOString()
+  const previous = existsSync(join(runDir(name), 'state.json')) ? loadState(name) : { tasks: {} }
+  const aliases = state.taskIdAliases ?? {}
+  const redispatchTask = cmd === 'unblock' ? Object.hasOwn(aliases, args._[0]) ? aliases[args._[0]] : args._[0] : undefined
+  for (const record of recordDispatchMetadata(previous, state, args, redispatchTask)) log('[prumo] model dispatch (reported, not verified): ' + JSON.stringify(record))
   closeInactiveActivity(state, state.updatedAt)
   const dir = runDir(name)
   writeAtomicState(join(dir, 'state.json'), JSON.stringify(state, null, 2))
@@ -435,9 +442,9 @@ function quoteCommandArg(value, shell = invokingShell()) {
     : `'${text.replaceAll("'", "'\\''")}'`
 }
 
-function positiveIndex(value, label) {
+function positiveIndex(value, label, choices) {
   if (typeof value !== 'string' || !/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) < 1)
-    die(`${label} must be a positive integer`)
+    die(`${label} must be a positive integer${choices === undefined ? '' : '; available: ' + JSON.stringify(choices)}`)
   return Number(value)
 }
 
@@ -599,7 +606,9 @@ function warnPlanTouchPaths(plan, cwd) {
   }
 }
 
-function warnTaskPlan(task, plan) {
+function warnTaskPlan(task, plan, state) {
+  for (const index of repeatedPlanQuestions(task, plan, state.phaseWorkflows?.[task.phase]?.discovery))
+    log(`[prumo] planning warning: ${task.id} openQuestions[${index}] repeats a literally answered discussion/decision question; inspect the current contract and answer before retaining it. No answer or resolution was inferred.`)
   if (!plan.writes?.length)
     log('[prumo] ' + tr('task plan warning: {0} declares no writes; confirm the executor stays within approved touches', task.id))
   for (let index = 0; index < plan.verification.length; index++) {
@@ -764,6 +773,7 @@ function manualEstimateMinutes(value) {
 }
 
 function validatePlan(plan, allowOverlap = false, historical = new Set()) {
+  try { assertRolePreferences(plan.rolePreferences) } catch (error) { die(error.message) }
   if (plan.maxAgents !== undefined && (!Number.isSafeInteger(plan.maxAgents) || plan.maxAgents < 1)) die('maxAgents must be a positive integer')
   if (!Array.isArray(plan.tasks) || plan.tasks.length === 0) die('plan has no tasks')
   const ids = new Set()
@@ -777,6 +787,7 @@ function validatePlan(plan, allowOverlap = false, historical = new Set()) {
   }
   for (const t of plan.tasks) {
     if (!t.id || !t.title) die('every task needs id and title')
+    try { assertEvidenceContract(t) } catch (error) { die(`task ${t.id}: ${error.message}`) }
     try { assertExplicitScope(t, historical.has(t.id) ? undefined : plan.scopePolicy) } catch (error) { die(`task ${t.id}: ${error.message}`) }
     safeId(t.id)
     if (ids.has(t.id)) die(`duplicate task id ${t.id}`)
@@ -930,6 +941,7 @@ function taskFromPlan(t) {
     touches: t.touches ?? [],
     ...(t.writeScope === undefined ? {} : { writeScope: t.writeScope }),
     ...(t.sharedResources === undefined ? {} : { sharedResources: t.sharedResources }),
+    ...Object.fromEntries(['textRules', 'deliveries', 'numericProvenance'].filter(key => t[key] !== undefined).map(key => [key, structuredClone(t[key])])),
     unavailable: t.unavailable === undefined ? undefined : [...new Set(t.unavailable)],
     state: 'pending',
     discussionRequired: true,
@@ -1074,6 +1086,7 @@ function agentLimitChange() {
 }
 
 function eligibleDiscussionPhases(state) {
+  if (state.runPause && !state.runPause.endedAt) return []
   if (state.plan.planningMode !== 'phase') return []
   return (state.plan.phases ?? []).flatMap(phase => {
     const workflow = state.phaseWorkflows?.[phase.id]
@@ -1327,11 +1340,13 @@ function authorizeScope(state, scope) {
 }
 
 function executionSlots(state) {
+  if (state.runPause && !state.runPause.endedAt) return 0
   const occ = occupancy(state)
   return Math.max(0, Math.min(occ.maxExec - occ.executors.length, occ.cap - occ.busy.length))
 }
 
 function actionForTask(state, task, slots) {
+  if (state.runPause && !state.runPause.endedAt) return ''
   if (!['ready_for_discussion', 'ready_to_plan', 'ready'].includes(task.effective)) return ''
   if (task.effective === 'ready_for_discussion')
     return state.plan.planningMode === 'phase' ? tr('ask user to begin discussion for {0}', task.phase) :
@@ -1353,6 +1368,7 @@ function actionForTask(state, task, slots) {
 }
 
 function printDispatchSuggestions(state, tasks = null) {
+  if (state.runPause && !state.runPause.endedAt) return
   const d = derive(state)
   const candidates = tasks ?? Object.values(d).filter(task => ['ready_for_discussion', 'ready_to_plan', 'ready'].includes(task.effective))
   let slots = executionSlots(state)
@@ -1892,7 +1908,7 @@ function progress(state) {
 const commands = {
   init() {
     const planPath = args.plan ?? die('init needs --plan <plan.json>')
-    const name = args.run
+    const name = args.run ?? process.env.PRUMO_RUN ?? (existsSync(CURRENT_FILE) ? readFileSync(CURRENT_FILE, 'utf8').trim() : undefined)
     const { plan, source } = readPlan(planPath)
     const cwd = projectCwd()
     warnPlanTouchPaths(plan, cwd)
@@ -1913,6 +1929,7 @@ const commands = {
         requireReview: plan.requireReview !== false,
         planningMode: plan.planningMode ?? ((plan.phases?.length ?? 0) ? 'phase' : 'task'),
         ...(plan.scopePolicy === undefined ? {} : { scopePolicy: plan.scopePolicy }),
+        ...(plan.rolePreferences === undefined ? {} : { rolePreferences: structuredClone(plan.rolePreferences) }),
         source,
         ...(cwd ? { cwd } : {}),
       },
@@ -2026,6 +2043,7 @@ const commands = {
       requireReview: plan.requireReview !== false,
       ...(state.plan.planningMode ? { planningMode: state.plan.planningMode } : {}),
       ...((plan.scopePolicy ?? state.plan.scopePolicy) === undefined ? {} : { scopePolicy: plan.scopePolicy ?? state.plan.scopePolicy }),
+      ...((plan.rolePreferences ?? state.plan.rolePreferences) === undefined ? {} : { rolePreferences: structuredClone(plan.rolePreferences ?? state.plan.rolePreferences) }),
       source,
       ...(cwd ? { cwd } : {}),
     }
@@ -2143,6 +2161,65 @@ const commands = {
     printDispatchSuggestions(state)
   },
 
+  brief() {
+    const state = loadState(runName()), task = getTask(state, args._[0])
+    console.log(JSON.stringify(taskBrief(state, task, args.role, tokens => shellCommand([process.execPath, fileURLToPath(import.meta.url), ...tokens, '--run', state.run])), null, 2))
+  },
+  'set-role'() {
+    const name = runName(), state = loadState(name)
+    const supplied = Object.fromEntries(['model', 'effort'].filter(key => args[key] !== undefined).map(key => [key, args[key]]))
+    assertRolePreferences({ [args.role]: supplied })
+    const preference = { ...(state.plan.rolePreferences?.[args.role] ?? {}), ...supplied }
+    ;(state.rolePreferenceHistory ??= []).push({ role: args.role, before: state.plan.rolePreferences?.[args.role] ?? null, after: preference, at: new Date().toISOString() })
+    state.plan.rolePreferences ??= {}
+    state.plan.rolePreferences[args.role] = preference
+    saveState(name, state)
+    emit(name, 'role_preference', null, { role: args.role, preference, requested: true })
+  },
+  'pause-run'() {
+    const name = runName(), state = loadState(name)
+    pauseRun(state, args.reason, args.until, new Date().toISOString())
+    saveState(name, state); emit(name, 'run_pause', null, state.runPause)
+    log('[prumo] Run paused; external harness processes are not interrupted; --until never resumes automatically')
+  },
+  'resume-run'() {
+    const name = runName(), state = loadState(name)
+    resumeRun(state, new Date().toISOString())
+    saveState(name, state); emit(name, 'run_resume', null, { at: state.runPause.endedAt })
+    log('[prumo] Run resumed explicitly; new dispatches use current limits')
+    printDispatchSuggestions(state)
+  },
+  'report-usage'() {
+    const name = runName(), state = loadState(name), task = getTask(state, args._[0])
+    if (!agentRoles.includes(args.role) || !args.receipt?.trim() || args.receipt.length > 128) die('report-usage requires role and a bounded receipt id')
+    const attemptNumber = args.attempt === undefined ? (args.role === 'execution' || args.role === 'review' ? task.attempts.length : task[`${args.role}Attempts`]?.length ?? 0) : positiveIndex(args.attempt, 'report-usage --attempt')
+    const owner = args.role === 'execution' || args.role === 'review' ? task.attempts[attemptNumber - 1] : task[`${args.role}Attempts`]?.[attemptNumber - 1]
+    const phaseId = args.phase ?? task.phase
+    const workers = Object.entries(state.phaseWorkflows ?? {}).filter(([id]) => !phaseId || id === phaseId).flatMap(([id, phase]) => (phase[`${args.role}Attempts`] ?? []).filter(round => round.n === attemptNumber && (Object.hasOwn(round.workers ?? {}, task.id) || !round.workers && round.targets?.includes(task.id))).map(round => ({ phase: id, worker: round.workers?.[task.id] ?? round })))
+    if (!owner && workers.length > 1) die('More than one recorded phase worker matches; select --phase explicitly')
+    const target = args.phase === undefined ? owner ?? workers[0]?.worker : workers[0]?.worker
+    if (!target || args.role === 'review' && !target.reviewStartedAt) die('No recorded attempt/worker for the selected role')
+    const counts = {}
+    for (const key of ['tokens', 'tools']) if (args[key] !== undefined) {
+      const value = Number(args[key])
+      if (!/^\d+$/.test(args[key]) || !Number.isSafeInteger(value)) die('Reported usage must be nonnegative safe integers')
+      counts[key] = value
+    }
+    if (!Object.keys(counts).length) die('report-usage requires tokens or tools')
+    const value = { task: task.id, role: args.role, attempt: attemptNumber, receipt: args.receipt, ...counts, selfReported: true }
+    const previous = (target.usageReports ?? []).find(item => item.receipt === args.receipt && item.role === args.role)
+    if (previous) { if (JSON.stringify(previous) !== JSON.stringify(value)) die('Receipt already recorded with different values'); return log('[prumo] Usage receipt already recorded; totals unchanged') }
+    ;(target.usageReports ??= []).push(value)
+    const totals = reportedUsageTotals(state)
+    saveState(name, state); emit(name, 'reported_usage', task.id, value)
+    log('[prumo] Reported tokens/tools (not measured): ' + JSON.stringify(totals))
+  },
+  'verify-provenance'() {
+    const state = loadState(runName()), task = getTask(state, args._[0])
+    if (!task.numericProvenance) die('No numeric provenance contract is recorded; approve the manifest and sources before explicitly verifying a numeric summary')
+    console.log(JSON.stringify(verifyNumericProvenance(task, state.plan.cwd)))
+  },
+
   'show-contract'() {
     const id = args._[0] ?? die('show-contract <task> [--diff]')
     const state = loadState(runName())
@@ -2183,12 +2260,21 @@ const commands = {
 
   'show-check'() {
     const id = args._[0] ?? die('show-check <task> --check <index> --attempt <number>')
-    const checkNumber = positiveIndex(args.check, 'show-check --check')
-    const attemptNumber = positiveIndex(args.attempt, 'show-check --attempt')
-    const task = getTask(loadState(runName()), id)
-    const receipt = task.validations?.slice().reverse().find(item =>
-      item.attempt === attemptNumber && item.checks?.[checkNumber - 1])
-    if (!receipt) die(`${id} has no stored check ${checkNumber} for attempt ${attemptNumber}`)
+    const name = runName()
+    const task = getTask(loadState(name), id)
+    const latest = task.attempts?.at(-1)?.n ?? task.attempts?.length ?? 0
+    const receipts = [...new Map((task.validations ?? []).map(item => [item.attempt, item])).values()]
+    const options = receipts.map(item => ({ attempt: item.attempt, checks: (item.checks ?? []).map((check, index) => ({ index: index + 1, run: check.run, command: shellCommand([process.execPath, fileURLToPath(import.meta.url), 'show-check', id, '--attempt', item.attempt, '--check', index + 1, '--run', name]) })) }))
+    if (args.check === undefined) {
+      const selected = args.attempt === undefined ? null : positiveIndex(args.attempt, 'show-check --attempt', options)
+      console.log(JSON.stringify({ task: id, latestAttempt: latest, attempts: selected === null ? options : options.filter(item => item.attempt === selected), note: 'No receipt for the current attempt means no stored check; older validation is never selected implicitly.' }, null, 2))
+      if (selected !== null && !options.some(item => item.attempt === selected)) die('No stored checks for this attempt; available: ' + options.map(item => item.attempt).join(', '))
+      return
+    }
+    const checkNumber = positiveIndex(args.check, 'show-check --check', options)
+    const attemptNumber = args.attempt === undefined ? latest : positiveIndex(args.attempt, 'show-check --attempt', options)
+    const receipt = receipts.find(item => item.attempt === attemptNumber)
+    if (!receipt?.checks?.[checkNumber - 1]) die(`${id} has no stored check ${checkNumber} for attempt ${attemptNumber}; available: ` + JSON.stringify(options))
     const check = receipt.checks[checkNumber - 1]
     const reused = Boolean(check.reusedAt)
     log(`[prumo] ${id} check ${checkNumber}/${receipt.checks.length} from attempt ${attemptNumber} (${receipt.by ?? 'unknown'}; reused ${tr(reused ? 'yes' : 'no')})`)
@@ -2271,6 +2357,10 @@ const commands = {
     const name = runName()
     const state = loadState(name)
     await printEngineIdentity()
+    if (state.runPause && !state.runPause.endedAt) log('[prumo] RUN PAUSED: ' + JSON.stringify(state.runPause))
+    log('[prumo] model preferences (requested; not verified): ' + JSON.stringify(state.plan.rolePreferences ?? {}))
+    log('[prumo] reported tokens/tools (not measured): ' + JSON.stringify(reportedUsageTotals(state)))
+    for (const item of dispatchOwners(state)) if (item.owner.modelDispatches?.length && item.role !== 'review') log('[prumo] ' + item.key + ' dispatches (reported): ' + JSON.stringify(item.owner.modelDispatches))
     printContractDriftWarnings(state)
     printPendingContractConfirmations(state)
     printPlanningRoundProgress(state)
@@ -2320,6 +2410,7 @@ const commands = {
 
   ready() {
     const state = loadState(runName())
+    if (state.runPause && !state.runPause.endedAt) return log('[prumo] RUN PAUSED: ' + JSON.stringify(state.runPause) + '; resume-run explicitly')
     printContractDriftWarnings(state)
     printPendingContractConfirmations(state)
     printPlanningRoundProgress(state)
@@ -2610,6 +2701,7 @@ const commands = {
     logPhasePlanningInputs(phaseId, round)
     logPhaseWorkers(phaseId, round)
     log('[prumo] planner guard: read-only research may determine how to execute; task results and acceptance evidence belong to the executor')
+    log('[prumo] If the planner cannot write, return complete task-plan-<task>.json JSON on stdout. The orchestrator saves that exact artifact, then runs finish-phase-planning --plan-dir. Empty output is not a plan; all artifact gates still apply.')
   },
 
   'skip-phase-planning'() {
@@ -2678,16 +2770,16 @@ const commands = {
             throw new Error(tr('phase planning cannot resolve the same open question more than once'))
           plannedQuestionRefs.add(ref)
         }
-        plans.push([task, plan, questionRefs])
+        plans.push([task, plan, questionRefs, path])
       } catch (error) { errors.push(planningArtifactError(filename, error)) }
     }
     if (errors.length) die(tr('finish-phase-planning {0} rejected {1} task-plan artifact(s); nothing was recorded:\n{2}',
       phaseId, errors.length, errors.join('\n')))
-    for (const [task, plan] of plans) warnTaskPlan(task, plan)
+    for (const [task, plan] of plans) warnTaskPlan(task, plan, state)
     const completedAt = new Date().toISOString()
     if (round.workers) {
       round.stagedPlans ??= []
-      round.stagedPlans.push(...plans.map(([task, plan, questionRefs]) => ({ task: task.id, plan, questionRefs })))
+      round.stagedPlans.push(...plans.map(([task, plan, questionRefs, sourcePath]) => ({ task: task.id, plan, questionRefs, sourcePath })))
       finishPhaseWorkers(round, completedAt)
       if (round.queuedTargets.length) {
         activatePhaseWorkers(state, round, 'planning')
@@ -2697,10 +2789,10 @@ const commands = {
         logPhasePlanningInputs(phaseId, round)
         return
       }
-      plans = round.stagedPlans.filter(item => !isExternalBlock(state.tasks[item.task])).map(item => [getTask(state, item.task), item.plan, item.questionRefs])
+      plans = round.stagedPlans.filter(item => !isExternalBlock(state.tasks[item.task])).map(item => [getTask(state, item.task), item.plan, item.questionRefs, item.sourcePath])
     }
     const allResolutions = []
-    for (const [task, plan, questionRefs] of plans) {
+    for (const [task, plan, questionRefs, sourcePath] of plans) {
       const fields = ['summary', 'research', 'decisions', 'steps', 'verification', 'openQuestions', 'phaseBinding', 'unresolvedInputs', 'writes']
       const artifact = Object.fromEntries(fields.map(field => [field, plan[field]]))
       artifact.openQuestions = annotatePlanQuestions(task, artifact.openQuestions, round.startedAt)
@@ -2708,7 +2800,7 @@ const commands = {
         task: task.id, questionRef, decisions: plan.decisions,
       })))
       task.planner = round.assignments?.[task.id] ?? phase.planner
-      task.taskPlan = { ...artifact, digest: taskPlanDigest(artifact), planner: task.planner, startedAt: round.workers?.[task.id]?.startedAt ?? round.startedAt, completedAt,
+      task.taskPlan = { ...artifact, ...(sourcePath ? { sourcePath } : {}), digest: taskPlanDigest(artifact), planner: task.planner, startedAt: round.workers?.[task.id]?.startedAt ?? round.startedAt, completedAt,
         context: round.context, scope: phasePlanningContext(state, task), phaseId,
         phaseDecision: round.discussionDecision ?? 'discussed', phaseDecisionDigest: round.discussionDigest ?? round.discoveryDigest,
         ...(round.discoveryDigest ? { phaseDiscoveryDigest: round.discoveryDigest } : {}), attempt: task.attempts.length + 1 }
@@ -3012,10 +3104,10 @@ const commands = {
       validateQuestionDeadlines(state, id, plan.openQuestions)
     } catch (error) { die(planningArtifactError(filename, error)) }
     const questionRefs = validateQuestionResolutions(state, plan.decisions)
-    warnTaskPlan(t, plan)
+    warnTaskPlan(t, plan, state)
     const artifact = Object.fromEntries(['summary', 'research', 'decisions', 'steps', 'verification', 'openQuestions', 'writes'].map(field => [field, plan[field]]))
     artifact.openQuestions = annotatePlanQuestions(t, artifact.openQuestions, round.startedAt)
-    t.taskPlan = { ...artifact, digest: taskPlanDigest(artifact), planner: t.planner, startedAt: round.startedAt, completedAt: new Date().toISOString(),
+    t.taskPlan = { ...artifact, sourcePath: path, digest: taskPlanDigest(artifact), planner: t.planner, startedAt: round.startedAt, completedAt: new Date().toISOString(),
       context: round.context, scope: planningContext(state, t, { scopeOnly: true }), attempt: round.attempt,
       ...(round.discoveryDigest ? { discoveryDigest: round.discoveryDigest } : {}),
       ...(skippedDiscussion ? { discussionDecision: 'skipped', discussionDecisionId: skippedDiscussion.decisionId,
@@ -3062,10 +3154,12 @@ const commands = {
     }
     const planDigest = t.taskPlan ? taskPlanDigest(t.taskPlan) : undefined
     if (planDigest) t.taskPlan.digest = planDigest
+    let deliveryBaseline
+    try { deliveryBaseline = captureDelivery(t, state.plan.cwd) } catch (error) { die(error.message) }
     const concurrentScopes = recordConcurrentScopes(state, t)
     t.state = 'running'
     t.agent = agent
-    t.attempts.push({ n: t.attempts.length + 1, agent, startedAt: new Date().toISOString(),
+    t.attempts.push({ n: t.attempts.length + 1, agent, startedAt: new Date().toISOString(), deliveryBaseline,
       ...(state.plan.scopePolicy === 'explicit' ? { scopeBaseline: captureScopeBaseline(state.plan.cwd) } : {}),
       ...(state.plan.scopePolicy === 'explicit' ? { concurrentScopes } : {}),
       activityTiming: 'explicit', activityIntervals: [],
@@ -3083,6 +3177,7 @@ const commands = {
       ...(dispatchConfirmation ? { manualDispatchConfirmation: dispatchConfirmation } : {}),
       ...(total ? { current: 1, total } : {}) })
     log(`[prumo] ${id} running (agent ${agent}, attempt ${t.attempts.length})`)
+    if (t.taskPlan) log('[prumo] current recorded plan: ' + JSON.stringify(recordedPlanIdentity(t)))
     if (unscoped)
       log('[prumo] ' + tr('no execution authorization scope is recorded for this run; {0} started as before — record the user scope with authorize to enable automatic dispatch', id))
     if (total) {
@@ -3137,6 +3232,7 @@ const commands = {
       die(`"${reviewer}" wrote ${id} — a reviewer must be a different agent (or --force)`)
     // A revisão substitui o executor no mesmo slot; também respeita reduções do limite.
     assertAvailable(state, t, 'reviewing', reviewer)
+    try { checkDelivery(state, t, state.plan.cwd) } catch (error) { die(error.message) }
     const slotsBeforeReview = executionSlots(state)
     t.state = 'reviewing'
     t.reviewer = reviewer
@@ -3244,6 +3340,7 @@ const commands = {
     const token = randomUUID()
     const snapshot = withLock(name, () => {
       const state = loadState(name)
+      if (state.runPause && !state.runPause.endedAt) die('Run is paused; resume-run explicitly. External harness processes are not interrupted.')
       const t = getTask(state, id)
       assertExternalBlockAction(state, id)
       if (t.state !== 'running' && t.state !== 'reviewing') die(id + ' is not running or reviewing')
@@ -3276,16 +3373,19 @@ const commands = {
         ...(t.planningRequired ? { planningScope: currentPlanningScope(state, t) } : {}) })
       saveState(name, state)
       emit(name, 'task_validation_started', id, { token, attempt: t.attempts.length })
-      return { ...t, explicitScopeRequired: state.plan.scopePolicy === 'explicit' }
+      return { ...t, evidenceState: { run: state.run, plan: state.plan, tasks: state.tasks }, explicitScopeRequired: state.plan.scopePolicy === 'explicit' }
     })
     // Testes não devem manter o bloqueio da execução: outras tarefas e o dashboard continuam utilizáveis.
     let result = {}
     let error = null
     if (requestedOk) {
       try {
+        result.deliveryCheck = checkDelivery(snapshot.evidenceState, snapshot, snapshot.evidenceState.plan.cwd)
+        result.numericProvenance = verifyNumericProvenance(snapshot, snapshot.evidenceState.plan.cwd)
         const previous = snapshot.validations.slice(0, -1).reverse().find(receipt =>
           receipt.by === snapshot.validations.at(-1).by && receipt.checks?.length)
-        result = await runValidation(snapshot, args.cwd, previous, check => {
+        const reusablePrevious = result.numericProvenance && previous?.numericProvenance?.fingerprint !== result.numericProvenance.fingerprint ? undefined : previous
+        const validationResult = await runValidation(snapshot, args.cwd, reusablePrevious, check => {
           withLock(name, () => {
             const current = getTask(loadState(name), id)
             if (current.validations.at(-1)?.token !== token || current.state !== snapshot.state ||
@@ -3298,6 +3398,9 @@ const commands = {
               by: snapshot.validations.at(-1).by })
           })
         })
+        Object.assign(result, validationResult)
+        if (JSON.stringify(verifyNumericProvenance(snapshot, snapshot.evidenceState.plan.cwd)) !== JSON.stringify(result.numericProvenance)) throw new Error('Provenance sources changed during validation; validate again')
+        if (checkDelivery(snapshot.evidenceState, snapshot, snapshot.evidenceState.plan.cwd).fingerprint !== result.deliveryCheck.fingerprint) throw new Error('Delivery changed during validation; validate again')
         printValidationTail(result.checks ?? [], tail)
         assertValidation(snapshot, { ...result, evidence: args.evidence })
         if (snapshot.explicitScopeRequired) result.scopeCheck = verifyTaskScope(snapshot, snapshot.attempts.at(-1)?.scopeBaseline,
@@ -3360,6 +3463,11 @@ const commands = {
         if (scope.method === 'git' && scope.fingerprint !== last.scopeCheck?.fingerprint) die('Delivery changed after scope validation; validate again')
       } catch (error) { die(error.message) }
     }
+    try {
+      const delivery = checkDelivery(state, t, state.plan.cwd)
+      if (last.deliveryCheck && delivery.fingerprint !== last.deliveryCheck.fingerprint) die('Delivery changed after validation; validate again')
+      if (JSON.stringify(verifyNumericProvenance(t, state.plan.cwd)) !== JSON.stringify(last.numericProvenance ?? null)) die('Provenance changed after validation; validate again')
+    } catch (error) { die(error.message) }
     const previouslyEligible = eligibleDiscussionPhases(state)
     const slotsBeforeDone = executionSlots(state)
     t.state = 'done'
@@ -3451,6 +3559,7 @@ const commands = {
       ...(reuse ? { reason: failed.reason, ...(!planningSkipped ? { planSourceAttempt } : {}),
         failedAttempt: t.attempts.length } : {}) })
     log(`[prumo] ${id} back to pending (attempt ${t.attempts.length + 1} when started; ${planningSkipped ? 'approved planning skip reused' : reuse ? 'approved plan reused' : 'planning required'})`)
+    if (reuse && !planningSkipped) log('[prumo] reused recorded plan: ' + JSON.stringify(recordedPlanIdentity(t)))
   },
 
   block() {
@@ -3532,6 +3641,7 @@ const commands = {
         die('passing validation requires an independent reviewer')
       assertAvailable(state, t, target, target === 'reviewing' ? reviewer : t.agent)
       recordManualConfirmation(t.attempts.at(-1), 'resume', dispatchConfirmation)
+      if (handoff) { try { checkDelivery(state, t, state.plan.cwd) } catch (error) { die(error.message) } }
       if (handoff && reviewer !== t.reviewer) {
         t.reviewer = reviewer
         attempt.reviewer = reviewer
@@ -3679,7 +3789,7 @@ if (!cmd || !Object.hasOwn(commands, cmd)) {
    ou o estado anterior ou o próximo, nunca um arquivo meio gravado. Todo o restante
    usa o bloqueio da execução durante toda a leitura-modificação-gravação; validate bloqueia suas atualizações de estado
    separadamente para que a execução de comandos não sobreviva ao curto período do bloqueio. */
-const READ_ONLY = new Set(['runs', 'status', 'ready', 'graph', 'show-contract', 'show-check'])
+const READ_ONLY = new Set(['brief', 'verify-provenance', 'runs', 'status', 'ready', 'graph', 'show-contract', 'show-check'])
 const LEGACY_MIGRATION_CONTINUATIONS = new Set([
   'start', 'progress', 'review', 'review-progress', 'validate', 'done', 'fail', 'retry', 'block', 'unblock', 'skip', 'refresh-contract',
   'pause-replanning',
@@ -3732,8 +3842,10 @@ if (!['init', 'runs', 'migrate'].includes(cmd)) {
 const BLOCKED_ACTIONS = new Set(['begin-discussion', 'finish-discussion', 'skip-discussion', 'plan-task', 'finish-planning', 'skip-planning', 'start', 'progress', 'review', 'review-progress', 'validate', 'done', 'fail', 'retry', 'skip', 'activity-start', 'pause-replanning'])
 function runCommand() {
   if (BLOCKED_ACTIONS.has(cmd) && args.scope !== 'phase') assertExternalBlockAction(loadState(runName()), args._[0])
+  const paused = !['init', 'runs'].includes(cmd) ? loadState(runName()).runPause : null
+  if (paused && !paused.endedAt && /^(?:begin-|plan-|finish-|skip-|start$|review$|retry$|unblock$|activity-start$|validate$|done$|progress$|review-progress$)/.test(cmd)) die('Run is paused; resume-run explicitly. External harness processes are not interrupted.')
   return commands[cmd]()
 }
 if (cmd === 'migrate' && args.check !== true) withLock(runName(), runCommand)
 else if (READ_ONLY.has(cmd) || cmd === 'validate' || cmd === 'migrate') await runCommand()
-else withLock(cmd === 'init' ? (args.run ?? die('init needs --run <name>')) : runName(), runCommand)
+else withLock(runName(), runCommand)

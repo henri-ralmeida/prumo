@@ -93,14 +93,14 @@ test('sem Git, execução exige evidência independente e done reconfere a atrib
 })
 
 test('validação do executor sem revisão obrigatória ainda confere escopo Git antes de concluir', t => {
-  const f = engineFixture(t, [{ id: 'T1' }], { requireReview: false })
+  const f = engineFixture(t, [{ id: 'T1', touches: ['delivery'] }], { requireReview: false })
   assert.equal(spawnSync('git', ['-C', f.project, 'init']).status, 0)
   f.ok('init', '--plan', f.source, '--run', 'scope')
   f.ok('authorize', '--scope', 'run', '--confirmed-by-user')
   f.ok('skip-discussion', 'T1', '--reason', 'Contrato confirmado', '--confirmed-by-user')
   f.ok('skip-planning', 'T1', '--reason', 'Escopo suficiente', '--confirmed-by-user')
   f.ok('start', 'T1', '--agent', 'executor')
-  writeFileSync(join(f.project, 'T1'), 'Entrega dentro do escopo aprovado')
+  writeFileSync(join(f.project, 'delivery'), 'Resultado verificado')
   f.ok('validate', 'T1', '--ok', '--cwd', f.project, '--evidence', 'Verificação funcional e conferência Git')
   assert.equal(f.state().tasks.T1.validations.at(-1).by, 'executor')
   assert.equal(f.state().tasks.T1.validations.at(-1).scopeCheck.method, 'git')

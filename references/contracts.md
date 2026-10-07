@@ -105,3 +105,12 @@ or increase a data window merely to satisfy the gate. See references/runtime.md 
 
 This holds on Windows too. Keep the actual working directory in the approved validation step; do not translate or
 rewrite its commands.
+
+## Numeric summary contract template
+
+For numeric synthesis acceptance, declare optional `numericProvenance` on the task
+([schema](runtime.md#executable-numeric-provenance)). Require preserved source paths,
+JSON Pointer origin locations, declared values, explicit sum/count rules and delivered
+result locations. Keep the relevant functional checks: numeric reconciliation does not
+prove every business rule. Missing/invalid/divergent provenance fails; changing sources
+invalidates stale receipts. A dependency receipt is not proof of a count.

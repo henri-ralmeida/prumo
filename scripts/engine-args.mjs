@@ -1,4 +1,9 @@
 const definitions = {
+  brief: [1, 'role'],
+  'set-role': [0, 'role model effort'],
+  'pause-run': [0, 'reason until'], 'resume-run': [0],
+  'report-usage': [1, 'role attempt phase receipt tokens tools'],
+  'verify-provenance': [1],
   init: [0, 'plan run cwd', 'force allow-overlap'],
   migrate: [0, '', 'check'],
   'sync-plan': [0, 'plan cwd', 'allow-overlap'],
@@ -39,9 +44,11 @@ export function parseEngineArgs(command, tokens) {
   const [positionals, strings = '', booleans = ''] = definitions[command]
   const stringFlags = new Set(('run lang ' + strings).trim().split(/\s+/))
   const booleanFlags = new Set(('force ' + booleans).trim().split(/\s+/))
+  const dispatch = ['start', 'review', 'unblock', 'begin-discussion', 'begin-phase-discussion', 'plan-task', 'plan-phase', 'finish-phase-discussion', 'finish-phase-planning']
+  if (dispatch.includes(command)) { stringFlags.add('model'); stringFlags.add('effort') }
   const args = { _: [] }
   for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i]
+    const token = tokens[i] === '-r' ? '--run' : tokens[i]
     if (!token.startsWith('--')) { args._.push(token); continue }
     const key = token.slice(2)
     if (!stringFlags.has(key) && !booleanFlags.has(key)) throw new Error(`Unknown option --${key} for ${command}`)

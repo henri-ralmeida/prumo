@@ -4,6 +4,7 @@ import { createTranslator, messages } from './i18n.mjs'
 import { taskManualEstimateMinutes, commandMetricsForRun, calculateGain, renderGainPanel, renderManualCoordination } from './dashboard-gains.mjs'
 import { createPrumoOnboarding, createGuideDemoFrameController } from './onboarding.mjs'
 import { createGuideDemoData } from './dashboard-guide-demo.mjs'
+import { recordedAgentTiming } from './recorded-timing.mjs'
 import { isReadyForReview, isReviewRejected } from './review-readiness.mjs'
 
 export function dashboardWithCatalog(html) {
@@ -22,7 +23,7 @@ export function dashboardWithCatalog(html) {
   if (!html.includes('/*PRUMO_GAIN_HELPERS_START*/')) throw new Error('Dashboard gain-helper marker missing')
   if (!html.includes('/*PRUMO_GUIDE_START*/')) throw new Error('Dashboard onboarding marker missing')
   const helpers = '/*PRUMO_GAIN_HELPERS_START*/\n' +
-    [isReadyForReview, isReviewRejected, taskManualEstimateMinutes, commandMetricsForRun, calculateGain, renderGainPanel, renderManualCoordination].map(fn => fn.toString()).join('\n\n') +
+    [recordedAgentTiming, isReadyForReview, isReviewRejected, taskManualEstimateMinutes, commandMetricsForRun, calculateGain, renderGainPanel, renderManualCoordination].map(fn => fn.toString()).join('\n\n') +
     '\n/*PRUMO_GAIN_HELPERS_END*/'
   return html
     .replace(/\/\*PRUMO_I18N_START\*\/[\s\S]*?\/\*PRUMO_I18N_END\*\//, () => block)

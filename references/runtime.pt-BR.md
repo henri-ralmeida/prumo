@@ -1049,9 +1049,145 @@ o motor deliberadamente nunca o decide — um orquestrador que escolhe quais das
 pulam a verificação é a etapa vigiando a si mesma. O papel da aba é substituir o palpite pela
 evidência da execução anterior. Ela nomeia candidatas; o dev as marca.
 
-Tokens ficam de fora de propósito: o motor não faz chamadas a modelos e nunca os vê. Leia-os
-no harness do agente.
+O motor não mede tokens nem chama modelos. Leia o consumo no harness; recibos opcionais
+de `report-usage` armazenam contagens fornecidas explicitamente, identificadas como relatos.
 
 ## Licença
 
 [MIT](../LICENSE)
+
+## Evidências e controles opcionais
+
+Planos anteriores continuam válidos sem campos novos. A atualização não reinicia runs,
+não cria tentativas nem reescreve contratos, autorizações, dependências ou histórico.
+Os comandos abaixo usam `node <ENGINE>`; o motor registra atribuições, não cria agentes.
+
+| Recurso | Comando ou campo | Padrão e efeito |
+|---|---|---|
+| Seleção de execução | `--run nome`, `-r nome`, `PRUMO_RUN`, `CURRENT` | Precedência nessa ordem; `--run` e `-r` são o mesmo argumento e não podem ser duplicados. Todos validam o mesmo nome seguro, inclusive em `init`. `init` mantém CURRENT. Não altera filtros do shell. |
+| Briefing atual | `brief T1 --role executor\|reviewer` | JSON do contrato persistido, critérios, task-plan/dispensas, recibos, fontes e entregas de dependências registradas, última reprovação e comandos com aspas adequadas ao shell. Sem caminhos ou experiências inventadas; um novo revisor inspeciona e valida a entrega atual. |
+| Preferências por papel | `rolePreferences: { "review": { "model": "nome", "effort": "high" } }` | Opcional no plano; papéis `discussion`, `planning`, `execution`, `review`. `set-role --role review --model nome --effort high` modifica apenas disparos futuros, com histórico. Não revoga contratos nem autorizações. |
+| Valores do disparo | `--model nome --effort high` em comandos de atribuição | O motor guarda preferência solicitada e valores informados em `modelDispatches` de cada tentativa/worker. Ausentes ficam `null`. Status e brief identificam esses dados como relatos; não comprovam o modelo real. |
+| Pausa geral | `pause-run --reason "motivo" [--until 2099-01-01T00:00:00Z]` | Pausa própria do run: preserva estados, rodadas, filas e bloqueios externos. Fecha intervalos ativos, desconta a pausa nos tempos e bloqueia novos despachos/prontidão. `--until` é previsão futura, nunca uma retomada automática. Não interrompe processos externos. |
+| Retomada explícita | `resume-run` | Preserva tentativas/histórico e aplica as cotas atuais ao próximo disparo. Não reabre intervalos de atividade por conta própria. |
+| Consumo informado | `report-usage T1 --role execution --attempt 1 --receipt medicao --tokens 100 --tools 3` | Contagens opcionais inteiras não negativas por papel/tentativa ou worker. Recibo igual é idempotente; valores conflitantes são recusados. Status soma por tarefa/run, sem copiar consumo entre validate/done. Não é custo financeiro nem medição independente. Para workers de fase informe `--attempt` da rodada explicitamente. |
+| Consultar checagens | `show-check T1 [--attempt K] [--check N]` | Sem check lista recibos e comandos exatos. Com check e sem attempt seleciona a última tentativa de execução registrada, nunca a última validação histórica. Uma tentativa atual sem recibo informa as opções; preserva stdout/stderr, erro, sinal e código de saída. |
+
+### Checagem de identificadores nas entregas
+
+Antes de `review` e `unblock --reviewer`, o motor compara arquivos visíveis pelo Git
+sob `touches` com a linha de base anterior a `start`. Verifica nomes novos e linhas
+novas de conteúdo, ignorando maiúsculas/minúsculas. Nomes de arquivos alterados e de
+entregas explicitamente declaradas também são conferidos; nomes inalterados de arquivos
+preexistentes sem essa relação são preservados. Fronteiras usam letras/números:
+`t6_resumo.tsv` contém `T6`, mas `T60` não contém `T6`. IDs existentes de tarefas/fases,
+nome do run e `plan.name` são literais; palavras comuns como executor/reviewer não
+são proibidas automaticamente. Linhas preexistentes idênticas são descontadas por ocorrência.
+A linha de base persiste hashes de linhas, sem copiar seu texto para o estado.
+
+Campos opcionais da tarefa:
+
+```json
+{
+  "deliveries": ["out/resumo.json"],
+  "textRules": {
+    "patterns": ["nome-interno-adicional"],
+    "exceptions": [{ "path": "out/exemplo.json", "line": 4, "identifier": "T6" }]
+  }
+}
+```
+
+`deliveries` declara caminhos reais dentro de `touches`, inclusive arquivos ignorados.
+Padrões são literais (sem regex), até 64 textos de até 128 caracteres; exceções são
+específicas por caminho, linha e identificador, até 64. Linha 0 significa nome de arquivo.
+São campos de contrato: uma alteração aprovada usa `sync-plan` e os gates atuais.
+Links e pais vinculados são recusados antes de ler; arquivos binários não são tratados
+como prosa e aparecem na limitação do recibo. A leitura limita 256 arquivos, 1 MiB por
+arquivo e 8 MiB no total; o erro informa somente caminho/linha, sem conteúdo sensível.
+Sem Git, a travessia fica sob `touches` aprovados e visita no máximo 4096 entradas.
+Caminhos ausentes por exclusão são preservados como exclusões do diff, sem leitura externa.
+
+Runs antigos sem linha de base de conteúdo mantêm a tentativa: somente `deliveries`
+explicitamente registradas são atribuíveis, com limitação no recibo. Sem escopo de arquivo
+ou cwd conhecido, a checagem informa que não pôde inspecionar conteúdo; não inventa baseline.
+Isso nunca dispensa revisão independente, comparação de escopo ou validação funcional.
+`validate` e `done` reconferem a entrega e seu frescor; uma mudança posterior exige validar novamente.
+
+### Procedência executável de sínteses numéricas
+
+O contrato declara o manifesto entregue e as fontes aprovadas, sem inferir todos os números da prosa:
+
+```json
+"numericProvenance": {
+  "manifest": "out/procedencia.json",
+  "sources": ["dados/entrada.json"]
+}
+```
+
+O manifesto JSON associa origem, localização por JSON Pointer, valor declarado, regra
+de cálculo e localização do resultado entregue:
+
+```json
+{
+  "claims": [{
+    "source": "dados/entrada.json", "pointer": "/valores",
+    "operation": "sum", "value": 5,
+    "result": { "source": "out/resumo.json", "pointer": "/total" }
+  }]
+}
+```
+
+Operações: `value` para um número, `sum` para array de números finitos e `count` para
+quantidade de elementos de um array. Pointer vazio seleciona o documento inteiro;
+`~0`/`~1` representam `~` e `/`. O manifesto precisa de 1–256 claims. Origem precisa
+estar na lista aprovada, resultado e manifesto dentro de `touches`. Arquivos são lidos
+sem links, com os mesmos limites; referências ausentes, JSON inválido, cálculo divergente,
+resultado divergente ou manifesto ausente recusam a verificação. Use
+`verify-provenance T1`; `validate --ok` também executa essa checagem e preserva hashes
+antes/depois dos comandos. `done` recusa fontes/manifestações alterados desde o recibo,
+mesmo se outra mudança preservar a soma. Recibo de dependência não prova contagem.
+Sem `numericProvenance`, nenhum gate numérico novo é imposto a contratos históricos.
+O comando explícito `verify-provenance` recusa contrato numérico ausente; a validação histórica normal continua válida.
+
+### Feedback do planejamento e identidade do artefato
+
+O fechamento do planejamento avisa quando uma pergunta aberta repete literalmente uma
+pergunta de discussão ou decisão respondida, ignorando maiúsculas e espaços. O aviso não
+infere resposta, equivalência semântica nem resolução e preserva a pergunta original.
+Decisões do contrato com outra redação continuam exigindo inspeção humana do briefing atual.
+
+Planos novos registram o `sourcePath` real do artefato. `start`, retry corretivo e `brief`
+mostram o digest completo do plano aprovado embutido no estado, a tentativa de origem e
+a rodada do planejador da fase. Um plano antigo sem caminho informa `null`; não se inventa
+origem nem se recarrega um arquivo alterado para substituir silenciosamente o plano aprovado.
+O caminho é metadado de procedência, sem afirmar que o arquivo atual ainda tenha aquele conteúdo.
+
+Se o planejador não puder gravar, devolve JSON completo por stdout com o nome designado
+`task-plan-<task>.json`. O orquestrador salva esse artefato e usa o comando de fechamento
+existente. Saída vazia não é um plano; permanecem os gates de esquema, vínculo, frescor,
+autorização e revisão independente. O disparo da fase imprime esse caminho de retorno.
+
+### Duração registrada e trabalho ativo
+
+O painel de atividade soma separadamente cada agente em cada papel. Workers de fase
+substituem o envelope da rodada, sem dupla contagem. Quando há intervalos START/STOP,
+mostra trabalho ativo aferido; quando eles estão vazios mas há horários válidos de etapa,
+mostra duração registrada, que pode incluir espera. Esse fallback não participa de ganhos
+aferidos. O relógio usa a união dos períodos de etapas, mantém continuidade entre papéis
+e desconta pausas/bloqueios registrados: três agentes por dez minutos somam trinta no papel
+e dez no relógio. Dados ausentes e históricos parciais são identificados, sem tempos inventados.
+
+### Diagnóstico de filtros de shell
+
+`prumo doctor --codex [--lean-ctx-config arquivo.json] [--shell-block-evidence arquivo.json]`
+lê apenas arquivos explicitamente fornecidos, até 64 KiB. Configuração acessível no formato
+`{"plugins":{"lean-ctx":{"allowedCommands":["comando aprovado"]}}}` comprova a lista,
+mas não um bloqueio ocorrido. Evidência de bloqueio no formato
+`{"plugin":"lean-ctx","decision":"blocked","command":"node scripts/engine.mjs ready"}`
+permite sugerir ajustar a lista permitida para o comando aprovado. O diagnóstico não
+autentica a origem do relato. Sem configuração/evidência pertinente, não afirma detecção.
+Nunca recomenda contornar filtros de segurança do shell.
+
+Entregas declaradas são inspecionadas integralmente, inclusive conteúdo preexistente; linhas inalteradas da linha de base sem essa relação continuam descontadas. Rodadas históricas de fase sem workers aceitam consumo na rodada existente somente quando seus targets registrados incluem a tarefa; `--phase` distingue o histórico da fase. Totais de tokens/ferramentas devem permanecer dentro dos limites de inteiro seguro.
+
+Após resume-run explícito, um checkpoint fechado pela pausa passa a contribuir duração registrada da etapa até o próximo checkpoint ou encerramento; não cria trabalho aferido. Timestamps persistidos no task-plan podem fornecer duração histórica parcial de planejamento quando não existe rodada; nenhuma tentativa é inventada.

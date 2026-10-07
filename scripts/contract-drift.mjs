@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { planTaskFromState } from './validation.mjs'
 
-export const TASK_CONTRACT_FIELDS = ['phase', 'title', 'deps', 'validation', 'validationMode', 'inspectionReason', 'requireReview', 'maxAttempts', 'tags', 'touches', 'unavailable', 'writeScope', 'sharedResources']
+export const TASK_CONTRACT_FIELDS = ['phase', 'title', 'deps', 'validation', 'validationMode', 'inspectionReason', 'requireReview', 'maxAttempts', 'tags', 'touches', 'unavailable', 'writeScope', 'sharedResources', 'textRules', 'deliveries', 'numericProvenance']
 export const GLOBAL_PLAN_FIELDS = ['name', 'description', 'requireReview', 'scopePolicy']
 
 function globalPlanValues(plan = {}) {
@@ -28,6 +28,7 @@ function sourceTask(task) {
     touches: task.touches ?? [],
     ...(task.writeScope === undefined ? {} : { writeScope: task.writeScope }),
     ...(task.sharedResources === undefined ? {} : { sharedResources: task.sharedResources }),
+    ...Object.fromEntries(['textRules', 'deliveries', 'numericProvenance'].filter(key => task[key] !== undefined).map(key => [key, task[key]])),
     unavailable: task.unavailable === undefined ? undefined : [...new Set(task.unavailable)],
   }
 }
