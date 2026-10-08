@@ -6,6 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn, spawnSync } from 'node:child_process'
 import { downloadPublishedFile } from './fixtures/published-download.mjs'
+import { shardConfig, selectShard } from '../tools/ci-shards.mjs'
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const smoke = join(repo, 'scripts/published-update-smoke.mjs')
@@ -13,7 +14,7 @@ const smoke = join(repo, 'scripts/published-update-smoke.mjs')
 // O prazo acompanha todas as publicações, para que novas versões não interrompam a matriz histórica.
 const workers = process.platform === 'win32' ? 1 : 2
 const publishedMetadata = JSON.parse((await downloadPublishedFile('https://registry.npmjs.org/@henri-ralmeida%2fprumo')).toString('utf8'))
-const publishedMatrixTimeout = Math.ceil(Object.keys(publishedMetadata.versions).length / workers) * 90000 + 120000
+const publishedMatrixTimeout = Math.ceil(selectShard(Object.keys(publishedMetadata.versions), shardConfig(process.env, 'PRUMO_TEST_PUBLISHED_SHARD')).length / workers) * 90000 + 120000
 
 test('versões publicadas no npm atualizam para o candidato e preservam seus dados', { timeout: publishedMatrixTimeout }, async () => {
   const result = await new Promise((resolveResult, reject) => {

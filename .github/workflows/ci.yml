@@ -12,6 +12,14 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         node: [22, 24]
+        shard: [0]
+        include:
+          - os: windows-latest
+            node: 22
+            shard: 1
+          - os: windows-latest
+            node: 24
+            shard: 1
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     steps:
@@ -28,13 +36,16 @@ jobs:
         env:
           PRUMO_TEST_CONCURRENCY: ${{ runner.os == 'Windows' && 1 || 4 }}
           PRUMO_TEST_PARTITIONED: ${{ runner.os == 'Windows' && '1' || '0' }}
+          PRUMO_TEST_SUITE: ${{ runner.os == 'Windows' && 'regular' || 'all' }}
+          PRUMO_TEST_SHARD_INDEX: ${{ matrix.shard }}
+          PRUMO_TEST_SHARD_COUNT: ${{ runner.os == 'Windows' && 2 || 1 }}
       - run: npm run check
       - run: npm pack
       - run: node scripts/package-smoke.mjs
       - uses: actions/upload-artifact@v6
         if: always()
         with:
-          name: coverage-${{ matrix.os }}-node-${{ matrix.node }}
+          name: coverage-${{ matrix.os }}-node-${{ matrix.node }}-shard-${{ matrix.shard }}
           path: |
             .test-output/coverage/coverage-final.json
             .test-output/coverage/coverage-summary.json
@@ -43,14 +54,56 @@ jobs:
       - uses: actions/upload-artifact@v6
         if: always()
         with:
-          name: verification-${{ matrix.os }}-node-${{ matrix.node }}
+          name: verification-${{ matrix.os }}-node-${{ matrix.node }}-shard-${{ matrix.shard }}
+          path: |
+            .test-output/
+            !.test-output/coverage/tmp/**
+          include-hidden-files: true
+          if-no-files-found: ignore
+  published-windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+        shard: [0, 1]
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile --ignore-scripts
+      # Cada runner conserva os cenarios historicos sequenciais, com homes, portas e caches isolados.
+      - run: bun run test:coverage:collect
+        env:
+          PRUMO_TEST_SUITE: published
+          PRUMO_TEST_CONCURRENCY: 1
+          PRUMO_TEST_PUBLISHED_SHARD_INDEX: ${{ matrix.shard }}
+          PRUMO_TEST_PUBLISHED_SHARD_COUNT: 2
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: coverage-windows-published-node-${{ matrix.node }}-shard-${{ matrix.shard }}
+          path: |
+            .test-output/coverage/coverage-final.json
+            .test-output/coverage/coverage-summary.json
+            .test-output/coverage/source-manifest.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: verification-windows-published-node-${{ matrix.node }}-shard-${{ matrix.shard }}
           path: |
             .test-output/
             !.test-output/coverage/tmp/**
           include-hidden-files: true
           if-no-files-found: ignore
   coverage:
-    needs: test
+    needs: [test, published-windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

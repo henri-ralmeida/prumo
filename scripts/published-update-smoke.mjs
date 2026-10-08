@@ -6,12 +6,15 @@ import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { downloadPublishedFile } from '../test/fixtures/published-download.mjs'
+import { shardConfig, selectShard } from '../tools/ci-shards.mjs'
 
 // Consulte o npm para não manter uma lista manual que deixe versões publicadas de fora.
 const directory = new URL('../.test-output/npm-versions/', import.meta.url)
 mkdirSync(directory, { recursive: true })
 const repo = fileURLToPath(new URL('../', import.meta.url))
 const packageVersion = JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8')).version
+const shard = shardConfig(process.env, 'PRUMO_TEST_PUBLISHED_SHARD')
+const resultsPath = new URL(`../published-update-results${shard.count > 1 ? `-${shard.index}` : ''}.json`, directory)
 const candidateDirectory = mkdtempSync(join(tmpdir(), 'prumo-published-candidate-'))
 try {
 const npm = process.platform === 'win32'
@@ -42,18 +45,21 @@ async function checkVersion([version, pkg]) {
   child.stderr.on('data', value => { output += value })
   const status = await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve) })
   results.push({ version, status, candidateVersion: packageVersion, candidateSha256, output })
-  writeFileSync(new URL('../published-update-results.json', directory), JSON.stringify(results, null, 2))
+  writeFileSync(resultsPath, JSON.stringify(results, null, 2))
   console.log(`${version}: ${status === 0 ? 'PASS' : 'FAIL'}${status ? `\n${output}` : ''}`)
 }
-const pending = Object.entries(metadata.versions)
+const selected = selectShard(Object.entries(metadata.versions).sort(([a], [b]) => a.localeCompare(b, 'en')), shard)
+const pending = [...selected]
+writeFileSync(new URL(`../published-update-selection-${shard.index}.json`, directory), JSON.stringify({ shard, all: Object.keys(metadata.versions).sort(), selected: selected.map(([version]) => version) }, null, 2))
 // As versões antigas consultam processos via PowerShell; serializar no Windows evita disputar a inicialização do dashboard.
 const workers = process.platform === 'win32' ? 1 : 2
 await Promise.all(Array.from({ length: workers }, async () => {
   while (pending.length) await checkVersion(pending.shift())
 }))
 assert.ok(results.length > 0)
-assert.ok(results.every(result => result.status === 0), 'See .test-output/published-update-results.json')
-console.log(`All ${results.length} npm releases upgraded successfully`)
+assert.deepEqual(results.map(result => result.version).sort(), selected.map(([version]) => version).sort())
+assert.ok(results.every(result => result.status === 0), `See ${fileURLToPath(resultsPath)}`)
+console.log(`All ${results.length} selected npm releases upgraded successfully (shard ${shard.index + 1}/${shard.count})`)
 } finally {
   assert.equal(dirname(realpathSync(candidateDirectory)), realpathSync(tmpdir()))
   assert.ok(basename(candidateDirectory).startsWith('prumo-published-candidate-'))

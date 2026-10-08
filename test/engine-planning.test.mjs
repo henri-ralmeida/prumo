@@ -346,6 +346,31 @@ function printedPhasePlanFragments(output) {
     .map(([, id, json]) => [id, JSON.parse(json)])
 }
 
+test('lote persistido sem caminho de origem preserva o plano ao concluir a fila', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Primeira entrega' }, { id: 'B', phase: 'F1', title: 'Segunda entrega' }], { maxAgents: 2 })
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  const discussed = f.state()
+  discussed.plan.maxAgents = 1
+  f.save(discussed)
+  f.ok('plan-phase', 'F1', '--agent', 'planejador')
+  f.writeArtifacts('F1')
+  f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  const state = f.state(), round = state.phaseWorkflows.F1.planningAttempts.at(-1)
+  assert.equal(round.stagedPlans.length, 1)
+  const first = round.stagedPlans[0].task, plan = structuredClone(round.stagedPlans[0].plan)
+  delete round.stagedPlans[0].sourcePath
+  f.save(state)
+  f.writeArtifacts('F1')
+  f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  const current = f.state()
+  assert.equal(current.phaseWorkflows.F1.state, 'planned')
+  assert.deepEqual(current.tasks[first].taskPlan.steps, plan.steps)
+  assert.equal(current.tasks[first].taskPlan.sourcePath, undefined)
+  assert.ok(current.tasks[first].taskPlan.digest)
+  assert.equal(current.tasks[first].planningHistory.length, 1)
+})
+
 test('discussões de tarefa e fase recusam decisões ausentes e perguntas sem vínculo sem gravar resultado', t => {
   const task = fixture(t)
   task.ok('begin-discussion', 'T1')

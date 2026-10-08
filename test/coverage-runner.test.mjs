@@ -7,6 +7,30 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { runCoverage, coverageBatches } from '../tools/run-coverage.mjs'
 
+test('importacao como biblioteca sem caminho de CLI nao dispara testes', async () => {
+  const original = process.argv[1]
+  try {
+    delete process.argv[1]
+    const imported = await import('../tools/run-coverage.mjs?library')
+    assert.equal(typeof imported.runCoverage, 'function')
+  } finally { process.argv[1] = original }
+})
+
+test('runners separados cobrem cada arquivo regular uma vez e conservam as plataformas', () => {
+  const repo = dirname(dirname(fileURLToPath(import.meta.url)))
+  const all = coverageBatches(repo, 1, true, 'regular').flatMap(batch => batch.files).sort()
+  const shards = [0, 1].flatMap(index => coverageBatches(repo, 1, true, 'regular', { index, count: 2 }).flatMap(batch => batch.files))
+  assert.deepEqual(shards.sort(), all)
+  assert.equal(new Set(shards).size, all.length)
+  assert.deepEqual(coverageBatches(repo, 4, false, 'regular', { index: 0, count: 2 }).flatMap(batch => batch.files).sort(), coverageBatches(repo, 1, true, 'regular', { index: 0, count: 2 }).flatMap(batch => batch.files).sort())
+  assert.equal(coverageBatches(repo, 4, false, 'all', { index: 0, count: 2 }).length, 1)
+  const workflow = readFileSync(join(repo, '.github/workflows/ci.yml'), 'utf8')
+  assert.match(workflow, /os: \[ubuntu-latest, windows-latest, macos-latest\]/)
+  assert.match(workflow, /shard: \[0, 1\]/)
+  assert.match(workflow, /PRUMO_TEST_PUBLISHED_SHARD_COUNT: 2/)
+  assert.match(workflow, /needs: \[test, published-windows\]/)
+})
+
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'prumo-coverage-runner-'))
   t.after(() => { assert.equal(dirname(root), tmpdir()); rmSync(root, { recursive: true, force: true }) })
@@ -107,6 +131,32 @@ test('particionamento aceita lotes unicos e recusa configuracao invalida ou suit
   for (const value of ['', '2', 'true']) assert.throws(() => runCoverage({ root: empty, env: { PRUMO_TEST_PARTITIONED: value } }), /Particionamento/)
 })
 
+test('jobs regulares e historicos preservam a suite completa sem duplicar o historico Windows', t => {
+  const files = ['test/upgrade-from-previous.test.mjs', 'test/one.unit.test.mjs', 'test/install.test.mjs', 'scripts/validation.test.mjs']
+  const root = batchFixture(t, files)
+  const regular = coverageBatches(root, 1, true, 'regular')
+  const published = coverageBatches(root, 4, true, 'published')
+  assert.equal(published.length, 1)
+  assert.equal(published[0].concurrency, 1)
+  assert.deepEqual(published[0].files, ['test/upgrade-from-previous.test.mjs'])
+  assert.equal(regular.flatMap(batch => batch.files).includes('test/upgrade-from-previous.test.mjs'), false)
+  assert.deepEqual([...regular, ...published].flatMap(batch => batch.files).sort(), files.sort())
+  assert.deepEqual(coverageBatches(root, 4, false, 'regular'), [{ concurrency: 4, files: files.filter(file => !file.includes('upgrade-from-previous')).sort() }])
+  assert.throws(() => coverageBatches(root, 1, true, 'unknown'), /Suite de cobertura/)
+  const calls = []
+  assert.equal(runCoverage({ root, collect: true, env: { PRUMO_TEST_SUITE: 'published', PRUMO_TEST_CONCURRENCY: '4' }, run: (...args) => { calls.push(args); return { status: 0 } } }), 0)
+  assert.equal(calls.length, 1)
+  assert.ok(calls[0][1].includes('--test-concurrency=1'))
+  assert.equal(calls[0][1].at(-1), 'test/upgrade-from-previous.test.mjs')
+  const repo = dirname(dirname(fileURLToPath(import.meta.url)))
+  const actual = coverageBatches(repo, 1, true).flatMap(batch => batch.files).sort()
+  const separated = [...coverageBatches(repo, 1, true, 'regular'), ...coverageBatches(repo, 1, false, 'published')].flatMap(batch => batch.files).sort()
+  assert.deepEqual(separated, actual)
+  const workflow = readFileSync(join(repo, '.github/workflows/ci.yml'), 'utf8')
+  assert.match(workflow, /published-windows:[\s\S]*node: \[22, 24\][\s\S]*runs-on: windows-latest/)
+  assert.match(workflow, /needs: \[test, published-windows\]/)
+})
+
 test('execucao real paraleliza os unitarios e preserva a cobertura conjunta antes das integracoes', t => {
   const root = batchFixture(t, ['test/one.unit.test.mjs', 'test/two.unit.test.mjs', 'test/integration.test.mjs'])
   const repo = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -140,7 +190,8 @@ test('integracao comeca depois dos unitarios', () => {
   assert.equal(select(false), 2)
 })
 `)
-  const env = { ...process.env, PRUMO_TEST_PARTITIONED: '1', PRUMO_TEST_CONCURRENCY: '1' }
+  const env = { ...process.env, PRUMO_TEST_PARTITIONED: '1', PRUMO_TEST_CONCURRENCY: '1',
+    PRUMO_TEST_SUITE: 'all', PRUMO_TEST_SHARD_INDEX: '0', PRUMO_TEST_SHARD_COUNT: '1' }
   // A CLI externa nao herda o marcador interno do node:test que executa esta regressao.
   delete env.NODE_TEST_CONTEXT
   assert.equal(runCoverage({ root, env }), 0)
