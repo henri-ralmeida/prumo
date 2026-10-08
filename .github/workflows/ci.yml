@@ -1,4 +1,4 @@
-name: Verificação do Prumo
+name: CI · Prumo
 on:
   push:
   pull_request:
@@ -7,7 +7,7 @@ permissions:
   contents: read
 jobs:
   test:
-    name: Testes · ${{ matrix.os == 'ubuntu-latest' && 'Linux' || matrix.os == 'macos-latest' && 'macOS' || 'Windows' }} · Node.js ${{ matrix.node }}${{ matrix.os == 'windows-latest' && format(' · lote {0} de 2', matrix.shard == 0 && '1' || '2') || '' }}
+    name: Testes · ${{ matrix.os == 'ubuntu-latest' && 'Linux' || matrix.os == 'macos-latest' && 'macOS' || 'Win' }} · Node ${{ matrix.node }}${{ matrix.os == 'windows-latest' && format(' · {0}/2', matrix.shard == 0 && '1' || '2') || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -62,7 +62,7 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
   published-windows:
-    name: Atualizações publicadas · Windows · Node.js ${{ matrix.node }} · lote ${{ matrix.shard == 0 && '1' || '2' }} de 2
+    name: Atualização · Win · Node ${{ matrix.node }} · ${{ matrix.shard == 0 && '1' || '2' }}/2
     strategy:
       fail-fast: false
       matrix:
@@ -105,7 +105,7 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
   coverage:
-    name: Cobertura consolidada · 100%
+    name: coverage
     needs: [test, published-windows]
     runs-on: ubuntu-latest
     steps:

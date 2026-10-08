@@ -10,7 +10,7 @@ import { packageContentManifest, packageDistributionFiles } from '../scripts/pac
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const rootFiles = ['package.json', 'SKILL.md', 'README.md', 'README.pt-BR.md', 'CHANGELOG.md', 'LICENSE']
-const bundleScripts = ['messages.json', 'region.mjs', 'i18n.mjs', 'storage.mjs', 'atomic-state.mjs', 'validation.mjs', 'task-scope.mjs', 'delivery-evidence.mjs', 'run-metadata.mjs', 'recorded-timing.mjs', 'execution-readiness.mjs', 'contract-drift.mjs', 'sync-plan-audit.mjs', 'task-identifiers.mjs', 'dashboard-diagnostics.mjs', 'dashboard-update.mjs', 'dashboard.html', 'installation-bundle.mjs', 'engine-args.mjs', 'command-metrics.mjs', 'review-readiness.mjs', 'engine.mjs', 'serve-args.mjs', 'serve.mjs']
+const bundleScripts = ['messages.json', 'region.mjs', 'i18n.mjs', 'storage.mjs', 'atomic-state.mjs', 'discovery-history.mjs', 'validation.mjs', 'task-scope.mjs', 'delivery-evidence.mjs', 'run-metadata.mjs', 'recorded-timing.mjs', 'execution-readiness.mjs', 'contract-drift.mjs', 'sync-plan-audit.mjs', 'task-identifiers.mjs', 'dashboard-diagnostics.mjs', 'dashboard-update.mjs', 'dashboard.html', 'installation-bundle.mjs', 'engine-args.mjs', 'command-metrics.mjs', 'review-readiness.mjs', 'engine.mjs', 'serve-args.mjs', 'serve.mjs']
 
 function fixture(t, prefix) {
   const root = mkdtempSync(join(resolve(tmpdir()), prefix))
@@ -111,6 +111,7 @@ test('empacotamento identifica tipo especial quando o sistema oferece socket no 
 test('bundle percorre referências aninhadas, tolera referências ausentes e ordena nomes iguais', t => {
   const root = bundleFixture(t)
   const withReferences = installationBundle('pt-BR', root)
+  assert.ok(withReferences.some(([name]) => name === join('scripts', 'discovery-history.mjs')))
   assert.ok(withReferences.some(([name]) => name === join('references', 'nested', 'detail.md')))
   assert.notDeepEqual(installationBundle('en', root).find(([name]) => name === join('scripts', 'dashboard.html'))[1], withReferences.find(([name]) => name === join('scripts', 'dashboard.html'))[1])
 
