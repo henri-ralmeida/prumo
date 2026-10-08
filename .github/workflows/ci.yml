@@ -23,10 +23,11 @@ jobs:
           node-version: ${{ matrix.node }}
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile --ignore-scripts
-      # As integrações instalam e reiniciam processos; no Windows, evite disputar recursos durante a prontidão.
+      # No Windows, testes independentes rodam em paralelo e integracoes permanecem sequenciais.
       - run: bun run test:coverage:collect
         env:
           PRUMO_TEST_CONCURRENCY: ${{ runner.os == 'Windows' && 1 || 4 }}
+          PRUMO_TEST_PARTITIONED: ${{ runner.os == 'Windows' && '1' || '0' }}
       - run: npm run check
       - run: npm pack
       - run: node scripts/package-smoke.mjs
