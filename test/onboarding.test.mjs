@@ -395,7 +395,7 @@ test('dados ficticios independem do plano real e nao compartilham estado entre a
   assert.equal(results.tasks.T1.state,'done')
 })
 
-test('guia reutiliza as interfaces reais, documenta os sete ambientes e oferece fontes oficiais', () => {
+test('guia reutiliza as interfaces reais, documenta os oito ambientes e oferece fontes oficiais', () => {
   const html = readFileSync(new URL('../scripts/dashboard.html', import.meta.url),'utf8')
   const section = html.match(/<section id="onboarding"[\s\S]*?<\/section>\s*(?=<div id="results")/)?.[0]
   assert.ok(section)
@@ -408,8 +408,14 @@ test('guia reutiliza as interfaces reais, documenta os sete ambientes e oferece 
   assert.match(section,/id="guideBoardFrame"/)
   assert.match(section,/id="guideResultsFrame"/)
   assert.doesNotMatch(section,/guide-mock-card|Exemplo ilustrativo|no prumo|Legend/)
-  for(const name of ['Claude Code','Codex','Kiro','DSH','Antigravity','OpenCode','Grok Build']) assert.match(section,new RegExp('<h3>'+name+'</h3>'))
-  for (const href of ['https://antigravity.google/docs/skills/', 'https://opencode.ai/docs/skills/', 'https://docs.x.ai/build/features/skills-plugins-marketplaces']) {
+  assert.deepEqual([...section.matchAll(/<h3>([^<]+)<\/h3>/g)].map(match => match[1]),
+    ['Claude Code','Codex','Kiro','Deep Seek','Antigravity','OpenCode','Grok Build','GitHub Copilot'])
+  for (const href of ['https://code.claude.com/docs/en/common-workflows',
+    'https://developers.openai.com/codex/cli/slash-commands', 'https://kiro.dev/docs/specs/plan/',
+    'https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/plan/plan-mode/README.md',
+    'https://antigravity.google/docs/skills/', 'https://opencode.ai/v2/docs/skills',
+    'https://docs.x.ai/build/features/skills-plugins-marketplaces',
+    'https://docs.github.com/en/copilot/concepts/agents/about-agent-skills']) {
     assert.ok(section.includes(`href="${href}"`), `fonte oficial ausente: ${href}`)
   }
   for (const fragment of ['agy --mode=plan', 'separate global skill roots', '/models', 'grok models', '.grok/skills']) assert.ok(section.includes(fragment), `orientação ausente: ${fragment}`)
