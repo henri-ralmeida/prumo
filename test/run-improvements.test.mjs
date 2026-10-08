@@ -4,8 +4,8 @@ import fs, { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlin
 import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { spawnSync } from 'node:child_process'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { spawnSync, spawn } from 'node:child_process'
 import { captureDelivery, checkDelivery, verifyNumericProvenance, assertEvidenceContract, safeEvidencePath } from '../scripts/delivery-evidence.mjs'
 import { assertRolePreferences, recordDispatchMetadata, reportedUsageTotals, pauseRun, resumeRun, shellCommand, taskBrief, repeatedPlanQuestions, recordedPlanIdentity } from '../scripts/run-metadata.mjs'
 import { recordedAgentTiming } from '../scripts/recorded-timing.mjs'
@@ -33,6 +33,193 @@ function fixture(t) {
   t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
   return { home, cwd, root, run, state, task, save, write, cli, read }
 }
+
+test('consultas e autorizacao durante uma pausa nao sugerem trabalho nem removem o motivo', t => {
+  const f = fixture(t)
+  f.cli(['pause-run', '--reason', 'Aguardar quota'])
+  const status = f.cli(['status'])
+  assert.match(status, /RUN PAUSED/)
+  assert.match(status, /0 execution slot/)
+  assert.doesNotMatch(status, /suggested action|→ start/)
+  f.cli(['authorize', '--scope', 'run', '--confirmed-by-user'])
+  assert.equal(f.read().runPause.reason, 'Aguardar quota')
+  f.write('plan.json', { name: f.state.plan.name, planningMode: 'task', tasks: [{ ...f.task, summary: 'Descricao atualizada durante a pausa' }] })
+  f.cli(['sync-plan', '--plan', join(f.cwd, 'plan.json')])
+  assert.equal(f.read().tasks.T1.summary, 'Descricao atualizada durante a pausa')
+  assert.ok(!f.read().runPause.endedAt)
+  f.cli(['resume-run'])
+  assert.doesNotMatch(f.cli(['status']), /RUN PAUSED/)
+})
+
+test('preferencias opcionais sobrevivem ao init por CURRENT e a sincronizacao sem revogar autorizacao', t => {
+  const f = fixture(t)
+  const preferences = { execution: { model: 'modelo-solicitado', effort: 'medium' } }
+  f.write('plan.json', { name: 'Plano compativel', rolePreferences: preferences, tasks: [f.task] })
+  f.cli(['init', '--plan', join(f.cwd, 'plan.json'), '--force'], 0, { PRUMO_RUN: undefined })
+  assert.deepEqual(f.read().plan.rolePreferences, preferences)
+  f.cli(['authorize', '--scope', 'run', '--confirmed-by-user'])
+  const before = f.read().authorizations
+  f.write('plan.json', { name: 'Plano compativel', tasks: [f.task] })
+  f.cli(['sync-plan', '--plan', join(f.cwd, 'plan.json')])
+  assert.deepEqual(f.read().plan.rolePreferences, preferences)
+  assert.deepEqual(f.read().authorizations, before)
+  f.write('plan.json', { name: 'Plano compativel', rolePreferences: { review: { model: 'outro-modelo' } }, tasks: [f.task] })
+  f.cli(['sync-plan', '--plan', join(f.cwd, 'plan.json')])
+  assert.deepEqual(f.read().plan.rolePreferences, { review: { model: 'outro-modelo' } })
+  assert.deepEqual(f.read().authorizations, before)
+})
+
+test('contratos invalidos de modelo e evidencia sao recusados antes de criar um run', t => {
+  const f = fixture(t)
+  for (const [patch, expected] of [
+    [{ rolePreferences: { execution: { model: 42 } } }, /Role preference/],
+    [{ tasks: [{ ...f.task, textRules: { patterns: [''] } }] }, /task T1:/],
+  ]) {
+    f.write('invalid-plan.json', { name: 'Plano invalido', tasks: [f.task], ...patch })
+    assert.match(f.cli(['init', '--plan', join(f.cwd, 'invalid-plan.json'), '--run', 'invalid'], 1), expected)
+    assert.equal(fs.existsSync(join(f.root, '.specs', 'graph', 'invalid', 'state.json')), false)
+  }
+})
+
+test('show-check explica indices invalidos e admite historico legado sem tentativas ou recibos', t => {
+  const f = fixture(t)
+  delete f.task.attempts
+  delete f.task.validations
+  f.save()
+  const empty = JSON.parse(f.cli(['show-check', 'T1']))
+  assert.equal(empty.latestAttempt, 0)
+  assert.deepEqual(empty.attempts, [])
+  assert.match(f.cli(['show-check', 'T1', '--check', 'zero'], 1), /positive integer; available: \[\]/)
+  f.task.attempts = [{ startedAt: at(0) }]
+  f.task.validations = [{ attempt: 1 }]
+  f.save()
+  const legacy = JSON.parse(f.cli(['show-check', 'T1']))
+  assert.equal(legacy.latestAttempt, 1)
+  assert.deepEqual(legacy.attempts[0].checks, [])
+  assert.match(f.cli(['show-check', 'T1', '--attempt', '0'], 1), /positive integer; available:/)
+})
+
+test('custos de planejamento individual usam a rodada atual e nao inventam trabalhador de fase', t => {
+  const f = fixture(t)
+  f.task.planningAttempts = [{ n: 1, agent: 'planejador', startedAt: at(0), endedAt: at(1) }]
+  f.state.phaseWorkflows = { F1: { state: 'pending' }, F2: { state: 'pending', planningAttempts: [] } }
+  f.save()
+  f.cli(['report-usage', 'T1', '--role', 'planning', '--receipt', 'plano-individual', '--tokens', '17'])
+  assert.equal(f.read().tasks.T1.planningAttempts[0].usageReports[0].tokens, 17)
+  assert.match(f.cli(['report-usage', 'T1', '--role', 'discussion', '--receipt', 'sem-discussao', '--tokens', '1'], 1), /No recorded attempt/)
+  const unchanged = f.read()
+  assert.match(f.cli(['report-usage', 'T1', '--role', 'planning', '--phase', 'F1', '--receipt', 'sem-worker', '--tokens', '1'], 1), /No recorded attempt/)
+  assert.deepEqual(f.read(), unchanged)
+})
+
+test('inicio recusa leitura insegura e nao cria tentativa quando a captura da entrega falha', t => {
+  const f = fixture(t)
+  f.write('out/large.txt', 'x'.repeat(1024 * 1024 + 1))
+  assert.match(f.cli(['start', 'T1', '--agent', 'autor'], 1), /reading limit/)
+  assert.equal(f.read().tasks.T1.attempts.length, 0)
+  assert.equal(f.read().tasks.T1.state, 'pending')
+})
+
+test('alteracao da entrega durante a validacao invalida o recibo em vez de aprovar dados antigos', t => {
+  const f = fixture(t)
+  f.task.validation = [{ kind: 'functional', run: `node -e "require('node:fs').writeFileSync('out/late.txt', 'resultado alterado')"`, expect: 'Gravacao autorizada concluida' }]
+  f.save()
+  f.cli(['start', 'T1', '--agent', 'autor'])
+  f.cli(['review', 'T1', '--agent', 'revisor'])
+  assert.match(f.cli(['validate', 'T1', '--ok', '--evidence', 'Conferencia independente', '--cwd', f.cwd], 1), /Delivery changed during validation/)
+  assert.equal(f.read().tasks.T1.validations.at(-1).ok, false)
+  assert.equal(f.read().tasks.T1.state, 'reviewing')
+})
+
+test('done e troca de revisor revalidam a entrega sem aceitar mudancas depois do recibo', t => {
+  const f = fixture(t)
+  f.cli(['start', 'T1', '--agent', 'autor'])
+  f.write('out/result.txt', 'resultado valido')
+  f.cli(['review', 'T1', '--agent', 'revisor'])
+  f.cli(['validate', 'T1', '--ok', '--evidence', 'Verificacao independente', '--cwd', f.cwd])
+  f.write('out/result.txt', 'resultado diferente')
+  assert.match(f.cli(['done', 'T1'], 1), /Delivery changed after validation/)
+  f.write('out/result.txt', 'T1 inserido no produto')
+  assert.match(f.cli(['done', 'T1'], 1), /out\/result.txt:1/)
+  f.cli(['block', 'T1', '--reason', 'Troca de sessao'])
+  assert.match(f.cli(['unblock', 'T1', '--reviewer', 'novo-revisor'], 1), /out\/result.txt:1/)
+  assert.equal(f.read().tasks.T1.state, 'blocked')
+})
+
+async function commandWaitingForLock(t, f, args, mutate, env = {}) {
+  const lock = join(f.run, '.lock'), ready = join(f.home, 'waiting-for-lock')
+  const preload = join(f.home, 'lock-wait.mjs')
+  mkdirSync(lock)
+  writeFileSync(preload, `import fs from 'node:fs'
+import { resolve } from 'node:path'
+import { syncBuiltinESMExports } from 'node:module'
+const original = fs.statSync
+fs.statSync = function(path, ...args) {
+  if (resolve(path) === ${JSON.stringify(lock)}) fs.writeFileSync(${JSON.stringify(ready)}, 'waiting')
+  return original.call(this, path, ...args)
+}
+syncBuiltinESMExports()
+`)
+  const child = spawn(process.execPath, [engine, ...args], {
+    cwd: f.cwd, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, PRUMO_HOME: dirname(f.root), PRUMO_ROOT: f.root, PRUMO_LANG: 'en', PRUMO_RUN: 'demo', ...env,
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(preload).href}` },
+  })
+  t.after(() => { if (child.exitCode === null && child.signalCode === null) child.kill() })
+  let output = ''
+  child.stdout.on('data', chunk => { output += chunk })
+  child.stderr.on('data', chunk => { output += chunk })
+  const completed = new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve) })
+  const deadline = Date.now() + 5000
+  while (!fs.existsSync(ready) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10))
+  assert.ok(fs.existsSync(ready), output)
+  mutate()
+  rmSync(lock, { recursive: true })
+  return { code: await completed, output }
+}
+
+test('pausa concorrente impede validacao que aguardava o lock e preserva a tentativa', async t => {
+  const f = fixture(t)
+  f.cli(['start', 'T1', '--agent', 'autor'])
+  f.cli(['review', 'T1', '--agent', 'revisor'])
+  const before = f.read()
+  const result = await commandWaitingForLock(t, f, ['validate', 'T1', '--ok', '--evidence', 'Conferencia independente', '--cwd', f.cwd], () => {
+    const state = f.read()
+    pauseRun(state, 'Quota indisponivel', undefined, new Date().toISOString())
+    writeFileSync(join(f.run, 'state.json'), JSON.stringify(state))
+  })
+  assert.equal(result.code, 1)
+  assert.match(result.output, /Run is paused/)
+  assert.equal(f.read().tasks.T1.validations.length, before.tasks.T1.validations.length)
+  f.cli(['resume-run'])
+  assert.match(f.cli(['review-progress', 'T1', '--step', '0', '--agent', 'revisor'], 1), /positive integer/)
+  f.cli(['validate', 'T1', '--ok', '--evidence', 'Conferencia apos retomada', '--cwd', f.cwd])
+  assert.equal(f.read().tasks.T1.validations.at(-1).ok, true)
+})
+
+test('init recusa CURRENT removido durante espera sem sobrescrever a execucao existente', async t => {
+  const f = fixture(t)
+  const before = f.read()
+  f.write('plan.json', { name: 'Outro plano', tasks: [f.task] })
+  const result = await commandWaitingForLock(t, f, ['init', '--plan', join(f.cwd, 'plan.json'), '--force'], () => {
+    rmSync(join(dirname(f.run), 'CURRENT'))
+  }, { PRUMO_RUN: undefined })
+  assert.equal(result.code, 1)
+  assert.match(result.output, /invalid run name/)
+  assert.deepEqual(f.read(), before)
+})
+
+test('retomada por alias preserva a identidade da tarefa no registro de modelo informado', t => {
+  const f = fixture(t)
+  f.state.taskIdAliases = { T9: 'T1', T1: 'T1' }
+  f.save()
+  f.cli(['start', 'T9', '--agent', 'autor'])
+  f.cli(['review', 'T9', '--agent', 'revisor'])
+  f.cli(['block', 'T9', '--reason', 'Troca de revisor'])
+  f.cli(['unblock', 'T9', '--reviewer', 'novo-revisor', '--model', 'modelo-informado'])
+  assert.equal(f.read().tasks.T1.reviewer, 'novo-revisor')
+  assert.equal(f.read().tasks.T1.attempts.at(-1).modelDispatches.at(-1).reported.model, 'modelo-informado')
+})
 test('review refuses new case-insensitive identifiers, permits correction and preserves unrelated old lines', t => {
   const f = fixture(t)
   f.write('out/existing.txt', 'T1 already existed\nCommon executor role\n')
