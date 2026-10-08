@@ -53,6 +53,7 @@ Você também pode abrir o instalador interativo, escolher um ambiente ou confer
 | Antigravity | `bunx @henri-ralmeida/prumo@latest install --antigravity` |
 | OpenCode | `bunx @henri-ralmeida/prumo@latest install --opencode` |
 | Grok Build | `bunx @henri-ralmeida/prumo@latest install --grok` |
+| GitHub Copilot | `/prumo` | Skill pessoal e instruções gerenciadas de projeto para CLI e VS Code: `~/.copilot/skills/prumo`, `.github/copilot-instructions.md` |
 | Reparar após scripts npm desabilitados | `prumo install --all` |
 | Conferir mudanças de ambientes e dashboard | `prumo install --all --dry-run` |
 
@@ -162,7 +163,7 @@ bunx @henri-ralmeida/prumo@latest install --all --dry-run
 bunx @henri-ralmeida/prumo@latest install --all
 ```
 
-Omita `--all` para escolher pelas caixas de seleção, ou use uma opção explícita como `--claude`, `--kiro`, `--codex`, `--dsh`, `--antigravity`, `--opencode` ou `--grok`. Se a instalação estiver dentro de um projeto, execute na pasta dele ou acrescente `--project "<caminho-do-projeto>"`. Essa primeira troca usa `install`; `update` só atualiza ambientes que já contêm Prumo. Depois da migração, use a invocação de skill nativa do ambiente selecionado; a skill original `/graph-foreman` permanece intacta em sua pasta separada.
+Omita `--all` para escolher pelas caixas de seleção, ou use uma opção explícita como `--claude`, `--kiro`, `--codex`, `--dsh`, `--antigravity`, `--opencode`, `--grok` ou `--copilot`. Se a instalação estiver dentro de um projeto, execute na pasta dele ou acrescente `--project "<caminho-do-projeto>"`. Essa primeira troca usa `install`; `update` só atualiza ambientes que já contêm Prumo. Depois da migração, use a invocação de skill nativa do ambiente selecionado; a skill original `/graph-foreman` permanece intacta em sua pasta separada.
 
 Quem tem somente graph-foreman mantém a skill e os planos intactos. Prumo usa seu próprio armazenamento e não importa esses planos automaticamente. A cópia de compatibilidade ocorre somente quando uma instalação anterior do Prumo é identificada pelo marcador de produto e versão do Prumo.
 

@@ -3,11 +3,77 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, rmSync, realpathSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
-import { HARNESSES, planInstall, applyInstall, restoreInstall, detectHarnesses, discoverInstallations, installationStatus, installedPoFirstLanguage } from '../lib/install.mjs'
+import { HARNESSES, planInstall, applyInstall, restoreInstall, detectHarnesses, discoverInstallations, installationStatus, installedPoFirstLanguage, installationFilesCurrent } from '../lib/install.mjs'
 import { inside } from '../scripts/storage.mjs'
 
 const put = (file, text) => { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, text) }
 const read = file => readFileSync(file, 'utf8')
+
+test('Copilot valida idioma legado e denuncia marcador removido sem perder arquivos', t => {
+  const f = fixture(t, 'copilot'), root = join(f.home, '.copilot', 'skills')
+  applyInstall(f.plan({ lang: 'en' }))
+  assert.equal(installationFilesCurrent(root, {}), true)
+  rmSync(join(root, 'prumo', '.prumo-install.json'))
+  const errors = []
+  assert.deepEqual(discoverInstallations({ ...f.options, onError: error => errors.push(error.message) }), [])
+  assert.ok(errors.some(error => error.includes('Invalid Prumo installation marker')))
+  assert.ok(existsSync(join(root, 'prumo', 'SKILL.md')))
+})
+
+test('Copilot instala skills para CLI e VS Code e preserva instrucoes, configuracao e dados', t => {
+  const f = fixture(t, 'copilot'), config = join(f.home, '.copilot')
+  const globalRules = join(config, 'copilot-instructions.md'), projectRules = join(f.cwd, '.github', 'copilot-instructions.md')
+  put(globalRules, 'Preferencias pessoais.\n'); put(projectRules, 'Regras existentes do projeto.\n')
+  put(join(config, 'settings.json'), '{"model":"modelo-existente"}\n')
+  put(join(f.cwd, '.specs', 'graph', 'run', 'state.json'), '{"historico":"preservar"}\n')
+  const plan = f.plan(), before = read(globalRules)
+  assert.equal(applyInstall(plan, { dryRun: true }).backup, null)
+  assert.equal(read(globalRules), before)
+  const result = applyInstall(plan)
+  assert.ok(result.groups.every(group => group.status !== 'conflict'), JSON.stringify(result))
+  assert.match(read(join(config, 'skills', 'prumo', 'SKILL.md')), /name: prumo/)
+  assert.ok(read(globalRules).startsWith(before)); assert.ok(read(projectRules).startsWith('Regras existentes do projeto.\n'))
+  assert.equal(read(projectRules).split('<!-- po-first:start -->').length, 2)
+  assert.equal(read(join(config, 'settings.json')), '{"model":"modelo-existente"}\n')
+  assert.equal(read(join(f.cwd, '.specs', 'graph', 'run', 'state.json')), '{"historico":"preservar"}\n')
+  assert.equal(installedPoFirstLanguage('copilot', config), 'pt-BR')
+  assert.equal(installationStatus(f.plan()).configured, true)
+  assert.equal(applyInstall(f.plan()).backup, null)
+  assert.deepEqual(discoverInstallations(f.options).map(entry => entry.harness), ['copilot'])
+  assert.ok(restoreInstall(result.backup, { home: f.home, env: {} }) > 0)
+  assert.equal(read(globalRules), before)
+  assert.equal(read(projectRules), 'Regras existentes do projeto.\n')
+})
+
+test('Copilot detecta extensao nativa e configuracao, mas nao pastas vazias nem regras apenas gerenciadas', t => {
+  const f = fixture(t, 'copilot')
+  mkdirSync(join(f.home, '.copilot'), { recursive: true })
+  assert.deepEqual(detectHarnesses(f.options), [])
+  const extension = join(f.home, '.vscode', 'extensions', 'github.copilot-chat-1.0.0')
+  mkdirSync(extension, { recursive: true })
+  assert.deepEqual(detectHarnesses(f.options), ['copilot'])
+  rmSync(join(f.home, '.vscode'), { recursive: true })
+  put(join(f.home, '.vscode-insiders', 'extensions', 'github.copilot-1.0.0', 'package.json'), '{}')
+  assert.deepEqual(detectHarnesses(f.options), ['copilot'])
+  rmSync(join(f.home, '.vscode-insiders'), { recursive: true })
+  put(join(f.home, '.copilot', 'config.json'), '{}')
+  assert.deepEqual(detectHarnesses(f.options), ['copilot'])
+  rmSync(join(f.home, '.copilot', 'config.json'))
+  applyInstall(f.plan())
+  assert.deepEqual(detectHarnesses({ ...f.options, includeManaged: false }), [])
+  assert.deepEqual(detectHarnesses(f.options), ['copilot'])
+  put(join(f.cwd, '.github', 'copilot-instructions.md'), 'Regra pessoal do projeto.\n')
+  assert.deepEqual(detectHarnesses({ ...f.options, includeManaged: false }), ['copilot'])
+})
+
+test('COPILOT_HOME atende CLI personalizado e conserva a skill pessoal padrao do VS Code', t => {
+  const f = fixture(t, 'copilot'), config = join(f.home, 'copilot personalizado'), env = { COPILOT_HOME: config }
+  put(join(config, 'settings.json'), '{}')
+  assert.deepEqual(detectHarnesses({ ...f.options, env }), ['copilot'])
+  applyInstall(f.plan({ env }))
+  for (const root of [config, join(f.home, '.copilot')]) assert.ok(existsSync(join(root, 'skills', 'prumo', 'SKILL.md')))
+  assert.equal(discoverInstallations({ ...f.options, env })[0].config, config)
+})
 function fixture(t, harness, env = {}) {
   const parent = realpathSync(tmpdir())
   const home = mkdtempSync(join(parent, 'prumo-new-harness-'))
@@ -73,7 +139,7 @@ test('pastas vazias e configuração genérica do Gemini não detectam novos har
   assert.deepEqual(discoverInstallations(f.options), [])
 })
 
-for (const [harness, executable] of [['antigravity', 'agy'], ['antigravity', 'antigravity'], ['opencode', 'opencode'], ['grok', 'grok']])
+for (const [harness, executable] of [['antigravity', 'agy'], ['antigravity', 'antigravity'], ['opencode', 'opencode'], ['grok', 'grok'], ['copilot', 'copilot']])
   test(`${harness}: detecta o executável ${executable} sem criar configuração`, t => {
     const f = fixture(t, harness)
     const folder = join(f.home, 'bin')

@@ -19,7 +19,7 @@ const print = (...parts) => console.log(...parts.map(part => t(part)))
 const color = (code, value, stream = process.stdout) => stream.isTTY && !('NO_COLOR' in process.env) ? `\x1b[${code}m${value}\x1b[0m` : value
 const harnessLabels = {
   claude: 'Claude Code', kiro: 'Kiro', codex: 'Codex', dsh: 'DeepSeek Harness',
-  antigravity: 'Antigravity', opencode: 'OpenCode', grok: 'Grok Build',
+  antigravity: 'Antigravity', opencode: 'OpenCode', grok: 'Grok Build', copilot: 'GitHub Copilot',
 }
 const harnessOptions = Object.fromEntries(HARNESSES.map(harness => [harness, { type: 'boolean' }]))
 const harnessFlags = HARNESSES.map(harness => `--${harness}`).join('|')

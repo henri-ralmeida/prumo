@@ -53,6 +53,7 @@ You can also start the interactive installer, select a harness directly or previ
 | Antigravity | `bunx @henri-ralmeida/prumo@latest install --antigravity` |
 | OpenCode | `bunx @henri-ralmeida/prumo@latest install --opencode` |
 | Grok Build | `bunx @henri-ralmeida/prumo@latest install --grok` |
+| GitHub Copilot | `/prumo` | Global skill and managed project instructions for CLI and VS Code: `~/.copilot/skills/prumo`, `.github/copilot-instructions.md` |
 | Repair after disabled npm scripts | `prumo install --all` |
 | Preview harness and dashboard changes | `prumo install --all --dry-run` |
 
@@ -162,7 +163,7 @@ bunx @henri-ralmeida/prumo@latest install --all --dry-run
 bunx @henri-ralmeida/prumo@latest install --all
 ```
 
-Omit `--all` to choose with checkboxes, or use an explicit harness option such as `--claude`, `--kiro`, `--codex`, `--dsh`, `--antigravity`, `--opencode` or `--grok`. For a project-local installation, run from that project or add `--project "<project-path>"`. This first switch uses `install`; `update` only refreshes environments already containing Prumo. After migration, use the native skill invocation for the selected harness; the original `/graph-foreman` skill stays intact in its separate directory.
+Omit `--all` to choose with checkboxes, or use an explicit harness option such as `--claude`, `--kiro`, `--codex`, `--dsh`, `--antigravity`, `--opencode`, `--grok` or `--copilot`. For a project-local installation, run from that project or add `--project "<project-path>"`. This first switch uses `install`; `update` only refreshes environments already containing Prumo. After migration, use the native skill invocation for the selected harness; the original `/graph-foreman` skill stays intact in its separate directory.
 
 A graph-foreman-only installation keeps its skill and plans intact. Prumo uses its own storage and does not automatically import those plans. Compatibility copying applies only when a previous Prumo installation is identified by its Prumo product and version marker.
 

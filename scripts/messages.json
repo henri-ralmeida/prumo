@@ -1641,5 +1641,6 @@
   "Recorded stage duration": "Duração registrada da etapa",
   "Partial history": "Histórico parcial",
   "Totals sum each agent. Stage duration may include waiting and is not measured active work or measured savings.": "Os totais somam cada agente. A duração da etapa pode incluir espera e não é trabalho ativo nem economia aferida.",
-  "Recorded stage elapsed time; may include waiting. Parallel periods count once.": "Tempo corrido registrado das etapas; pode incluir espera. Períodos paralelos contam uma vez."
+  "Recorded stage elapsed time; may include waiting. Parallel periods count once.": "Tempo corrido registrado das etapas; pode incluir espera. Períodos paralelos contam uma vez.",
+  "Use /plan in Copilot CLI or select Plan in VS Code; personal skills load from ~/.copilot/skills and project skills from .github/skills. Approve the plan, then invoke /prumo.": "Use /plan no Copilot CLI ou selecione Plan no VS Code; as skills pessoais ficam em ~/.copilot/skills e as de projeto em .github/skills. Aprove o plano e depois invoque /prumo."
 }

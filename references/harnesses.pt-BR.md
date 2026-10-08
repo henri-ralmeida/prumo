@@ -12,10 +12,31 @@ O instalador aceita um destino explícito ou todos os destinos detectados:
 prumo install --antigravity
 prumo install --opencode
 prumo install --grok
+prumo install --copilot
 prumo install --all
 ```
 
 Os comandos integram uma instalação local existente. Eles não baixam Antigravity, OpenCode ou Grok Build e não configuram credenciais ou endpoints de provedores. Consulte a [seção de instalação](../README.pt-BR.md#instalação) para detecção, prévia, backups e conflitos.
+
+## GitHub Copilot: CLI e VS Code
+
+Use `prumo install --copilot` na raiz do projeto ou acrescente `--project <pasta>`.
+A skill pessoal fica em `~/.copilot/skills/prumo`; instalações de projeto existentes em
+`.github/skills/prumo` também são atualizadas. `COPILOT_HOME` permite uma raiz personalizada
+do CLI sem retirar a skill pessoal padrão do VS Code.
+
+O PO First é acrescentado como bloco gerenciado a `copilot-instructions.md` da configuração
+do CLI e a `.github/copilot-instructions.md` dos projetos selecionados. Isso atende também
+o agente Local do VS Code, preservando as instruções pessoais, modelos e permissões.
+Um projeto novo precisa de `prumo install --copilot --project <pasta>` para receber essas regras.
+
+Planeje com `/plan` no CLI ou com o agente Plan no VS Code. Depois da aprovação, saia do modo
+de planejamento e invoque `/prumo`. O instalador não cria agentes nem configura autenticação.
+Confira a descoberta com `copilot skill list` no CLI ou `/skills` no VS Code.
+
+Fontes oficiais: [skills](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills),
+[CLI e instruções](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference),
+[VS Code](https://code.visualstudio.com/docs/agent-customization/agent-skills).
 
 ## Antigravity
 
