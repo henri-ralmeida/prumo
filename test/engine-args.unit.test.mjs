@@ -9,6 +9,12 @@ const commands = ['init', 'migrate', 'sync-plan', 'status', 'ready', 'graph', 'r
   'review', 'review-progress', 'refresh-contract', 'validate', 'done', 'fail', 'retry', 'block', 'unblock', 'skip', 'note',
   'pause-replanning', 'set-agent-limit']
 
+test('reaproveitamento explícito é limitado ao fechamento do planejamento de fase', () => {
+  assert.deepEqual(parseEngineArgs('finish-phase-planning', ['F1', '--plan-dir', 'plans', '--reuse-unchanged-plans']),
+    { _: ['F1'], 'plan-dir': 'plans', 'reuse-unchanged-plans': true })
+  assert.throws(() => parseEngineArgs('plan-task', ['T1', '--reuse-unchanged-plans']), /Unknown option/)
+})
+
 test('start --cwd explica o comando válido e exige registro bem-sucedido antes do despacho', () => {
   assert.throws(() => parseEngineArgs('start', ['T1', '--agent', 'executor', '--cwd', '/projeto']),
     /start does not support --cwd; use start <task> --agent <executor> --run <run>.*wait for success before dispatching/)

@@ -210,3 +210,5 @@ deadline has arrived. In task-planning mode, a `{ "beforePhase": "F2" }` deadlin
 task in F2 begins discussion or planning.
 
 An unanswered open question with beforeTask set to its own task ID must be answered before finish-planning or finish-phase-planning accepts that task plan. Task-plan validation rejects this deadline immediately when the artifact is submitted. Batch errors identify the task, question index, a bounded excerpt and artifact path; correct the answer or the approved deadline, then retry the batch. plan-phase opens the round and cannot inspect an artifact that has not yet been submitted.
+
+After a fresh phase discussion is accepted, `finish-phase-planning <phase> --plan-dir <directory> --reuse-unchanged-plans` can rebind an older artifact only when its task contract, dependency digests, global plan context and material discussion decisions are unchanged. Changed tasks need current artifacts. All artifact, question and batch gates still apply. The original file remains unchanged; the persisted plan records its old binding in `reusedFrom`. Without the flag, an old binding remains an error. Shared decision changes require replanning.

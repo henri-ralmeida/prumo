@@ -1487,6 +1487,27 @@ function phaseContractDigests(state, targets) {
     .sort((left, right) => left.task.localeCompare(right.task))
 }
 
+// Reutilizar o conteúdo exige contrato, dependências e decisões iguais; somente o vínculo da rodada muda.
+function rebindUnchangedPhasePlan(phase, round, task, plan, binding) {
+  const previous = phase.planningAttempts.find(item => item.n === plan.phaseBinding?.plannerRound &&
+    item.discussionRoundId === plan.phaseBinding?.discussionRoundId && plan.phaseBinding.phaseId === binding.phaseId)
+  const oldSnapshot = previous?.contextSnapshot
+  const currentSnapshot = round.contextSnapshot
+  const oldTask = oldSnapshot?.tasks.find(item => item.task === task.id)
+  const currentTask = currentSnapshot.tasks.find(item => item.task === task.id)
+  const discovery = id => phase.discussionAttempts.find(item => item.roundId === id)?.discovery
+  const material = value => value && JSON.stringify({ research: value.research, coverage: value.coverage,
+    questions: value.questions.map(({ question, answer }) => ({ question, answer })),
+    decisions: value.decisions, deferred: value.deferred, executionBoundary: value.executionBoundary, closure: value.closure })
+  const oldDiscovery = material(discovery(previous?.discussionRoundId))
+  if (!previous || !oldTask ||
+      JSON.stringify(oldSnapshot.plan) !== JSON.stringify(currentSnapshot.plan) ||
+      JSON.stringify(oldTask) !== JSON.stringify(currentTask) || !oldDiscovery ||
+      oldDiscovery !== material(discovery(round.discussionRoundId)))
+    throw new Error(tr('Cannot reuse plan for {0}: its contract, dependencies or phase discussion changed; provide a current artifact', task.id))
+  return { ...plan, phaseBinding: binding }
+}
+
 function latestPlanSyncAuditAt(name) {
   try {
     const lines = readFileSync(join(runDir(name), 'events.ndjson'), 'utf8').trim().split(/\r?\n/)
@@ -2843,7 +2864,13 @@ const commands = {
       try {
         safeId(task.id)
         const path = resolve(planDir, filename)
-        const plan = readPlanningArtifact(path)
+        let plan = readPlanningArtifact(path)
+        let reusedFrom
+        if (args['reuse-unchanged-plans'] && (plan.phaseBinding?.phaseId !== binding.phaseId ||
+            plan.phaseBinding.discussionRoundId !== binding.discussionRoundId || plan.phaseBinding.plannerRound !== binding.plannerRound)) {
+          reusedFrom = plan.phaseBinding
+          plan = rebindUnchangedPhasePlan(phase, round, task, plan, binding)
+        }
         assertPhaseTaskPlan(state, task, plan, binding, round.requiredInputs?.[task.id] ?? [])
         validateQuestionDeadlines(state, task.id, plan.openQuestions)
         const questionRefs = validateQuestionResolutions(state, plan.decisions)
@@ -2852,7 +2879,7 @@ const commands = {
             throw new Error(tr('phase planning cannot resolve the same open question more than once'))
           plannedQuestionRefs.add(ref)
         }
-        plans.push([task, plan, questionRefs, path])
+        plans.push([task, plan, questionRefs, path, reusedFrom])
       } catch (error) { errors.push(planningArtifactError(filename, error) + '\n' + tr('artifact path: {0}', resolve(planDir, filename))) }
     }
     if (errors.length) die(tr('finish-phase-planning {0} rejected {1} task-plan artifact(s); nothing was recorded:\n{2}',
@@ -2861,7 +2888,7 @@ const commands = {
     const completedAt = new Date().toISOString()
     if (round.workers) {
       round.stagedPlans ??= []
-      round.stagedPlans.push(...plans.map(([task, plan, questionRefs, sourcePath]) => ({ task: task.id, plan, questionRefs, sourcePath })))
+      round.stagedPlans.push(...plans.map(([task, plan, questionRefs, sourcePath, reusedFrom]) => ({ task: task.id, plan, questionRefs, sourcePath, reusedFrom })))
       finishPhaseWorkers(round, completedAt)
       if (round.queuedTargets.length) {
         activatePhaseWorkers(state, round, 'planning')
@@ -2871,10 +2898,10 @@ const commands = {
         logPhasePlanningInputs(phaseId, round)
         return
       }
-      plans = round.stagedPlans.filter(item => !isExternalBlock(state.tasks[item.task])).map(item => [getTask(state, item.task), item.plan, item.questionRefs, item.sourcePath])
+      plans = round.stagedPlans.filter(item => !isExternalBlock(state.tasks[item.task])).map(item => [getTask(state, item.task), item.plan, item.questionRefs, item.sourcePath, item.reusedFrom])
     }
     const allResolutions = []
-    for (const [task, plan, questionRefs, sourcePath] of plans) {
+    for (const [task, plan, questionRefs, sourcePath, reusedFrom] of plans) {
       const fields = ['summary', 'research', 'decisions', 'steps', 'verification', 'openQuestions', 'phaseBinding', 'unresolvedInputs', 'writes']
       const artifact = Object.fromEntries(fields.map(field => [field, plan[field]]))
       artifact.openQuestions = annotatePlanQuestions(task, artifact.openQuestions, round.startedAt)
@@ -2882,7 +2909,7 @@ const commands = {
         task: task.id, questionRef, decisions: plan.decisions,
       })))
       task.planner = round.assignments?.[task.id] ?? phase.planner
-      task.taskPlan = { ...artifact, ...(sourcePath ? { sourcePath } : {}), digest: taskPlanDigest(artifact), planner: task.planner, startedAt: round.workers?.[task.id]?.startedAt ?? round.startedAt, completedAt,
+      task.taskPlan = { ...artifact, ...(sourcePath ? { sourcePath } : {}), ...(reusedFrom ? { reusedFrom } : {}), digest: taskPlanDigest(artifact), planner: task.planner, startedAt: round.workers?.[task.id]?.startedAt ?? round.startedAt, completedAt,
         context: round.context, scope: phasePlanningContext(state, task), phaseId,
         phaseDecision: round.discussionDecision ?? 'discussed', phaseDecisionDigest: round.discussionDigest ?? round.discoveryDigest,
         ...(round.discoveryDigest ? { phaseDiscoveryDigest: round.discoveryDigest } : {}), attempt: task.attempts.length + 1 }
@@ -2900,6 +2927,8 @@ const commands = {
     saveState(name, state)
     emit(name, 'phase_planned', null, { phase: phaseId, planner: phase.planner, round: round.n, members: round.targets })
     log(`[prumo] ${phaseId} planned atomically (${round.targets.length} task artifact(s))`)
+    const reused = plans.filter(item => item[4]).map(item => item[0].id)
+    if (reused.length) log('[prumo] ' + tr('Reused unchanged phase plans: {0}', reused.join(', ')))
     printPlannedQuestionSummary(tasks)
   },
 

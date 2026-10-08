@@ -1723,5 +1723,7 @@
   "Show recorded validation summaries, bounded evidence previews and scope receipts, and detect engine and dashboard content mismatches": "Mostre resumos de validação registrados, prévias limitadas de evidência e recibos de escopo, e detecte diferenças de conteúdo entre motor e dashboard",
   "Fixed — Installation and CI verification": "Corrigido — Instalação e verificação do CI",
   "Include discussion history dependencies in installed bundles and preserve legacy planning queries and deferred migration diagnostics": "Inclua dependências do histórico de discussão nos pacotes instalados e preserve consultas de planejamento legado e diagnósticos de migração adiada",
-  "Clarify platform, Node version and batch names while preserving all test jobs and consolidated coverage requirements": "Esclareça plataforma, versão do Node e nomes dos lotes preservando todos os jobs de teste e os limites de cobertura consolidada"
+  "Clarify platform, Node version and batch names while preserving all test jobs and consolidated coverage requirements": "Esclareça plataforma, versão do Node e nomes dos lotes preservando todos os jobs de teste e os limites de cobertura consolidada",
+  "Cannot reuse plan for {0}: its contract, dependencies or phase discussion changed; provide a current artifact": "Não é possível reaproveitar o plano de {0}: contrato, dependências ou discussão da fase mudaram; forneça um artefato atual",
+  "Reused unchanged phase plans: {0}": "Planos de fase inalterados reaproveitados: {0}"
 }

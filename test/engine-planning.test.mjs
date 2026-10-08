@@ -1582,6 +1582,70 @@ test('partial migration keeps a blocked legacy attempt resumable while independe
   assert.equal(f.state().tasks.T4.state, 'running')
 })
 
+test('reaproveitamento explícito conserva artefato inalterado após novo aceite da fase', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Alterada' }, { id: 'B', phase: 'F1', title: 'Preservada' }])
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('plan-phase', 'F1', '--agent', 'planner', '--plan-dir', f.plans)
+  f.writeArtifacts('F1')
+  const pathA = join(f.plans, 'task-plan-A.json'), pathB = join(f.plans, 'task-plan-B.json')
+  const originalB = readFileSync(pathB, 'utf8')
+  f.plan.tasks[0].title = 'Contrato alterado'
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.ok('sync-plan', '--plan', f.planPath)
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('plan-phase', 'F1', '--agent', 'planner', '--plan-dir', f.plans)
+  const round = f.state().phaseWorkflows.F1.planningAttempts.at(-1)
+  const changed = JSON.parse(readFileSync(pathA, 'utf8'))
+  changed.steps = ['Entregar o contrato novo.']
+  changed.phaseBinding = { phaseId: 'F1', discussionRoundId: round.discussionRoundId, plannerRound: round.n }
+  writeFileSync(pathA, JSON.stringify(changed))
+  const before = JSON.stringify(f.state()), events = f.events()
+  f.rejects(/binding must match/, 'finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  assert.equal(JSON.stringify(f.state()), before)
+  assert.equal(f.events(), events)
+  const current = f.state()
+  for (const change of [
+    s => { s.phaseWorkflows.F1.planningAttempts[0].contextSnapshot = undefined },
+    s => { s.phaseWorkflows.F1.planningAttempts[0].contextSnapshot.tasks = [] },
+    s => { s.phaseWorkflows.F1.planningAttempts[0].contextSnapshot.plan.name = 'Outro plano' },
+    s => { s.phaseWorkflows.F1.planningAttempts[0].contextSnapshot.tasks.find(item => item.task === 'B').inputDigest = 'dependência alterada' },
+    s => { s.phaseWorkflows.F1.discussionAttempts.shift() },
+    s => {
+      const old = s.phaseWorkflows.F1.discussionAttempts[0]
+      old.discovery = JSON.parse(readFileSync(join(f.root, '.specs/graph/phase-negative', old.discoveryArtifact), 'utf8')).discovery
+      delete old.discoveryArtifact
+      old.discovery.coverage.rules = 'Outra decisão compartilhada'
+    },
+  ]) {
+    const modified = structuredClone(current)
+    change(modified); f.save(modified)
+    const bytes = JSON.stringify(f.state()), eventBytes = f.events()
+    f.rejects(/Cannot reuse plan/, 'finish-phase-planning', 'F1', '--plan-dir', f.plans, '--reuse-unchanged-plans')
+    assert.equal(JSON.stringify(f.state()), bytes)
+    assert.equal(f.events(), eventBytes)
+  }
+  f.save(current)
+  for (const oldBinding of [undefined, { phaseId: 'F2', discussionRoundId: 'missing', plannerRound: 99 }, changed.phaseBinding]) {
+    const invalid = { ...JSON.parse(originalB), phaseBinding: oldBinding }
+    if (oldBinding === changed.phaseBinding) invalid.phaseBinding = { ...oldBinding, plannerRound: 1 }
+    writeFileSync(pathB, JSON.stringify(invalid))
+    f.rejects(/Cannot reuse plan/, 'finish-phase-planning', 'F1', '--plan-dir', f.plans, '--reuse-unchanged-plans')
+  }
+  writeFileSync(pathB, originalB)
+  const oldA = { ...changed, phaseBinding: JSON.parse(originalB).phaseBinding }
+  writeFileSync(pathA, JSON.stringify(oldA))
+  f.rejects(/Cannot reuse plan for A/, 'finish-phase-planning', 'F1', '--plan-dir', f.plans, '--reuse-unchanged-plans')
+  writeFileSync(pathA, JSON.stringify(changed))
+  assert.match(f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans, '--reuse-unchanged-plans').stdout, /Reused unchanged phase plans: B/)
+  assert.equal(readFileSync(pathB, 'utf8'), originalB)
+  assert.deepEqual(f.state().tasks.B.taskPlan.steps, JSON.parse(originalB).steps)
+  assert.deepEqual(f.state().tasks.B.taskPlan.phaseBinding, changed.phaseBinding)
+  assert.deepEqual(f.state().tasks.B.taskPlan.reusedFrom, JSON.parse(originalB).phaseBinding)
+  assert.deepEqual(f.state().tasks.A.taskPlan.steps, changed.steps)
+})
+
 test('material sync invalidates a completed phase discussion before planner dispatch', t => {
   const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Original' }])
   f.ok('begin-phase-discussion', 'F1')
