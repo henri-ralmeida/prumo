@@ -5,6 +5,9 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import * as validationRuntime from '../scripts/validation.mjs'
+import * as readinessRuntime from '../scripts/execution-readiness.mjs'
+import { hydrateDiscoveries } from '../scripts/discovery-history.mjs'
 import { initializeLegacyPlanFixture } from './fixtures/legacy-plan-init.mjs'
 
 const engine = resolve(dirname(fileURLToPath(import.meta.url)), '../scripts/engine.mjs')
@@ -1798,7 +1801,28 @@ test('selective plan-defect replanning keeps sibling phase plans current', t => 
   f.writeArtifacts('F1')
   f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
   assert.deepEqual(f.state().tasks.A.taskPlan, siblingPlan)
-  assert.equal(JSON.parse(f.ok('graph').stdout).derived.A.effective, 'ready')
+  const projection = JSON.parse(f.ok('graph').stdout)
+  assert.equal(projection.derived.A.effective, 'ready')
+  assert.equal(projection.phaseWorkflows.F1.discussionAttempts[0].discovery, undefined)
+  const server = readFileSync(new URL('../scripts/serve.mjs', import.meta.url), 'utf8')
+  const helpers = server.slice(server.indexOf('function phaseTargets('), server.indexOf('function json('))
+  const serverDerive = new Function('validation', 'readiness', 'state', `
+    const { discoveryDigest, hasCurrentTaskPlan, phasePlanningContext, planningContext, usesCurrentPlanning, currentPlanningSkip } = validation;
+    const { executionReadiness, isExternalBlock } = readiness;
+    ${helpers}
+    return derive(state);
+  `)
+  const hydrated = hydrateDiscoveries(f.state(), join(f.root, '.specs/graph/phase-negative'))
+  const response = JSON.parse(JSON.stringify({ ...hydrated, derived: serverDerive(validationRuntime, readinessRuntime, hydrated) }))
+  assert.equal(response.phaseWorkflows.F1.discussionAttempts[0].discovery, undefined)
+  assert.equal(response.derived.A.effective, 'ready', 'o servidor calcula prontidão antes da serialização compacta')
+  assert.deepEqual(response.derived.A.executionReadiness, projection.derived.A.executionReadiness)
+  const changedPlan = JSON.parse(readFileSync(f.planPath, 'utf8'))
+  changedPlan.tasks.find(task => task.id === 'C').title = 'Contrato atualizado'
+  writeFileSync(f.planPath, JSON.stringify(changedPlan))
+  f.ok('sync-plan', '--plan', f.planPath)
+  assert.ok(f.state().phaseWorkflows.F1.contractConfirmationRequired,
+    'a cópia anterior preserva planos irmãos históricos para detectar a discussão invalidada')
 })
 
 test('a fresh material phase discussion invalidates and replans every targeted current plan', t => {
@@ -2145,4 +2169,77 @@ test('literal answered planning questions warn without inventing an answer or di
   assert.equal(f.state().tasks.A.taskPlan.openQuestions[0].question, artifact.openQuestions[0].question)
   assert.equal(f.state().tasks.A.taskPlan.openQuestions[0].answer, undefined)
   assert.equal(f.state().questionResolutions?.length ?? 0, 0)
+})
+
+for (const lang of ['en', 'pt-BR']) test(`status preserva estado e identifica discussao e planejamento vigente ou obsoleto em ${lang}`, t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }])
+  f.ok('begin-phase-discussion', 'F1')
+  const roundId = f.state().phaseWorkflows.F1.discussionAttempts.at(-1).roundId
+  let before = JSON.stringify(f.state())
+  assert.match(f.ok('status', '--lang', lang).stdout, new RegExp(`${roundId}: ${lang === 'en' ? 'current' : 'vigente'}`))
+  assert.equal(JSON.stringify(f.state()), before)
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('plan-phase', 'F1', '--agent', 'planner')
+  before = JSON.stringify(f.state())
+  assert.match(f.ok('status', '--lang', lang).stdout, lang === 'en' ? /planning round 1: current/ : /rodada de planejamento 1: vigente/)
+  assert.equal(JSON.stringify(f.state()), before)
+  f.writeArtifacts('F1')
+  f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  assert.match(f.ok('status', '--lang', lang).stdout, lang === 'en' ? /planning round 1: current/ : /rodada de planejamento 1: vigente/)
+  const state = f.state()
+  state.phaseWorkflows.F1.discussionAttempts.at(-1).context = 'obsolete'
+  f.save(state)
+  before = JSON.stringify(f.state())
+  assert.match(f.ok('status', '--lang', lang).stdout, new RegExp(`${roundId}: ${lang === 'en' ? 'stale' : 'obsoleta'}`))
+  assert.match(f.ok('status', '--lang', lang).stdout, lang === 'en' ? /planning round 1: stale/ : /rodada de planejamento 1: obsoleta/)
+  assert.equal(JSON.stringify(f.state()), before)
+})
+
+test('tres reaberturas mantem apenas a rodada vigente integral e recuperam historico', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }])
+  const originals = []
+  for (let n = 0; n < 4; n++) {
+    f.ok('begin-phase-discussion', 'F1')
+    const path = f.discovery('F1')
+    const discovery = JSON.parse(readFileSync(path, 'utf8'))
+    discovery.decisions = [{ question: 'Qual regra preservar?', answer: `Regra ${n}` }]
+    writeFileSync(path, JSON.stringify(discovery))
+    f.ok('finish-phase-discussion', 'F1', '--context', path)
+    originals.push(f.state().phaseWorkflows.F1.discovery)
+    const phase = f.state().phaseWorkflows.F1
+    assert.equal(phase.discussionAttempts.filter(round => round.discovery).length, 1)
+    for (let index = 0; index < n; index++) {
+      const archive = JSON.parse(readFileSync(join(f.root, '.specs/graph/phase-negative', phase.discussionAttempts[index].discoveryArtifact), 'utf8'))
+      assert.deepEqual(archive.discovery, originals[index])
+    }
+  }
+  f.ok('plan-phase', 'F1', '--agent', 'planner')
+  f.writeArtifacts('F1')
+  f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  assert.equal(JSON.parse(f.ok('graph').stdout).derived.A.effective, 'ready')
+})
+
+test('migracao de descobertas ocorre somente em escrita valida e referencia ausente preserva estado', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }])
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('begin-phase-discussion', 'F1')
+  const state = f.state(), old = state.phaseWorkflows.F1.discussionAttempts[0]
+  const archivedPath = join(f.root, '.specs/graph/phase-negative', old.discoveryArtifact)
+  Object.assign(old, JSON.parse(readFileSync(archivedPath, 'utf8')))
+  delete old.discoveryArtifact
+  f.save(state)
+  let before = JSON.stringify(f.state())
+  f.ok('status')
+  f.ok('migrate', '--check')
+  f.rejects(/needs --context/, 'finish-phase-discussion', 'F1')
+  assert.equal(JSON.stringify(f.state()), before)
+  f.ok('note', 'A', '--text', 'Preservar histórico')
+  assert.ok(f.state().phaseWorkflows.F1.discussionAttempts[0].discoveryArtifact)
+  assert.equal(f.state().phaseWorkflows.F1.discussionAttempts[0].discovery, undefined)
+  rmSync(archivedPath)
+  before = JSON.stringify(f.state())
+  f.ok('status')
+  f.rejects(/ENOENT/, 'note', 'A', '--text', 'Escrita recusada sem histórico')
+  assert.equal(JSON.stringify(f.state()), before)
 })

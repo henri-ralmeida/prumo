@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { hydrateDiscoveries } from './discovery-history.mjs'
 /**
  * Prumo — servidor de observabilidade. Ele renderiza state.json sem gravá-lo. Opcionalmente,
  * --sync-plan delega a reconciliação do plano aprovado a engine.mjs, o único gravador de estado.
@@ -204,7 +205,7 @@ function catalog() {
       const statePath = join(root.graphDir, entry.name, 'state.json')
       if (!existsSync(statePath)) continue
       try {
-        const state = JSON.parse(readFileSync(statePath, 'utf8'))
+        const state = hydrateDiscoveries(JSON.parse(readFileSync(statePath, 'utf8')), dirname(statePath))
         runs.push({
           root: root.name,
           run: entry.name,
@@ -261,7 +262,7 @@ function syncPlanIfChanged() {
   if (!run) return
   const statePath = join(GRAPH_DIR, run, 'state.json')
   if (!existsSync(statePath)) return
-  const state = JSON.parse(readFileSync(statePath, 'utf8'))
+  const state = hydrateDiscoveries(JSON.parse(readFileSync(statePath, 'utf8')), dirname(statePath))
   const planPath = state.plan?.source
   if (!planPath || !existsSync(planPath)) return
   const signature = `${run}:${planPath}:${statSync(planPath).mtimeMs}`
@@ -543,7 +544,7 @@ const server = createServer((req, res) => {
     }
     const p = join(selected.graphDir, run, 'state.json')
     if (!existsSync(p)) return json(res, 404, { error: tr(`run "${run}" not found`) })
-    const state = JSON.parse(readFileSync(p, 'utf8'))
+    const state = hydrateDiscoveries(JSON.parse(readFileSync(p, 'utf8')), dirname(p))
     const usage = occupancy(state)
     return json(res, 200, { ...state, derived: derive(state), agentUsage: { used: usage.busy.length, maxAgents: usage.cap },
       agentControlToken: AGENT_CONTROL_TOKEN, commandMetrics: readCommandMetrics(join(selected.graphDir, run)) })

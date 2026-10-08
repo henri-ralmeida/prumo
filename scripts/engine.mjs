@@ -73,6 +73,7 @@ import { isReadyForReview } from './review-readiness.mjs'
 import { assertExplicitScope, scopeConflicts, sameProject, captureScopeBaseline, scopeEvidenceRequirement, verifyTaskScope } from './task-scope.mjs'
 import { executionReadiness, planQuestionRef, openQuestionRecords, questionResolutionMap, targetHasStarted, overdueQuestions, questionIsOverdue, taskAuthorization, runHasAuthorizationScope, occupancy, isExternalBlock } from './execution-readiness.mjs'
 import { writeAtomicState } from './atomic-state.mjs'
+import { hydrateDiscoveries, compactDiscoveries } from './discovery-history.mjs'
 import { runValidation, assertValidation, validationContract, validationDirectories, assertDiscovery, assertDiscussionBoundary, discoveryDigest, assertTaskPlan,
   assertUnavailableResources,
   planTaskFromState, planningContext, hasCurrentTaskPlan, hasCurrentTaskScope, currentPlanningScope, usesCurrentPlanning,
@@ -186,7 +187,7 @@ function runDir(name) {
 function loadState(name) {
   const p = join(runDir(name), 'state.json')
   if (!existsSync(p)) die(`run "${name}" has no state.json`)
-  return JSON.parse(readFileSync(p, 'utf8'))
+  return hydrateDiscoveries(JSON.parse(readFileSync(p, 'utf8')), runDir(name))
 }
 
 function saveState(name, state) {
@@ -197,6 +198,7 @@ function saveState(name, state) {
   for (const record of recordDispatchMetadata(previous, state, args, redispatchTask)) log('[prumo] model dispatch (reported, not verified): ' + JSON.stringify(record))
   closeInactiveActivity(state, state.updatedAt)
   const dir = runDir(name)
+  compactDiscoveries(state, dir)
   writeAtomicState(join(dir, 'state.json'), JSON.stringify(state, null, 2))
 }
 
@@ -1991,8 +1993,8 @@ const commands = {
       missingSummaries.map(task => displayIdentifier(task.id)).join(', ')))
 
     const contractFields = TASK_CONTRACT_FIELDS
-    const beforeState = structuredClone(state)
-    const persistedTasks = structuredClone(state.tasks)
+    const beforeState = hydrateDiscoveries(structuredClone(state), runDir(name))
+    const persistedTasks = hydrateDiscoveries({ tasks: structuredClone(state.tasks) }, runDir(name)).tasks
     const added = []
     const updated = []
     const metadataUpdated = []
@@ -2407,6 +2409,21 @@ const commands = {
     }
     for (const phase of state.plan.phases) {
       console.log(`\n${phase.id} — ${phase.title}`)
+      const workflow = state.phaseWorkflows?.[phase.id]
+      const discussion = workflow?.discussionAttempts?.at(-1)
+      const planning = workflow?.planningAttempts?.at(-1)
+      const decision = workflow && currentPhaseDiscussionDecision(state, workflow)
+      if (decision?.kind === 'skipped') log('[prumo] ' + tr('phase {0} discussion {1}: {2}', phase.id, decision.id, tr('current')))
+      if (discussion) {
+        const targets = (discussion.contextTargets ?? discussion.targets ?? []).map(id => state.tasks[id]).filter(Boolean)
+        const current = !workflow.contractConfirmationRequired && discussion.context === phaseContext(state, phase.id, targets) &&
+          (!discussion.endedAt || decision?.id === discussion.roundId)
+        log('[prumo] ' + tr('phase {0} discussion {1}: {2}', phase.id, discussion.roundId, tr(current ? 'current' : 'stale')))
+      }
+      if (planning) log('[prumo] ' + tr('phase {0} planning round {1}: {2}', phase.id, planning.n,
+        tr((currentPhasePlanning(state, workflow, planning) || (planning.result === 'planned' &&
+          decision?.id === planning.discussionRoundId && decision.digest === (planning.discussionDigest ?? planning.discoveryDigest) &&
+          planning.context === phaseContext(state, phase.id, decision.targets.map(id => state.tasks[id])))) ? 'current' : 'stale')))
       Object.values(d).filter((t) => t.phase === phase.id).forEach(row)
     }
     /* phases é OPCIONAL em um plano — tarefas sem fase (ou com uma entrada que não nomeia fase)
@@ -2983,7 +3000,7 @@ const commands = {
     const fields = ['research', 'questions', 'coverage', 'decisions', 'deferred', 'executionBoundary', 'closure', 'roundId', 'nonce']
     t.discovery = { ...Object.fromEntries(fields.map(field => [field, discovery[field]])),
       recordedAt: new Date().toISOString(), context: round.context, attempt: round.attempt, digest }
-    Object.assign(round, { endedAt: new Date().toISOString(), result: 'discussed', discoveryDigest: digest })
+    Object.assign(round, { endedAt: new Date().toISOString(), result: 'discussed', discoveryDigest: digest, discovery: t.discovery })
     if (round.requiresContractConfirmation) {
       t.contractConfirmations ??= []
       t.contractConfirmations.push({ roundId: round.roundId, at: new Date().toISOString(),

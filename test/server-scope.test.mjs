@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
 import { setTimeout } from 'node:timers/promises'
+import { compactDiscoveries, hydrateDiscoveries } from '../scripts/discovery-history.mjs'
 import { executionReadiness, planQuestionRef, openQuestionRecords, questionResolutionMap, taskHasStarted, phaseWorkflowHasStarted, targetHasStarted, overdueQuestions, questionIsOverdue, occupancy, isExternalBlock } from '../scripts/execution-readiness.mjs'
 
 const task = (id, fields = {}) => ({ id, title: id, state: 'pending', deps: [], attempts: [], discussionAttempts: [], planningAttempts: [], planningHistory: [], planningSkips: [], discussionSkips: [], touches: [], ...fields })
@@ -87,6 +88,21 @@ test('API real expõe prontidão compartilhada sem modificar o contrato persisti
   delete state.tasks.T2.executionAuthorization; state.tasks.T2.authorizationHistory = [{}]; await check(state, ['authorization'])
   state = base(); state.tasks.T1.taskPlan = { openQuestions: [{ question: 'Escolha pendente', decideBy: 'user-now' }] }; await check(state, ['questions'])
   state.tasks.T1.taskPlan.openQuestions[0].answer = 'Respondida'; await check(state, [])
+  state = base()
+  state.tasks.T1.taskPlan = { openQuestions: [{ question: 'Regra histórica', decideBy: 'user-now' }] }
+  const questionRef = planQuestionRef(state.tasks.T1, state.tasks.T1.taskPlan, 0)
+  state.tasks.T1.discussionAttempts = [{ roundId: 'historical', endedAt: '2026-01-01',
+    discovery: { decisions: [{ resolvesQuestion: questionRef, answer: 'Preservar regra aprovada' }] } }, {}]
+  compactDiscoveries(state, join(graph, 'scope'))
+  const reference = state.tasks.T1.discussionAttempts[0].discoveryArtifact
+  const archived = readFileSync(join(graph, 'scope', reference), 'utf8')
+  hydrateDiscoveries(state, join(graph, 'scope'))
+  const historical = await check(state, [])
+  assert.equal(historical.tasks.T1.discussionAttempts[0].discovery, undefined)
+  assert.equal(historical.tasks.T1.discussionAttempts[0].discoveryArtifact, reference)
+  assert.equal(readFileSync(join(graph, 'scope', reference), 'utf8'), archived)
+  rmSync(join(graph, 'scope', reference))
+  await check(JSON.parse(JSON.stringify(state)), ['questions'])
 })
 
 test('prontidão considera ocupação por planejador de fase e estado ativo', () => {

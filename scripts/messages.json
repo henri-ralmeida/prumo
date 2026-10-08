@@ -1,4 +1,10 @@
 {
+  "Invalid discovery archive reference": "Referência inválida ao histórico de descobertas",
+  "Discovery archive digest mismatch": "O conteúdo do histórico de descobertas não corresponde ao resumo verificado",
+  "phase {0} discussion {1}: {2}": "fase {0} discussão {1}: {2}",
+  "phase {0} planning round {1}: {2}": "fase {0} rodada de planejamento {1}: {2}",
+  "current": "vigente",
+  "stale": "obsoleta",
   "Active work": "Trabalho ativo",
   "No activity measurement": "Sem medição",
   "Elapsed time": "Tempo corrido",
