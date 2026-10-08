@@ -31,6 +31,21 @@ function engineFixture(t, tasks, extra = {}, lang = 'en') {
     save: value => writeFileSync(statePath, JSON.stringify(value)) }
 }
 
+test('início paralelo registra os dois escopos e orienta a revisão independente', t => {
+  const f = engineFixture(t, [{ id: 'T1' }, { id: 'T2' }])
+  f.ok('init', '--plan', f.source, '--run', 'scope')
+  f.ok('authorize', '--scope', 'run', '--confirmed-by-user')
+  for (const id of ['T1', 'T2']) {
+    f.ok('skip-discussion', id, '--reason', 'Escopo aprovado', '--confirmed-by-user')
+    f.ok('skip-planning', id, '--reason', 'Contrato suficiente', '--confirmed-by-user')
+  }
+  assert.doesNotMatch(f.ok('start', 'T1', '--agent', 'executor-a').stdout, /If concurrent deliveries/)
+  assert.match(f.ok('start', 'T2', '--agent', 'executor-b').stdout, /If concurrent deliveries.*validate T2.*--scope-evidence/)
+  const state = f.state()
+  assert.deepEqual(state.tasks.T1.attempts[0].concurrentScopes, [['T2']])
+  assert.deepEqual(state.tasks.T2.attempts[0].concurrentScopes, [['T1']])
+})
+
 test('projetos diferentes isolam caminhos, mas recursos compartilhados permanecem globais', () => {
   const a = { project: join(tmpdir(), 'repo-a'), touches: ['src'], sharedResources: [{ id: 'db', access: 'write' }] }
   const b = { project: join(tmpdir(), 'repo-b'), touches: ['src'], sharedResources: [{ id: 'db', access: 'read' }] }

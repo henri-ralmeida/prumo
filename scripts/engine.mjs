@@ -912,7 +912,7 @@ function printSyncPlanAudit(changes, diagnostics) {
     const indices = finding.indices.join(', ')
     log(`[prumo] sync-plan warning: ${displayIdentifier(finding.task)} is ${tr(finding.effective)}, but validation now has ${finding.count} ${unit} (${indexLabel} ${indices}); is this planning?`)
   }
-  for (const invalidation of diagnostics.invalidatedWorkflows ?? []) {
+  for (const invalidation of diagnostics.invalidatedWorkflows) {
     const workflow = tr(invalidation.workflow)
     const label = invalidation.task ? `${displayIdentifier(invalidation.task)} ${workflow}` :
       `${displayIdentifier(invalidation.id)} ${workflow}`

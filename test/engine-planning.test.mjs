@@ -24,6 +24,9 @@ test('alterar descrição lista fases e tarefas concluídas, mas dispensa fases 
   f.ok('plan-phase', 'F1', '--agent', 'planner', '--plan-dir', f.plans)
   f.writeArtifacts('F1')
   f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  const legacy = f.state()
+  delete legacy.phaseWorkflows.F1.planningAttempts.at(-1).contextTargets
+  f.save(legacy)
   const before = JSON.stringify(f.state()), events = f.events()
   f.plan.description = 'Segundo escopo'
   writeFileSync(f.planPath, JSON.stringify(f.plan))

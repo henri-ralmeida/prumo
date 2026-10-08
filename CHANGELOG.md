@@ -2,6 +2,18 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.7.0 — 2026-10-08
+
+- Vincule cada tarefa ao projeto aprovado e confira evidências de entrega entre repositórios sem alterar o projeto padrão.
+- Exija variáveis de ambiente declaradas antes da execução e validação, e confira a evidência independente de escopo antes de executar checagens.
+- Arquive descobertas de discussões concluídas com referências recuperáveis e mostre rodadas de fase sem descartar decisões históricas.
+- Exija confirmação explícita antes de mudanças na descrição invalidarem rodadas concluídas de discussão ou planejamento.
+- Identifique tarefa, artefato e pergunta nos erros de prazo do planejamento e avise quando uma pergunta já aponta para a própria tarefa.
+- Separe a duração corrida da etapa do trabalho ativo aferido dos agentes e mostre o comando de início antes do disparo do executor.
+- Mostre resumos de validação registrados, prévias limitadas de evidência e recibos de escopo, e detecte diferenças de conteúdo entre motor e dashboard.
+- Inclua dependências do histórico de discussão nos pacotes instalados e preserve consultas de planejamento legado e diagnósticos de migração adiada.
+- Esclareça plataforma, versão do Node e nomes dos lotes preservando todos os jobs de teste e os limites de cobertura consolidada.
+
 ## 2.6.1 — 2026-10-08
 
 - Abra o board no navegador padrão após a instalação global ou `prumo install` iniciar o dashboard com sucesso, em Windows, Linux e macOS.

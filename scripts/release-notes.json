@@ -1,4 +1,37 @@
 {
+  "2.7.0": {
+    "en": [
+      {
+        "title": "Added — Project scopes and validation prerequisites",
+        "items": [
+          "Bind each task to its approved project and verify delivery evidence across repositories without changing the default project",
+          "Require declared environment variables before execution and validation, and preflight independent scope evidence before running checks"
+        ]
+      },
+      {
+        "title": "Improved — Planning history and contract safeguards",
+        "items": [
+          "Archive completed discussion payloads with recoverable references and show phase rounds without discarding historical decisions",
+          "Require explicit confirmation before description changes invalidate completed discussion or planning rounds",
+          "Identify the task, artifact and question in planning deadline errors and warn when a question already targets its own task"
+        ]
+      },
+      {
+        "title": "Improved — Activity timing and delivery diagnostics",
+        "items": [
+          "Separate elapsed stage duration from measured active agent work and print the start command before executor dispatch",
+          "Show recorded validation summaries, bounded evidence previews and scope receipts, and detect engine and dashboard content mismatches"
+        ]
+      },
+      {
+        "title": "Fixed — Installation and CI verification",
+        "items": [
+          "Include discussion history dependencies in installed bundles and preserve legacy planning queries and deferred migration diagnostics",
+          "Clarify platform, Node version and batch names while preserving all test jobs and consolidated coverage requirements"
+        ]
+      }
+    ]
+  },
   "2.6.1": {
     "en": [
       {

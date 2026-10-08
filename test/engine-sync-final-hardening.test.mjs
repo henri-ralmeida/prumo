@@ -44,6 +44,15 @@ function fixture(t, mode = 'task') {
 const phaseContext = (s, ids = ['T1', 'T2']) => JSON.stringify([s.plan.name, s.plan.description, s.plan.planningRevision ?? 0,
   'F1', ids.map(id => [id, phasePlanningContext(s, s.tasks[id])]).sort()])
 
+test('status preserva discussão histórica sem alvos e informa contexto obsoleto', t => {
+  const f = fixture(t, 'phase'), s = f.state()
+  s.phaseWorkflows.F1.discussionAttempts = [{ roundId: 'legacy', context: 'antigo' }]
+  f.save(s)
+  const before = f.bytes()
+  assert.match(f.ok('status').output, /phase F1 discussion legacy: stale/)
+  assert.deepEqual(f.bytes(), before)
+})
+
 test('fonte explícita permite sincronizar nome humano legado sem caminho armazenado e conserva os dados', t => {
   for (const name of ['Plano do checkout', 'Revisão do contrato']) {
     const f = fixture(t), s = f.state()

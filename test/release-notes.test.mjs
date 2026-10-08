@@ -5,6 +5,21 @@ import { releaseHistory, releaseNotes } from '../lib/release-notes.mjs'
 
 const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 
+test('atualização para 2.7.0 explica os contratos novos e traduz cada nota', () => {
+  const messages = JSON.parse(readFileSync(new URL('../scripts/messages.json', import.meta.url), 'utf8'))
+  const history = releaseHistory(['2.6.1'], '2.7.0')
+  assert.deepEqual(history.map(release => release.version), ['2.7.0'])
+  const sections = history[0].sections
+  assert.equal(sections.length, 4)
+  for (const section of sections) {
+    assert.ok(messages[section.title]?.trim())
+    for (const item of section.items) assert.ok(messages[item]?.trim())
+  }
+  assert.ok(sections.flatMap(section => section.items).some(item => item.includes('explicit confirmation')))
+  assert.ok(sections.flatMap(section => section.items).some(item => item.includes('environment variables')))
+  assert.deepEqual(releaseHistory(['2.7.0'], '2.7.0'), [])
+})
+
 test('atualização da 2.6.0 explica a abertura do board e o isolamento no Windows com tradução completa', () => {
   const messages = JSON.parse(readFileSync(new URL('../scripts/messages.json', import.meta.url), 'utf8'))
   const history = releaseHistory(['2.6.0'], '2.6.1')
