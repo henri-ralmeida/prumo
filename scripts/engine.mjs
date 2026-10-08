@@ -784,7 +784,7 @@ function manualEstimateMinutes(value) {
   return Number.isSafeInteger(total) && total > 0 ? total : null
 }
 
-function validatePlan(plan, allowOverlap = false, historical = new Set()) {
+function validatePlan(plan, allowOverlap = false, historical = new Set(), defaultProject = projectCwd()) {
   try { assertRolePreferences(plan.rolePreferences) } catch (error) { die(error.message) }
   if (plan.maxAgents !== undefined && (!Number.isSafeInteger(plan.maxAgents) || plan.maxAgents < 1)) die('maxAgents must be a positive integer')
   if (!Array.isArray(plan.tasks) || plan.tasks.length === 0) die('plan has no tasks')
@@ -854,8 +854,8 @@ function validatePlan(plan, allowOverlap = false, historical = new Set()) {
         die(`${a.id} and ${b.id} share write resources: ${shared.join(', ')} — add a dep between them (or --allow-overlap)`)
       if (!a.touches?.length || !b.touches?.length) continue
       if (reaches(byId, a.id, b.id) || reaches(byId, b.id, a.id)) continue
-      const clash = plan.scopePolicy === 'explicit' ? scopeConflicts(a, b, plan.cwd ?? projectCwd()).paths[0] :
-        sameProject(a, b, plan.cwd ?? projectCwd()) && a.touches.find((pa) => b.touches.some((pb) => pathsCollide(pa, pb)))
+      const clash = plan.scopePolicy === 'explicit' ? scopeConflicts(a, b, defaultProject).paths[0] :
+        sameProject(a, b, defaultProject) && a.touches.find((pa) => b.touches.some((pb) => pathsCollide(pa, pb)))
       if (clash && !allowOverlap)
         die(
           `${a.id} and ${b.id} can run in parallel but both touch "${clash}" — ` +
@@ -924,7 +924,7 @@ function readPlan(planPath, state) {
   const source = resolve(planPath)
   const plan = JSON.parse(readFileSync(source, 'utf8'))
   const validationPlan = state ? { ...plan, planningMode: state.plan.planningMode ?? 'task' } : plan
-  validatePlan(validationPlan, args['allow-overlap'] === true, historicalTasks(state))
+  validatePlan(validationPlan, args['allow-overlap'] === true, historicalTasks(state), projectCwd(state?.plan.cwd))
   const identifierTasks = state ? plan.tasks.map(task => ['done', 'skipped'].includes(state.tasks[task.id]?.state)
     ? { ...task, deps: state.tasks[task.id].deps } : task) : plan.tasks
   const identifierProblem = taskIdentifierProblem(identifierTasks, state ? Object.keys(state.tasks) : undefined, state?.tasks)
@@ -2069,7 +2069,7 @@ const commands = {
 
     // O modo existente governa a sincronização; o arquivo não pode enfraquecer suas regras de fase.
     const effectivePlan = { ...plan, scopePolicy: plan.scopePolicy ?? state.plan.scopePolicy, planningMode: state.plan.planningMode ?? 'task', tasks: Object.values(state.tasks).map(planTaskFromState) }
-    validatePlan(effectivePlan, args['allow-overlap'] === true, historicalTasks(state))
+    validatePlan(effectivePlan, args['allow-overlap'] === true, historicalTasks(state), cwd)
     const nextPlan = {
       name: plan.name,
       description: plan.description ?? '',

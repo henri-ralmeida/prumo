@@ -20,12 +20,13 @@ function engineFixture(t, tasks, extra = {}, lang = 'en') {
   const writePlan = () => writeFileSync(source, JSON.stringify(plan))
   writePlan()
   const engine = new URL('../scripts/engine.mjs', import.meta.url).pathname.replace(/^\/(?:([A-Za-z]:))/, '$1')
-  const cli = (...args) => spawnSync(process.execPath, [engine, ...args], { cwd: project,
+  const cliFrom = (cwd, ...args) => spawnSync(process.execPath, [engine, ...args], { cwd,
     env: { ...process.env, PRUMO_ROOT: root, PRUMO_HOME: home, PRUMO_LANG: lang }, encoding: 'utf8', windowsHide: true, timeout: 30000 })
+  const cli = (...args) => cliFrom(project, ...args)
   const ok = (...args) => { const r = cli(...args); assert.equal(r.status, 0, r.stdout + r.stderr); return r }
   const rejected = (pattern, ...args) => { const r = cli(...args); assert.notEqual(r.status, 0); assert.match(r.stdout + r.stderr, pattern); return r }
   const statePath = join(root, '.specs/graph/scope/state.json')
-  return { plan, source, root, project, writePlan, cli, ok, rejected,
+  return { plan, source, root, project, writePlan, cli, cliFrom, ok, rejected,
     state: () => JSON.parse(readFileSync(statePath, 'utf8')),
     save: value => writeFileSync(statePath, JSON.stringify(value)) }
 }
@@ -41,6 +42,21 @@ test('projetos diferentes isolam caminhos, mas recursos compartilhados permanece
     assert.throws(() => assertExplicitScope({ project }), /absolute Git repository root/)
   assert.doesNotThrow(() => assertExplicitScope({ project: a.project }))
   assert.throws(() => assertExplicitScope({ writeScope: 'files', touches: ['../neighbor'] }, 'explicit'), /task.project.*absolute Git root/)
+})
+
+test('sincronização fora do projeto usa a raiz persistida ao comparar escopos implícitos e explícitos', t => {
+  const f = engineFixture(t, [{ id: 'T1', touches: ['left'] }, { id: 'T2', touches: ['right'] }])
+  f.plan.tasks[1].project = f.project
+  f.writePlan()
+  f.ok('init', '--plan', f.source, '--run', 'scope')
+  const before = JSON.stringify(f.state())
+  f.plan.tasks[0].touches = ['same']
+  f.plan.tasks[1].touches = ['same']
+  f.writePlan()
+  const result = f.cliFrom(f.root, 'sync-plan', '--plan', f.source)
+  assert.notEqual(result.status, 0)
+  assert.match(result.stdout + result.stderr, /both touch/)
+  assert.equal(JSON.stringify(f.state()), before)
 })
 
 test('pré-checagem de escopo evita comandos e recibos sem exigir evidência por simultaneidade apenas', t => {
