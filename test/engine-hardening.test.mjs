@@ -1972,3 +1972,26 @@ test('consulta informa idade de rodada e confirmação pendente sem alterar hist
     assert.deepEqual(f.snapshot(), before)
   }
 })
+
+test('validate mostra resumo gravado e limita evidência sem alterar recibo', t => {
+  for (const lang of ['en', 'pt-BR']) {
+    const f = fixture(t, { requireReview: false })
+    f.env.PRUMO_LANG = lang
+    assert.equal(f.init().status, 0)
+    makeLegacy(f)
+    assert.equal(f.cli('start', 'T1', '--agent', 'executor').status, 0)
+    const evidence = ['linha 1', 'linha 2', 'linha 3', 'linha 4', 'linha 5', 'FORA_DA_PREVIA'].join('\n')
+    for (const verdict of ['--ok', '--failed']) {
+      const result = f.cli('validate', 'T1', verdict, '--cwd', f.project, '--summary', 'Resultado observado', '--evidence', evidence)
+      assert.equal(result.status, 0, f.output(result))
+      assert.match(result.stdout, /Resultado observado/)
+      assert.match(result.stdout, lang === 'en' ? /first 5 lines, up to 1000 characters/ : /primeiras 5 linhas, até 1000 caracteres/)
+      assert.ok(result.stdout.includes(String(evidence.length)))
+      assert.doesNotMatch(result.stdout, /FORA_DA_PREVIA/)
+      assert.equal(f.state().tasks.T1.validations.at(-1).evidence, evidence)
+    }
+    const long = f.cli('validate', 'T1', '--failed', '--evidence', 'x'.repeat(1100))
+    assert.ok(long.stdout.includes('x'.repeat(1000)))
+    assert.ok(!long.stdout.includes('x'.repeat(1001)))
+  }
+})

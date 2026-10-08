@@ -3440,6 +3440,14 @@ const commands = {
       emit(name, 'task_validate', id, { ok: last.ok, by: last.by, evidence: last.evidence,
         ...(last.summary === undefined ? {} : { summary: last.summary }), error })
       log('[prumo] ' + id + ' validation recorded by ' + last.by + ': ' + (last.ok ? 'OK' : 'FAILED'))
+      if (last.summary !== undefined) log('[prumo] ' + tr('Recorded summary: {0}', last.summary))
+      const preview = last.evidence.split(/\r?\n/).slice(0, 5).join('\n').slice(0, 1000)
+      log('[prumo] ' + tr('Recorded evidence (first 5 lines, up to 1000 characters; {0} characters total):', last.evidence.length))
+      log(preview)
+      if (last.scopeCheck) log('[prumo] ' + tr('Scope check: method {0}; paths: {1}; excluded paths: {2}',
+        last.scopeCheck.method, (last.scopeCheck.paths ?? []).join(', ') || tr('none'),
+        (last.scopeCheck.excludedPaths ?? []).join(', ') || tr('none')))
+
     })
     if (error) die(error)
   },

@@ -1687,5 +1687,8 @@
   "WARNING: validation --cwd {0} differs from task project {1}; scope and delivery checks remain bound to the approved project": "AVISO: --cwd {0} da validação difere do projeto {1} da tarefa; as verificações de escopo e entrega permanecem vinculadas ao projeto aprovado",
   "task {0} plan open question {1} targets its own task with beforeTask; answer it before adding the plan: {2}": "a pergunta aberta {1} do plano da tarefa {0} aponta para a própria tarefa com beforeTask; responda antes de adicionar o plano: {2}",
   "task {0} plan open question {1} has an expired deadline ({2}) and must be answered before it can be added: {3}": "a pergunta aberta {1} do plano da tarefa {0} já passou do prazo ({2}) e precisa ser respondida antes de ser adicionada: {3}",
-  "artifact path: {0}": "caminho do artefato: {0}"
+  "artifact path: {0}": "caminho do artefato: {0}",
+  "Recorded summary: {0}": "Resumo gravado: {0}",
+  "Recorded evidence (first 5 lines, up to 1000 characters; {0} characters total):": "Evidência gravada (primeiras 5 linhas, até 1000 caracteres; {0} caracteres no total):",
+  "Scope check: method {0}; paths: {1}; excluded paths: {2}": "Verificação de escopo: método {0}; caminhos: {1}; caminhos excluídos: {2}"
 }
