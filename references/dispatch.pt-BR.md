@@ -1,5 +1,7 @@
 # Autorização, despacho e execução
 
+Execute o comando `start` sugerido por `ready` e exija sucesso antes de disparar o executor. Se falhar, corrija o comando ou resolva o impedimento informado antes do despacho; o agente não deve começar trabalho no produto sem sua tentativa registrada. `start` não aceita `--cwd`: registre o diretório do projeto com `init --cwd` ou `sync-plan --cwd` e use `validate --cwd` nas checagens executáveis. Marque `activity-start` somente quando o trabalho começar e `activity-stop` antes de aguardar ou terminar, para separar duração da etapa e trabalho ativo.
+
 [English](dispatch.md)
 
 Leia isto quando uma tarefa estiver em `ready` ou `running`: antes de registrar uma autorização de execução, antes de cada

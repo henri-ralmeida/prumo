@@ -51,6 +51,7 @@ export function parseEngineArgs(command, tokens) {
     const token = tokens[i] === '-r' ? '--run' : tokens[i]
     if (!token.startsWith('--')) { args._.push(token); continue }
     const key = token.slice(2)
+    if (command === 'start' && key === 'cwd') throw new Error('start does not support --cwd; use start <task> --agent <executor> --run <run> and wait for success before dispatching the agent. Set the project directory with init --cwd or sync-plan --cwd; validate also accepts --cwd.')
     if (!stringFlags.has(key) && !booleanFlags.has(key)) throw new Error(`Unknown option --${key} for ${command}`)
     const repeatedAgent = key === 'agent' && ['plan-phase', 'begin-phase-discussion'].includes(command)
     if (Object.hasOwn(args, key) && key !== 'option' && !repeatedAgent) throw new Error(`Duplicate option --${key}`)

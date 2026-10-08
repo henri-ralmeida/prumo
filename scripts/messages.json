@@ -1,4 +1,11 @@
 {
+  "Active work": "Trabalho ativo",
+  "No activity measurement": "Sem medição",
+  "Elapsed time": "Tempo corrido",
+  "Active work sums agents. Elapsed time counts overlaps once and includes waiting; recorded pauses are excluded. Activity without START/STOP is not measured.": "Trabalho ativo soma os agentes. Tempo corrido conta sobreposições uma vez e inclui espera; pausas registradas ficam fora. Atividade sem START/STOP não é medida.",
+  "start does not support --cwd; use start <task> --agent <executor> --run <run> and wait for success before dispatching the agent. Set the project directory with init --cwd or sync-plan --cwd; validate also accepts --cwd.": "start não aceita --cwd; use start <tarefa> --agent <executor> --run <run> e aguarde o sucesso antes de disparar o agente. Configure o diretório do projeto com init --cwd ou sync-plan --cwd; validate também aceita --cwd.",
+  "run before dispatch: node \"{0}\" {1} --run \"{2}\"": "execute antes do despacho: node \"{0}\" {1} --run \"{2}\"",
+  "Register start successfully before dispatching an executor. If start fails, do not dispatch. Mark activity-start when work begins and activity-stop before waiting or finishing.": "Registre start com sucesso antes de disparar um executor. Se start falhar, não dispare. Marque activity-start quando o trabalho começar e activity-stop antes de aguardar ou terminar.",
   "task {0} plan open question {1} targets its own task with beforeTask; answer it before adding the plan": "a pergunta aberta {1} do plano da tarefa {0} aponta para a própria tarefa com beforeTask; responda antes de adicionar o plano",
   "task {0} plan open question {1} references unknown task {2}": "a pergunta aberta {1} do plano da tarefa {0} referencia a tarefa desconhecida {2}",
   "task {0} plan open question {1} references unknown phase {2}": "a pergunta aberta {1} do plano da tarefa {0} referencia a fase desconhecida {2}",

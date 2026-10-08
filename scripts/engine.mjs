@@ -2428,6 +2428,8 @@ const commands = {
         tr(scoped ? 'authorization required' : 'no authorization scope recorded')
       const action = actions.get(t.id)
       console.log(`${t.id}  ${t.title}  [${tr(t.effective)} · ${auth}]  → ${action}`)
+      if (action?.startsWith(`start ${t.id} `))
+        log('[prumo] ' + tr('run before dispatch: node "{0}" {1} --run "{2}"', fileURLToPath(import.meta.url), action, state.run))
     }
     log(
       `\n[prumo] ${occ.executors.length}/${occ.maxExec} executors, ${occ.reviewers.length} in review ` +
@@ -2435,6 +2437,8 @@ const commands = {
     )
     log(`[prumo] ${occ.planners.length} in planning — ${Math.max(0, occ.cap - occ.busy.length)} agent slots available for planning`)
     if (occ.reviewers.length) log(`[prumo] awaiting review: ${occ.reviewers.map((t) => `${t.id} @${t.reviewer}`).join(', ')}`)
+    if (list.some(task => task.effective === 'ready'))
+      log('[prumo] ' + tr('Register start successfully before dispatching an executor. If start fails, do not dispatch. Mark activity-start when work begins and activity-stop before waiting or finishing.'))
   },
 
   graph() {

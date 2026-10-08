@@ -9,6 +9,12 @@ const commands = ['init', 'migrate', 'sync-plan', 'status', 'ready', 'graph', 'r
   'review', 'review-progress', 'refresh-contract', 'validate', 'done', 'fail', 'retry', 'block', 'unblock', 'skip', 'note',
   'pause-replanning', 'set-agent-limit']
 
+test('start --cwd explica o comando válido e exige registro bem-sucedido antes do despacho', () => {
+  assert.throws(() => parseEngineArgs('start', ['T1', '--agent', 'executor', '--cwd', '/projeto']),
+    /start does not support --cwd; use start <task> --agent <executor> --run <run>.*wait for success before dispatching/)
+  assert.deepEqual(parseEngineArgs('start', ['T1', '--agent', 'executor', '--run', 'run']), { _: ['T1'], agent: 'executor', run: 'run' })
+})
+
 for (const command of commands) {
   test(`${command}: opção desconhecida não executa ação`, () => assert.throws(() => parseEngineArgs(command, ['--typo']), /Unknown option/))
   test(`${command}: opção herdada não é comando nem flag`, () => assert.throws(() => parseEngineArgs(command, ['--constructor']), /Unknown option/))

@@ -1,6 +1,7 @@
 /** Recorded stage duration is a fallback, not proof of active work or measured savings. */
 export function recordedAgentTiming(state, events = [], now = Date.now(), historyComplete = true) {
-  const roles = Object.fromEntries(['discussion', 'planning', 'execution', 'review'].map(role => [role, { durationMs: 0, measuredMs: 0, stageMs: 0, partial: false }]))
+  const roles = Object.fromEntries(['discussion', 'planning', 'execution', 'review'].map(role => [role, { durationMs: 0, measuredMs: 0, stageMs: 0, elapsedMs: 0, hasActivityRecords: false, partial: false }]))
+  const roleStageRanges = Object.fromEntries(Object.keys(roles).map(role => [role, []]))
   const agents = Object.create(null), ranges = [], stageRanges = [], globalPauses = (state.runPauseHistory ?? []).map(pause => [Date.parse(pause.startedAt), Date.parse(pause.endedAt ?? new Date(now).toISOString())])
   if (state.runPause && !state.runPauseHistory?.some(pause => pause.startedAt === state.runPause.startedAt)) globalPauses.push([Date.parse(state.runPause.startedAt), Date.parse(state.runPause.endedAt ?? new Date(now).toISOString())])
   const pauses = Object.create(null), pending = Object.create(null)
@@ -31,6 +32,8 @@ export function recordedAgentTiming(state, events = [], now = Date.now(), histor
     const excluded = [...globalPauses, ...(pauses[id] ?? [])]
     const stage = segments(Date.parse(start), Date.parse(end), excluded)
     const intervals = (round.activityIntervals ?? []).filter(interval => interval.role === role)
+    roleStageRanges[role].push(...stage)
+    if (intervals.some(interval => Number.isFinite(Date.parse(interval.startedAt)) && Date.parse(interval.startedAt) <= now)) roles[role].hasActivityRecords = true
     // Resume advances recorded stage duration, without reopening measured activity.
     const resumed = globalPauses.filter(([from, to]) => Number.isFinite(to) && intervals.some(interval => interval.closedBy === 'run-pause' && Date.parse(interval.endedAt) === from)).flatMap(([, to]) => {
       const next = intervals.map(interval => Date.parse(interval.startedAt)).filter(value => value >= to).sort((a, b) => a - b)[0]
@@ -74,6 +77,8 @@ export function recordedAgentTiming(state, events = [], now = Date.now(), histor
     for (const [id, worker] of workers) visit({ ...worker, endedAt: worker.endedAt ?? round.endedAt }, role, index === rounds.length - 1 && !worker.endedAt && phase.state === (role === 'discussion' ? 'discussing' : 'planning'), id, worker.agent ?? worker.activityAgent)
   })
   for (const role of Object.keys(roles)) {
+    // O tempo corrido inclui espera e conta sobreposições uma vez; o trabalho ativo continua somado por agente.
+    roles[role].elapsedMs = union(roleStageRanges[role])
     const selected = ranges.filter(item => item.role === role)
     for (const agent of new Set(selected.map(item => item.agent))) {
       const own = selected.filter(item => item.agent === agent)

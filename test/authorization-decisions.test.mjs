@@ -549,7 +549,10 @@ test('execution authorization records scope and mode, gates only selected tasks,
   assert.ok(authorization.at)
   const readyAuto = f.ok('ready').stdout
   assert.match(readyAuto, /A  Source  \[ready · authorized auto\].*start A --agent <executor>/)
+  assert.match(readyAuto, /run before dispatch: node ".*engine\.mjs" start A --agent <executor> --run ".+"/)
+  assert.match(readyAuto, /If start fails, do not dispatch/)
   assert.match(readyAuto, /B  Target  \[ready · authorization required\].*ask user to authorize/)
+  assert.doesNotMatch(readyAuto, /run before dispatch:.*start B/)
   f.rejects(/no execution authorization/, 'start', 'B', '--agent', 'executor-B')
   f.ok('authorize', '--scope', 'tasks:B', '--mode', 'manual', '--confirmed-by-user')
   assert.equal(f.state().tasks.B.executionAuthorization.mode, 'manual')
@@ -586,6 +589,29 @@ test('a run without any recorded authorization scope starts as before, including
   pt.planTask('A')
   assert.match(pt.ok('start', 'A', '--agent', 'executor-A').stdout,
     /nenhum escopo de autorização de execução está registrado nesta execução; A foi iniciada como antes/)
+})
+
+test('ready orienta start antes do despacho e start --cwd não abre uma tentativa, em inglês e pt-BR', t => {
+  for (const lang of ['en', 'pt-BR']) {
+    const f = fixture(t, { run: `dispatch-order-${lang}`, lang })
+    const beforePlanning = f.ok('ready').stdout
+    assert.doesNotMatch(beforePlanning, /run before dispatch:|execute antes do despacho:/)
+    assert.doesNotMatch(beforePlanning, /Register start successfully|Registre start com sucesso/)
+    f.planTask('A')
+    const before = f.stateBytes(), events = f.eventBytes()
+    const ready = f.ok('ready').stdout
+    assert.match(ready, new RegExp(`node ".*engine\\.mjs" start A --agent <executor> --run "dispatch-order-${lang}"`))
+    assert.match(ready, lang === 'en' ? /If start fails, do not dispatch/ : /Se start falhar, não dispare/)
+    const invalid = f.cli('start', 'A', '--agent', 'executor-A', '--cwd', f.project)
+    assert.notEqual(invalid.status, 0)
+    assert.match(invalid.stdout + invalid.stderr, lang === 'en' ? /start does not support --cwd/ : /start não aceita --cwd/)
+    assert.deepEqual(f.stateBytes(), before)
+    assert.deepEqual(f.eventBytes(), events)
+    f.rejects(lang === 'en' ? /not running/ : /não em running/, 'progress', 'A', '--agent', 'executor-A', '--step', '1')
+    f.ok('start', 'A', '--agent', 'executor-A')
+    f.ok('progress', 'A', '--agent', 'executor-A', '--step', '1')
+    assert.equal(f.state().tasks.A.attempts.length, 1)
+  }
 })
 
 test('a recorded scope refuses tasks outside it, and a freed slot names only authorized ready work', t => {

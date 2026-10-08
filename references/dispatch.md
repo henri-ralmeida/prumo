@@ -45,6 +45,8 @@ node $ENGINE unblock T4 --confirmed-by-user                   # resuming active 
 
 ## Recording a role does not create an agent
 
+Run the suggested `start` command from `ready` and require a successful result before dispatching the executor. If it fails, correct the command or resolve the reported gate before dispatch; an agent must not start product work without its recorded attempt. `start` does not accept `--cwd`: record the project directory with `init --cwd` or `sync-plan --cwd`, and use `validate --cwd` for executable checks. Only call `activity-start` when work actually begins; call `activity-stop` before waiting or finishing so elapsed stage time is not presented as active work.
+
 **Use one native subagent for each active plan-phase target when available; otherwise report the limitation and follow the local, read-only planner fallback in [planning.md](planning.md). Every start still requires an actual native executor dispatch in the SAME message.**
 Dispatch ready agents of every role within the shared `maxAgents` limit — parallelism is
 the point of the graph, but inspect declared file and shared-resource conflicts before treating tasks as independent. The engine only ever sees
