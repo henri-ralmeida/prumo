@@ -47,13 +47,14 @@ function readSafe(root, path, budget) {
     current = resolve(current, part)
     if (lstatSync(current).isSymbolicLink()) throw new Error(`Evidence link refused: ${path}`)
   }
-  const expected = lstatSync(absolute)
+  // Windows file IDs can exceed Number's integer precision. Compare exact IDs.
+  const expected = lstatSync(absolute, { bigint: true })
   if (!expected.isFile()) throw new Error(`Evidence is not a regular file: ${path}`)
   const fd = openSync(absolute, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
   try {
-    const stat = fstatSync(fd)
+    const stat = fstatSync(fd, { bigint: true })
     if (stat.dev !== expected.dev || stat.ino !== expected.ino || realpathSync(absolute) !== absolute) throw new Error(`Evidence path changed: ${path}`)
-    if (!stat.isFile() || stat.size > MAX_FILE || budget.bytes + stat.size > MAX_TOTAL) throw new Error(`Evidence reading limit: ${path}`)
+    if (!stat.isFile() || stat.size > MAX_FILE || budget.bytes + Number(stat.size) > MAX_TOTAL) throw new Error(`Evidence reading limit: ${path}`)
     // Bound the actual read as well as stat: growth cannot allocate an unbounded buffer.
     const data = Buffer.alloc(MAX_FILE + 1)
     let bytes = 0, count

@@ -59,3 +59,17 @@ O Git local não disponibilizou credencial de escrita por HTTPS. O conector GitH
 | 79811304d0366b5c3a47c94cf7738560da7626bc | e50b77382be426e7bade4c184aa3bd5eb2ee17ca | 52d24874805a09e8a02980312fef16a2542c7093 |
 
 Este relatório acompanha o terceiro commit. Consultas de CI devem usar o SHA remoto final da branch, sem atribuir os resultados do SHA de base ou do commit local a uma execução remota inexistente.
+
+### Correção Windows e orientação posterior para main
+
+Em 2026-10-08 UTC, o usuário substituiu a restrição inicial de branch isolada e autorizou levar o trabalho à main. A main remota continuava em `efadd0d3fd4af393608cd1864f5fc7f78ad3fc3e`; a atualização será um avanço direto, preservando os três commits existentes e sem force push. Nenhuma autorização de publicação, tag, Release ou reativação de automações foi adicionada.
+
+O [CI 37703728854](https://github.com/henri-ralmeida/prumo/actions/runs/37703728854) do SHA `1481c2979af2ccf4db0b59e591aa6c6e87855741` terminou com Linux/macOS Node.js 22/24 aprovados e os dois jobs Windows falhando no teste `file replacement, special entries, partial reads and growth cannot bypass safe evidence reads`. A consolidação foi pulada. Os logs dos dois jobs registraram apenas essa falha: `Missing expected exception`, ao incrementar `stat.ino` no mock de substituição de arquivo.
+
+IDs de arquivo Windows podem exceder a precisão inteira de Number: `Number(2n ** 60n)` e `Number(2n ** 60n + 1n)` são iguais. A correção lê as identidades de lstat/fstat com `{ bigint: true }`, compara dispositivo/inode exatos e converte tamanho para Number somente no cálculo de orçamento limitado de leitura. Os mocks repassam as opções. A regressão reproduz IDs grandes, aceita a identidade correta e recusa tanto inode quanto dispositivo diferentes; nenhuma asserção, limite ou job foi removido.
+
+Node.js 24.19.0: 39 testes das melhorias aprovados. Node.js 22.23.3: 267 testes focados aprovados, zero falhas/skips. `npm run check`, `npm pack` e integração real npm/Bun passaram após a correção; sete harnesses em oito raízes isoladas, preservando prévia e falha de registro.
+
+O c8 completo foi executado novamente após a última alteração de código: 2.569 testes, 2.552 aprovados, quatro falhas locais e 13 skips existentes. Foram as três entradas especiais com `listen EPERM` e a matriz de atualização com `kill ESRCH`. Todas as 33 versões npm foram tentadas: sete aprovadas e 26 falhas ESRCH, sem exclusão de versão. Cobertura global Linux: linhas/statements 99,95% (13.359/13.365), funções 100% (832/832), branches 99,44% (12.407/12.476), mantendo exit code 1 e os limites de 100% por arquivo. Painel renderizado, run-metadata e recorded-timing atingiram 100% de linhas/functions/branches. Delivery-evidence teve 100% de linhas/functions e 99,59% de branches; permanece a alternativa de ausência de O_NOFOLLOW nesse Linux. Não há aprovação global local.
+
+O SHA novo da main precisa de sua própria execução dos seis jobs e consolidação; a correção local não aprova o CI. Nenhuma publicação faz parte dessa atualização.

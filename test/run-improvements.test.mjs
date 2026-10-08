@@ -315,7 +315,7 @@ test('non-Git projects inspect only approved files and enforce file/traversal/to
   assert.throws(() => captureDelivery(f.task, f.cwd), /reading limit/)
   const original = fs.fstatSync
   try {
-    fs.fstatSync = fd => { const stat = original(fd); stat.size = 0; return stat }; syncBuiltinESMExports()
+    fs.fstatSync = (...args) => { const stat = original(...args); stat.size = 0; return stat }; syncBuiltinESMExports()
     assert.throws(() => captureDelivery(f.task, f.cwd), /reading limit/)
   } finally { fs.fstatSync = original; syncBuiltinESMExports() }
 })
@@ -327,27 +327,52 @@ test('file replacement, special entries, partial reads and growth cannot bypass 
   f.task.deliveries = ['out/report.txt']
   const capture = () => captureDelivery(f.task, f.cwd, true, true)
   try {
-    fs.fstatSync = fd => { const stat = original.fstatSync(fd); stat.ino++; return stat }; syncBuiltinESMExports()
+    fs.fstatSync = (...args) => { const stat = original.fstatSync(...args); stat.ino++; return stat }; syncBuiltinESMExports()
     assert.throws(capture, /path changed/); restore()
-    fs.fstatSync = fd => { const stat = original.fstatSync(fd); stat.dev++; return stat }; syncBuiltinESMExports()
+    fs.fstatSync = (...args) => { const stat = original.fstatSync(...args); stat.dev++; return stat }; syncBuiltinESMExports()
     assert.throws(capture, /path changed/); restore()
     fs.realpathSync = path => path === join(f.cwd, 'out/report.txt') ? join(f.cwd, 'private.txt') : original.realpathSync(path); syncBuiltinESMExports()
     assert.throws(capture, /path changed/); restore()
-    fs.fstatSync = fd => { const stat = original.fstatSync(fd); stat.isFile = () => false; return stat }; syncBuiltinESMExports()
+    fs.fstatSync = (...args) => { const stat = original.fstatSync(...args); stat.isFile = () => false; return stat }; syncBuiltinESMExports()
     assert.throws(capture, /reading limit/); restore()
-    fs.lstatSync = path => { const stat = original.lstatSync(path); if (path === join(f.cwd, 'out/report.txt')) stat.isFile = () => false; return stat }; syncBuiltinESMExports()
+    fs.lstatSync = (path, ...args) => { const stat = original.lstatSync(path, ...args); if (path === join(f.cwd, 'out/report.txt')) stat.isFile = () => false; return stat }; syncBuiltinESMExports()
     assert.throws(capture, /not a regular file/); restore()
     fs.readSync = (fd, buffer, offset, length, position) => original.readSync(fd, buffer, offset, Math.min(length, 3), position); syncBuiltinESMExports()
     assert.equal(capture().files['out/report.txt'].lines[0], 'T1 sensitive payload'); restore()
     f.write('out/report.txt', 'x'.repeat(1024 * 1024 + 1))
-    fs.fstatSync = fd => { const stat = original.fstatSync(fd); stat.size = 0; return stat }; syncBuiltinESMExports()
+    fs.fstatSync = (...args) => { const stat = original.fstatSync(...args); stat.size = 0; return stat }; syncBuiltinESMExports()
     assert.throws(capture, /reading limit/); restore()
     f.write('out/report.txt', Buffer.from([0xff, 0x54, 0x31]))
     assert.equal(capture().files['out/report.txt'].binary, true)
     rmSync(join(f.cwd, '.git'), { recursive: true })
-    fs.lstatSync = path => { if (path === join(f.cwd, 'out')) throw Object.assign(new Error('Denied'), { code: 'EACCES' }); return original.lstatSync(path) }; syncBuiltinESMExports()
+    fs.lstatSync = (path, ...args) => { if (path === join(f.cwd, 'out')) throw Object.assign(new Error('Denied'), { code: 'EACCES' }); return original.lstatSync(path, ...args) }; syncBuiltinESMExports()
     assert.throws(() => captureDelivery(f.task, f.cwd), /Denied/)
   } finally { restore() }
+})
+test('exact large file identities reject replacements hidden by Number rounding', t => {
+  const f = fixture(t), target = join(f.cwd, 'out/report.txt')
+  f.write('out/report.txt', 'Approved product content'); f.task.deliveries = ['out/report.txt']
+  const original = { lstatSync: fs.lstatSync, fstatSync: fs.fstatSync }
+  const large = 2n ** 60n
+  assert.equal(Number(large), Number(large + 1n), 'the regression must reproduce loss of precision')
+  let openedInode = large, openedDevice = large
+  try {
+    fs.lstatSync = (path, options) => {
+      const stat = original.lstatSync(path, options)
+      if (path === target && options?.bigint) { stat.ino = large; stat.dev = large }
+      return stat
+    }
+    fs.fstatSync = (fd, options) => {
+      assert.equal(options?.bigint, true, 'file identity must use exact integers')
+      const stat = original.fstatSync(fd, options); stat.ino = openedInode; stat.dev = openedDevice
+      return stat
+    }
+    syncBuiltinESMExports()
+    const capture = () => captureDelivery(f.task, f.cwd, true, true)
+    assert.equal(capture().files['out/report.txt'].lines[0], 'Approved product content')
+    openedInode = large + 1n; assert.throws(capture, /path changed/)
+    openedInode = large; openedDevice = large + 1n; assert.throws(capture, /path changed/)
+  } finally { Object.assign(fs, original); syncBuiltinESMExports() }
 })
 test('an open block freezes recorded stage duration at its real event without inventing a missing endpoint', () => {
   const state = { tasks: { T1: { state: 'blocked', stateBeforeBlock: 'running', attempts: [{ agent: 'author', startedAt: at(0) }] } } }
