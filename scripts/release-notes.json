@@ -1,4 +1,22 @@
 {
+  "2.6.1": {
+    "en": [
+      {
+        "title": "Added — Automatic board opening after installation",
+        "items": [
+          "Open the board in the default browser after installation successfully starts the dashboard on Windows, Linux and macOS",
+          "Keep previews and disabled dashboards from opening tabs; if the browser is unavailable, complete installation and show the address for manual access"
+        ]
+      },
+      {
+        "title": "Fixed — Browser launch and Windows upgrade isolation",
+        "items": [
+          "Launch the browser outside the installation directory so Windows does not keep that directory occupied",
+          "Isolate browser opening in historical upgrade tests while preserving all versions, the platform matrix and coverage requirements"
+        ]
+      }
+    ]
+  },
   "2.6.0": {
     "en": [
       {

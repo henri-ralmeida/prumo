@@ -5,6 +5,22 @@ import { releaseHistory, releaseNotes } from '../lib/release-notes.mjs'
 
 const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 
+test('atualização da 2.6.0 explica a abertura do board e o isolamento no Windows com tradução completa', () => {
+  const messages = JSON.parse(readFileSync(new URL('../scripts/messages.json', import.meta.url), 'utf8'))
+  const history = releaseHistory(['2.6.0'], '2.6.1')
+  assert.deepEqual(history.map(release => release.version), ['2.6.1'])
+  assert.deepEqual(history[0].sections.map(section => section.title), [
+    'Added — Automatic board opening after installation', 'Fixed — Browser launch and Windows upgrade isolation',
+  ])
+  for (const section of history[0].sections) {
+    assert.equal(typeof messages[section.title], 'string')
+    for (const item of section.items) assert.equal(typeof messages[item], 'string')
+  }
+  assert.ok(history[0].sections[0].items.some(item => item.includes('browser is unavailable')))
+  assert.ok(history[0].sections[1].items.some(item => item.includes('preserving all versions')))
+  assert.deepEqual(releaseHistory(['2.6.1'], '2.6.1'), [])
+})
+
 test('atualizacao para 2.6.0 explica as funcionalidades entregues e oferece traducao completa', () => {
   const messages = JSON.parse(readFileSync(new URL('../scripts/messages.json', import.meta.url), 'utf8'))
   const history = releaseHistory(['2.5.1'], '2.6.0')

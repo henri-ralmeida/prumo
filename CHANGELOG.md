@@ -2,6 +2,13 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.6.1 — 2026-10-08
+
+- Abra o board no navegador padrão após a instalação global ou `prumo install` iniciar o dashboard com sucesso, em Windows, Linux e macOS.
+- Preserve a prévia e a preferência de manter o dashboard desabilitado sem abrir abas; se o navegador estiver indisponível, conclua a instalação e informe o endereço para acesso manual.
+- Inicie o navegador fora da pasta de instalação para não mantê-la ocupada no Windows.
+- Isole a abertura do navegador nos testes históricos de atualização, preservando todas as versões, a matriz de plataformas e a exigência de cobertura.
+
 ## 2.6.0 — 2026-10-08
 
 - Confira nomes de entregas e linhas novas para identificadores de tarefa, fase e execução antes da revisão independente, com exceções explícitas limitadas.

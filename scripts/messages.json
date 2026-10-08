@@ -1,4 +1,10 @@
 {
+  "Added — Automatic board opening after installation": "Adicionado — Abertura automática do board após a instalação",
+  "Open the board in the default browser after installation successfully starts the dashboard on Windows, Linux and macOS": "Abra o board no navegador padrão após a instalação iniciar o dashboard com sucesso em Windows, Linux e macOS",
+  "Keep previews and disabled dashboards from opening tabs; if the browser is unavailable, complete installation and show the address for manual access": "Preserve prévias e dashboards desabilitados sem abrir abas; se o navegador estiver indisponível, conclua a instalação e mostre o endereço para acesso manual",
+  "Fixed — Browser launch and Windows upgrade isolation": "Corrigido — Abertura do navegador e isolamento das atualizações no Windows",
+  "Launch the browser outside the installation directory so Windows does not keep that directory occupied": "Inicie o navegador fora da pasta de instalação para que o Windows não a mantenha ocupada",
+  "Isolate browser opening in historical upgrade tests while preserving all versions, the platform matrix and coverage requirements": "Isole a abertura do navegador nos testes históricos de atualização, preservando todas as versões, a matriz de plataformas e os limites de cobertura",
   "Could not open the default browser; open {0}": "Não foi possível abrir o navegador padrão; acesse {0}",
   "preparing prumo update": "preparando atualização do prumo",
   "would update the cli": "atualizaria o cli",
