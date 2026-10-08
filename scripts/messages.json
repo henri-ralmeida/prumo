@@ -1694,5 +1694,7 @@
   "Git scope unavailable": "escopo Git indisponível",
   "changes outside approved touches overlap concurrent delivery scopes": "alterações fora dos touches aprovados sobrepõem escopos de entregas simultâneas",
   "Independent reviewer --scope-evidence is required before validation ({0}); provide inspected paths and attribution; no checks or receipt were recorded": "--scope-evidence de um revisor independente é obrigatório antes da validação ({0}); informe caminhos inspecionados e atribuição; nenhum comando nem recibo foi registrado",
-  "If concurrent deliveries changed files outside this task, the independent reviewer needs: validate {0} --ok --evidence <evidence> --scope-evidence <paths and attribution>": "Se entregas simultâneas alteraram arquivos fora desta tarefa, o revisor independente precisa de: validate {0} --ok --evidence <evidência> --scope-evidence <caminhos e atribuição>"
+  "If concurrent deliveries changed files outside this task, the independent reviewer needs: validate {0} --ok --evidence <evidence> --scope-evidence <paths and attribution>": "Se entregas simultâneas alteraram arquivos fora desta tarefa, o revisor independente precisa de: validate {0} --ok --evidence <evidência> --scope-evidence <caminhos e atribuição>",
+  "WARNING: engine content {0} differs from dashboard content {1}; run prumo update": "AVISO: o conteúdo {0} do motor difere do conteúdo {1} do dashboard; execute prumo update",
+  "WARNING: {0} engine content {1} differs from dashboard content {2}; run prumo update": "AVISO: o conteúdo {1} do motor {0} difere do conteúdo {2} do dashboard; execute prumo update"
 }

@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { dirname, join, relative } from 'node:path'
+import { dirname, isAbsolute, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { localizeDashboard } from './i18n.mjs'
 
@@ -44,4 +44,35 @@ export function packageIdentity(lang = 'en', { packageRoot = PACKAGE } = {}) {
 
 export function contentId(lang = 'en', options) {
   return packageIdentity(lang, options).contentId
+}
+
+// O dashboard tem bytes localizados; compare os arquivos executados nos dois idiomas, sem confiar no marcador.
+export function engineDashboardMismatch(engineRoot, dashboardContentId) {
+  if (typeof dashboardContentId !== 'string' || !dashboardContentId) return null
+  try {
+    const identities = ['en', 'pt-BR'].map(lang => bundleIdentity(installationBundle(lang, engineRoot).map(([name, bytes]) =>
+      [name, name === join('scripts', 'dashboard.html')
+        ? Buffer.from(bytes.toString().replace(/(const defaultLanguage = )"(?:en|pt-BR)"/, (_, prefix) => prefix + JSON.stringify(lang)))
+        : bytes])))
+    return identities.includes(dashboardContentId) ? null : { engineContentId: identities[0], dashboardContentId }
+  } catch { return null }
+}
+
+export async function registeredDashboardIdentity({ home, fetch = globalThis.fetch }) {
+  let preference
+  try { preference = JSON.parse(readFileSync(join(home, '.local', 'share', 'prumo', 'dashboard.json'), 'utf8')) }
+  catch { return null }
+  if (preference.enabled !== true || typeof preference.script !== 'string' || !isAbsolute(preference.script)) return null
+  try {
+    const response = await fetch('http://127.0.0.1:4949/api/health', { signal: AbortSignal.timeout(1200) })
+    const health = response.ok ? await response.json() : null
+    if (health?.product !== 'prumo' || health.mode !== 'global' || health.readOnly !== true) return null
+    const details = await fetch('http://127.0.0.1:4949/api/about', { signal: AbortSignal.timeout(1200) })
+    const about = details.ok ? await details.json() : null
+    return about?.product === 'prumo' && typeof about.contentId === 'string' ? about.contentId : null
+  } catch {
+    // Sem resposta saudável, a cópia registrada ainda permite comparar o próximo dashboard usado.
+    try { return contentId(preference.lang === 'pt-BR' ? 'pt-BR' : 'en', { packageRoot: dirname(dirname(preference.script)) }) }
+    catch { return null }
+  }
 }

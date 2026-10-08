@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { spawnSync } from 'node:child_process'
+import { contentId } from '../scripts/installation-bundle.mjs'
 import { planInstall, applyInstall } from '../lib/install.mjs'
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -847,4 +848,25 @@ syncBuiltinESMExports();\n`)
   assert.equal(repair.status, 0, repair.output)
   assert.match(repair.stdout, /Would restart the enabled Prumo dashboard/)
   assert.equal(JSON.parse(readFileSync(preference, 'utf8')).enabled, true)
+})
+
+test('dashboard enable avisa quando bytes do motor instalado diferem e respeita ambos os idiomas', t => {
+  const f = detectedClaude(t, 'prumo-cli-dashboard-engine-content-')
+  installHarness(f, 'claude')
+  for (const lang of ['en', 'pt-BR']) {
+    const result = { ok: true, registered: true, process: 'running', contentId: contentId(lang), port: 4949, url: 'http://localhost:4949' }
+    const clean = runCli(f.home, ['dashboard', 'enable'], { ...dashboardDouble(result), PRUMO_LANG: lang }, f.project)
+    assert.equal(clean.status, 0, clean.output)
+    assert.doesNotMatch(clean.output, /differs from dashboard|difere.*dashboard|undefined/)
+  }
+  const readme = join(f.home, '.claude/skills/prumo/README.md')
+  writeFileSync(readme, readFileSync(readme, 'utf8') + '\nMotor local alterado.\n')
+  for (const lang of ['en', 'pt-BR']) {
+    const result = { ok: true, registered: true, process: 'running', contentId: contentId(lang) }
+    const changed = runCli(f.home, ['dashboard', 'enable'], { ...dashboardDouble(result), PRUMO_LANG: lang }, f.project)
+    assert.equal(changed.status, 0, changed.output)
+    assert.match(changed.output, lang === 'en' ? /claude engine content.*differs from dashboard content.*run prumo update/ : /conteúdo.*motor claude difere.*dashboard.*execute prumo update/)
+    const unknown = runCli(f.home, ['dashboard', 'enable'], { ...dashboardDouble({ ...result, contentId: null }), PRUMO_LANG: lang }, f.project)
+    assert.doesNotMatch(unknown.output, /differs from dashboard|difere.*dashboard/)
+  }
 })

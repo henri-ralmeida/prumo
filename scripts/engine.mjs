@@ -68,6 +68,7 @@ import {
   rmSync, statSync, copyFileSync, realpathSync,
 } from 'node:fs'
 import { randomUUID, createHash } from 'node:crypto'
+import { homedir } from 'node:os'
 import { isReadyForReview } from './review-readiness.mjs'
 import { assertExplicitScope, scopeConflicts, sameProject, captureScopeBaseline, scopeEvidenceRequirement, verifyTaskScope } from './task-scope.mjs'
 import { executionReadiness, planQuestionRef, openQuestionRecords, questionResolutionMap, targetHasStarted, overdueQuestions, questionIsOverdue, taskAuthorization, runHasAuthorizationScope, occupancy, isExternalBlock } from './execution-readiness.mjs'
@@ -643,13 +644,20 @@ async function printEngineIdentity() {
     return
   }
   const harness = typeof marker.harness === 'string' && marker.harness ? marker.harness : tr('harness not recorded')
-  if (marker.contentId) log(`[prumo] Prumo ${marker.version} (${marker.contentId}) — ${harness}`)
-  else log('[prumo] ' + tr('Prumo {0} (content identifier missing — run prumo update) — {1}', marker.version, harness))
+  const installedVersion = marker.version ?? tr('unknown version')
+  if (marker.contentId) log(`[prumo] Prumo ${installedVersion} (${marker.contentId}) — ${harness}`)
+  else log('[prumo] ' + tr('Prumo {0} (content identifier missing — run prumo update) — {1}', installedVersion, harness))
   let engineHash = null
   try { engineHash = sha256(readFileSync(engineFile)) } catch { /* arquivo do engine ilegível */ }
   if (marker.engineHash && engineHash && marker.engineHash !== engineHash)
     log('[prumo] ' + tr('WARNING: the running engine.mjs differs from the installation marker ({0} {1}); run prumo status --verify-install, then prumo update',
-      marker.version, marker.contentId ?? tr('content identifier missing')))
+      installedVersion, marker.contentId ?? tr('content identifier missing')))
+  try {
+    const { engineDashboardMismatch, registeredDashboardIdentity } = await import('./installation-bundle.mjs')
+    const mismatch = engineDashboardMismatch(skillDir, await registeredDashboardIdentity({ home: homedir() }))
+    if (mismatch) log('[prumo] ' + tr('WARNING: engine content {0} differs from dashboard content {1}; run prumo update',
+      mismatch.engineContentId, mismatch.dashboardContentId))
+  } catch { /* Cópias incompletas não comprovam divergência de conteúdo. */ }
   if (args['verify-install'] !== true) return
   let current = null
   try {

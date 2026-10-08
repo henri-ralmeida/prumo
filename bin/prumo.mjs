@@ -13,6 +13,7 @@ import { openDashboardBrowser, BOARD_URL } from '../lib/browser.mjs'
 import { selectHarnesses } from '../lib/prompt.mjs'
 import { diagnoseShellFilter } from '../lib/shell-diagnostics.mjs'
 import { assertCliOptions } from '../lib/cli-args.mjs'
+import { engineDashboardMismatch } from '../scripts/installation-bundle.mjs'
 import { language, createTranslator, messages } from '../scripts/i18n.mjs'
 
 let t = createTranslator(messages, language())
@@ -182,6 +183,15 @@ try {
       print(t('Dashboard: {0}; {1}; {2}', t(result.process), t(result.registered ? 'registered' : 'not registered'), t(result.enabled ? 'enabled' : result.disabled ? 'disabled' : 'not configured')))
       print(t('version: {0}; content: {1}; port: {2}; URL: {3}', result.version ?? version, result.contentId ?? t('unknown'), result.port, result.url))
       if (result.origin || result.path) print(t('origin: {0}; path: {1}', result.origin ?? t('unknown'), result.path ?? t('unknown')))
+      if (action === 'enable' && result.registered && result.process === 'running') {
+        const { reports } = registeredReports({ projects: values.project ?? [] })
+        for (const report of reports) {
+          const mismatch = engineDashboardMismatch(join(report.root, 'prumo'), result.contentId)
+          if (mismatch) print(t('WARNING: {0} engine content {1} differs from dashboard content {2}; run prumo update',
+            report.harness, mismatch.engineContentId, mismatch.dashboardContentId))
+        }
+      }
+
       if (result.error) console.error(`[prumo] ${t(result.error)}`)
       else if (result.conflict) console.error(`[prumo] ${t('Port {0} is used by another process', result.port)}`)
       if (result.conflict || 'ok' in result && !result.ok) process.exitCode = 2
