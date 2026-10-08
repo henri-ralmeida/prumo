@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { lstatSync, readFileSync, readlinkSync, realpathSync } from 'node:fs'
-import { resolve, relative, dirname } from 'node:path'
+import { resolve, relative, dirname, isAbsolute } from 'node:path'
 
 export const scopePath = value => {
   const normalized = value.replace(/\\/g, '/').split('/').filter(part => part && part !== '.').join('/')
@@ -12,19 +12,30 @@ export function insideTouches(path, touches) {
   return touches.some(value => { const prefix = scopePath(value); return prefix === '' || candidate === prefix || candidate.startsWith(prefix + '/') })
 }
 export function assertExplicitScope(task, policy) {
+  if (task.project !== undefined && (typeof task.project !== 'string' || !isAbsolute(task.project) || task.project.includes('\0')))
+    throw new Error('task project must be an absolute Git repository root')
   if (policy !== undefined && policy !== 'explicit') throw new Error('scopePolicy must be explicit when present')
   if (policy === 'explicit') {
     if (!['files', 'read-only', 'unknown'].includes(task.writeScope)) throw new Error('explicit scope requires writeScope files, read-only or unknown')
     if (!Array.isArray(task.touches) || task.touches.some(path => typeof path !== 'string' || !path.trim() || /^(?:[/\\]|[A-Za-z]:)/.test(path) || path.includes('\0') || path.replace(/\\/g, '/').split('/').includes('..')))
-      throw new Error('explicit scope requires safe repository-relative touches')
+      throw new Error('explicit scope requires safe repository-relative touches: paths are relative to the task project, or the run project directory; for another repository declare task.project with its absolute Git root; touches must not contain .. or absolute paths')
     if (task.writeScope === 'files' && !task.touches.length) throw new Error('files scope requires nonempty touches')
     if (task.writeScope !== 'files' && task.touches.length) throw new Error('read-only and unknown scope require empty touches')
   }
   if (task.sharedResources !== undefined && (!Array.isArray(task.sharedResources) || task.sharedResources.some(resource => !resource || typeof resource.id !== 'string' || !resource.id.trim() || !['read', 'write'].includes(resource.access))))
     throw new Error('sharedResources requires nonempty id and access read or write')
 }
-export function scopeConflicts(task, other) {
-  const paths = (task.touches ?? []).filter(path => (other.touches ?? []).some(candidate => insideTouches(path, [candidate]) || insideTouches(candidate, [path])))
+export function sameProject(task, other, defaultProject) {
+  const key = value => {
+    if (!value) return ''
+    let path = resolve(value)
+    try { path = realpathSync.native(path) } catch { /* O início verifica a raiz Git antes de executar. */ }
+    return process.platform === 'win32' ? path.toLowerCase() : path
+  }
+  return key(task.project ?? defaultProject) === key(other.project ?? defaultProject)
+}
+export function scopeConflicts(task, other, defaultProject) {
+  const paths = sameProject(task, other, defaultProject) ? (task.touches ?? []).filter(path => (other.touches ?? []).some(candidate => insideTouches(path, [candidate]) || insideTouches(candidate, [path]))) : []
   const resources = (task.sharedResources ?? []).filter(resource => (other.sharedResources ?? []).some(candidate => candidate.id === resource.id && (resource.access === 'write' || candidate.access === 'write'))).map(resource => resource.id)
   return { paths, resources: [...new Set(resources)] }
 }

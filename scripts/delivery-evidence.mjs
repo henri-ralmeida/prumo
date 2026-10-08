@@ -85,6 +85,7 @@ function deliveryFiles(task, cwd) {
   return [...new Set([...result.stdout.split('\0').filter(path => path && insideTouches(path, task.touches)), ...(task.deliveries ?? [])])].sort()
 }
 export function captureDelivery(task, cwd, content = false, declaredOnly = false) {
+  cwd = task.project ?? cwd
   assertEvidenceContract(task)
   if (!(task.touches ?? []).length) return { files: {}, limitation: 'No approved file scope; identifier content check unavailable.' }
   if (!cwd) {
@@ -103,6 +104,7 @@ export function captureDelivery(task, cwd, content = false, declaredOnly = false
   return { files }
 }
 export function checkDelivery(state, task, cwd) {
+  cwd = task.project ?? cwd
   assertEvidenceContract(task)
   const baseline = task.attempts?.at(-1)?.deliveryBaseline
   if (!baseline && !task.deliveries?.length) return { fingerprint: null, binaryPaths: [], limitation: 'Legacy attempt has no content baseline or declared deliveries; identifier inspection unavailable.' }
@@ -144,6 +146,7 @@ function pointerValue(value, pointer) {
   return value
 }
 export function verifyNumericProvenance(task, cwd) {
+  cwd = task.project ?? cwd
   if (!task.numericProvenance) return null
   assertEvidenceContract(task)
   const budget = { bytes: 0 }, documents = new Map()

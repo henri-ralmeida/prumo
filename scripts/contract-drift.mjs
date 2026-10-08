@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { planTaskFromState } from './validation.mjs'
 
-export const TASK_CONTRACT_FIELDS = ['phase', 'title', 'deps', 'validation', 'validationMode', 'inspectionReason', 'requireReview', 'maxAttempts', 'tags', 'touches', 'unavailable', 'writeScope', 'sharedResources', 'textRules', 'deliveries', 'numericProvenance']
+export const TASK_CONTRACT_FIELDS = ['phase', 'title', 'deps', 'validation', 'validationMode', 'inspectionReason', 'requireReview', 'maxAttempts', 'tags', 'touches', 'project', 'unavailable', 'writeScope', 'sharedResources', 'textRules', 'deliveries', 'numericProvenance']
 export const GLOBAL_PLAN_FIELDS = ['name', 'description', 'requireReview', 'scopePolicy']
 
 function globalPlanValues(plan = {}) {
@@ -26,6 +26,7 @@ function sourceTask(task) {
     maxAttempts: task.maxAttempts,
     tags: task.tags ?? [],
     touches: task.touches ?? [],
+    ...(task.project === undefined ? {} : { project: task.project }),
     ...(task.writeScope === undefined ? {} : { writeScope: task.writeScope }),
     ...(task.sharedResources === undefined ? {} : { sharedResources: task.sharedResources }),
     ...Object.fromEntries(['textRules', 'deliveries', 'numericProvenance'].filter(key => task[key] !== undefined).map(key => [key, task[key]])),

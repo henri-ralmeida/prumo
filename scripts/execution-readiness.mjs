@@ -18,7 +18,7 @@ export function executionReadiness(state, task, derived) {
   const occ = occupancy(state)
   if (occ.executors.length >= occ.maxExec || occ.busy.filter(value => value.id !== task.id).length >= occ.cap) add('capacity', 'Execution capacity is occupied')
   if (state.plan.scopePolicy === 'explicit') for (const other of occ.busy.filter(other => other.id !== task.id && other.touches)) {
-    const { paths, resources } = scopeConflicts(task, other)
+    const { paths, resources } = scopeConflicts(task, other, state.plan.cwd)
     if (paths.length) add('path_conflict', 'An active task owns overlapping paths', { taskIds: [other.id], paths })
     if (resources.length) add('shared_resource_conflict', 'An active task owns a conflicting shared resource', { taskIds: [other.id], resources })
   }

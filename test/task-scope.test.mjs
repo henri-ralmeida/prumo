@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import fs from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
-import { assertExplicitScope, scopePath, insideTouches, scopeConflicts, captureScopeBaseline, verifyTaskScope } from '../scripts/task-scope.mjs'
+import { assertExplicitScope, scopePath, insideTouches, scopeConflicts, sameProject, captureScopeBaseline, verifyTaskScope } from '../scripts/task-scope.mjs'
 
 function engineFixture(t, tasks, extra = {}) {
   const home = mkdtempSync(join(tmpdir(), 'prumo-scope-engine-'))
@@ -29,6 +29,59 @@ function engineFixture(t, tasks, extra = {}) {
     state: () => JSON.parse(readFileSync(statePath, 'utf8')),
     save: value => writeFileSync(statePath, JSON.stringify(value)) }
 }
+
+test('projetos diferentes isolam caminhos, mas recursos compartilhados permanecem globais', () => {
+  const a = { project: join(tmpdir(), 'repo-a'), touches: ['src'], sharedResources: [{ id: 'db', access: 'write' }] }
+  const b = { project: join(tmpdir(), 'repo-b'), touches: ['src'], sharedResources: [{ id: 'db', access: 'read' }] }
+  assert.deepEqual(scopeConflicts(a, b), { paths: [], resources: ['db'] })
+  assert.deepEqual(scopeConflicts(a, { ...b, project: a.project }).paths, ['src'])
+  assert.equal(sameProject(a, { touches: ['src'] }, a.project), true)
+  assert.equal(sameProject({}, {}), true)
+  for (const project of ['', 'relative/repo', null, 1, '/repo\0'])
+    assert.throws(() => assertExplicitScope({ project }), /absolute Git repository root/)
+  assert.doesNotThrow(() => assertExplicitScope({ project: a.project }))
+  assert.throws(() => assertExplicitScope({ writeScope: 'files', touches: ['../neighbor'] }, 'explicit'), /task.project.*absolute Git root/)
+})
+
+test('execução usa o projeto aprovado sem cwd e valida a entrega no repositório correto', async t => {
+  const f = engineFixture(t, [{ id: 'T1', touches: ['src'] }, { id: 'T2', touches: ['src'] }])
+  const repoB = join(f.project, '..', 'neighbor')
+  mkdirSync(repoB)
+  for (const repo of [f.project, repoB]) {
+    assert.equal(spawnSync('git', ['init', repo], { encoding: 'utf8', windowsHide: true }).status, 0)
+    mkdirSync(join(repo, 'src'))
+  }
+  f.plan.tasks[0].project = f.project
+  f.plan.tasks[1].project = repoB
+  f.writePlan()
+  f.ok('init', '--plan', f.source, '--run', 'scope')
+  f.ok('authorize', '--scope', 'run', '--confirmed-by-user')
+  for (const id of ['T1', 'T2']) {
+    f.ok('skip-discussion', id, '--reason', 'Contrato aprovado', '--confirmed-by-user')
+    f.ok('skip-planning', id, '--reason', 'Escopo suficiente', '--confirmed-by-user')
+    f.ok('start', id, '--agent', `executor-${id}`)
+  }
+  assert.equal(f.state().tasks.T2.attempts[0].scopeBaseline.cwd, fs.realpathSync.native(repoB))
+  assert.deepEqual(f.state().tasks.T2.attempts[0].concurrentScopes, [])
+  writeFileSync(join(repoB, 'src', 'result.txt'), 'Entrega aprovada')
+  f.ok('review', 'T2', '--agent', 'revisor')
+  f.ok('validate', 'T2', '--ok', '--evidence', 'Entrega conferida')
+  assert.deepEqual(f.state().tasks.T2.validations.at(-1).scopeCheck.paths, ['src/result.txt'])
+  assert.match(f.ok('validate', 'T2', '--ok', '--cwd', f.project, '--evidence', 'Inspeção na raiz aprovada').stdout, /differs from task project/)
+  const { contractDrift } = await import('../scripts/contract-drift.mjs')
+  f.plan.tasks[1].project = f.project
+  assert.ok(contractDrift(f.state(), { plan: f.plan }).tasks.find(task => task.task === 'T2').fields.includes('project'))
+})
+
+test('projeto inacessível recusa início sem criar tentativa', t => {
+  const f = engineFixture(t, [{ id: 'T1', project: join(tmpdir(), 'prumo-root-that-does-not-exist') }])
+  f.ok('init', '--plan', f.source, '--run', 'scope')
+  f.ok('authorize', '--scope', 'run', '--confirmed-by-user')
+  f.ok('skip-discussion', 'T1', '--reason', 'Aprovado', '--confirmed-by-user')
+  f.ok('skip-planning', 'T1', '--reason', 'Escopo suficiente', '--confirmed-by-user')
+  f.rejected(/accessible Git repository root/, 'start', 'T1', '--agent', 'executor')
+  assert.equal(f.state().tasks.T1.attempts.length, 0)
+})
 
 test('motor recusa limites e escopos inválidos e serializa recursos compartilhados de escrita', t => {
   const f = engineFixture(t, [{ id: 'T1' }, { id: 'T2' }])

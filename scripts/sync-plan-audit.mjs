@@ -2,7 +2,7 @@
 
 export const CONTRACT_FIELDS = [
   'phase', 'title', 'deps', 'validation', 'validationMode', 'inspectionReason',
-  'requireReview', 'maxAttempts', 'tags', 'touches',
+  'requireReview', 'maxAttempts', 'tags', 'touches', 'project',
 ]
 
 const WAITING_CONTEXT = /\b(?:aguarda(?:ndo|r)?|espera(?:ndo|r)?|reabre\s+quando|wait(?:ing|s)?)\b/iu

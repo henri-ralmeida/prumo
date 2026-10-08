@@ -69,7 +69,7 @@ import {
 } from 'node:fs'
 import { randomUUID, createHash } from 'node:crypto'
 import { isReadyForReview } from './review-readiness.mjs'
-import { assertExplicitScope, scopeConflicts, captureScopeBaseline, verifyTaskScope } from './task-scope.mjs'
+import { assertExplicitScope, scopeConflicts, sameProject, captureScopeBaseline, verifyTaskScope } from './task-scope.mjs'
 import { executionReadiness, planQuestionRef, openQuestionRecords, questionResolutionMap, targetHasStarted, overdueQuestions, questionIsOverdue, taskAuthorization, runHasAuthorizationScope, occupancy, isExternalBlock } from './execution-readiness.mjs'
 import { writeAtomicState } from './atomic-state.mjs'
 import { runValidation, assertValidation, validationContract, validationDirectories, assertDiscovery, assertDiscussionBoundary, discoveryDigest, assertTaskPlan,
@@ -519,6 +519,7 @@ function projectCwd(stored) {
 }
 
 function validationRoots(task, cwd) {
+  if (task.project) return [task.project]
   const steps = Array.isArray(task.validation) ? task.validation : []
   const roots = steps.length
     ? steps.map(step => typeof step?.cwd === 'string' && step.cwd.trim() ? resolve(step.cwd) : cwd)
@@ -842,8 +843,8 @@ function validatePlan(plan, allowOverlap = false, historical = new Set()) {
         die(`${a.id} and ${b.id} share write resources: ${shared.join(', ')} — add a dep between them (or --allow-overlap)`)
       if (!a.touches?.length || !b.touches?.length) continue
       if (reaches(byId, a.id, b.id) || reaches(byId, b.id, a.id)) continue
-      const clash = plan.scopePolicy === 'explicit' ? scopeConflicts(a, b).paths[0] :
-        a.touches.find((pa) => b.touches.some((pb) => pathsCollide(pa, pb)))
+      const clash = plan.scopePolicy === 'explicit' ? scopeConflicts(a, b, plan.cwd ?? projectCwd()).paths[0] :
+        sameProject(a, b, plan.cwd ?? projectCwd()) && a.touches.find((pa) => b.touches.some((pb) => pathsCollide(pa, pb)))
       if (clash && !allowOverlap)
         die(
           `${a.id} and ${b.id} can run in parallel but both touch "${clash}" — ` +
@@ -939,6 +940,7 @@ function taskFromPlan(t) {
     maxAttempts: t.maxAttempts,
     tags: t.tags ?? [],
     touches: t.touches ?? [],
+    ...(t.project === undefined ? {} : { project: t.project }),
     ...(t.writeScope === undefined ? {} : { writeScope: t.writeScope }),
     ...(t.sharedResources === undefined ? {} : { sharedResources: t.sharedResources }),
     ...Object.fromEntries(['textRules', 'deliveries', 'numericProvenance'].filter(key => t[key] !== undefined).map(key => [key, structuredClone(t[key])])),
@@ -1863,7 +1865,7 @@ export function derive(state) {
 /** Um nome de agente pode manter somente uma tarefa por vez, qualquer que seja o papel. */
 function recordConcurrentScopes(state, task, resume = false) {
   const scopes = resume ? [...(task.attempts.at(-1)?.concurrentScopes ?? [])] : []
-  if (state.plan.scopePolicy === 'explicit') for (const other of Object.values(state.tasks).filter(other => other.id !== task.id && ['running', 'reviewing'].includes(other.state))) {
+  if (state.plan.scopePolicy === 'explicit') for (const other of Object.values(state.tasks).filter(other => other.id !== task.id && ['running', 'reviewing'].includes(other.state) && sameProject(task, other, state.plan.cwd))) {
     scopes.push(other.touches)
     other.attempts.at(-1).concurrentScopes ??= []
     other.attempts.at(-1).concurrentScopes.push(task.touches)
@@ -1884,7 +1886,7 @@ function assertAvailable(state, task, role, agent) {
   if (role === 'running' && state.plan.scopePolicy === 'explicit') {
     if (!task.writeScope || task.writeScope === 'unknown') die('Write scope must be resolved before execution')
     for (const other of occ.busy.filter(other => other.id !== task.id && other.touches)) {
-      const conflict = scopeConflicts(task, other)
+      const conflict = scopeConflicts(task, other, state.plan.cwd)
       if (conflict.paths.length || conflict.resources.length) die(`Execution scope conflicts with ${other.id}: ${[...conflict.paths, ...conflict.resources].join(', ')}`)
     }
   }
@@ -3161,12 +3163,13 @@ const commands = {
     const planDigest = t.taskPlan ? taskPlanDigest(t.taskPlan) : undefined
     if (planDigest) t.taskPlan.digest = planDigest
     let deliveryBaseline
-    try { deliveryBaseline = captureDelivery(t, state.plan.cwd) } catch (error) { die(error.message) }
+    if (t.project && captureScopeBaseline(t.project).method !== 'git') die(tr('task {0} project must be an accessible Git repository root: {1}', id, t.project))
+    try { deliveryBaseline = captureDelivery(t, t.project ?? state.plan.cwd) } catch (error) { die(error.message) }
     const concurrentScopes = recordConcurrentScopes(state, t)
     t.state = 'running'
     t.agent = agent
     t.attempts.push({ n: t.attempts.length + 1, agent, startedAt: new Date().toISOString(), deliveryBaseline,
-      ...(state.plan.scopePolicy === 'explicit' ? { scopeBaseline: captureScopeBaseline(state.plan.cwd) } : {}),
+      ...(state.plan.scopePolicy === 'explicit' ? { scopeBaseline: captureScopeBaseline(t.project ?? state.plan.cwd) } : {}),
       ...(state.plan.scopePolicy === 'explicit' ? { concurrentScopes } : {}),
       activityTiming: 'explicit', activityIntervals: [],
       ...(t.retryPlan?.attempt === t.attempts.length + 1 ? {
@@ -3370,6 +3373,8 @@ const commands = {
           die(`${id} inspection criteria are not fully traversed; record reviewer-reported progress for each criterion with review-progress ${id} --step <index> --agent ${reviewer} (this is not proof of inspection)`)
       }
       if (requestedOk) {
+        if (t.project && args.cwd && !sameProject(t, { project: args.cwd }))
+          log('[prumo] ' + tr('WARNING: validation --cwd {0} differs from task project {1}; scope and delivery checks remain bound to the approved project', args.cwd, t.project))
         try { validationDirectories(t, args.cwd) } catch (error) { die(error.message) }
       }
       // Invalide qualquer aprovação anterior antes de executar comandos, inclusive em caso de interrupção.

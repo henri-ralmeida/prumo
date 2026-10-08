@@ -209,6 +209,7 @@ export function planTaskFromState(t) {
     maxAttempts: t.maxAttempts,
     tags: t.tags,
     touches: t.touches,
+    ...(t.project === undefined ? {} : { project: t.project }),
     ...(t.writeScope === undefined ? {} : { writeScope: t.writeScope }),
     ...(t.sharedResources === undefined ? {} : { sharedResources: t.sharedResources }),
     ...Object.fromEntries(['textRules', 'deliveries', 'numericProvenance'].filter(key => t[key] !== undefined).map(key => [key, t[key]])),
@@ -508,7 +509,7 @@ function workspaceRevision(directory, paths) {
 
 export function validationDirectories(task, cwd) {
   return validationContract(task).steps.map((step) => {
-    const directory = step.cwd ?? cwd
+    const directory = step.cwd ?? cwd ?? task.project
     if (typeof directory === 'string' && /^[A-Za-z]:(?![\\\\/])/.test(directory))
       throw new Error('validation cwd looks like a Windows path whose backslashes were consumed by the shell; use a quoted absolute path with forward slashes, for example "C:/work/project"')
     insist(nonempty(directory) && isAbsolute(directory), 'executable validation needs an absolute --cwd or step.cwd')
