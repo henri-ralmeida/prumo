@@ -1,5 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { tmpdir } from 'node:os'
+import { spawnSync } from 'node:child_process'
 import { BOARD_URL, openDashboardBrowser } from '../lib/browser.mjs'
 import { reconcileDashboardInstall } from '../lib/install.mjs'
 
@@ -12,13 +14,23 @@ test('a instalação usa o navegador padrão de Windows, macOS e Linux sem shell
     await openDashboardBrowser({ platform, run(actual, values, options, callback) {
       assert.equal(actual, file)
       assert.deepEqual(values, args)
-      assert.deepEqual(options, { windowsHide: true, timeout: 10000 })
+      assert.deepEqual(options, { cwd: tmpdir(), windowsHide: true, timeout: 10000 })
       callback(null)
     } })
   }
   await openDashboardBrowser({ run(file, args, options, callback) { callback(null) } })
   await assert.rejects(openDashboardBrowser({ run(file, args, options, callback) { callback(new Error('sem navegador')) } }), /sem navegador/)
   await assert.rejects(openDashboardBrowser({ run() { throw new Error('falha ao iniciar') } }), /falha ao iniciar/)
+})
+
+test('a atualização histórica não lança o navegador real nem retém seu diretório temporário', () => {
+  const result = spawnSync(process.execPath, ['--import', new URL('./fixtures/dashboard-port.mjs', import.meta.url).href,
+    '--input-type=module', '-e', `import { openDashboardBrowser } from ${JSON.stringify(new URL('../lib/browser.mjs', import.meta.url).href)};
+      try { await openDashboardBrowser(); process.exitCode = 1 } catch (error) { console.log(error.message) }`],
+  { encoding: 'utf8', windowsHide: true, timeout: 10000 })
+  assert.ifError(result.error)
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /navegador isolado indisponível/)
 })
 
 test('abre somente após o dashboard iniciar; prévia, opt-out e falha não abrem abas', async () => {

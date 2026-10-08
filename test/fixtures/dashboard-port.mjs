@@ -3,6 +3,16 @@
 // porta fixa do dashboard, para que o dashboard real do usuário em 4949 nunca seja contatado.
 import net from 'node:net'
 import { appendFileSync } from 'node:fs'
+import childProcess from 'node:child_process'
+import { syncBuiltinESMExports } from 'node:module'
+
+// As atualizações históricas exercitam a instalação real sem abrir abas ou prender a pasta temporária.
+const execFile = childProcess.execFile
+childProcess.execFile = (file, args, options, callback) => {
+  if (!['rundll32.exe', 'open', 'xdg-open'].includes(file)) return execFile(file, args, options, callback)
+  callback(new Error('navegador isolado indisponível'))
+}
+syncBuiltinESMExports()
 
 // Registre o encerramento do servidor isolado para distinguir falha de lançamento de falha de prontidão.
 const diagnostics = process.env.PRUMO_TEST_DASHBOARD_DIAGNOSTICS
