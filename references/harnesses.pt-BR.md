@@ -51,7 +51,7 @@ O Antigravity usa raízes globais de skills diferentes para a superfície 2.0/ID
 
 Use `/plan` no prompt. Na CLI, `agy --mode=plan` inicia diretamente no modo de planejamento. Depois da aprovação, invoque `/prumo <plano-ou-run>`. Escolha o modelo de raciocínio no seletor sob o prompt; a disponibilidade depende do plano da conta ou organização e pode mudar.
 
-Referências oficiais: [skills e locais](https://antigravity.google/docs/skills/), [comando plan](https://antigravity.google/docs/plan/), [modos de execução](https://www.antigravity.google/docs/cli/modes/) e [modelos](https://antigravity.google/docs/models).
+Referências oficiais: [skills e locais](https://antigravity.google/docs/skills/), [comando plan](https://antigravity.google/docs/plan/), [modos de execução](https://www.antigravity.google/docs/cli/modes/) e [modelos](https://antigravity.google/docs/models?app=antigravity).
 
 ## OpenCode
 
@@ -63,13 +63,13 @@ O OpenCode descobre skills em raízes de projeto e globais. A integração globa
 | Skill do workspace | `.opencode/skills/prumo/SKILL.md` |
 | PO First global | `~/.config/opencode/AGENTS.md` |
 
-Selecione o agente primário integrado `Plan` com `Tab` antes de pedir o plano aprovado. Carregue o Prumo pela ferramenta nativa de skills do OpenCode, por exemplo `skill({ name: "prumo" })`. Escolha um modelo com `/models`, ou configure um `provider/model-id` completo somente quando essa escolha for deliberada. O catálogo e a disponibilidade dos provedores não são fixados pelo Prumo.
+Selecione o agente integrado `Plan` antes de pedir o plano aprovado: use `/agents` ou `Shift+Tab` na V2, e `Tab` na V1. Depois da aprovação, saia de Plan e mencione `@prumo` no prompt da V2. A V1 registra as skills descobertas como comandos de barra; nela, use `/prumo`. A ferramenta `skill` é uma chamada interna do agente, não um comando para digitar no prompt. Escolha um modelo com `/models`, ou configure um `provider/model-id` completo somente quando essa escolha for deliberada. O catálogo e a disponibilidade dos provedores não são fixados pelo Prumo.
 
 A instalação usa os diretórios canônicos do OpenCode. A documentação também menciona `.agents/skills` como compatibilidade, mas essa descoberta não apareceu no diagnóstico isolado do OpenCode 1.4.10; não dependa desse caminho para a integração.
 
 No OpenCode, as regras em `AGENTS.md` fornecem instruções do projeto, enquanto arquivos `SKILL.md` fornecem comportamento reutilizável para tarefas. A precedência e as permissões continuam sob controle do OpenCode.
 
-Referências oficiais: [skills](https://opencode.ai/docs/skills/), [rules](https://opencode.ai/docs/rules/), [agentes e Plan](https://opencode.ai/docs/agents/), [modelos e `/models`](https://opencode.ai/docs/models/) e [provedores](https://opencode.ai/docs/providers/).
+Referências oficiais: [skills](https://opencode.ai/v2/docs/skills), [TUI V2](https://opencode.ai/v2/docs/cli/tui/), [skills V1](https://opencode.ai/docs/skills/), [registro de comandos V1](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/command/index.ts), [rules](https://opencode.ai/docs/rules/), [agentes e Plan](https://opencode.ai/docs/agents/), [modelos e `/models`](https://opencode.ai/docs/models/) e [provedores](https://opencode.ai/docs/providers/).
 
 ## Grok Build
 

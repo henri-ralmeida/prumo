@@ -102,7 +102,7 @@ bunx @henri-ralmeida/prumo@latest doctor --dsh --lang pt-BR
 | Codex | `$prumo` / seletor de skills | Bloco no arquivo global de instruções efetivamente carregado |
 | DeepSeek Harness (DSH) | `/prumo` | Skill em `<DSH_HOME>/skills/prumo` e bloco PO First gerenciado em `<DSH_HOME>/AGENTS.md` |
 | Antigravity | `/prumo` | Skill nas duas raízes globais do Antigravity e PO First gerenciado em `~/.gemini/AGENTS.md` |
-| OpenCode | `skill({ name: "prumo" })` / seletor de skills | Skill em `~/.config/opencode/skills/prumo` e PO First gerenciado em `~/.config/opencode/AGENTS.md` |
+| OpenCode | `@prumo` (V2) / `/prumo` (V1) | Skill em `~/.config/opencode/skills/prumo` e PO First gerenciado em `~/.config/opencode/AGENTS.md` |
 | Grok Build | `/prumo` | Skill em `$GROK_HOME/skills/prumo` (ou `~/.grok/skills/prumo`) e PO First gerenciado no `AGENTS.md` da mesma raiz |
 
 Consulte o [guia de integração dos harnesses](references/harnesses.pt-BR.md) para as raízes distintas do IDE/CLI do Antigravity, os caminhos de descoberta do OpenCode, as regras de projeto do Grok Build, os controles nativos de planejamento e os seletores de modelo. O Prumo preserva o catálogo e os padrões de modelo do harness; escolha o modelo atual nesse ambiente depois da instalação.
