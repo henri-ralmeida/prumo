@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   validationContract, assertUnavailableResources, assertDiscovery, assertDiscussionBoundary,
-  discoveryDigest, assertTaskPlan, taskPlanDigest, assertValidation,
+  discoveryDigest, assertTaskPlan, taskPlanDigest, assertValidation, planningContext, hasCurrentTaskPlan, hasCurrentTaskScope,
 } from '../scripts/validation.mjs'
 
 const step = () => ({ kind: 'functional', run: 'node comportamento.cjs', expect: 'O comportamento aprovado é preservado' })
@@ -86,6 +86,32 @@ for (const value of [null, '', 'later', 0, true, [], {}, { beforeTask: '' }, { b
 })
 for (const value of empty) test(`pergunta bloqueante exige resposta ${label(value)}`, () => {
   const p = plan(); p.openQuestions = [{ question: 'Qual opção?', blocking: true, answer: value }]; assert.throws(() => assertTaskPlan(task(), p), /openQuestions|blocking questions/)
+})
+
+test('prazo para a própria tarefa exige resposta na validação inicial e identifica a pergunta', () => {
+  const p = plan()
+  p.openQuestions = [{ question: 'Regra a decidir na execução?', blocking: false, decideBy: 'executor' },
+    { question: 'Decidir antes desta tarefa?', blocking: false, decideBy: { beforeTask: 'T1' } }]
+  assert.throws(() => assertTaskPlan(task(), p), /task T1 plan open question 2 targets its own task with beforeTask/)
+  assert.doesNotThrow(() => assertTaskPlan(task(), p, { checkSelfDeadline: false }), 'Consultar um contrato já registrado não impõe retroativamente a nova regra de entrada.')
+  p.openQuestions[1].answer = 'Regra confirmada.'
+  assert.doesNotThrow(() => assertTaskPlan(task(), p))
+  delete p.openQuestions[1].answer
+  p.openQuestions[1].decideBy = { beforeTask: 'T2' }
+  assert.doesNotThrow(() => assertTaskPlan(task(), p), 'A pergunta futura para outra tarefa permanece permitida.')
+})
+
+test('consulta histórica preserva o escopo registrado e continua recusando contratos inválidos', () => {
+  const t = { ...task(), planningRequired: true, discoveryRequired: false, attempts: [], deps: [], state: 'pending' }
+  const state = { plan: { name: 'Contratos', planningMode: 'task' }, tasks: { T1: t } }
+  t.taskPlan = { ...plan(), planner: 'planejador', completedAt: '2026-10-08T00:00:00Z', attempt: 1,
+    scope: planningContext(state, t, { scopeOnly: true, attempt: 1 }),
+    openQuestions: [{ question: 'Decisão histórica?', blocking: false, decideBy: { beforeTask: 'T1' } }] }
+  assert.equal(hasCurrentTaskScope(state, t, 1), true)
+  assert.equal(hasCurrentTaskPlan(state, t), true)
+  t.taskPlan.steps = []
+  assert.equal(hasCurrentTaskScope(state, t, 1), false)
+  assert.equal(hasCurrentTaskPlan(state, t), false)
 })
 for (const field of Object.keys(discovery().coverage)) for (const value of empty) test(`descoberta exige cobertura ${field}=${label(value)}`, () => {
   const d = discovery(); d.coverage[field] = value; assert.throws(() => assertDiscovery(d), /coverage/)

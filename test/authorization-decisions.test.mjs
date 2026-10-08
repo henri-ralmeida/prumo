@@ -424,7 +424,10 @@ test('task planning rejects unanswered deadlines after targets start without cha
         { question: `${run} was not answered before its target began`, blocking: false, decideBy },
       ] })))
       const stateBefore = f.stateBytes(), eventsBefore = f.eventBytes()
-      f.rejects(/has an expired deadline/, 'finish-planning', 'A', '--plan', planPath)
+      const rejected = f.rejects(/has an expired deadline/, 'finish-planning', 'A', '--plan', planPath)
+      assert.match(rejected.stdout + rejected.stderr, /task A plan open question 1/)
+      assert.ok((rejected.stdout + rejected.stderr).includes(`${run}-late-plan.json`))
+      assert.ok((rejected.stdout + rejected.stderr).includes(deadlineKind === 'beforeTask' ? 'before task B' : 'before phase F2'))
       assert.deepEqual(f.stateBytes(), stateBefore, `${run}: rejection must leave state bytes unchanged`)
       assert.deepEqual(f.eventBytes(), eventsBefore, `${run}: rejection must leave event bytes unchanged`)
     }
@@ -453,11 +456,52 @@ test('phase planning atomically rejects a late beforePhase question before savin
     })))
   }
   const stateBefore = f.stateBytes(), eventsBefore = f.eventBytes()
-  f.rejects(/has an expired deadline/, 'finish-phase-planning', 'P1', '--plan-dir', planDir)
+  const rejected = f.rejects(/has an expired deadline/, 'finish-phase-planning', 'P1', '--plan-dir', planDir)
+  assert.match(rejected.stdout + rejected.stderr, /task-plan-A\.json: task A plan open question 1.*before phase P2/)
   assert.deepEqual(f.stateBytes(), stateBefore, 'the rejected phase batch must leave state bytes unchanged')
   assert.deepEqual(f.eventBytes(), eventsBefore, 'the rejected phase batch must leave event bytes unchanged')
   assert.equal(f.state().tasks.A.taskPlan, undefined)
   assert.equal(f.state().tasks.C.taskPlan, undefined)
+})
+
+test('lote identifica todos os artefatos inválidos em inglês e pt-BR e preserva o estado até a correção', t => {
+  for (const lang of ['en', 'pt-BR']) {
+    const f = fixture(t, { run: `question-artifacts-${lang}`, lang, requireReview: true, planningMode: 'phase',
+      phases: [{ id: 'P1', title: 'Entregas' }], tasks: ['T1', 'T2', 'T3'].map(id => ({ id, title: id, phase: 'P1' })) })
+    f.ok('begin-phase-discussion', 'P1')
+    finishPhaseDiscussion(f, 'P1')
+    f.ok('plan-phase', 'P1', '--agent', 'planejador')
+    const round = f.state().phaseWorkflows.P1.planningAttempts.at(-1)
+    const planDir = join(f.root, 'plans')
+    mkdirSync(planDir)
+    for (const id of round.targets) {
+      const openQuestions = id === 'T1' ? [] : [{ question: 'Qual regra vale?', blocking: false,
+        decideBy: id === 'T2' ? { beforeTask: 'inexistente' } : { beforeTask: 'T3' } }]
+      writeFileSync(join(planDir, `task-plan-${id}.json`), JSON.stringify(f.basePlan(id, {
+        phaseBinding: { phaseId: 'P1', discussionRoundId: round.discussionRoundId, plannerRound: round.n },
+        unresolvedInputs: round.requiredInputs[id], openQuestions,
+      })))
+    }
+    const stateBefore = f.stateBytes(), eventsBefore = f.eventBytes()
+    const rejected = f.rejects(/task-plan-T3\.json/, 'finish-phase-planning', 'P1', '--plan-dir', planDir)
+    const output = rejected.stdout + rejected.stderr
+    assert.match(output, /task-plan-T2\.json/)
+    assert.match(output, /beforeTask/)
+    assert.match(output, lang === 'en' ? /task T3 plan open question 1/ : /pergunta aberta 1 do plano da tarefa T3/)
+    assert.deepEqual(f.stateBytes(), stateBefore)
+    assert.deepEqual(f.eventBytes(), eventsBefore)
+    for (const id of ['T2', 'T3']) {
+      const path = join(planDir, `task-plan-${id}.json`), plan = JSON.parse(readFileSync(path, 'utf8'))
+      if (id === 'T2') plan.openQuestions = []
+      else plan.openQuestions[0].answer = 'Regra confirmada.'
+      writeFileSync(path, JSON.stringify(plan))
+    }
+    f.ok('finish-phase-planning', 'P1', '--plan-dir', planDir)
+    assert.equal(f.state().phaseWorkflows.P1.state, 'planned')
+    assert.equal(f.state().tasks.T3.taskPlan.openQuestions[0].answer, 'Regra confirmada.')
+    assert.equal(f.state().tasks.T3.attempts.length, 0, 'O reparo não inicia uma tentativa artificial.')
+    assert.equal(f.state().plan.requireReview, true)
+  }
 })
 
 test('legacy overdue questions block validate --ok and done in task and phase deadline modes', t => {

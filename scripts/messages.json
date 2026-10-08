@@ -1,4 +1,8 @@
 {
+  "task {0} plan open question {1} targets its own task with beforeTask; answer it before adding the plan": "a pergunta aberta {1} do plano da tarefa {0} aponta para a própria tarefa com beforeTask; responda antes de adicionar o plano",
+  "task {0} plan open question {1} references unknown task {2}": "a pergunta aberta {1} do plano da tarefa {0} referencia a tarefa desconhecida {2}",
+  "task {0} plan open question {1} references unknown phase {2}": "a pergunta aberta {1} do plano da tarefa {0} referencia a fase desconhecida {2}",
+  "task {0} plan open question {1} has an expired deadline ({2}) and must be answered before it can be added": "a pergunta aberta {1} do plano da tarefa {0} já passou do prazo ({2}) e precisa ser respondida antes de ser adicionada",
   "Added — Automatic board opening after installation": "Adicionado — Abertura automática do board após a instalação",
   "Open the board in the default browser after installation successfully starts the dashboard on Windows, Linux and macOS": "Abra o board no navegador padrão após a instalação iniciar o dashboard com sucesso em Windows, Linux e macOS",
   "Keep previews and disabled dashboards from opening tabs; if the browser is unavailable, complete installation and show the address for manual access": "Preserve prévias e dashboards desabilitados sem abrir abas; se o navegador estiver indisponível, conclua a instalação e mostre o endereço para acesso manual",

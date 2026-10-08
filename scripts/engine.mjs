@@ -1122,13 +1122,15 @@ function validateQuestionDeadlines(state, taskId, openQuestions) {
   for (const [index, question] of openQuestions.entries()) {
     if (question.decideBy && typeof question.decideBy === 'object') {
       if (question.decideBy.beforeTask && (!Object.hasOwn(state.tasks, question.decideBy.beforeTask) || !state.tasks[question.decideBy.beforeTask]))
-        die(`task plan open question ${index + 1} references unknown task ${question.decideBy.beforeTask}`)
+        throw new Error(tr('task {0} plan open question {1} references unknown task {2}', taskId, index + 1, question.decideBy.beforeTask))
       if (question.decideBy.beforePhase && !(state.plan.phases ?? []).some(phase => phase.id === question.decideBy.beforePhase))
-        die(`task plan open question ${index + 1} references unknown phase ${question.decideBy.beforePhase}`)
+        throw new Error(tr('task {0} plan open question {1} references unknown phase {2}', taskId, index + 1, question.decideBy.beforePhase))
     }
     const decideBy = question.blocking ? 'user-now' : (question.decideBy ?? 'executor')
-    if (!question.answer && targetHasStarted(state, decideBy))
-      die(tr('task plan open question {0} has an expired deadline and must be answered before it can be added', index + 1))
+    if (!question.answer && targetHasStarted(state, decideBy)) {
+      const deadline = decideBy.beforeTask ? tr('before task {0}', decideBy.beforeTask) : tr('before phase {0}', decideBy.beforePhase)
+      throw new Error(tr('task {0} plan open question {1} has an expired deadline ({2}) and must be answered before it can be added', taskId, index + 1, deadline))
+    }
   }
 }
 

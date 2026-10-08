@@ -1,4 +1,4 @@
-import { log } from './i18n.mjs'
+import { log, tr } from './i18n.mjs'
 import { spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { isAbsolute, resolve } from 'node:path'
@@ -146,7 +146,7 @@ export function validationContract(task) {
 }
 
 // A evidência é fornecida pelo planejador; este portão verifica completude, não a veracidade da pesquisa.
-export function assertTaskPlan(task, plan) {
+export function assertTaskPlan(task, plan, { checkSelfDeadline = true } = {}) {
   insist(plan && typeof plan === 'object' && !Array.isArray(plan), 'task plan must be a JSON object')
   if (plan.summary !== undefined)
     insist(nonempty(plan.summary), 'task plan summary must be a nonempty string when present')
@@ -185,6 +185,11 @@ export function assertTaskPlan(task, plan) {
     nonempty(item.question) && typeof item.blocking === 'boolean' &&
     (item.answer === undefined || nonempty(item.answer)) && validQuestionDeadline(item.decideBy)),
   'task plan openQuestions must contain question, blocking boolean, optional nonempty answer, and a valid optional decideBy')
+  for (const [index, question] of plan.openQuestions.entries()) {
+    // A pergunta sobre a própria tarefa precisa estar respondida quando seu plano for entregue.
+    if (checkSelfDeadline && !question.answer && question.decideBy?.beforeTask && question.decideBy.beforeTask === task.id)
+      throw new Error(tr('task {0} plan open question {1} targets its own task with beforeTask; answer it before adding the plan', task.id, index + 1))
+  }
   insist(plan.openQuestions.every(item => !item.blocking || nonempty(item.answer)),
     'task plan has unanswered blocking questions; resolve them with the user before execution')
   insist(Array.isArray(plan.decisions) && plan.decisions.every(item => item.resolvesQuestion === undefined || nonempty(item.resolvesQuestion)),
@@ -348,7 +353,8 @@ export function hasCurrentTaskPlan(state, task) {
   // não deve fabricar retroativamente um plano de tarefa para uma tentativa ativa.
   if (!usesCurrentPlanning(state, task)) return true
   if (currentPlanningSkip(state, task)) return true
-  try { assertTaskPlan(task, task.taskPlan) } catch { return false }
+  // Prazos históricos continuam sendo cobrados pelo motor, sem invalidar o contrato já registrado.
+  try { assertTaskPlan(task, task.taskPlan, { checkSelfDeadline: false }) } catch { return false }
   if (task.taskPlan?.phaseId) {
     const phase = state.phaseWorkflows?.[task.taskPlan.phaseId]
     if (task.taskPlan.phaseDecision === 'skipped') {
@@ -385,7 +391,7 @@ export function hasCurrentTaskScope(state, task, attempt = task.attempts.length)
   if (!usesCurrentPlanning(state, task)) return true
   if (currentPlanningSkip(state, task)) return true
   const plan = task.taskPlan
-  try { assertTaskPlan(task, plan) } catch { return false }
+  try { assertTaskPlan(task, plan, { checkSelfDeadline: false }) } catch { return false }
   if (!(nonempty(plan?.planner) && nonempty(plan.completedAt))) return false
   if (plan.phaseId) {
     const phase = state.phaseWorkflows?.[plan.phaseId]
