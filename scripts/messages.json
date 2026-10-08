@@ -1707,6 +1707,8 @@
   "sync-plan description change invalidates completed planning for {0} {1}; tasks: {2}": "sync-plan: alteração da descrição invalida rodada concluída de planejamento para {0} {1}; tarefas: {2}",
   "phase": "fase",
   "task": "tarefa",
+  "requiresEnv must be an array of portable nonempty environment variable names": "requiresEnv deve ser uma lista de nomes portáveis e não vazios de variáveis de ambiente",
+  "validation requires environment variables: {0}; configure them in the process environment or step.env before start or validate --ok": "a validação exige variáveis de ambiente: {0}; configure-as no ambiente do processo ou em step.env antes de start ou validate --ok",
   "sync-plan dry-run: no changes written; added {0}, updated {1}, metadata {2}": "sync-plan dry-run: nenhuma alteração gravada; novas {0}, atualizadas {1}, metadados {2}",
   "sync-plan requires --confirm-invalidation to invalidate completed rounds after a description change; inspect --dry-run first": "sync-plan exige --confirm-invalidation para invalidar rodadas concluídas após alterar a descrição; confira --dry-run primeiro"
 }

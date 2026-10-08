@@ -2,6 +2,8 @@
 
 Execute o comando `start` sugerido por `ready` e exija sucesso antes de disparar o executor. Se falhar, corrija o comando ou resolva o impedimento informado antes do despacho; o agente não deve começar trabalho no produto sem sua tentativa registrada. `start` não aceita `--cwd`: registre o diretório do projeto com `init --cwd` ou `sync-plan --cwd` e use `validate --cwd` nas checagens executáveis. Marque `activity-start` somente quando o trabalho começar e `activity-stop` antes de aguardar ou terminar, para separar duração da etapa e trabalho ativo.
 
+Antes de `start` abrir uma tentativa, todas as etapas de validação devem dispor das variáveis de ambiente indicadas no campo opcional `requiresEnv`. Configure os valores ausentes no ambiente do processo executor ou em `step.env` aprovado e tente novamente. A recusa lista somente os nomes das variáveis e não cria tentativa; os requisitos de autorização, planejamento e revisão continuam válidos.
+
 [English](dispatch.md)
 
 Leia isto quando uma tarefa estiver em `ready` ou `running`: antes de registrar uma autorização de execução, antes de cada

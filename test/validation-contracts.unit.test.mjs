@@ -1,11 +1,46 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  validationContract, assertUnavailableResources, assertDiscovery, assertDiscussionBoundary,
+  validationContract, assertValidationEnvironment, assertUnavailableResources, assertDiscovery, assertDiscussionBoundary,
   discoveryDigest, assertTaskPlan, taskPlanDigest, assertValidation, planningContext, hasCurrentTaskPlan, hasCurrentTaskScope,
 } from '../scripts/validation.mjs'
 
 const step = () => ({ kind: 'functional', run: 'node comportamento.cjs', expect: 'O comportamento aprovado é preservado' })
+
+test('requiresEnv aceita nomes portáveis e integra a identidade do contrato sem exigir valores no plano', () => {
+  const base = { validation: [step()] }
+  const required = { validation: [{ ...step(), requiresEnv: ['PRUMO_ENV', '_PORTABLE_2'] }] }
+  assert.notEqual(validationContract(base).key, validationContract(required).key)
+  assert.doesNotThrow(() => validationContract({ validation: [{ ...step(), requiresEnv: [] }] }))
+  for (const requiresEnv of [null, '', {}, [''], ['with space'], ['1INVALID'], [null], [1], ['VAR\0']])
+    assert.throws(() => validationContract({ validation: [{ ...step(), requiresEnv }] }), /requiresEnv/)
+})
+
+test('requiresEnv considera vazio ausente e step.env prevalece sem expor valores', () => {
+  for (const platform of ['linux', 'win32']) {
+    const value = { validation: [{ ...step(), requiresEnv: ['PRUMO_ENV', 'SECOND_ENV'] }] }
+    for (const env of [{}, { undefined: 'configured' }, { PRUMO_ENV: '' }, { PRUMO_ENV: '  ' }, { PRUMO_ENV: null }])
+      assert.throws(() => assertValidationEnvironment(value, env, platform), /PRUMO_ENV, SECOND_ENV/)
+    value.validation[0].env = { PRUMO_ENV: '  ', SECOND_ENV: 'configured' }
+    assert.throws(() => assertValidationEnvironment(value, { PRUMO_ENV: 'synthetic-inherited' }, platform), error => {
+      assert.doesNotMatch(error.message, /synthetic-inherited|configured|SECOND_ENV/)
+      return /PRUMO_ENV/.test(error.message)
+    })
+    value.validation[0].env.PRUMO_ENV = 'configured'
+    assert.equal(assertValidationEnvironment(value, {}, platform)[0].PRUMO_ENV, 'configured')
+  }
+  const value = { validation: [{ ...step(), requiresEnv: ['PRUMO_ENV'], env: { prumo_env: 'override' } }] }
+  const env = assertValidationEnvironment(value, { PRUMO_ENV: 'inherited', OTHER: 'retained' }, 'win32')[0]
+  assert.equal(env.prumo_env, 'override')
+  assert.equal(env.PRUMO_ENV, undefined)
+  assert.equal(env.OTHER, 'retained')
+  assert.throws(() => assertValidationEnvironment(value, {}, 'linux'), /PRUMO_ENV/)
+  const special = { validation: [{ ...step(), requiresEnv: ['__proto__'],
+    env: Object.fromEntries([['__proto__', 'configured']]) }] }
+  assert.equal(assertValidationEnvironment(special, {}, 'win32')[0].__proto__, 'configured')
+  assert.doesNotThrow(() => assertValidationEnvironment({ validationMode: 'inspection',
+    inspectionReason: 'O artefato requer somente inspeção.', validation: 'Inspecionar o resultado.' }, {}))
+})
 const task = () => ({ id: 'T1', validation: [step()], touches: ['src'] })
 const plan = () => ({ research: [{ source: 'src', findings: 'Contrato inspecionado' }], decisions: [],
   steps: ['Implementar a regra aprovada'], verification: [{ criterion: 'Resultado observável', check: 1 }], openQuestions: [] })

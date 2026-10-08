@@ -22,6 +22,37 @@ async function waitForFile(path, timeoutMs = 30000) {
 const staticStep = { run: 'node --check delivery.cjs', kind: 'static', expect: 'valid JavaScript syntax' }
 const functionalStep = { run: 'node delivery.test.cjs', kind: 'functional', expect: 'express delivery is 1 day; normal delivery is 3 days' }
 
+for (const lang of ['en', 'pt-BR']) test(`requiresEnv recusa início e validação sem tentativa ou recibo em ${lang}`, t => {
+  const name = 'PRUMO_ENV_REQUIRED_TEST_50'
+  const f = fixture(t, { validation: [{ ...staticStep, run: 'node marker.cjs' },
+    { ...functionalStep, requiresEnv: [name] }] }, {}, { lang })
+  for (const key of Object.keys(f.options.env)) if (key.toLowerCase() === name.toLowerCase()) delete f.options.env[key]
+  writeFileSync(join(f.project, 'marker.cjs'), "require('node:fs').writeFileSync('executado','x');\n")
+  writeFileSync(join(f.project, 'delivery.test.cjs'), "if(process.env.PRUMO_ENV_REQUIRED_TEST_50 !== 'configured') process.exit(2);\n")
+  f.ok('authorize', '--scope', 'tasks:T1', '--confirmed-by-user')
+  const statePath = join(f.root, '.specs/graph/regression/state.json')
+  const before = readFileSync(statePath, 'utf8'), events = f.events()
+  const pattern = lang === 'en' ? /configure them.*step.env.*before start/ : /configure-as.*step.env.*antes de start/
+  const rejected = f.rejected(pattern, 'start', 'T1', '--agent', 'executor')
+  assert.match(rejected.output, new RegExp(name))
+  assert.equal(readFileSync(statePath, 'utf8'), before)
+  assert.deepEqual(f.events(), events)
+  assert.equal(f.state().tasks.T1.attempts.length, 0)
+  f.options.env[name] = 'configured'
+  f.beginReview()
+  f.options.env[name] = '  '
+  const reviewing = readFileSync(statePath, 'utf8'), reviewEvents = f.events()
+  f.rejected(pattern, 'validate', 'T1', '--ok', '--evidence', 'Conferir estimativas', '--cwd', f.project)
+  assert.equal(readFileSync(statePath, 'utf8'), reviewing)
+  assert.deepEqual(f.events(), reviewEvents)
+  assert.equal(existsSync(join(f.project, 'executado')), false)
+  assert.equal(f.state().tasks.T1.validations.length, 0)
+  f.options.env[name] = 'configured'
+  assert.equal(f.validate().status, 0)
+  assert.equal(f.state().tasks.T1.validations.at(-1).ok, true)
+  assert.equal(existsSync(join(f.project, 'executado')), true)
+})
+
 function fixture(t, task = {}, planOptions = {}, { init = true, lang = 'en' } = {}) {
   const parent = resolve(tmpdir())
   const home = mkdtempSync(join(parent, 'graph-validation-'))

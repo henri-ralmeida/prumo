@@ -2,6 +2,8 @@
 
 [English](contracts.md)
 
+Cada etapa executável de validação pode declarar `requiresEnv: ["SERVICE_TOKEN", "API_URL"]`. Os nomes devem seguir a sintaxe portátil de variáveis de ambiente (`[A-Za-z_][A-Za-z0-9_]*`). O ambiente efetivo combina o ambiente do processo com `step.env`; o valor da etapa prevalece, e valores vazios ou contendo somente espaços são considerados ausentes. No Windows, os nomes não distinguem maiúsculas de minúsculas. Os requisitos pertencem ao contrato de validação. Etapas estáticas com `requiresEnv` não vazio são executadas novamente mesmo com `cacheable`, pois valores externos podem mudar sem alteração no projeto; etapas históricas sem requisitos mantêm seu cache. Não inclua valores de credenciais no plano para satisfazer um pré-requisito.
+
 Leia isto ao escrever ou traduzir a `validation` de um plano, ao conferir um plano aprovado antes do
 primeiro despacho e ao adaptar um contrato antigo. A sintaxe dos campos (`kind`, `cacheable`, `cachePaths`,
 `env`, `shell`, `expectedExitCodes`, `timeoutMs`) está em [runtime.pt-BR.md](runtime.pt-BR.md#contrato-da-tarefa); como um

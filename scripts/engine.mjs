@@ -74,7 +74,7 @@ import { assertExplicitScope, scopeConflicts, sameProject, captureScopeBaseline,
 import { executionReadiness, planQuestionRef, openQuestionRecords, questionResolutionMap, targetHasStarted, overdueQuestions, questionIsOverdue, taskAuthorization, runHasAuthorizationScope, occupancy, isExternalBlock } from './execution-readiness.mjs'
 import { writeAtomicState } from './atomic-state.mjs'
 import { hydrateDiscoveries, compactDiscoveries } from './discovery-history.mjs'
-import { runValidation, assertValidation, validationContract, validationDirectories, assertDiscovery, assertDiscussionBoundary, discoveryDigest, assertTaskPlan,
+import { runValidation, assertValidation, assertValidationEnvironment, validationContract, validationDirectories, assertDiscovery, assertDiscussionBoundary, discoveryDigest, assertTaskPlan,
   assertUnavailableResources,
   planTaskFromState, planningContext, hasCurrentTaskPlan, hasCurrentTaskScope, currentPlanningScope, usesCurrentPlanning,
   phasePlanningContext, phaseRequiredInputs, assertPhaseTaskPlan, executionInputReceipt, currentPlanningSkip,
@@ -3225,6 +3225,7 @@ const commands = {
     try { validationContract(t) } catch (error) {
       die(`${id} has an invalid legacy validation contract: ${error.message} — correct the approved plan and run sync-plan before start`)
     }
+    try { assertValidationEnvironment(t) } catch (error) { die(error.message) }
     assertAvailable(state, t, 'running', agent)
     let inputReceipt
     if (t.taskPlan?.phaseId || currentPlanningSkip(state, t)) {
@@ -3451,7 +3452,7 @@ const commands = {
         }
         if (t.project && args.cwd && !sameProject(t, { project: args.cwd }))
           log('[prumo] ' + tr('WARNING: validation --cwd {0} differs from task project {1}; scope and delivery checks remain bound to the approved project', args.cwd, t.project))
-        try { validationDirectories(t, args.cwd) } catch (error) { die(error.message) }
+        try { assertValidationEnvironment(t); validationDirectories(t, args.cwd) } catch (error) { die(error.message) }
       }
       // Invalide qualquer aprovação anterior antes de executar comandos, inclusive em caso de interrupção.
       t.validations.push({ ok: false, by, agent: by === 'review' ? t.reviewer : t.agent,

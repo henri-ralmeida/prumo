@@ -2,6 +2,8 @@
 
 [Português](contracts.pt-BR.md)
 
+Each executable validation step may declare `requiresEnv: ["SERVICE_TOKEN", "API_URL"]`. Names must use portable environment-variable syntax (`[A-Za-z_][A-Za-z0-9_]*`). The effective environment combines the process environment with `step.env`; the step value wins, and empty or whitespace-only values count as missing. Windows matches names without regard to case. Requirements belong to the validation contract. Static steps with nonempty `requiresEnv` run again even when `cacheable`, because external values can change without a workspace change; legacy steps without requirements keep their existing cache behavior. Never include credential values in the plan to satisfy a prerequisite.
+
 Read this when writing or translating a plan's `validation`, when checking an approved plan before the
 first dispatch, and when adapting an old contract. Field-level syntax (`kind`, `cacheable`, `cachePaths`,
 `env`, `shell`, `expectedExitCodes`, `timeoutMs`) is in [runtime.md](runtime.md#task-contract); how a

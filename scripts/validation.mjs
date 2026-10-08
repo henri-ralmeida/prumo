@@ -132,6 +132,10 @@ export function validationContract(task) {
         Object.entries(step.env).every(([name, value]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) &&
           typeof value === 'string' && !value.includes('\0')),
       'env must map environment variable names to string values')
+    if (step.requiresEnv !== undefined)
+      insist(Array.isArray(step.requiresEnv) && step.requiresEnv.every(name =>
+        typeof name === 'string' && /^[A-Za-z_][A-Za-z0-9_]*$/.test(name)),
+      'requiresEnv must be an array of portable nonempty environment variable names')
     if (step.shell !== undefined) insist(nonempty(step.shell), 'shell must be an executable name or path')
     if (step.timeoutMs !== undefined)
       insist(Number.isSafeInteger(step.timeoutMs) && step.timeoutMs >= 0 && step.timeoutMs <= 2147483647,
@@ -143,6 +147,28 @@ export function validationContract(task) {
     insist(steps.some((step) => step.kind === 'functional'),
       'functional task requires an executable functional check; lint, build, typecheck or prose alone cannot approve it')
   return { mode, steps, key: JSON.stringify([mode, task.inspectionReason ?? '', task.validation]) }
+}
+
+// Exija os pré-requisitos de todas as etapas antes de executar qualquer comando, sem expor seus valores.
+export function assertValidationEnvironment(task, environment = process.env, platform = process.platform) {
+  const { steps } = validationContract(task)
+  const missing = new Set()
+  const environments = steps.map(step => {
+    const env = Object.assign(Object.create(null), environment)
+    for (const [name, value] of Object.entries(step.env ?? {})) {
+      if (platform === 'win32')
+        for (const key of Object.keys(env)) if (key.toLowerCase() === name.toLowerCase()) delete env[key]
+      env[name] = value
+    }
+    for (const name of step.requiresEnv ?? []) {
+      const key = platform === 'win32' ? Object.keys(env).find(key => key.toLowerCase() === name.toLowerCase()) : name
+      if (key === undefined || !nonempty(env[key])) missing.add(name)
+    }
+    return env
+  })
+  insist(!missing.size, tr('validation requires environment variables: {0}; configure them in the process environment or step.env before start or validate --ok',
+    [...missing].join(', ')))
+  return environments
 }
 
 // A evidência é fornecida pelo planejador; este portão verifica completude, não a veracidade da pesquisa.
@@ -520,10 +546,11 @@ export function validationDirectories(task, cwd) {
 
 export async function runValidation(task, cwd, previousReceipt = null, onCheck = () => {}) {
   const contract = validationContract(task)
+  const environments = assertValidationEnvironment(task)
   const checks = []
   const directories = validationDirectories(task, cwd)
   for (const [index, step] of contract.steps.entries()) {
-    const revision = step.cacheable ? workspaceRevision(directories[index], step.cachePaths) : null
+    const revision = step.cacheable && !step.requiresEnv?.length ? workspaceRevision(directories[index], step.cachePaths) : null
     const prior = previousReceipt?.checks?.[index]
     const current = task.validations?.at(-1)
     const sameAttempt = previousReceipt?.attempt === task.attempts?.length && previousReceipt?.agent === current?.agent
@@ -542,12 +569,7 @@ export async function runValidation(task, cwd, previousReceipt = null, onCheck =
     }
     const timeoutMs = step.timeoutMs ?? 600000
     const shell = step.shell ?? (process.platform === 'win32' ? process.env.ComSpec ?? 'cmd.exe' : '/bin/sh')
-    const env = { ...process.env }
-    for (const [name, value] of Object.entries(step.env ?? {})) {
-      if (process.platform === 'win32')
-        for (const key of Object.keys(env)) if (key.toLowerCase() === name.toLowerCase()) delete env[key]
-      env[name] = value
-    }
+    const env = environments[index]
     log(`[prumo] running check ${index + 1}/${contract.steps.length}; timeout ${timeoutMs === 0 ? 'disabled by plan' : timeoutMs + 'ms'}; expected exit ${expectedExitCodes(step).join(',')}`)
     onCheck({ current: index + 1, total: contract.steps.length, kind: step.kind ?? 'static', status: 'started' })
     const result = await execute(step.run, {

@@ -34,6 +34,49 @@ const step = (overrides = {}) => ({
   ...overrides,
 })
 
+test('requiresEnv protege a API direta antes de qualquer comando e usa o ambiente efetivo', async t => {
+  const root = temporary(t)
+  const marker = join(root, 'executado')
+  writeFileSync(join(root, 'check.cjs'), "require('node:fs').appendFileSync('executado','x');\n")
+  const value = task([step(), step({ requiresEnv: ['PRUMO_ENV_REQUIRED_TEST_50'] })])
+  value.validation[1].env = { PRUMO_ENV_REQUIRED_TEST_50: '  ' }
+  const before = structuredClone(value)
+  const checks = []
+  await assert.rejects(runValidation(value, root, null, check => checks.push(check)), /PRUMO_ENV_REQUIRED_TEST_50/)
+  assert.deepEqual(value, before)
+  assert.deepEqual(checks, [])
+  assert.throws(() => readFileSync(marker), /ENOENT/)
+  value.validation[1].env.PRUMO_ENV_REQUIRED_TEST_50 = 'configured'
+  writeFileSync(join(root, 'check.cjs'), "if(process.env.PRUMO_ENV_REQUIRED_TEST_50 !== 'configured') process.exit(2);\n")
+  value.validation[0].env = { PRUMO_ENV_REQUIRED_TEST_50: 'configured' }
+  const result = await runValidation(value, root)
+  assert.ok(result.checks.every(check => check.exitCode === 0))
+})
+
+test('requiresEnv reexecuta etapa estática quando o ambiente muda, mantendo cache histórico sem requisitos', async t => {
+  const root = gitRepository(t)
+  const name = 'PRUMO_ENV_CACHE_TEST_50'
+  const previous = process.env[name]
+  t.after(() => { if (previous === undefined) delete process.env[name]; else process.env[name] = previous })
+  writeFileSync(join(root, 'check.cjs'), "require('node:fs').appendFileSync('contador','x');\n")
+  git(root, 'add', 'check.cjs')
+  git(root, 'commit', '-qm', 'base')
+  const value = task([step({ kind: 'static', cacheable: true, cachePaths: ['check.cjs'], requiresEnv: [name] })])
+  value.validationMode = 'inspection'
+  value.inspectionReason = 'A inspeção estática verifica o artefato com seu ambiente obrigatório.'
+  process.env[name] = 'first'
+  const first = { ...await runValidation(value, root), by: 'review', agent: 'revisor', attempt: 1 }
+  process.env[name] = 'second'
+  const second = await runValidation(value, root, first)
+  assert.equal(second.checks[0].reusedAt, undefined)
+  assert.equal(readFileSync(join(root, 'contador'), 'utf8'), 'xx')
+  delete value.validation[0].requiresEnv
+  const historical = { ...await runValidation(value, root), by: 'review', agent: 'revisor', attempt: 1 }
+  const reused = await runValidation(value, root, historical)
+  assert.ok(reused.checks[0].reusedAt)
+  assert.equal(readFileSync(join(root, 'contador'), 'utf8'), 'xxx')
+})
+
 test('escopo planejado antes da primeira tentativa preserva inspeção, dependências e revisão', () => {
   const state = plannedManualInspectionState(), task = state.tasks.T7a
   const before = structuredClone(state)

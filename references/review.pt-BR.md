@@ -2,6 +2,8 @@
 
 [English](review.md)
 
+`validate --ok` verifica `requiresEnv` em todas as etapas antes de registrar um recibo ou executar qualquer comando. Valores ausentes ou em branco recusam a solicitação sem alterar o histórico de validação; o diagnóstico contém nomes e orientação de configuração, nunca valores. A mesma verificação protege chamadas diretas de `runValidation`, e cada comando recebe o ambiente efetivo verificado. Uma etapa estática com `requiresEnv` não vazio não reaproveita uma checagem anterior em cache, mesmo sem alteração no projeto.
+
 Leia isto quando uma tarefa estiver em `reviewing` ou tiver um recibo de validação atual, antes de disparar um revisor,
 antes de `validate`/`done`, e quando um veredito voltar `failed` ou a tarefa estiver em `failed`. As regras de
 contrato que o revisor aplica estão em [contracts.pt-BR.md](contracts.pt-BR.md).
