@@ -188,7 +188,7 @@ export function assertTaskPlan(task, plan, { checkSelfDeadline = true } = {}) {
   for (const [index, question] of plan.openQuestions.entries()) {
     // A pergunta sobre a própria tarefa precisa estar respondida quando seu plano for entregue.
     if (checkSelfDeadline && !question.answer && question.decideBy?.beforeTask && question.decideBy.beforeTask === task.id)
-      throw new Error(tr('task {0} plan open question {1} targets its own task with beforeTask; answer it before adding the plan', task.id, index + 1))
+      throw new Error(tr('task {0} plan open question {1} targets its own task with beforeTask; answer it before adding the plan: {2}', task.id, index + 1, question.question.replace(/\s+/g, ' ').slice(0, 120)))
   }
   insist(plan.openQuestions.every(item => !item.blocking || nonempty(item.answer)),
     'task plan has unanswered blocking questions; resolve them with the user before execution')

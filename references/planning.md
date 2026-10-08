@@ -208,3 +208,5 @@ appears in discussion/planning and `status` reports it when overdue. Resolve it 
 entry with `resolvesQuestion` set to the displayed reference; start remains gated only after that
 deadline has arrived. In task-planning mode, a `{ "beforePhase": "F2" }` deadline becomes due when any
 task in F2 begins discussion or planning.
+
+An unanswered open question with beforeTask set to its own task ID must be answered before finish-planning or finish-phase-planning accepts that task plan. Task-plan validation rejects this deadline immediately when the artifact is submitted. Batch errors identify the task, question index, a bounded excerpt and artifact path; correct the answer or the approved deadline, then retry the batch. plan-phase opens the round and cannot inspect an artifact that has not yet been submitted.

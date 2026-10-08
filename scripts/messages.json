@@ -1684,5 +1684,8 @@
   "task project must be an absolute Git repository root": "project da tarefa deve ser a raiz absoluta de um repositório Git",
   "explicit scope requires safe repository-relative touches: paths are relative to the task project, or the run project directory; for another repository declare task.project with its absolute Git root; touches must not contain .. or absolute paths": "o escopo explícito exige touches seguros relativos ao projeto da tarefa ou ao diretório do projeto da execução; para outro repositório declare task.project com sua raiz Git absoluta; touches não pode conter .. nem caminhos absolutos",
   "task {0} project must be an accessible Git repository root: {1}": "o projeto da tarefa {0} deve ser uma raiz Git acessível: {1}",
-  "WARNING: validation --cwd {0} differs from task project {1}; scope and delivery checks remain bound to the approved project": "AVISO: --cwd {0} da validação difere do projeto {1} da tarefa; as verificações de escopo e entrega permanecem vinculadas ao projeto aprovado"
+  "WARNING: validation --cwd {0} differs from task project {1}; scope and delivery checks remain bound to the approved project": "AVISO: --cwd {0} da validação difere do projeto {1} da tarefa; as verificações de escopo e entrega permanecem vinculadas ao projeto aprovado",
+  "task {0} plan open question {1} targets its own task with beforeTask; answer it before adding the plan: {2}": "a pergunta aberta {1} do plano da tarefa {0} aponta para a própria tarefa com beforeTask; responda antes de adicionar o plano: {2}",
+  "task {0} plan open question {1} has an expired deadline ({2}) and must be answered before it can be added: {3}": "a pergunta aberta {1} do plano da tarefa {0} já passou do prazo ({2}) e precisa ser respondida antes de ser adicionada: {3}",
+  "artifact path: {0}": "caminho do artefato: {0}"
 }

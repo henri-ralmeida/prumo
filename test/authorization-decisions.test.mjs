@@ -488,6 +488,8 @@ test('lote identifica todos os artefatos inválidos em inglês e pt-BR e preserv
     assert.match(output, /task-plan-T2\.json/)
     assert.match(output, /beforeTask/)
     assert.match(output, lang === 'en' ? /task T3 plan open question 1/ : /pergunta aberta 1 do plano da tarefa T3/)
+    assert.match(output, /Qual regra vale\?/)
+    assert.ok(output.includes(join(planDir, 'task-plan-T3.json')))
     assert.deepEqual(f.stateBytes(), stateBefore)
     assert.deepEqual(f.eventBytes(), eventsBefore)
     for (const id of ['T2', 'T3']) {

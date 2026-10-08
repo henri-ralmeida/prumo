@@ -92,7 +92,7 @@ test('prazo para a própria tarefa exige resposta na validação inicial e ident
   const p = plan()
   p.openQuestions = [{ question: 'Regra a decidir na execução?', blocking: false, decideBy: 'executor' },
     { question: 'Decidir antes desta tarefa?', blocking: false, decideBy: { beforeTask: 'T1' } }]
-  assert.throws(() => assertTaskPlan(task(), p), /task T1 plan open question 2 targets its own task with beforeTask/)
+  assert.throws(() => assertTaskPlan(task(), p), /(?:task T1 plan open question 2 targets its own task|pergunta aberta 2 do plano da tarefa T1 aponta para a própria tarefa).*beforeTask.*Decidir antes desta tarefa\?/)
   assert.doesNotThrow(() => assertTaskPlan(task(), p, { checkSelfDeadline: false }), 'Consultar um contrato já registrado não impõe retroativamente a nova regra de entrada.')
   p.openQuestions[1].answer = 'Regra confirmada.'
   assert.doesNotThrow(() => assertTaskPlan(task(), p))
@@ -112,6 +112,16 @@ test('consulta histórica preserva o escopo registrado e continua recusando cont
   t.taskPlan.steps = []
   assert.equal(hasCurrentTaskScope(state, t, 1), false)
   assert.equal(hasCurrentTaskPlan(state, t), false)
+})
+
+test('diagnóstico de pergunta mantém um trecho limitado e sem quebras de linha', () => {
+  const p = plan()
+  p.openQuestions = [{ question: 'Qual\n regra? ' + 'x'.repeat(180), blocking: false, decideBy: { beforeTask: 'T1' } }]
+  assert.throws(() => assertTaskPlan(task(), p), error => {
+    assert.ok(error.message.endsWith(('Qual regra? ' + 'x'.repeat(180)).slice(0, 120)))
+    assert.ok(!error.message.includes('\n'))
+    return true
+  })
 })
 for (const field of Object.keys(discovery().coverage)) for (const value of empty) test(`descoberta exige cobertura ${field}=${label(value)}`, () => {
   const d = discovery(); d.coverage[field] = value; assert.throws(() => assertDiscovery(d), /coverage/)

@@ -1131,7 +1131,7 @@ function validateQuestionDeadlines(state, taskId, openQuestions) {
     const decideBy = question.blocking ? 'user-now' : (question.decideBy ?? 'executor')
     if (!question.answer && targetHasStarted(state, decideBy)) {
       const deadline = decideBy.beforeTask ? tr('before task {0}', decideBy.beforeTask) : tr('before phase {0}', decideBy.beforePhase)
-      throw new Error(tr('task {0} plan open question {1} has an expired deadline ({2}) and must be answered before it can be added', taskId, index + 1, deadline))
+      throw new Error(tr('task {0} plan open question {1} has an expired deadline ({2}) and must be answered before it can be added: {3}', taskId, index + 1, deadline, question.question.replace(/\s+/g, ' ').slice(0, 120)))
     }
   }
 }
@@ -2779,7 +2779,7 @@ const commands = {
           plannedQuestionRefs.add(ref)
         }
         plans.push([task, plan, questionRefs, path])
-      } catch (error) { errors.push(planningArtifactError(filename, error)) }
+      } catch (error) { errors.push(planningArtifactError(filename, error) + '\n' + tr('artifact path: {0}', resolve(planDir, filename))) }
     }
     if (errors.length) die(tr('finish-phase-planning {0} rejected {1} task-plan artifact(s); nothing was recorded:\n{2}',
       phaseId, errors.length, errors.join('\n')))

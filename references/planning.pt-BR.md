@@ -207,3 +207,5 @@ aparece na discussão/planejamento e `status` a informa quando estiver vencida. 
 com `resolvesQuestion` definido como a referência exibida; o início só fica bloqueado depois que esse
 prazo chega. No modo de planejamento por tarefa, um prazo `{ "beforePhase": "F2" }` vence quando qualquer
 tarefa de F2 inicia discussão ou planejamento.
+
+Uma pergunta aberta sem resposta com beforeTask igual ao ID da própria tarefa precisa de resposta antes de finish-planning ou finish-phase-planning aceitar o plano. A validação do plano recusa esse prazo assim que o artefato é apresentado. Erros do lote identificam tarefa, índice da pergunta, trecho limitado e caminho do artefato; corrija a resposta ou o prazo aprovado e tente o lote novamente. plan-phase abre a rodada e não consegue inspecionar um artefato que ainda não foi apresentado.
