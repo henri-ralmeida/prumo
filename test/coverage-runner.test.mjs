@@ -29,6 +29,10 @@ test('runners separados cobrem cada arquivo regular uma vez e conservam as plata
   assert.match(workflow, /shard: \[0, 1\]/)
   assert.match(workflow, /PRUMO_TEST_PUBLISHED_SHARD_COUNT: 2/)
   assert.match(workflow, /needs: \[test, published-windows\]/)
+  assert.match(workflow, /name: Testes ·.*Linux.*macOS.*Windows.*Node\.js/)
+  assert.match(workflow, /name: Atualizações publicadas · Windows · Node\.js.*de 2/)
+  assert.match(workflow, /name: Cobertura consolidada · 100%/)
+  assert.ok(!workflow.includes('matrix.shard + 1'), 'A expressão do GitHub deve usar somente operadores suportados.')
 })
 
 function fixture(t) {

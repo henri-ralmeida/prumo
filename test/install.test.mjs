@@ -15,6 +15,15 @@ import { runPostinstall } from '../scripts/postinstall.mjs'
 import { inside, findRoot, storageHome, graphRoots, globalGraphRoots } from '../scripts/storage.mjs'
 
 const source = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+
+test('pacote de instalação inclui o histórico e todas as dependências relativas estáticas', () => {
+  const files = installationBundle('en')
+  const paths = new Set(files.map(([name]) => resolve(source, name)))
+  assert.ok(paths.has(join(source, 'scripts', 'discovery-history.mjs')))
+  for (const [name, contents] of files.filter(([name]) => name.endsWith('.mjs')))
+    for (const match of contents.toString().matchAll(/\bfrom\s+['"](\.[^'"]+)['"]/g))
+      assert.ok(paths.has(resolve(source, dirname(name), match[1])), `${name} precisa de ${match[1]} na instalação`)
+})
 const put = (path, value) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, typeof value === 'string' ? value : JSON.stringify(value, null, 2)) }
 const read = path => readFileSync(path, 'utf8')
 const packageVersion = JSON.parse(read(join(source, 'package.json'))).version

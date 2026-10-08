@@ -216,7 +216,8 @@ test('a future question survives while its source task awaits replanning', t => 
   const questionRef = f.state().tasks.A.taskPlan.openQuestions[0].questionRef
   f.plan.description = 'Global description changed before A started.'
   f.savePlan(f.plan)
-  f.ok('sync-plan', '--plan', f.planPath)
+  f.rejects(/--confirm-invalidation/, 'sync-plan', '--plan', f.planPath)
+  f.ok('sync-plan', '--plan', f.planPath, '--confirm-invalidation')
   assert.equal(f.state().tasks.A.state, 'pending')
   assert.match(f.ok('status').stdout, new RegExp(`open question ${questionRef}`))
 

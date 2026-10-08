@@ -2110,6 +2110,10 @@ const commands = {
       die(tr('sync-plan requires --confirm-invalidation to invalidate completed rounds after a description change; inspect --dry-run first'))
     // Migração só persiste após a confirmação; a nova leitura preserva o comportamento dos contratos históricos.
     const migration = migrationStatus(beforeState)
+    if (migration.needed && (beforeState.schemaVersion !== STATE_SCHEMA_VERSION || migration.structural) && migration.blockers.length) {
+      errorLog('[prumo] Migration deferred: resolve unsafe in-flight planning before starting new work')
+      errorLog('[prumo] Migration blockers: ' + migration.blockers.join('; '))
+    }
     if (migration.needed && (beforeState.schemaVersion !== STATE_SCHEMA_VERSION || migration.structural) && !migration.blockers.length) {
       migrateState(name, { quiet: true })
       return commands['sync-plan']()
@@ -2466,7 +2470,7 @@ const commands = {
         log('[prumo] ' + tr('phase {0} discussion {1}: {2}', phase.id, discussion.roundId, tr(current ? 'current' : 'stale')))
       }
       if (planning) log('[prumo] ' + tr('phase {0} planning round {1}: {2}', phase.id, planning.n,
-        tr((currentPhasePlanning(state, workflow, planning) || (planning.result === 'planned' &&
+        tr((currentPhasePlanning(state, workflow, planning) || (decision && planning.result === 'planned' &&
           decision?.id === planning.discussionRoundId && decision.digest === (planning.discussionDigest ?? planning.discoveryDigest) &&
           planning.context === phaseContext(state, phase.id, decision.targets.map(id => state.tasks[id])))) ? 'current' : 'stale')))
       Object.values(d).filter((t) => t.phase === phase.id).forEach(row)

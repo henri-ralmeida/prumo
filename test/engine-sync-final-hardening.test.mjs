@@ -224,7 +224,13 @@ test('decisão confirmada mais recente prevalece sobre discussão concluída na 
     f.ok(...(mode === 'task' ? ['plan-task', 'T1', '--agent', 'planner'] : ['plan-phase', 'F1', '--agent', 'planner']))
     const planned = f.state(), round = mode === 'phase' ? planned.phaseWorkflows.F1.planningAttempts.at(-1) : planned.tasks.T1.planningAttempts.at(-1)
     assert.equal(mode === 'phase' ? round.discussionRoundId : round.discoveryDigest, mode === 'phase' ? 'newest' : 'latest')
-    assert.deepEqual((mode === 'phase' ? planned.phaseWorkflows.F1 : planned.tasks.T1).discussionAttempts, owner.discussionAttempts)
+    const persisted = (mode === 'phase' ? planned.phaseWorkflows.F1 : planned.tasks.T1).discussionAttempts
+    if (mode === 'phase') {
+      const { discoveryArtifact, ...metadata } = persisted[0]
+      assert.deepEqual([metadata], owner.discussionAttempts)
+      const archived = JSON.parse(readFileSync(join(f.run, discoveryArtifact), 'utf8'))
+      assert.deepEqual(archived.discovery, owner.discovery)
+    } else assert.deepEqual(persisted, owner.discussionAttempts)
     if (mode === 'phase') {
       delete planned.phaseWorkflows.F1.planningAttempts.at(-1).requiredInputs; f.save(planned)
       const before = f.bytes(), output = f.ok('plan-phase', 'F1', '--agent', 'planner').output
