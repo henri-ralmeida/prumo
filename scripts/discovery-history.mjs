@@ -30,7 +30,7 @@ export function hydrateDiscoveries(state, directory) {
 // Grave o artefato antes da troca atômica do estado; uma falha mantém o estado anterior recuperável.
 export function compactDiscoveries(state, directory) {
   for (const owner of owners(state)) for (const round of owner.discussionAttempts ?? []) {
-    if (!round.endedAt || round === owner.discussionAttempts.at(-1)) continue
+    if (!round.endedAt) continue
     if (round.discoveryArtifact) readArchive(directory, round.discoveryArtifact)
     const discovery = round.discovery ?? (owner.discovery?.roundId === round.roundId ? owner.discovery : undefined)
     const discoveries = round.discoveries

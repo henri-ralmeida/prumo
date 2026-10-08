@@ -2233,7 +2233,7 @@ test('tres reaberturas mantem apenas a rodada vigente integral e recuperam histo
     f.ok('finish-phase-discussion', 'F1', '--context', path)
     originals.push(f.state().phaseWorkflows.F1.discovery)
     const phase = f.state().phaseWorkflows.F1
-    assert.equal(phase.discussionAttempts.filter(round => round.discovery).length, 1)
+    assert.equal(phase.discussionAttempts.filter(round => round.discovery).length, 0)
     for (let index = 0; index < n; index++) {
       const archive = JSON.parse(readFileSync(join(f.root, '.specs/graph/phase-negative', phase.discussionAttempts[index].discoveryArtifact), 'utf8'))
       assert.deepEqual(archive.discovery, originals[index])

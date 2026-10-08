@@ -25,9 +25,15 @@ test('compactacao conserva pesquisa, perguntas, decisoes e ondas apos tres reabe
     owner.discussionAttempts.push({ roundId: discovery.roundId, endedAt: '2026-01-01', discovery, discoveries: [discovery] })
     compactDiscoveries(state, directory)
     const persisted = JSON.parse(JSON.stringify(state))
-    assert.equal(persisted.phaseWorkflows.F1.discussionAttempts.filter(round => round.discovery || round.discoveries).length, 1)
+    assert.equal(persisted.phaseWorkflows.F1.discussionAttempts.filter(round => round.discovery || round.discoveries).length, 0)
     assert.deepEqual(persisted.phaseWorkflows.F1.discovery, discovery)
   }
+  const countPayloads = value => value && typeof value === 'object'
+    ? Number(Array.isArray(value.research) && Array.isArray(value.questions) && Array.isArray(value.decisions)) +
+      Object.values(value).reduce((total, item) => total + countPayloads(item), 0)
+    : 0
+  assert.equal(countPayloads(JSON.parse(JSON.stringify(state))), 1,
+    'o JSON inteiro mantém uma única descoberta integral após três reaberturas')
   const persisted = JSON.stringify(state)
   hydrateDiscoveries(state, directory)
   assert.equal(JSON.stringify(state), persisted)
