@@ -1702,5 +1702,11 @@
   "Independent reviewer --scope-evidence is required before validation ({0}); provide inspected paths and attribution; no checks or receipt were recorded": "--scope-evidence de um revisor independente é obrigatório antes da validação ({0}); informe caminhos inspecionados e atribuição; nenhum comando nem recibo foi registrado",
   "If concurrent deliveries changed files outside this task, the independent reviewer needs: validate {0} --ok --evidence <evidence> --scope-evidence <paths and attribution>": "Se entregas simultâneas alteraram arquivos fora desta tarefa, o revisor independente precisa de: validate {0} --ok --evidence <evidência> --scope-evidence <caminhos e atribuição>",
   "WARNING: engine content {0} differs from dashboard content {1}; run prumo update": "AVISO: o conteúdo {0} do motor difere do conteúdo {1} do dashboard; execute prumo update",
-  "WARNING: {0} engine content {1} differs from dashboard content {2}; run prumo update": "AVISO: o conteúdo {1} do motor {0} difere do conteúdo {2} do dashboard; execute prumo update"
+  "WARNING: {0} engine content {1} differs from dashboard content {2}; run prumo update": "AVISO: o conteúdo {1} do motor {0} difere do conteúdo {2} do dashboard; execute prumo update",
+  "sync-plan description change invalidates completed discussion for {0} {1}; tasks: {2}": "sync-plan: alteração da descrição invalida rodada concluída de discussão para {0} {1}; tarefas: {2}",
+  "sync-plan description change invalidates completed planning for {0} {1}; tasks: {2}": "sync-plan: alteração da descrição invalida rodada concluída de planejamento para {0} {1}; tarefas: {2}",
+  "phase": "fase",
+  "task": "tarefa",
+  "sync-plan dry-run: no changes written; added {0}, updated {1}, metadata {2}": "sync-plan dry-run: nenhuma alteração gravada; novas {0}, atualizadas {1}, metadados {2}",
+  "sync-plan requires --confirm-invalidation to invalidate completed rounds after a description change; inspect --dry-run first": "sync-plan exige --confirm-invalidation para invalidar rodadas concluídas após alterar a descrição; confira --dry-run primeiro"
 }

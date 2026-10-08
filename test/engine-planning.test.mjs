@@ -13,6 +13,32 @@ import { initializeLegacyPlanFixture } from './fixtures/legacy-plan-init.mjs'
 const engine = resolve(dirname(fileURLToPath(import.meta.url)), '../scripts/engine.mjs')
 const validation = [{ kind: 'functional', run: 'node check.cjs', expect: 'delivery behavior passes' }]
 
+test('alterar descrição lista fases e tarefas concluídas, mas dispensa fases sem rodadas', t => {
+  const f = phaseFixture(t, [{ id: 'T1', phase: 'F1', title: 'Primeira' }, { id: 'T2', phase: 'F1', title: 'Segunda' },
+    { id: 'T3', phase: 'F2', title: 'Terceira' }])
+  f.plan.description = 'Primeiro escopo'
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  assert.doesNotMatch(f.ok('sync-plan', '--plan', f.planPath).stdout, /confirm-invalidation|completed/)
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('plan-phase', 'F1', '--agent', 'planner', '--plan-dir', f.plans)
+  f.writeArtifacts('F1')
+  f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  const before = JSON.stringify(f.state()), events = f.events()
+  f.plan.description = 'Segundo escopo'
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  const output = f.ok('sync-plan', '--plan', f.planPath, '--dry-run').stdout
+  assert.match(output, /completed discussion for phase F1; tasks: T1, T2/)
+  assert.match(output, /completed planning for phase F1; tasks: T1, T2/)
+  assert.match(output, /completed planning for task T1/)
+  assert.doesNotMatch(output, /completed .* F2|completed .* T3/)
+  f.rejects(/--confirm-invalidation/, 'sync-plan', '--plan', f.planPath)
+  assert.equal(JSON.stringify(f.state()), before)
+  assert.equal(f.events(), events)
+  f.ok('sync-plan', '--plan', f.planPath, '--confirm-invalidation')
+  assert.ok(f.state().phaseWorkflows.F1.contractConfirmationRequired)
+})
+
 function fixture(t, dependent = false, { requireReview = true } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'prumo-corrective-retry-'))
   t.after(() => rmSync(home, { recursive: true, force: true }))

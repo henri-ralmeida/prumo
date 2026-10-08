@@ -64,6 +64,8 @@ aprove explicitamente uma mudança mais ampla no grafo. Caso contrário, adote u
 por vez com `begin-phase-discussion <phase> --adopt-legacy`. Uma mudança aprovada de validação para trabalho
 ativo precisa de `refresh-contract`, não de fail/retry. Sempre confira a tarefa persistida antes da revisão.
 
+Uma alteração de descrição que invalide rodadas concluídas de discussão ou planejamento lista as fases e tarefas afetadas antes de qualquer persistência e exige `--confirm-invalidation`. Confira primeiro `sync-plan --plan <approved-plan.json> --dry-run`: a prévia não grava estado, eventos, fontes, backups nem migração. Descrição igual ou fases sem rodadas concluídas não exigem confirmação. A invalidação de contratos e os avisos de touches continuam válidos.
+
 `sync-plan` avisa, sem recusar a sincronização, quando invalida uma rodada aberta de discussão/planejamento ou
 uma dispensa atual. `status` e `ready` também avisam quando a fonte do plano aprovado difere dos contratos
 de tarefa persistidos, nomeando campos alterados, tarefas novas ainda não sincronizadas e tarefas ausentes do plano aprovado;

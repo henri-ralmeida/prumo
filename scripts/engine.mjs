@@ -30,7 +30,7 @@
  *
  * Uso (ENGINE = caminho para este arquivo, onde quer que a skill esteja instalada):
  *   node $ENGINE init --plan <plan.json> --run <name>
- *   node $ENGINE sync-plan --plan <plan.json> [--run <name>] [--cwd <project>]
+ *   node $ENGINE sync-plan --plan <plan.json> [--run <name>] [--cwd <project>] [--dry-run] [--confirm-invalidation]
  *   node $ENGINE migrate [--check] [--run <name>]
  *   node $ENGINE status [--verify-install]|ready|graph [--run <name>]
  *   node $ENGINE show-contract <task> [--diff] [--run <name>]
@@ -119,6 +119,7 @@ if (recognizedCommand) {
   const metric = newCommandRecord(cmd)
   process.on('exit', code => {
     try {
+      if (cmd === 'sync-plan' && args?.['dry-run']) return
       const runFlag = rest.lastIndexOf('--run')
       if (runFlag >= 0 && rest[runFlag + 1] === undefined) return
       const requestedRun = args?.run ?? process.env.PRUMO_RUN ?? (runFlag >= 0 ? rest[runFlag + 1] : undefined)
@@ -1649,6 +1650,28 @@ function invalidatedSyncWorkflows(name, before, after) {
   return result
 }
 
+// Alterar a descrição invalida decisões concluídas; a pessoa deve conhecer o alcance antes de confirmar.
+function completedDescriptionInvalidations(before, after, invalidated) {
+  if ((before.plan.description ?? '') === after.plan.description) return []
+  const result = invalidated.filter(item => item.workflow === 'discussion' &&
+    (item.scope === 'phase' ? before.phaseWorkflows[item.id] : before.tasks[item.task])
+      .discussionAttempts.some(round => round.roundId === item.roundId && round.endedAt && round.result === 'discussed'))
+    .map(item => item.scope === 'phase' ? { ...item, tasks: before.phaseWorkflows[item.id].discussionAttempts
+      .find(round => round.roundId === item.roundId).targets } : item)
+  for (const [id, phase] of Object.entries(before.phaseWorkflows ?? {})) {
+    const round = phase.planningAttempts?.at(-1)
+    if (round?.endedAt && round.result === 'planned' &&
+        round.context === phaseContext(before, id, (round.contextTargets ?? round.targets).map(task => before.tasks[task])) &&
+        round.context !== phaseContext(after, id, (round.contextTargets ?? round.targets).map(task => after.tasks[task])))
+      result.push({ scope: 'phase', id, workflow: 'planning', tasks: round.targets })
+  }
+  for (const [id, task] of Object.entries(before.tasks)) {
+    if (task.taskPlan && hasCurrentTaskPlan(before, task) && !hasCurrentTaskPlan(after, after.tasks[id]))
+      result.push({ scope: 'task', id, task: id, workflow: 'planning' })
+  }
+  return result
+}
+
 function currentPhaseDiscussion(state, phase) {
   const round = phase?.discussionAttempts?.at(-1)
   const targets = round?.targets?.map(id => state.tasks[id]).filter(Boolean)
@@ -2067,6 +2090,30 @@ const commands = {
     if (state.plan.planningRevision || planningChanged)
       nextPlan.planningRevision = (state.plan.planningRevision ?? 0) + (planningChanged ? 1 : 0)
     const planChanged = JSON.stringify(state.plan) !== JSON.stringify(nextPlan)
+    const preview = { ...state, plan: nextPlan }
+    const invalidatedWorkflows = invalidatedSyncWorkflows(name, beforeState, preview)
+    diagnostics.invalidatedWorkflows = invalidatedWorkflows
+    const completed = completedDescriptionInvalidations(beforeState, preview, invalidatedWorkflows)
+    for (const item of completed)
+      log('[prumo] ' + tr(item.workflow === 'discussion'
+        ? 'sync-plan description change invalidates completed discussion for {0} {1}; tasks: {2}'
+        : 'sync-plan description change invalidates completed planning for {0} {1}; tasks: {2}',
+        tr(item.scope), displayIdentifier(item.id),
+        (item.tasks ?? [item.id]).map(displayIdentifier).join(', ')))
+    if (args['dry-run']) {
+      printSyncPlanAudit(changes, diagnostics)
+      log('[prumo] ' + tr('sync-plan dry-run: no changes written; added {0}, updated {1}, metadata {2}',
+        added.length, updated.length, metadataUpdated.length))
+      return
+    }
+    if (completed.length && !args['confirm-invalidation'])
+      die(tr('sync-plan requires --confirm-invalidation to invalidate completed rounds after a description change; inspect --dry-run first'))
+    // Migração só persiste após a confirmação; a nova leitura preserva o comportamento dos contratos históricos.
+    const migration = migrationStatus(beforeState)
+    if (migration.needed && (beforeState.schemaVersion !== STATE_SCHEMA_VERSION || migration.structural) && !migration.blockers.length) {
+      migrateState(name, { quiet: true })
+      return commands['sync-plan']()
+    }
     if (!added.length && !updated.length && !metadataUpdated.length && !planChanged) {
       const hasDiagnostics = diagnostics.blockReasonContradictions.length || diagnostics.newLeaves.length ||
         diagnostics.preDiscussionFunctionalContracts.length
@@ -2120,8 +2167,6 @@ const commands = {
       }
     }
 
-    const invalidatedWorkflows = invalidatedSyncWorkflows(name, beforeState, state)
-    diagnostics.invalidatedWorkflows = invalidatedWorkflows
     if (state.plan.planningMode === 'phase') {
       const confirmationPhases = new Set()
       for (const item of invalidatedWorkflows) {
@@ -3870,7 +3915,7 @@ function assertMigrationCommandAllowed(state, command) {
   die('migration is blocked by unsafe in-flight planning; only legacy attempt continuation, read-only commands, sync-plan and note are allowed')
 }
 if (cmd === 'set-agent-limit') agentLimitChange()
-if (!['init', 'runs', 'migrate'].includes(cmd)) {
+if (!['init', 'runs', 'migrate', 'sync-plan'].includes(cmd)) {
   const name = runName()
   const initialState = loadState(name)
   const aliases = initialState.taskIdAliases ?? {}
@@ -3897,5 +3942,5 @@ function runCommand() {
   return commands[cmd]()
 }
 if (cmd === 'migrate' && args.check !== true) withLock(runName(), runCommand)
-else if (READ_ONLY.has(cmd) || cmd === 'validate' || cmd === 'migrate') await runCommand()
+else if (READ_ONLY.has(cmd) || cmd === 'validate' || cmd === 'migrate' || cmd === 'sync-plan' && args['dry-run']) await runCommand()
 else withLock(runName(), runCommand)

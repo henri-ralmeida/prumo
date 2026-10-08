@@ -64,6 +64,8 @@ explicitly approves a broader graph change. Otherwise, adopt a migrated task-sco
 at a time with `begin-phase-discussion <phase> --adopt-legacy`. An approved validation change for active
 work needs `refresh-contract`, not fail/retry. Always check the persisted task before review.
 
+A description change that invalidates completed discussion or planning rounds lists the affected phases and tasks before any persistence and requires `--confirm-invalidation`. Inspect `sync-plan --plan <approved-plan.json> --dry-run` first: the preview writes no state, events, source files, backups or migration. An unchanged description or phases without completed rounds need no confirmation. Contract invalidation and touches warnings still apply.
+
 `sync-plan` warns without refusing synchronization when it invalidates an open discussion/planning round or
 a current skip. `status` and `ready` also warn when the approved plan source differs from persisted task
 contracts, naming changed fields, new tasks not yet synchronized and tasks missing from the approved plan;

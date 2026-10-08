@@ -6,7 +6,7 @@ const definitions = {
   'verify-provenance': [1],
   init: [0, 'plan run cwd', 'force allow-overlap'],
   migrate: [0, '', 'check'],
-  'sync-plan': [0, 'plan cwd', 'allow-overlap'],
+  'sync-plan': [0, 'plan cwd', 'allow-overlap dry-run confirm-invalidation'],
   status: [0, '', 'verify-install'], ready: [0], graph: [0], runs: [0],
   'show-contract': [1, '', 'diff'], 'show-check': [1, 'check attempt'],
   authorize: [0, 'scope mode channel', 'confirmed-by-user'],

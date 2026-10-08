@@ -9,6 +9,54 @@ import { fileURLToPath } from 'node:url'
 const engine = resolve(dirname(fileURLToPath(import.meta.url)), '../scripts/engine.mjs')
 const check = { kind: 'functional', run: 'node delivery.test.cjs', expect: 'Express delivery takes 1 day and normal delivery takes 3 days' }
 
+for (const lang of ['en', 'pt-BR']) test(`descrição exige confirmação antes de invalidar decisões concluídas em ${lang}`, t => {
+  const f = fixture(t, undefined, {}, { lang })
+  f.planTask()
+  const statePath = join(f.root, '.specs/graph/planning/state.json')
+  const before = readFileSync(statePath, 'utf8'), events = f.events()
+  const unchanged = f.ok('sync-plan', '--plan', f.planPath).output
+  assert.doesNotMatch(unchanged, /description change invalidates|alteração da descrição invalida|confirm-invalidation/)
+  f.plan.description = 'Escopo aprovado corrigido'
+  f.writePlan()
+  const source = readFileSync(f.planPath, 'utf8')
+  const preview = f.ok('sync-plan', '--plan', f.planPath, '--dry-run').output
+  assert.match(preview, /T1/)
+  assert.match(preview, lang === 'en' ? /completed discussion[\s\S]*completed planning/ : /rodada concluída de discussão[\s\S]*rodada concluída de planejamento/)
+  assert.equal(readFileSync(statePath, 'utf8'), before)
+  assert.equal(f.events(), events)
+  assert.equal(readFileSync(f.planPath, 'utf8'), source)
+  assert.equal(existsSync(join(dirname(statePath), 'state.pre-sync.json')), false)
+  f.rejected(/--confirm-invalidation/, 'sync-plan', '--plan', f.planPath)
+  assert.equal(readFileSync(statePath, 'utf8'), before)
+  assert.equal(f.events(), events)
+  assert.equal(existsSync(join(dirname(statePath), 'state.pre-sync.json')), false)
+  f.ok('sync-plan', '--plan', f.planPath, '--confirm-invalidation')
+  assert.equal(f.state().plan.description, f.plan.description)
+  assert.ok(f.state().tasks.T1.contractConfirmationRequired)
+  assert.match(f.events().slice(events.length), /plan_sync/)
+})
+
+test('prévia sem mudanças não registra auditoria e não migra estado histórico', t => {
+  const f = fixture(t)
+  const statePath = join(f.root, '.specs/graph/planning/state.json')
+  const old = f.state()
+  delete old.schemaVersion
+  delete old.plan.maxAgents
+  f.save(old)
+  const before = readFileSync(statePath, 'utf8'), events = f.events()
+  const source = readFileSync(f.planPath, 'utf8')
+  f.ok('sync-plan', '--plan', f.planPath, '--dry-run', '--confirm-invalidation')
+  assert.equal(readFileSync(statePath, 'utf8'), before)
+  assert.equal(f.events(), events)
+  assert.equal(readFileSync(f.planPath, 'utf8'), source)
+  assert.equal(existsSync(join(dirname(statePath), 'state.pre-migrate-v1.json')), false)
+  f.plan.description = 'Descrição antes da primeira rodada'
+  f.writePlan()
+  f.ok('sync-plan', '--plan', f.planPath)
+  assert.equal(f.state().plan.description, f.plan.description)
+  assert.equal(f.state().schemaVersion, 1)
+})
+
 test('conversão do plano remove ordinais duplicados sem alterar subpassos ou comandos', t => {
   const f = fixture(t)
   f.beginPlan('T1')
@@ -819,7 +867,7 @@ test('changed global scope cannot bypass planning through active review or valid
   f.ok('start', 'T1', '--agent', 'executor')
   f.plan.description = 'Approved clarification: preserve the exported days function.'
   f.writePlan()
-  f.ok('sync-plan', '--plan', f.planPath)
+  f.ok('sync-plan', '--plan', f.planPath, '--confirm-invalidation')
   f.ok('authorize', '--scope', 'tasks:T1', '--confirmed-by-user')
   f.rejected(/scope needs current planning/, 'review', 'T1', '--agent', 'reviewer', '--force')
   f.rejected(/scope needs current planning/, 'validate', 'T1', '--ok', '--evidence', 'Old research', '--cwd', f.project)

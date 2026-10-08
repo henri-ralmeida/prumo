@@ -53,11 +53,17 @@ test('init preserva a exceção explícita para sobreposição aprovada', () => 
   assert.equal(parseEngineArgs('init', ['--allow-overlap'])['allow-overlap'], true)
 })
 
-for (const command of commands) {
+for (const command of commands.filter(command => command !== 'sync-plan')) {
   test(`${command}: --dry-run sem suporte não deve executar gravações reais`, () => {
     assert.throws(() => parseEngineArgs(command, ['--dry-run']), /Unknown option/)
   })
 }
+
+test('sync-plan aceita prévia e confirmação explícita sem consumir argumentos', () => {
+  assert.deepEqual(parseEngineArgs('sync-plan', ['--dry-run', '--confirm-invalidation']),
+    { _: [], 'dry-run': true, 'confirm-invalidation': true })
+  assert.throws(() => parseEngineArgs('sync-plan', ['--dry-run', '--dry-run']), /Duplicate option/)
+})
 
 for (const [command, options] of Object.entries(stringOptions)) for (const flag of options.filter(flag => flag !== 'option')) {
   if (flag === 'agent' && ['plan-phase', 'begin-phase-discussion'].includes(command)) continue
