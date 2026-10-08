@@ -6,9 +6,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import fs from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
-import { assertExplicitScope, scopePath, insideTouches, scopeConflicts, sameProject, captureScopeBaseline, verifyTaskScope } from '../scripts/task-scope.mjs'
+import { assertExplicitScope, scopePath, insideTouches, scopeConflicts, sameProject, captureScopeBaseline, scopeEvidenceRequirement, verifyTaskScope } from '../scripts/task-scope.mjs'
 
-function engineFixture(t, tasks, extra = {}) {
+function engineFixture(t, tasks, extra = {}, lang = 'en') {
   const home = mkdtempSync(join(tmpdir(), 'prumo-scope-engine-'))
   const root = join(home, 'root'), project = join(home, 'project')
   mkdirSync(root); mkdirSync(project)
@@ -21,11 +21,11 @@ function engineFixture(t, tasks, extra = {}) {
   writePlan()
   const engine = new URL('../scripts/engine.mjs', import.meta.url).pathname.replace(/^\/(?:([A-Za-z]:))/, '$1')
   const cli = (...args) => spawnSync(process.execPath, [engine, ...args], { cwd: project,
-    env: { ...process.env, PRUMO_ROOT: root, PRUMO_HOME: home, PRUMO_LANG: 'en' }, encoding: 'utf8', windowsHide: true, timeout: 30000 })
+    env: { ...process.env, PRUMO_ROOT: root, PRUMO_HOME: home, PRUMO_LANG: lang }, encoding: 'utf8', windowsHide: true, timeout: 30000 })
   const ok = (...args) => { const r = cli(...args); assert.equal(r.status, 0, r.stdout + r.stderr); return r }
   const rejected = (pattern, ...args) => { const r = cli(...args); assert.notEqual(r.status, 0); assert.match(r.stdout + r.stderr, pattern); return r }
   const statePath = join(root, '.specs/graph/scope/state.json')
-  return { plan, source, project, writePlan, cli, ok, rejected,
+  return { plan, source, root, project, writePlan, cli, ok, rejected,
     state: () => JSON.parse(readFileSync(statePath, 'utf8')),
     save: value => writeFileSync(statePath, JSON.stringify(value)) }
 }
@@ -41,6 +41,41 @@ test('projetos diferentes isolam caminhos, mas recursos compartilhados permanece
     assert.throws(() => assertExplicitScope({ project }), /absolute Git repository root/)
   assert.doesNotThrow(() => assertExplicitScope({ project: a.project }))
   assert.throws(() => assertExplicitScope({ writeScope: 'files', touches: ['../neighbor'] }, 'explicit'), /task.project.*absolute Git root/)
+})
+
+test('pré-checagem de escopo evita comandos e recibos sem exigir evidência por simultaneidade apenas', t => {
+  for (const lang of ['en', 'pt-BR']) for (const git of [false, true]) {
+    const f = engineFixture(t, [{ id: 'T1', touches: ['checked'], validation: [{ kind: 'functional',
+      run: 'node -e "require(\'node:fs\').writeFileSync(\'checked\',\'resultado\')"', expect: 'A entrega atende o contrato' }] }], {}, lang)
+    const marker = join(f.root, 'command-ran').replace(/\\/g, '/')
+    f.plan.tasks[0].validation[0].run = `node -e "require('node:fs').writeFileSync('${marker}','resultado')"`
+    f.writePlan()
+    if (git) assert.equal(spawnSync('git', ['init', f.project], { windowsHide: true }).status, 0)
+    f.ok('init', '--plan', f.source, '--run', 'scope')
+    f.ok('authorize', '--scope', 'run', '--confirmed-by-user')
+    f.ok('skip-discussion', 'T1', '--reason', 'Aprovado', '--confirmed-by-user')
+    f.ok('skip-planning', 'T1', '--reason', 'Escopo suficiente', '--confirmed-by-user')
+    f.ok('start', 'T1', '--agent', 'executor')
+    f.ok('review', 'T1', '--agent', 'reviewer')
+    if (git) {
+      const state = f.state()
+      state.tasks.T1.attempts[0].concurrentScopes = [['other']]
+      f.save(state)
+      assert.equal(scopeEvidenceRequirement(state.tasks.T1, state.tasks.T1.attempts[0].scopeBaseline, [['other']]), null)
+      writeFileSync(join(f.project, 'other'), 'Entrega simultânea')
+    }
+    const statePath = join(f.root, '.specs/graph/scope/state.json')
+    const eventsPath = join(f.root, '.specs/graph/scope/events.ndjson')
+    const before = readFileSync(statePath), events = readFileSync(eventsPath)
+    const refused = f.rejected(/--scope-evidence/, 'validate', 'T1', '--ok', '--cwd', f.project, '--evidence', 'Conferido')
+    assert.match(refused.stdout + refused.stderr, lang === 'en' ? /no checks or receipt were recorded/ : /nenhum comando nem recibo foi registrado/)
+    assert.deepEqual(readFileSync(statePath), before)
+    assert.deepEqual(readFileSync(eventsPath), events)
+    assert.equal(fs.existsSync(marker), false)
+    f.ok('validate', 'T1', '--ok', '--cwd', f.project, '--evidence', 'Conferido', '--scope-evidence', 'Atribuição independente dos arquivos inspecionados')
+    assert.equal(fs.existsSync(marker), true)
+    assert.equal(f.state().tasks.T1.validations.at(-1).ok, true)
+  }
 })
 
 test('execução usa o projeto aprovado sem cwd e valida a entrega no repositório correto', async t => {
@@ -131,6 +166,9 @@ test('sem Git, execução exige evidência independente e done reconfere a atrib
   f.ok('start', 'T1', '--agent', 'executor')
   f.rejected(/independent reviewer/, 'validate', 'T1', '--ok', '--cwd', f.project, '--evidence', 'Verificação funcional')
   f.ok('review', 'T1', '--agent', 'reviewer')
+  const beforeMissingEvidence = JSON.stringify(f.state())
+  f.rejected(/--scope-evidence/, 'validate', 'T1', '--ok', '--cwd', f.project, '--evidence', 'Verificação funcional')
+  assert.equal(JSON.stringify(f.state()), beforeMissingEvidence)
   f.ok('validate', 'T1', '--ok', '--cwd', f.project, '--evidence', 'Verificação funcional', '--scope-evidence', 'Inspeção independente dos arquivos entregues')
   assert.equal(f.state().tasks.T1.validations.at(-1).scopeCheck.method, 'independent-review')
   const receipt = f.state()

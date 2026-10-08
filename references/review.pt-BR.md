@@ -201,3 +201,5 @@ Para sínteses numéricas, verifique cada fonte/caminho e localização, o valor
 a regra explícita de soma/contagem e a localização do resultado. Execute `verify-provenance`
 ou o gate de `validate`; não aceite um recibo de dependência como prova da contagem.
 Valores de modelo/esforço e tokens/ferramentas são informados, não medições independentes.
+
+Antes de validate, forneça --scope-evidence quando o escopo Git estiver indisponível (inclusive submódulos) ou alterações já presentes fora dos touches da tarefa sobrepuserem escopos registrados de entregas simultâneas. O motor recusa a falta de atribuição independente antes de executar comandos ou gravar recibo. Agentes simultâneos, por si só, não exigem esse argumento quando o diff permanece no escopo da tarefa. O escopo é conferido novamente após a validação: alterações surgidas durante os comandos ainda podem reprovar o gate. A pré-checagem não substitui testes funcionais.

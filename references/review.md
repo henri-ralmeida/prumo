@@ -201,3 +201,5 @@ For numeric summaries, inspect source paths/locations, declared values, explicit
 sum/count rules and result locations. Run verify-provenance or the validate gate;
 a dependency receipt is not a counting proof. Model/effort and token/tool counts
 are reported values, not independent measurements.
+
+Before running validate, provide --scope-evidence when Git scope is unavailable (including submodules) or existing changes outside task touches overlap recorded concurrent delivery scopes. The engine rejects a missing independent attribution before running checks or recording a receipt. Concurrent agents alone do not require this argument when the diff stays inside the task scope. Scope is checked again after validation: changes appearing during commands may still fail the gate. No preflight replaces functional checks.

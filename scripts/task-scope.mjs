@@ -61,6 +61,15 @@ export function captureScopeBaseline(cwd) {
     return { method: 'git', cwd: root, files, limitation: 'Ignored files are not included in the Git scope check.' }
   } catch (error) { return { method: 'unavailable', limitation: error.message } }
 }
+// A falta de argumento deve ser detectada antes dos comandos; alterações reais continuam sujeitas ao gate final.
+export function scopeEvidenceRequirement(task, baseline, concurrentScopes = []) {
+  const current = captureScopeBaseline(baseline?.cwd)
+  if (baseline?.method !== 'git' || current.method !== 'git') return 'Git scope unavailable'
+  const paths = [...new Set([...Object.keys(baseline.files), ...Object.keys(current.files)])].filter(path => baseline.files[path] !== current.files[path])
+  if (paths.some(path => (task.writeScope !== 'files' || !insideTouches(path, task.touches)) && concurrentScopes.some(scope => insideTouches(path, scope))))
+    return 'changes outside approved touches overlap concurrent delivery scopes'
+  return null
+}
 export function verifyTaskScope(task, baseline, independentEvidence, concurrentScopes = []) {
   const current = captureScopeBaseline(baseline?.cwd)
   if (baseline?.method !== 'git' || current.method !== 'git') {

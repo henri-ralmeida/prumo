@@ -69,7 +69,7 @@ import {
 } from 'node:fs'
 import { randomUUID, createHash } from 'node:crypto'
 import { isReadyForReview } from './review-readiness.mjs'
-import { assertExplicitScope, scopeConflicts, sameProject, captureScopeBaseline, verifyTaskScope } from './task-scope.mjs'
+import { assertExplicitScope, scopeConflicts, sameProject, captureScopeBaseline, scopeEvidenceRequirement, verifyTaskScope } from './task-scope.mjs'
 import { executionReadiness, planQuestionRef, openQuestionRecords, questionResolutionMap, targetHasStarted, overdueQuestions, questionIsOverdue, taskAuthorization, runHasAuthorizationScope, occupancy, isExternalBlock } from './execution-readiness.mjs'
 import { writeAtomicState } from './atomic-state.mjs'
 import { runValidation, assertValidation, validationContract, validationDirectories, assertDiscovery, assertDiscussionBoundary, discoveryDigest, assertTaskPlan,
@@ -3186,6 +3186,7 @@ const commands = {
       ...(dispatchConfirmation ? { manualDispatchConfirmation: dispatchConfirmation } : {}),
       ...(total ? { current: 1, total } : {}) })
     log(`[prumo] ${id} running (agent ${agent}, attempt ${t.attempts.length})`)
+    if (concurrentScopes.length) log('[prumo] ' + tr('If concurrent deliveries changed files outside this task, the independent reviewer needs: validate {0} --ok --evidence <evidence> --scope-evidence <paths and attribution>', id))
     if (t.taskPlan) log('[prumo] current recorded plan: ' + JSON.stringify(recordedPlanIdentity(t)))
     if (unscoped)
       log('[prumo] ' + tr('no execution authorization scope is recorded for this run; {0} started as before — record the user scope with authorize to enable automatic dispatch', id))
@@ -3373,6 +3374,11 @@ const commands = {
           die(`${id} inspection criteria are not fully traversed; record reviewer-reported progress for each criterion with review-progress ${id} --step <index> --agent ${reviewer} (this is not proof of inspection)`)
       }
       if (requestedOk) {
+        if (state.plan.scopePolicy === 'explicit') {
+          const reason = scopeEvidenceRequirement(t, t.attempts.at(-1)?.scopeBaseline, t.attempts.at(-1)?.concurrentScopes)
+          if (reason && (!args['scope-evidence']?.trim() || by !== 'review' || !t.reviewer || t.reviewer === t.agent))
+            die(tr('Independent reviewer --scope-evidence is required before validation ({0}); provide inspected paths and attribution; no checks or receipt were recorded', tr(reason)))
+        }
         if (t.project && args.cwd && !sameProject(t, { project: args.cwd }))
           log('[prumo] ' + tr('WARNING: validation --cwd {0} differs from task project {1}; scope and delivery checks remain bound to the approved project', args.cwd, t.project))
         try { validationDirectories(t, args.cwd) } catch (error) { die(error.message) }
