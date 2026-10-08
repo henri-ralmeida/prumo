@@ -36,7 +36,7 @@ Instale a CLI, a skill Prumo, o PO First e o serviço de dashboard do usuário e
 npm install -g @henri-ralmeida/prumo
 ```
 
-O `postinstall` global do npm configura todos os ambientes suportados detectados e habilita o dashboard em [http://localhost:4949](http://localhost:4949). Uma instalação npm local no projeto é inerte: não altera configurações globais nem registra inicialização. Se os scripts do npm estavam desabilitados, ou um novo ambiente foi instalado depois, repare a configuração com `prumo install --all`.
+O `postinstall` global do npm configura todos os ambientes suportados detectados e habilita o dashboard em [http://localhost:4949](http://localhost:4949). Após iniciar o dashboard, a instalação abre o board no navegador padrão. Se o navegador estiver indisponível, a instalação termina e informa o endereço para acesso manual. A prévia e a preferência de manter o dashboard desabilitado não abrem o navegador. Uma instalação npm local no projeto é inerte: não altera configurações globais nem registra inicialização. Se os scripts do npm estavam desabilitados, ou um novo ambiente foi instalado depois, repare a configuração com `prumo install --all`.
 
 Ao menos um ambiente configurado com sucesso é preservado e o dashboard é habilitado mesmo se outro falhar, mas o comando retorna código diferente de zero e informa a configuração incompleta. Se nenhum puder ser configurado, a instalação retorna erro e não habilita o dashboard. Repetir o comando retoma com segurança, sem duplicar arquivos, blocos gerenciados ou registros de inicialização.
 

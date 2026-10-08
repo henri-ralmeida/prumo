@@ -84,6 +84,12 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
   let running = false
   const original = childProcess.execFileSync
   const originalSpawn = childProcess.spawn
+  const originalExecFile = childProcess.execFile
+  childProcess.execFile = (file, args, options, callback) => {
+    if (!['rundll32.exe', 'open', 'xdg-open'].includes(file)) return originalExecFile(file, args, options, callback)
+    appendFileSync(${JSON.stringify(autoEvents)}, JSON.stringify(['browser', file, args]) + '\\n')
+    callback(null)
+  }
   childProcess.execFileSync = (file, args, options) => {
     const name = String(file).toLowerCase()
     if (name === 'wscript.exe') {
@@ -155,6 +161,9 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
   assert.equal(existsSync(join(autoHome, '.dsh', '.credentials.yaml')), false)
   assert.equal(JSON.parse(readFileSync(join(autoHome, '.local', 'share', 'prumo', 'dashboard.json'), 'utf8')).enabled, true)
   const startupCalls = readFileSync(autoEvents, 'utf8')
+  const browserCalls = startupCalls.trim().split('\n').map(line => JSON.parse(line)).filter(call => call[0] === 'browser')
+  assert.equal(browserCalls.length, 1, 'A instalação global abre o board uma única vez no navegador padrão.')
+  assert.equal(browserCalls[0][2].at(-1), 'http://localhost:4949')
   assert.ok(process.platform === 'win32' ? startupCalls.includes('"spawn"') :
     process.platform === 'darwin' ? startupCalls.includes('kickstart') : startupCalls.includes('enable","--now'))
   if (process.platform === 'win32') {

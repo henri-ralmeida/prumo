@@ -9,6 +9,7 @@ import { HARNESSES, planInstall, applyInstall, restoreInstall, installationStatu
 import { assertUpdateVersion, ensureGlobalCliContent, globalCliContentCurrent, globalCliState, launchUpdate, reconcileDashboardUpdate, updateGlobalCliFromPackage, updateRequest } from '../lib/update.mjs'
 import { releaseHistory } from '../lib/release-notes.mjs'
 import { dashboardNeedsRepair, dashboardStatus, disableDashboard, enableDashboard, readDashboardEvents, runDashboardForeground, stopDashboardForUpdate } from '../lib/autostart.mjs'
+import { openDashboardBrowser, BOARD_URL } from '../lib/browser.mjs'
 import { selectHarnesses } from '../lib/prompt.mjs'
 import { diagnoseShellFilter } from '../lib/shell-diagnostics.mjs'
 import { assertCliOptions } from '../lib/cli-args.mjs'
@@ -403,6 +404,7 @@ try {
     if (command === 'install') {
       const dashboardLang = language()
       const dashboard = await reconcileDashboardInstall(successfulHarnesses, {
+        openBrowser: openDashboardBrowser,
         dryRun,
         sourcePackageRoot: packageRoot,
         globalPackageRoot: global?.packageRoot,
@@ -412,6 +414,7 @@ try {
       if (dashboard.action === 'enable') print(dryRun ? 'Would enable and start the Prumo dashboard' : `Dashboard enabled: ${dashboard.status.url}`)
       else if (dashboard.action === 'restart') print(dryRun ? 'Would restart the enabled Prumo dashboard' : `Dashboard restarted: ${dashboard.status.url}`)
       else if (dashboard.action === 'disabled') print('Dashboard remains disabled by user preference')
+      if (dashboard.browserFailed) print(t('Could not open the default browser; open {0}', BOARD_URL))
       if (!dashboard.ok) {
         const detail = dashboard.status?.error ?? (dashboard.status?.conflict ? `port ${dashboard.status.port} is used by another process` : undefined)
         console.error(`[prumo] ${detail ? t('Dashboard setup failed: {0}', t(detail)) : t('Dashboard setup failed')}`)

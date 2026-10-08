@@ -378,6 +378,18 @@ function dashboardDouble(status, result = status) {
     PRUMO_TEST_DASHBOARD_STATUS: JSON.stringify(status), PRUMO_TEST_DASHBOARD_RESULT: JSON.stringify(result), PRUMO_TEST_DASHBOARD_REPAIR: '0' }
 }
 
+test('install mantém sucesso e informa acesso manual quando o navegador padrão falha', t => {
+  const f = detectedClaude(t, 'prumo-cli-browser-')
+  const result = runCli(f.home, ['install', '--all'], {
+    ...dashboardDouble({ enabled: false }, { ok: true, url: 'http://localhost:4949' }),
+    PRUMO_POSTINSTALL_LIFECYCLE: '1', npm_lifecycle_event: 'postinstall',
+    npm_package_json: join(repository, 'package.json'),
+  }, f.project)
+  assert.equal(result.status, 0, result.output)
+  assert.match(result.stdout, /Could not open the default browser; open http:\/\/localhost:4949/)
+  assert.match(result.stdout, /Prumo installed successfully/)
+})
+
 function updateDouble(extra = {}) {
   return { NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${new URL('./fixtures/update-double.mjs', import.meta.url).href}`.trim(),
     PRUMO_TEST_GLOBAL_STATE: JSON.stringify({ running: true, version: packageVersion, packageRoot: repository }),

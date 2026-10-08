@@ -1,4 +1,5 @@
 {
+  "Could not open the default browser; open {0}": "Não foi possível abrir o navegador padrão; acesse {0}",
   "preparing prumo update": "preparando atualização do prumo",
   "would update the cli": "atualizaria o cli",
   "updating the cli": "atualizando o cli",

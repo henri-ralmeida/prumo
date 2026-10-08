@@ -1,5 +1,15 @@
 import net from 'node:net'
 import { EventEmitter } from 'node:events'
+import childProcess from 'node:child_process'
+import { syncBuiltinESMExports } from 'node:module'
+
+// A instalação testada não deve abrir abas no navegador real de quem executa a suíte.
+const execFile = childProcess.execFile
+childProcess.execFile = (file, args, options, callback) => {
+  if (!['rundll32.exe', 'open', 'xdg-open'].includes(file)) return execFile(file, args, options, callback)
+  callback(new Error('navegador isolado indisponível'))
+}
+syncBuiltinESMExports()
 
 // Testes de instalação sem dashboard devem observar ausência sem consultar a porta do usuário.
 const fetchOriginal = globalThis.fetch
