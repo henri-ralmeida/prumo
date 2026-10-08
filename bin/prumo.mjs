@@ -135,7 +135,7 @@ function registeredReports({ projects = [] } = {}) {
 try {
   if (Number(process.versions.node.split('.')[0]) < 22) throw new Error('Prumo requires Node.js 22 or newer')
   const { values, positionals } = parseArgs({ allowPositionals: true, options: {
-    ...harnessOptions, 'lean-ctx-config': { type: 'string' }, 'shell-block-evidence': { type: 'string' }, all: { type: 'boolean' },
+    ...harnessOptions, 'shell-filter-config': { type: 'string' }, 'shell-block-evidence': { type: 'string' }, all: { type: 'boolean' },
     lang: { type: 'string' }, 'dry-run': { type: 'boolean' }, project: { type: 'string', multiple: true },
     check: { type: 'boolean' }, run: { type: 'string', short: 'r' }, 'verify-install': { type: 'boolean' },
     help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'v' },
@@ -340,7 +340,10 @@ try {
       })
       if (!allCurrent && !values.all && (process.stdin.isTTY && process.stdout.isTTY || !values['dry-run'])) harnesses = await selectHarnesses(harnesses, { t })
     }
-    if (command === 'doctor') print(diagnoseShellFilter({ config: values['lean-ctx-config'], evidence: values['shell-block-evidence'] }))
+    if (command === 'doctor') {
+      const diagnosis = diagnoseShellFilter({ config: values['shell-filter-config'], evidence: values['shell-block-evidence'] })
+      if (diagnosis) print(diagnosis)
+    }
     let successfulHarnesses = 0
     let doctorLang = lang
     if (command === 'install') {

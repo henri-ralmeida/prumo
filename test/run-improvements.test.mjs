@@ -434,23 +434,23 @@ test('pause validation, shell quoting and context defaults do not invent data', 
   assert.equal(brief.taskPlan, null); assert.equal(brief.lastRejection, null); assert.deepEqual(brief.dependencyDeliveries[0].deliveries, [])
   assert.deepEqual(recordDispatchMetadata(state, structuredClone(state)), [])
 })
-test('doctor uses accessible evidence and never assumes a lean-ctx block', t => {
+test('doctor usa evidencia generica e permanece silencioso sem diagnostico', t => {
   const f = fixture(t), config = join(f.home, 'config.json'), evidence = join(f.home, 'evidence.json')
-  assert.match(diagnoseShellFilter(), /no shell filter detection claimed/)
-  writeFileSync(config, JSON.stringify({ plugins: { 'lean-ctx': { allowedCommands: ['node --version'] } } }))
+  assert.equal(diagnoseShellFilter(), '')
+  writeFileSync(config, JSON.stringify({ allowedCommands: ['node --version'] }))
   assert.match(diagnoseShellFilter({ config }), /runtime block has not been established/)
-  writeFileSync(evidence, JSON.stringify({ plugin: 'lean-ctx', decision: 'blocked', command: 'node scripts/engine.mjs ready' }))
+  writeFileSync(evidence, JSON.stringify({ decision: 'blocked', command: 'node scripts/engine.mjs ready' }))
   assert.match(diagnoseShellFilter({ evidence }), /adjust the allowed command list/)
-  for (const value of [{ plugin: 'other' }, { plugin: 'lean-ctx', decision: 'allowed' }, { plugin: 'lean-ctx', decision: 'blocked', command: 'unrelated' }]) { writeFileSync(evidence, JSON.stringify(value)); assert.match(diagnoseShellFilter({ evidence }), /No accessible/) }
-  writeFileSync(config, '{}'); assert.match(diagnoseShellFilter({ config }), /No accessible/)
+  for (const value of [{ plugin: 'other' }, { decision: 'allowed' }, { decision: 'blocked', command: 'unrelated' }]) { writeFileSync(evidence, JSON.stringify(value)); assert.equal(diagnoseShellFilter({ evidence }), '') }
+  writeFileSync(config, '{}'); assert.equal(diagnoseShellFilter({ config }), '')
   writeFileSync(config, 'x'.repeat(65537)); assert.throws(() => diagnoseShellFilter({ config }), /64 KiB/)
   writeFileSync(config, 'private-unparseable-value'); assert.throws(() => diagnoseShellFilter({ config }), error => /not valid JSON/.test(error.message) && !error.message.includes('private'))
-  writeFileSync(config, 'null'); assert.match(diagnoseShellFilter({ config }), /No accessible/)
+  writeFileSync(config, 'null'); assert.equal(diagnoseShellFilter({ config }), '')
   for (const command of ['echo prumo', 'printf engine.mjs', '']) {
-    writeFileSync(evidence, JSON.stringify({ plugin: 'lean-ctx', decision: 'blocked', command })); assert.match(diagnoseShellFilter({ evidence }), /No accessible/)
+    writeFileSync(evidence, JSON.stringify({ decision: 'blocked', command })); assert.equal(diagnoseShellFilter({ evidence }), '')
   }
   for (const command of ['prumo ready', "& 'node' 'scripts/engine.mjs' ready", 'npx prumo ready', 'bunx prumo ready']) {
-    writeFileSync(evidence, JSON.stringify({ plugin: 'lean-ctx', decision: 'blocked', command })); assert.match(diagnoseShellFilter({ evidence }), /adjust the allowed/)
+    writeFileSync(evidence, JSON.stringify({ decision: 'blocked', command })); assert.match(diagnoseShellFilter({ evidence }), /adjust the allowed/)
   }
   assert.throws(() => diagnoseShellFilter({ config: f.home }), /regular file|EISDIR|EPERM|EACCES/)
 })
@@ -877,7 +877,7 @@ test('partial historical artifacts avoid phase envelopes and review receipts pre
 })
 test('doctor bounds actual bytes even if a diagnostic file grows after stat and accepts partial reads', t => {
   const f = fixture(t), path = join(f.home, 'diagnostic.json'), originalStat = fs.fstatSync, originalRead = fs.readSync
-  writeFileSync(path, JSON.stringify({ plugins: { 'lean-ctx': { allowedCommands: [] } } }))
+  writeFileSync(path, JSON.stringify({ allowedCommands: [] }))
   try {
     fs.readSync = (fd, buffer, offset, length, position) => originalRead(fd, buffer, offset, Math.min(length, 2), position)
     syncBuiltinESMExports()
@@ -887,8 +887,8 @@ test('doctor bounds actual bytes even if a diagnostic file grows after stat and 
     syncBuiltinESMExports()
     assert.throws(() => diagnoseShellFilter({ config: path }), /64 KiB/)
   } finally { fs.fstatSync = originalStat; fs.readSync = originalRead; syncBuiltinESMExports() }
-  writeFileSync(path, JSON.stringify({ plugin: 'lean-ctx', decision: 'blocked', command: 'node' }))
-  assert.match(diagnoseShellFilter({ evidence: path }), /No accessible/)
+  writeFileSync(path, JSON.stringify({ decision: 'blocked', command: 'node' }))
+  assert.equal(diagnoseShellFilter({ evidence: path }), '')
   f.task.deliveries = ['out/value.txt']; f.write('out/value.txt', 'Business text')
   assert.ok(checkDelivery({ tasks: f.state.tasks, plan: {} }, f.task, f.cwd).fingerprint)
 })

@@ -1179,13 +1179,13 @@ e dez no relógio. Dados ausentes e históricos parciais são identificados, sem
 
 ### Diagnóstico de filtros de shell
 
-`prumo doctor --codex [--lean-ctx-config arquivo.json] [--shell-block-evidence arquivo.json]`
+`prumo doctor --codex [--shell-filter-config arquivo.json] [--shell-block-evidence arquivo.json]`
 lê apenas arquivos explicitamente fornecidos, até 64 KiB. Configuração acessível no formato
-`{"plugins":{"lean-ctx":{"allowedCommands":["comando aprovado"]}}}` comprova a lista,
+`{"allowedCommands":["comando aprovado"]}` comprova a lista,
 mas não um bloqueio ocorrido. Evidência de bloqueio no formato
-`{"plugin":"lean-ctx","decision":"blocked","command":"node scripts/engine.mjs ready"}`
+`{"decision":"blocked","command":"node scripts/engine.mjs ready"}`
 permite sugerir ajustar a lista permitida para o comando aprovado. O diagnóstico não
-autentica a origem do relato. Sem configuração/evidência pertinente, não afirma detecção.
+autentica a origem do relato. Sem configuração/evidência pertinente, este diagnóstico permanece silencioso.
 Nunca recomenda contornar filtros de segurança do shell.
 
 Entregas declaradas são inspecionadas integralmente, inclusive conteúdo preexistente; linhas inalteradas da linha de base sem essa relação continuam descontadas. Rodadas históricas de fase sem workers aceitam consumo na rodada existente somente quando seus targets registrados incluem a tarefa; `--phase` distingue o histórico da fase. Totais de tokens/ferramentas devem permanecer dentro dos limites de inteiro seguro.

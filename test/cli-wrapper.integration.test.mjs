@@ -220,6 +220,24 @@ test('install --all separa instalação atual, pendente e conflito em prévia is
   assert.equal(readFileSync(join(conflict.home, '.claude', 'settings.json'), 'utf8'), '[]\n')
 })
 
+test('doctor so informa filtro generico quando arquivos pertinentes sao fornecidos', t => {
+  const f = detectedClaude(t, 'prumo-cli-shell-filter-')
+  installHarness(f, 'claude')
+  disableDashboard(f.home)
+  const plain = runCli(f.home, ['doctor', '--claude'], {}, f.project)
+  assert.equal(plain.status, 0, plain.output)
+  assert.doesNotMatch(plain.output, /shell block|allowed command configuration|shell filter detection/i)
+  const config = join(f.home, 'filter.json'), evidence = join(f.home, 'block.json')
+  writeFileSync(config, JSON.stringify({ allowedCommands: ['prumo ready'] }))
+  writeFileSync(evidence, JSON.stringify({ decision: 'blocked', command: 'prumo ready' }))
+  const configured = runCli(f.home, ['doctor', '--claude', '--shell-filter-config', config], {}, f.project)
+  assert.equal(configured.status, 0, configured.output)
+  assert.match(configured.output, /Accessible allowed command configuration/)
+  const blocked = runCli(f.home, ['doctor', '--claude', '--shell-block-evidence', evidence], {}, f.project)
+  assert.equal(blocked.status, 0, blocked.output)
+  assert.match(blocked.output, /Recorded shell block/)
+})
+
 test('doctor reporta conteúdo divergente e instalação incompleta sem reescrever arquivos', t => {
   const f = detectedClaude(t, 'prumo-cli-doctor-content-')
   installHarness(f, 'claude')

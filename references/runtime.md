@@ -1092,13 +1092,13 @@ minutes and ten elapsed. Missing evidence/partial history is labeled honestly.
 
 ### Shell filter diagnostics
 
-Doctor accepts `--lean-ctx-config file.json` and `--shell-block-evidence file.json`, each
+Doctor accepts `--shell-filter-config file.json` and `--shell-block-evidence file.json`, each
 bounded to 64 KiB. Accessible configuration shape:
-`{"plugins":{"lean-ctx":{"allowedCommands":["approved command"]}}}`. This identifies the
+`{"allowedCommands":["approved command"]}`. This identifies the
 list but does not establish a runtime block. Recorded evidence shape:
-`{"plugin":"lean-ctx","decision":"blocked","command":"node scripts/engine.mjs ready"}`.
+`{"decision":"blocked","command":"node scripts/engine.mjs ready"}`.
 Relevant block evidence permits advising an allowed-list adjustment, never bypassing the
-filter. The report's origin is not authenticated. With neither, no detection is claimed.
+filter. The report's origin is not authenticated. Without relevant evidence or configuration, this diagnostic stays silent.
 
 ### Planning feedback and artifact identity
 
