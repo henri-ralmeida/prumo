@@ -1,4 +1,52 @@
 {
+  "2.6.0": {
+    "en": [
+      {
+        "title": "Added — Delivery and numeric evidence",
+        "items": [
+          "Check new delivery filenames and added lines for task, phase and run identifiers before independent review, with bounded explicit exceptions",
+          "Verify declared numeric provenance against approved JSON sources and invalidate receipts when their evidence changes"
+        ]
+      },
+      {
+        "title": "Added — Persisted agent briefings and preferences",
+        "items": [
+          "Generate executor and reviewer briefings from the current persisted contract, dependency deliveries, validation receipts and last rejection",
+          "Record model and effort preferences by role and reported dispatch metadata without changing contracts, authorization or existing agents"
+        ]
+      },
+      {
+        "title": "Added — Run pause and reported usage",
+        "items": [
+          "Pause and explicitly resume a run while preserving task states, queues, blockers and history; pause does not stop external harness processes",
+          "Record optional token and tool usage with idempotent receipts and totals per task and run, clearly identified as reported data"
+        ]
+      },
+      {
+        "title": "Improved — Activity clocks and CLI diagnostics",
+        "items": [
+          "Show recorded stage durations separately from measured active work and count overlapping stages once in the live project clock",
+          "Refresh the live clock every second without extra requests and normalize duplicated numbering in imported execution steps",
+          "Select runs with -r or PRUMO_RUN and show available attempts and checks when show-check arguments are missing",
+          "Keep optional shell-filter diagnostics provider agnostic and silent without evidence, and update only detected installed harnesses"
+        ]
+      },
+      {
+        "title": "Added — Four harness integrations and official guide logos",
+        "items": [
+          "Install Prumo and managed PO First instructions for Antigravity, OpenCode, Grok Build and GitHub Copilot CLI and VS Code, preserving personal configuration",
+          "Use official guide logos with consistent colors, retain the OpenCode gray detail and explain native planning and version-specific skill invocation"
+        ]
+      },
+      {
+        "title": "Improved — Cross-platform verification",
+        "items": [
+          "Shard Windows workloads and published upgrade scenarios while retaining Windows, Linux and macOS with Node.js 22 and 24 and 100 percent consolidated coverage",
+          "Preserve existing plans, dependencies, attempts, authorization and historical evidence when upgrading"
+        ]
+      }
+    ]
+  },
   "2.5.1": {
     "en": [
       {

@@ -2,6 +2,23 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.6.0 — 2026-10-08
+
+- Confira nomes de entregas e linhas novas para identificadores de tarefa, fase e execução antes da revisão independente, com exceções explícitas limitadas.
+- Verifique a procedência numérica declarada contra fontes JSON aprovadas e invalide recibos quando suas evidências mudarem.
+- Gere briefings do executor e revisor a partir do contrato persistido, entregas das dependências, recibos de validação e última reprovação.
+- Registre preferências de modelo e esforço por papel e os metadados informados no disparo, sem alterar contratos, autorização ou agentes existentes.
+- Pause e retome explicitamente uma execução preservando estados, filas, bloqueios e histórico; a pausa não encerra processos externos do harness.
+- Registre consumo opcional de tokens e ferramentas com recibos idempotentes e totais por tarefa e execução, identificados como dados informados.
+- Mostre a duração registrada das etapas separada do trabalho ativo aferido e conte etapas sobrepostas uma única vez no relógio ao vivo.
+- Atualize o relógio ao vivo a cada segundo sem requisições extras e normalize numeração duplicada nos passos de execução importados.
+- Selecione execuções com -r ou PRUMO_RUN e mostre tentativas e checagens disponíveis quando faltarem argumentos em show-check.
+- Mantenha o diagnóstico opcional de filtros de shell agnóstico e silencioso sem evidências, e atualize apenas harnesses instalados e detectados.
+- Instale o Prumo e as instruções PO First gerenciadas no Antigravity, OpenCode, Grok Build e GitHub Copilot CLI e VS Code, preservando a configuração pessoal.
+- Use logos oficiais com cores consistentes no guia, preserve o detalhe cinza do OpenCode e explique o planejamento nativo e a invocação da skill por versão.
+- Distribua os testes Windows e cenários históricos de atualização entre lotes, preservando Windows, Linux e macOS com Node.js 22 e 24 e cobertura consolidada de 100%.
+- Preserve planos existentes, dependências, tentativas, autorização e evidências históricas durante a atualização.
+
 ## 2.5.1 — 2026-10-07
 
 - Preserve o tempo de trabalho anterior ao primeiro checkpoint e o acumulado entre discussão, planejamento, execução e revisão, sem reiniciar o relógio ao mudar de tarefa.

@@ -5,6 +5,23 @@ import { releaseHistory, releaseNotes } from '../lib/release-notes.mjs'
 
 const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 
+test('atualizacao para 2.6.0 explica as funcionalidades entregues e oferece traducao completa', () => {
+  const messages = JSON.parse(readFileSync(new URL('../scripts/messages.json', import.meta.url), 'utf8'))
+  const history = releaseHistory(['2.5.1'], '2.6.0')
+  assert.deepEqual(history.map(release => release.version), ['2.6.0'])
+  assert.deepEqual(history[0].sections.map(section => section.title), [
+    'Added — Delivery and numeric evidence', 'Added — Persisted agent briefings and preferences',
+    'Added — Run pause and reported usage', 'Improved — Activity clocks and CLI diagnostics',
+    'Added — Four harness integrations and official guide logos', 'Improved — Cross-platform verification',
+  ])
+  for (const section of history[0].sections) {
+    assert.ok(messages[section.title]?.trim())
+    for (const item of section.items) assert.ok(messages[item]?.trim())
+  }
+  assert.ok(history[0].sections.flatMap(section => section.items).some(item => item.includes('GitHub Copilot CLI and VS Code')))
+  assert.ok(history[0].sections.flatMap(section => section.items).some(item => item.includes('Preserve existing plans')))
+})
+
 test('atualização da 2.5.0 explica a continuidade do relógio e o paralelismo da 2.5.1', () => {
   const messages = JSON.parse(readFileSync(new URL('../scripts/messages.json', import.meta.url), 'utf8'))
   const history = releaseHistory(['2.5.0'], '2.5.1')
