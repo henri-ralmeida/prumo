@@ -1725,5 +1725,8 @@
   "Include discussion history dependencies in installed bundles and preserve legacy planning queries and deferred migration diagnostics": "Inclua dependências do histórico de discussão nos pacotes instalados e preserve consultas de planejamento legado e diagnósticos de migração adiada",
   "Clarify platform, Node version and batch names while preserving all test jobs and consolidated coverage requirements": "Esclareça plataforma, versão do Node e nomes dos lotes preservando todos os jobs de teste e os limites de cobertura consolidada",
   "Cannot reuse plan for {0}: its contract, dependencies or phase discussion changed; provide a current artifact": "Não é possível reaproveitar o plano de {0}: contrato, dependências ou discussão da fase mudaram; forneça um artefato atual",
-  "Reused unchanged phase plans: {0}": "Planos de fase inalterados reaproveitados: {0}"
+  "Reused unchanged phase plans: {0}": "Planos de fase inalterados reaproveitados: {0}",
+  "Improved — Safe phase plan reuse and compact CI names": "Melhorado — Reaproveitamento seguro de planos de fase e nomes compactos do CI",
+  "Reuse an older phase planning artifact explicitly only when its task contract, dependencies and material discussion decisions remain unchanged; preserve the original file and record its previous binding": "Reaproveite explicitamente um artefato antigo de planejamento de fase somente quando contrato da tarefa, dependências e decisões materiais da discussão permanecerem iguais; preserve o arquivo original e registre seu vínculo anterior",
+  "Shorten CI job names while preserving platform, Node version and batch identification, all jobs and consolidated coverage requirements": "Encurte os nomes dos jobs do CI preservando plataforma, versão do Node e identificação do lote, todos os jobs e os limites de cobertura consolidada"
 }

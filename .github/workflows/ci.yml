@@ -7,7 +7,7 @@ permissions:
   contents: read
 jobs:
   test:
-    name: Testes · ${{ matrix.os == 'ubuntu-latest' && 'Linux' || matrix.os == 'macos-latest' && 'macOS' || 'Win' }} · Node ${{ matrix.node }}${{ matrix.os == 'windows-latest' && format(' · {0}/2', matrix.shard == 0 && '1' || '2') || '' }}
+    name: Testes · ${{ matrix.os == 'ubuntu-latest' && 'Linux' || matrix.os == 'macos-latest' && 'macOS' || 'Win' }} · N${{ matrix.node }}${{ matrix.os == 'windows-latest' && format(' · {0}/2', matrix.shard == 0 && '1' || '2') || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -62,7 +62,7 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
   published-windows:
-    name: Atualização · Win · Node ${{ matrix.node }} · ${{ matrix.shard == 0 && '1' || '2' }}/2
+    name: Update · Win · N${{ matrix.node }} · ${{ matrix.shard == 0 && '1' || '2' }}/2
     strategy:
       fail-fast: false
       matrix:

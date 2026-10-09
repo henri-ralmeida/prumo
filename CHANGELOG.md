@@ -2,6 +2,11 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.7.1 — 2026-10-08
+
+- Reaproveite explicitamente um artefato antigo de planejamento de fase somente quando contrato da tarefa, dependências e decisões materiais da discussão permanecerem iguais; preserve o arquivo original e registre seu vínculo anterior.
+- Encurte os nomes dos jobs do CI preservando plataforma, versão do Node e identificação do lote, todos os jobs e os limites de cobertura consolidada.
+
 ## 2.7.0 — 2026-10-08
 
 - Vincule cada tarefa ao projeto aprovado e confira evidências de entrega entre repositórios sem alterar o projeto padrão.

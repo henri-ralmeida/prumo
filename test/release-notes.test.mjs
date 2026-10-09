@@ -5,6 +5,17 @@ import { releaseHistory, releaseNotes } from '../lib/release-notes.mjs'
 
 const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 
+test('atualização para 2.7.1 explica reaproveitamento seguro e nomes compactos com tradução', () => {
+  const messages = JSON.parse(readFileSync(new URL('../scripts/messages.json', import.meta.url), 'utf8'))
+  const history = releaseHistory(['2.7.0'], '2.7.1')
+  assert.deepEqual(history.map(release => release.version), ['2.7.1'])
+  const section = history[0].sections[0]
+  assert.ok(messages[section.title]?.trim())
+  for (const item of section.items) assert.ok(messages[item]?.trim())
+  assert.ok(section.items.some(item => item.includes('remain unchanged')))
+  assert.ok(section.items.some(item => item.includes('Shorten CI job names')))
+})
+
 test('atualização para 2.7.0 explica os contratos novos e traduz cada nota', () => {
   const messages = JSON.parse(readFileSync(new URL('../scripts/messages.json', import.meta.url), 'utf8'))
   const history = releaseHistory(['2.6.1'], '2.7.0')

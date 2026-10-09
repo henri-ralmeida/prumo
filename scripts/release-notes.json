@@ -1,4 +1,15 @@
 {
+  "2.7.1": {
+    "en": [
+      {
+        "title": "Improved — Safe phase plan reuse and compact CI names",
+        "items": [
+          "Reuse an older phase planning artifact explicitly only when its task contract, dependencies and material discussion decisions remain unchanged; preserve the original file and record its previous binding",
+          "Shorten CI job names while preserving platform, Node version and batch identification, all jobs and consolidated coverage requirements"
+        ]
+      }
+    ]
+  },
   "2.7.0": {
     "en": [
       {
