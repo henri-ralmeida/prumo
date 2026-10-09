@@ -573,6 +573,74 @@ test('identificadores completos têm prioridade sobre o espaço do status do car
   }
 })
 
+test('status de reprovação usa maiúsculas no card em inglês e português', () => {
+  for (const [lang, label] of [['en', 'REJECTED'], ['pt-BR', 'REPROVADO']]) {
+    const ui = dashboard(lang)
+    const value = { ...rejectionCases()[0][0], id: 'T1', deps: [], title: 'Revisão', phase: 'F1' }
+    ui.render({ run: 'rejection-label', plan: {}, tasks: { T1: value } })
+    assert.ok(ui.nodes.get('#nodes').innerHTML.includes(`<span class="tr">${label}</span>`))
+    assert.equal(value.state, 'reviewing')
+  }
+})
+
+test('todos os status dos cards seguem maiúsculas nos dois idiomas', () => {
+  for (const lang of ['en', 'pt-BR']) {
+    const ui = dashboard(lang)
+    const statuses = ['pending', 'ready_for_discussion', 'ready_to_plan', 'ready', 'ready_for_review', 'discussing', 'planning', 'running', 'reviewing', 'done', 'failed', 'blocked', 'skipped']
+    for (const status of statuses) {
+      const label = ui.run('boardStateLabel(status)', { status })
+      assert.equal(label, label.toLocaleUpperCase(lang))
+      assert.ok(label.length > 0)
+    }
+  }
+})
+
+test('fase com zero alvos planejando não acende planejador nem seu fluxo de energia', () => {
+  const ui = dashboard('pt-BR')
+  const state = { run: 'ghost-planner', plan: { phases: [{ id: 'F1', title: 'Fase' }] }, tasks: {
+    T1: task('T1', 'reviewing', { phase: 'F1' }), T2: task('T2', 'done', { phase: 'F1' }),
+  }, phaseWorkflows: { F1: { id: 'F1', state: 'planning', planningAttempts: [{ targets: ['T1', 'T2'] }] } } }
+  ui.render(state)
+  assert.equal(ui.nodes.get('#planNode').classList.contains('live'), false)
+  assert.equal(ui.nodes.get('#planSub').textContent, 'inativo')
+  assert.equal(ui.nodes.get('#revNode').classList.contains('live'), true)
+  assert.match(ui.nodes.get('#hubPaths').innerHTML, /data-role="rev"/)
+  assert.doesNotMatch(ui.nodes.get('#hubPaths').innerHTML, /data-role="plan"|data-role="exec"/)
+  assert.match(ui.nodes.get('#hubPaths').innerHTML, /class="s-frame"/)
+  state.tasks.T1.state = 'pending'
+  state.derived = { T1: { effective: 'planning', planningStatus: 'phase_planning' } }
+  ui.render(state)
+  assert.equal(ui.nodes.get('#planNode').classList.contains('live'), true)
+  assert.match(ui.nodes.get('#hubPaths').innerHTML, /data-role="plan"/)
+})
+
+test('orquestrador abre explicação por clique e teclado e atualiza o estado ao vivo', () => {
+  for (const lang of ['en', 'pt-BR']) {
+    const ui = dashboard(lang), dialog = ui.run("document.querySelector('#orchestratorDialog')")
+    let opens = 0, prevented = 0
+    dialog.showModal = () => { opens++; dialog.open = true }
+    const state = { run: 'orchestrator-help', plan: {}, tasks: {} }
+    ui.render(state)
+    ui.run('openOrchestrator(); openOrchestrator()')
+    assert.equal(opens, 1)
+    assert.equal(ui.nodes.get('#orchestratorStatus').textContent, lang === 'en' ? 'idle' : 'inativo')
+    state.tasks.T1 = task('T1', 'running')
+    ui.render(state)
+    assert.match(ui.nodes.get('#orchestratorStatus').textContent, /1\/3/)
+    for (const key of ['Enter', ' ', 'Escape']) {
+      dialog.open = false
+      ui.run('orchestratorKey(event)', { event: { key, preventDefault() { prevented++ } } })
+    }
+    assert.equal(opens, 3)
+    assert.equal(prevented, 2)
+    assert.match(html, /id="orchNode"[^>]*role="button"[^>]*tabindex="0"[^>]*aria-haspopup="dialog"/)
+    assert.match(html, /id="orchestratorDialog"[^>]*aria-labelledby="orchestratorTitle"/)
+    assert.match(html, /id="orchestratorStatus" role="status" aria-live="polite"/)
+    assert.match(html, /Here you discuss what needs to be done/)
+    assert.ok(Object.values(messages).some(value => value.includes('Nele, você discute o que precisa ser feito')))
+  }
+})
+
 test('reprovação concluída sai da revisão ativa e entra no resumo vermelho sem mudar o estado persistido', () => {
   const ui = dashboard('pt-BR')
   for (const [input, expected] of rejectionCases()) {
@@ -4946,8 +5014,9 @@ test('indicadores ficam juntos acima dos agentes, capitalizados e nas cores dos 
   assert.match(html, /#statusBox \.counts b \{[^}]*white-space: nowrap;/)
 })
 
-test('as conexoes ficam ocultas e o trilho das fases permanece visivel', () => {
-  assert.match(html, /#edgePaths, #hubPaths, #structPaths \.s-base \{ display: none; \}/)
+test('conexões de tarefas ficam ocultas e conexões dos papéis permanecem visíveis', () => {
+  assert.match(html, /#edgePaths, #structPaths \.s-base \{ display: none; \}/)
+  assert.doesNotMatch(html, /#edgePaths, #hubPaths/)
   assert.doesNotMatch(html, /#structPaths(?:,| \{)[^}]*display: none/)
   const ui = dashboard('pt-BR')
   ui.render({ run: 'dependencias', plan: { phases: [{ id: 'F1', title: 'Fase' }] }, tasks: { T1: task('T1'), T2: task('T2', 'pending', { deps: ['T1'] }) },

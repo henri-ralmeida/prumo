@@ -6,7 +6,9 @@ import { createHash } from 'node:crypto'
 test('guia preserva vetores oficiais completos sem depender de rede', () => {
   const html = readFileSync(new URL('../scripts/dashboard.html', import.meta.url), 'utf8')
   const brands = [...html.matchAll(/<img class="guide-brand-logo" src="data:image\/svg\+xml;base64,([^"]+)" alt="([^"]+)" width="40" height="40" data-brand-source="([^"]+)" data-brand-sha256="([^"]+)">/g)]
-  assert.deepEqual(brands.map(match => match[2]), ['Antigravity', 'OpenCode', 'Grok Build'])
+  assert.deepEqual(brands.map(match => match[2]), ['Antigravity', 'OpenCode', 'Grok'])
+  assert.match(html, /<h3>Grok<\/h3>/)
+  assert.doesNotMatch(html, /<h3>Grok Build<\/h3>/)
   for (const [, encoded, , source, digest] of brands) {
     const asset = Buffer.from(encoded, 'base64')
     assert.equal(createHash('sha256').update(asset).digest('hex'), digest)
@@ -23,7 +25,7 @@ test('logos ficam brancos e barras amarelas como os demais cards, sem o fundo es
   assert.match(html, /\.guide-harness-grid article \{[^}]*border-top: 2px solid var\(--accent\)/)
   assert.doesNotMatch(html, /guide-harness-grid-new article \{ border-top-color:/)
   assert.match(html, /filter: url\(#guide-brand-tint\)/)
-  assert.match(html, /\[alt="Grok Build"\] \{ filter: url\(#guide-brand-tint-luminance\)/)
+  assert.match(html, /\[alt="Grok"\] \{ filter: url\(#guide-brand-tint-luminance\)/)
   assert.match(html, /0\.2126 0\.7152 0\.0722 0 0" result="luminance"/)
   assert.match(html, /feFuncA type="linear" slope="1\.05" intercept="-0\.05"/)
   assert.match(html, /in2="SourceGraphic" operator="in"/)
