@@ -169,3 +169,15 @@ test('update history includes every missed release with the newest version first
   assert.deepEqual(releaseHistory(null, version), releaseHistory([], version))
   assert.deepEqual(releaseHistory(undefined, version), releaseHistory([], version))
 })
+
+test('notas da 2.8.0 explicam a atividade visual com tradução completa', () => {
+  const messages = JSON.parse(readFileSync(new URL('../scripts/messages.json', import.meta.url), 'utf8'))
+  const history = releaseHistory(['2.7.1'], '2.8.0')
+  assert.deepEqual(history.map(release => release.version), ['2.8.0'])
+  for (const section of history[0].sections) {
+    assert.ok(messages[section.title]?.trim())
+    for (const item of section.items) assert.ok(messages[item]?.trim())
+  }
+  assert.ok(history[0].sections[0].items.some(item => item.includes('only toward active roles')))
+  assert.deepEqual(releaseHistory(['2.8.0'], '2.8.0'), [])
+})

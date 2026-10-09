@@ -1,6 +1,6 @@
 {
   "name": "@henri-ralmeida/prumo",
-  "version": "2.7.1",
+  "version": "2.8.0",
   "description": "Evidence-driven task orchestration with PO First for Claude Code, Kiro, Codex, DeepSeek Harness, Antigravity, OpenCode, Grok Build and GitHub Copilot",
   "type": "module",
   "bin": {

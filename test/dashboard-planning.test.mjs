@@ -614,6 +614,25 @@ test('fase com zero alvos planejando não acende planejador nem seu fluxo de ene
   assert.match(ui.nodes.get('#hubPaths').innerHTML, /data-role="plan"/)
 })
 
+test('energia tracejada percorre conexão contínua apenas nos papéis ativos', () => {
+  const ui = dashboard('pt-BR')
+  ui.render({ run: 'energia', plan: {}, tasks: {
+    T1: task('T1', 'planning'), T2: task('T2', 'running'), T3: task('T3', 'reviewing'),
+  } })
+  const paths = [...ui.nodes.get('#hubPaths').innerHTML.matchAll(/<path class="s-flow"[^>]+d="([^"]+)"/g)]
+  assert.equal(paths.length, 3)
+  for (const [markup, path] of paths) {
+    assert.equal((path.match(/M /g) ?? []).length, 1)
+    assert.doesNotMatch(markup, /pathLength=/)
+  }
+  const base = ui.nodes.get('#hubPaths').innerHTML
+  for (const [role, color] of [['plan', '#241d3d'], ['exec', '#34200f'], ['rev', '#12293a']]) {
+    assert.ok(base.includes('class="s-frame" data-connection="' + role + '" style="stroke:' + color + '"'))
+  }
+  assert.match(html, /svg#hubPaths \.s-flow \{[^}]*stroke-dasharray: 3 6; animation: flow9 \.7s linear infinite;/)
+  assert.match(html, /@keyframes flow9 \{ to \{ stroke-dashoffset: -9;/)
+})
+
 test('orquestrador abre explicação por clique e teclado e atualiza o estado ao vivo', () => {
   for (const lang of ['en', 'pt-BR']) {
     const ui = dashboard(lang), dialog = ui.run("document.querySelector('#orchestratorDialog')")

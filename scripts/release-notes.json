@@ -1,4 +1,17 @@
 {
+  "2.8.0": {
+    "en": [
+      {
+        "title": "Added — Agent connections and orchestrator guidance",
+        "items": [
+          "Open the orchestrator card to understand discussion, decisions and delegation, with its current activity shown live",
+          "Connect planning, execution and review with dark role-colored lines and fast dashed energy only toward active roles",
+          "Show elapsed phase time separately from measured active work and keep task status labels uppercase in both languages",
+          "Keep the planner inactive when a planning phase has no tasks being planned and simplify the Grok guide label"
+        ]
+      }
+    ]
+  },
   "2.7.1": {
     "en": [
       {

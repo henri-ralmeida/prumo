@@ -2,6 +2,13 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.8.0 — 2026-10-09
+
+- Abra o card do orquestrador para entender discussão, decisões e delegação, com sua atividade atual exibida ao vivo.
+- Conecte planejamento, execução e revisão com linhas escuras da cor de cada papel e energia tracejada rápida somente para os papéis ativos.
+- Mostre o tempo corrido da fase separado do trabalho ativo aferido e mantenha os status das tarefas em maiúsculas nos dois idiomas.
+- Mantenha o planejador inativo quando uma fase de planejamento não tiver tarefas sendo planejadas e simplifique o nome Grok no guia.
+
 ## 2.7.1 — 2026-10-08
 
 - Reaproveite explicitamente um artefato antigo de planejamento de fase somente quando contrato da tarefa, dependências e decisões materiais da discussão permanecerem iguais; preserve o arquivo original e registre seu vínculo anterior.
