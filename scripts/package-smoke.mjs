@@ -18,7 +18,7 @@ mkdirSync(join(cwd, '.git'), { recursive: true })
 writeFileSync(join(cwd, 'package.json'), JSON.stringify({ name: 'prumo-package-smoke', private: true, dependencies: { [name]: `file:${archive.replace(/\\/g, '/')}` } }))
 const env = { ...process.env, HOME: home, USERPROFILE: home, CODEX_HOME: join(home, '.codex'), DSH_HOME: join(home, '.dsh'), CLAUDE_CONFIG_DIR: join(home, '.claude'), PRUMO_HOME: join(home, 'data'), PRUMO_LANG: 'en',
   APPDATA: join(home, 'AppData', 'Roaming'), LOCALAPPDATA: join(home, 'AppData', 'Local'),
-  GROK_HOME: join(home, '.grok'), COPILOT_HOME: join(home, '.copilot'), OPENCODE_CONFIG_DIR: join(home, '.config', 'opencode'), XDG_CONFIG_HOME: join(home, '.config'),
+  HERMES_HOME: join(home, '.hermes'), OPENCLAW_STATE_DIR: join(home, '.openclaw'), OPENCLAW_WORKSPACE_DIR: join(home, '.openclaw', 'workspace'), GROK_HOME: join(home, '.grok'), COPILOT_HOME: join(home, '.copilot'), OPENCODE_CONFIG_DIR: join(home, '.config', 'opencode'), XDG_CONFIG_HOME: join(home, '.config'),
   npm_config_cache: join(home, 'npm-cache'), npm_config_userconfig: join(home, 'npmrc'), npm_config_prefix: globalPrefix, BUN_INSTALL_CACHE_DIR: join(home, 'bun-cache') }
 // As instalações sem dashboard não consultam nem encerram o serviço real na porta do usuário.
 env.NODE_OPTIONS = `${env.NODE_OPTIONS ?? ''} --import="${pathToFileURL(join(root, 'test', 'fixtures', 'dashboard-absent.mjs')).href}"`.trim()
@@ -192,16 +192,20 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
     ['opencode', join(home, '.config', 'opencode', 'AGENTS.md')],
     ['grok', join(home, '.grok', 'AGENTS.md')],
     ['copilot', join(home, '.copilot', 'copilot-instructions.md')],
+    ['hermes', join(cwd, 'AGENTS.md')],
+    ['openclaw', join(home, '.openclaw', 'workspace', 'AGENTS.md')],
     ['copilot-project', join(cwd, '.github', 'copilot-instructions.md')],
   ]
   const newHarnessRoots = [join(home, '.gemini', 'config', 'skills', 'prumo'), join(home, '.gemini', 'antigravity-cli', 'skills', 'prumo'),
-    join(home, '.config', 'opencode', 'skills', 'prumo'), join(home, '.grok', 'skills', 'prumo'), join(home, '.copilot', 'skills', 'prumo')]
+    join(home, '.config', 'opencode', 'skills', 'prumo'), join(home, '.grok', 'skills', 'prumo'), join(home, '.copilot', 'skills', 'prumo'), join(home, '.hermes', 'skills', 'prumo'), join(home, '.openclaw', 'skills', 'prumo')]
   for (const [file, text] of [
     [join(home, '.gemini', 'antigravity-cli', 'config.json'), '{}'],
     [join(home, '.config', 'opencode', 'opencode.json'), '{}'],
     [join(home, '.grok', 'config.toml'), '[models]\n'],
     [join(home, '.copilot', 'settings.json'), '{"model":"preserved-model"}'],
     [join(cwd, '.github', 'copilot-instructions.md'), '# Instrucoes existentes do projeto\n'],
+    [join(home, '.hermes', 'config.yaml'), 'model: personal-model\n'],
+    [join(home, '.openclaw', 'openclaw.json'), '{}'],
   ]) { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, text) }
   const assertInstalledPoFirst = (pattern, language) => {
     for (const [harness, file] of poFirstTargets)
@@ -298,7 +302,7 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
     assert.equal(readFileSync(join(destination, 'scripts', 'engine.mjs'), 'utf8'), readFileSync(join(root, 'scripts', 'engine.mjs'), 'utf8'))
     assert.equal(readFileSync(join(destination, 'SKILL.md'), 'utf8'), readFileSync(join(root, 'SKILL.md'), 'utf8'))
   }
-  console.log('A atualização do pacote validou oito harnesses em nove raízes isoladas; prévia e falha do registro preservaram os arquivos existentes')
+  console.log('A atualização do pacote validou dez harnesses em onze raízes isoladas; prévia e falha do registro preservaram os arquivos existentes')
 } finally {
   if (registry && registry.exitCode === null && registry.signalCode === null) { const closed = new Promise(resolve => registry.once('exit', resolve)); registry.kill(); await closed }
   mkdirSync(join(root, '.test-output'), { recursive: true })

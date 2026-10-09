@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, rmSync, realpathSync, chmodSync } from 'node:fs'
@@ -139,7 +140,7 @@ test('pastas vazias e configuração genérica do Gemini não detectam novos har
   assert.deepEqual(discoverInstallations(f.options), [])
 })
 
-for (const [harness, executable] of [['antigravity', 'agy'], ['antigravity', 'antigravity'], ['opencode', 'opencode'], ['grok', 'grok'], ['copilot', 'copilot']])
+for (const [harness, executable] of [['antigravity', 'agy'], ['antigravity', 'antigravity'], ['opencode', 'opencode'], ['grok', 'grok'], ['copilot', 'copilot'], ['hermes', 'hermes'], ['openclaw', 'openclaw']])
   test(`${harness}: detecta o executável ${executable} sem criar configuração`, t => {
     const f = fixture(t, harness)
     const folder = join(f.home, 'bin')
@@ -258,4 +259,105 @@ test('arquivos criados apenas pelo Prumo permitem reparo sem anunciar aplicativo
   put(join(f.home, '.kiro', 'steering', 'regra-do-usuario.md'), 'Regra própria do Kiro.')
   put(join(f.home, '.dsh', 'AGENTS.md'), 'Instrução própria do DSH.\n')
   assert.deepEqual(detectHarnesses({ ...f.options, env, includeManaged: false }), ['claude', 'kiro', 'dsh'])
+})
+
+for (const harness of ['hermes', 'openclaw']) test(harness + ': instalação preserva perfil, instruções e permite restauração', t => {
+  const f = fixture(t, harness)
+  const config = join(f.home, 'perfil')
+  const workspace = join(f.home, 'workspace-agente')
+  const env = harness === 'hermes' ? { HERMES_HOME: config } : { OPENCLAW_STATE_DIR: config, OPENCLAW_WORKSPACE_DIR: workspace }
+  const rules = join(harness === 'hermes' ? f.cwd : workspace, 'AGENTS.md')
+  const settings = join(config, harness === 'hermes' ? 'config.yaml' : 'openclaw.json')
+  const personal = harness === 'hermes' ? 'model: modelo-pessoal\n' : '{"model":"modelo-pessoal"}\n'
+  put(settings, personal)
+  put(rules, 'Instruções pessoais.\n')
+  assert.deepEqual(detectHarnesses({ ...f.options, env }), [harness])
+  const plan = f.plan({ env })
+  applyInstall(plan, { dryRun: true })
+  assert.equal(read(rules), 'Instruções pessoais.\n')
+  const result = applyInstall(plan)
+  assert.ok(result.groups.every(group => group.status !== 'conflict'), JSON.stringify(result))
+  const root = join(config, 'skills', 'prumo')
+  for (const file of ['SKILL.md', 'scripts/engine.mjs', 'scripts/storage.mjs', 'references/dispatch.md']) assert.ok(existsSync(join(root, file)))
+  assert.equal(JSON.parse(read(join(root, '.prumo-install.json'))).harness, harness)
+  mkdirSync(join(f.cwd, '.specs', 'graph'), { recursive: true })
+  const planFile = join(f.cwd, 'runtime-plan.json')
+  put(planFile, JSON.stringify({ name: 'Runtime instalado', tasks: [{ id: 'T1', title: 'Conferir runtime', validation: [{ kind: 'functional', run: 'node --version', expect: 'Runtime disponível' }] }] }))
+  const runtime = spawnSync(process.execPath, [join(root, 'scripts', 'engine.mjs'), 'init', '--plan', planFile, '--run', 'installed-runtime'], { cwd: f.cwd, env: { ...process.env, PRUMO_ROOT: f.cwd, PRUMO_HOME: join(f.home, 'data'), PRUMO_LANG: 'en' }, encoding: 'utf8', windowsHide: true, timeout: 20000 })
+  assert.equal(runtime.status, 0, runtime.stdout + runtime.stderr)
+  assert.ok(existsSync(join(f.cwd, '.specs', 'graph', 'installed-runtime', 'state.json')))
+  assert.ok(read(rules).startsWith('Instruções pessoais.\n'))
+  assert.equal(read(rules).split('<!-- po-first:start -->').length, 2)
+  assert.equal(read(settings), personal)
+  assert.equal(applyInstall(f.plan({ env })).backup, null)
+  assert.deepEqual(discoverInstallations({ ...f.options, env }).map(value => value.harness), [harness])
+  assert.ok(restoreInstall(result.backup, { home: f.home, env }) > 0)
+  assert.equal(read(rules), 'Instruções pessoais.\n')
+  assert.equal(existsSync(join(root, 'SKILL.md')), false)
+})
+
+test('Hermes respeita instruções prioritárias do projeto sem alterar personalidade', t => {
+  const f = fixture(t, 'hermes')
+  put(join(f.cwd, '.hermes.md'), 'Regra prioritária.\n')
+  put(join(f.cwd, 'AGENTS.md'), 'Regra secundária.\n')
+  const config = join(f.home, 'hermes-perfil')
+  put(join(config, 'SOUL.md'), 'Personalidade pessoal.\n')
+  applyInstall(f.plan({ env: { HERMES_HOME: config } }))
+  assert.match(read(join(f.cwd, '.hermes.md')), /po-first:start/)
+  assert.equal(read(join(f.cwd, 'AGENTS.md')), 'Regra secundária.\n')
+  assert.equal(read(join(config, 'SOUL.md')), 'Personalidade pessoal.\n')
+})
+
+test('OpenClaw usa workspaces configurados e recusa configuração ambígua sem escrita', t => {
+  const f = fixture(t, 'openclaw'), config = join(f.home, '.openclaw')
+  const one = join(f.home, 'agente-um'), two = join(f.home, 'agente-dois')
+  put(join(config, 'openclaw.json'), JSON.stringify({ agents: { entries: { one: { workspace: one }, two: { workspace: two } } } }))
+  const plan = f.plan()
+  assert.ok(plan.groups.some(group => group.snapshots.includes(join(one, 'AGENTS.md'))))
+  assert.ok(plan.groups.some(group => group.snapshots.includes(join(two, 'AGENTS.md'))))
+  applyInstall(plan)
+  for (const root of [one, two]) assert.match(read(join(root, 'AGENTS.md')), /po-first:start/)
+  put(join(config, 'openclaw.json'), '{ agents: { defaults: { workspace: "custom" } } }')
+  assert.throws(() => f.plan(), /use --project/)
+  const explicit = f.plan({ projects: [one] })
+  assert.ok(explicit.groups.some(group => group.snapshots.includes(join(one, 'AGENTS.md'))))
+  assert.equal(explicit.groups.some(group => group.snapshots.includes(join(two, 'AGENTS.md'))), false)
+})
+
+test('Hermes e OpenClaw não são detectados por pastas vazias', t => {
+  const f = fixture(t, 'hermes')
+  const env = { HERMES_HOME: join(f.home, 'hermes-vazio'), OPENCLAW_STATE_DIR: join(f.home, 'openclaw-vazio') }
+  mkdirSync(env.HERMES_HOME)
+  mkdirSync(env.OPENCLAW_STATE_DIR)
+  assert.deepEqual(detectHarnesses({ ...f.options, env }), [])
+})
+
+test('OpenClaw mantém o workspace registrado ao atualizar de outro diretório', t => {
+  const f = fixture(t, 'openclaw'), workspace = join(f.home, 'workspace-correto')
+  applyInstall(f.plan({ env: { OPENCLAW_WORKSPACE_DIR: workspace } }))
+  const installations = discoverInstallations(f.options)
+  assert.deepEqual(installations[0].projects, [workspace])
+  const update = f.plan({ projects: installations[0].projects, onlyInstalled: true })
+  assert.ok(update.groups.some(group => group.snapshots.includes(join(workspace, 'AGENTS.md'))))
+  assert.equal(update.groups.some(group => group.snapshots.includes(join(f.cwd, 'AGENTS.md'))), false)
+})
+
+test('OpenClaw resolve defaults, perfis, múltiplos agentes e caminhos pessoais', t => {
+  const f = fixture(t, 'openclaw'), config = join(f.home, '.openclaw')
+  const inspect = (settings, expected, env = {}) => {
+    put(join(config, 'openclaw.json'), JSON.stringify(settings))
+    const value = f.plan({ env })
+    for (const path of expected) assert.ok(value.groups.some(group => group.snapshots.includes(join(path, 'AGENTS.md'))), path)
+  }
+  inspect({}, [join(config, 'workspace')])
+  inspect({ agents: { defaults: { workspace: '~/personal' } } }, [join(f.home, 'personal')])
+  inspect({ agents: { list: [{ id: 'main' }] } }, [join(config, 'workspace')])
+  inspect({ agents: { defaults: { workspace: join(f.home, 'base') }, list: [{ id: 'main' }] } }, [join(f.home, 'base')])
+  inspect({ agents: { list: [{ id: 'one' }, { id: 'two' }] } }, [join(config, 'workspace-one'), join(config, 'workspace-two')])
+  inspect({ agents: { defaults: { workspace: join(f.home, 'base') }, list: [{ id: 'one' }, { id: 'two' }] } }, [join(f.home, 'base', 'one'), join(f.home, 'base', 'two')])
+  put(join(config, 'openclaw.json'), JSON.stringify({ agents: { list: [{ id: '../outside' }, { id: 'two' }] } }))
+  assert.throws(() => f.plan(), /Invalid OpenClaw agent identifier/)
+  const profile = f.plan({ env: { OPENCLAW_PROFILE: 'work' } })
+  assert.equal(profile.config, join(f.home, '.openclaw-work'))
+  assert.ok(profile.groups.some(group => group.snapshots.includes(join(f.home, '.openclaw-work', 'workspace', 'AGENTS.md'))))
 })

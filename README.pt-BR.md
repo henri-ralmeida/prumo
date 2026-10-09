@@ -285,3 +285,5 @@ npm pack
 Ao editar traduções: `node scripts/build-dashboard.mjs --write`. O dashboard incorpora o catálogo para funcionar em servidores antigos sem novas rotas de arquivos.
 
 O Prumo nasceu como fork do graph-foreman de **JrSantiaggo** e hoje é um projeto independente, sob [licença MIT](LICENSE). As alterações estão documentadas no [changelog](CHANGELOG.md).
+
+Hermes Agent e OpenClaw também aceitam a instalação do Prumo. Use `prumo install --hermes --project <projeto>` ou `prumo install --openclaw --project <workspace>` e confira os caminhos, permissões e planejamento no [guia de harnesses](references/harnesses.pt-BR.md).

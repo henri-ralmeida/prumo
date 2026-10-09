@@ -22,6 +22,7 @@ const color = (code, value, stream = process.stdout) => stream.isTTY && !('NO_CO
 const harnessLabels = {
   claude: 'Claude Code', kiro: 'Kiro', codex: 'Codex', dsh: 'DeepSeek Harness',
   antigravity: 'Antigravity', opencode: 'OpenCode', grok: 'Grok Build', copilot: 'GitHub Copilot',
+  hermes: 'Hermes Agent', openclaw: 'OpenClaw',
 }
 const harnessOptions = Object.fromEntries(HARNESSES.map(harness => [harness, { type: 'boolean' }]))
 const harnessFlags = HARNESSES.map(harness => `--${harness}`).join('|')

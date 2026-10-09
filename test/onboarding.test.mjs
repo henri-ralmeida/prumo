@@ -357,6 +357,8 @@ test('teclado, fullscreen e encerramento percorrem as saídas do onboarding', as
   externalExit.launcher.click()
   externalExit.document.fullscreenElement = null
   externalExit.document.listeners.get('fullscreenchange')()
+  assert.equal(externalExit.root.hidden, false)
+  externalExit.el('#guideSkip').click()
   assert.equal(externalExit.root.hidden, true)
 
   const finish = harness()
@@ -395,7 +397,7 @@ test('dados ficticios independem do plano real e nao compartilham estado entre a
   assert.equal(results.tasks.T1.state,'done')
 })
 
-test('guia reutiliza as interfaces reais, documenta os oito ambientes e oferece fontes oficiais', () => {
+test('guia reutiliza as interfaces reais, documenta os dez ambientes e oferece fontes oficiais', () => {
   const html = readFileSync(new URL('../scripts/dashboard.html', import.meta.url),'utf8')
   const section = html.match(/<section id="onboarding"[\s\S]*?<\/section>\s*(?=<div id="results")/)?.[0]
   assert.ok(section)
@@ -409,7 +411,7 @@ test('guia reutiliza as interfaces reais, documenta os oito ambientes e oferece 
   assert.match(section,/id="guideResultsFrame"/)
   assert.doesNotMatch(section,/guide-mock-card|Exemplo ilustrativo|no prumo|Legend/)
   assert.deepEqual([...section.matchAll(/<h3>([^<]+)<\/h3>/g)].map(match => match[1]),
-    ['Claude Code','Codex','Kiro','Deep Seek','Antigravity','OpenCode','Grok','GitHub Copilot'])
+    ['Claude Code','Codex','Kiro','Deep Seek','Antigravity','OpenCode','Grok','GitHub Copilot','Hermes Agent','OpenClaw'])
   for (const href of ['https://code.claude.com/docs/en/common-workflows',
     'https://developers.openai.com/codex/cli/slash-commands', 'https://kiro.dev/docs/specs/plan/',
     'https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/plan/plan-mode/README.md',
@@ -448,4 +450,32 @@ test('guia preserva saída amarela do orquestrador e ramificações nas cores do
   assert.match(connections, /data-role="orchestrator" style="stroke:var\(--accent\)" d="M366 0V19"/)
   for (const role of ['plan', 'exec', 'rev']) assert.ok(connections.includes('data-role="' + role + '"'))
   assert.match(html, /@media \(max-width: 700px\) \{ \.guide-role-connections \{ display: none;/)
+})
+
+test('abrir documentação mantém o guia na etapa atual após sair da tela cheia', async () => {
+  const ui = harness()
+  ui.launcher.click()
+  await Promise.resolve()
+  for (let step = 0; step < 12; step += 1) ui.el('#guideNext').click()
+  assert.equal(ui.el('#guideCommandPanel').hidden, false)
+  const title = ui.el('#guideTitle').textContent
+  const count = ui.el('#guideCount').textContent
+  const stops = ui.stops.length
+  const focus = ui.launcher.focusCount
+  ui.root.scrollTop = 420
+  ui.document.fullscreenElement = null
+  ui.document.listeners.get('fullscreenchange')()
+  assert.equal(ui.root.hidden, false)
+  assert.equal(ui.root.classList.contains('presenting'), true)
+  assert.equal(ui.launcher.getAttribute('aria-expanded'), 'true')
+  assert.equal(ui.el('#guideCommandPanel').hidden, false)
+  assert.equal(ui.el('#guideTitle').textContent, title)
+  assert.equal(ui.el('#guideCount').textContent, count)
+  assert.equal(ui.root.scrollTop, 420)
+  assert.equal(ui.stops.length, stops)
+  assert.equal(ui.launcher.focusCount, focus)
+  ui.document.listeners.get('fullscreenchange')()
+  assert.equal(ui.root.hidden, false)
+  ui.document.listeners.get('keydown')({ key: 'Escape', target: ui.root, preventDefault() {} })
+  assert.equal(ui.root.hidden, true, 'a saída explícita pelo teclado continua fechando o guia')
 })

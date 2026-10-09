@@ -90,3 +90,19 @@ Referências oficiais: [visão geral do Grok Build](https://docs.x.ai/build/over
 ## Regra operacional compartilhada
 
 Nos três harnesses, escolha o modelo e entre na superfície nativa de planejamento antes de invocar o Prumo. Mantenha o plano aprovado como fonte do escopo. O dashboard mostra a run resultante e as evidências da revisão independente; ele não executa o harness nem muda a escolha de modelo.
+
+## Hermes Agent
+
+Instale com `prumo install --hermes --project <pasta-do-projeto>`. A skill fica no perfil selecionado por `HERMES_HOME`; o padrão é `~/.hermes/skills/prumo` em Linux/macOS e `%LOCALAPPDATA%/hermes/skills/prumo` no Windows. O PO First é acrescentado às instruções prioritárias do projeto, preservando conteúdo pessoal e `SOUL.md`.
+
+Use `/plan`, aprove o plano e invoque `/prumo`. Habilite terminal e delegação. Cada subagente deve receber o contrato e os caminhos do run; após uma interrupção, consulte o estado persistido antes de disparar outra tentativa. A instalação não altera modelos, autenticação, permissões nem a confiança de skills do projeto. Se usar uma skill de projeto, confirme a confiança com `hermes skills trust` por sua decisão.
+
+Fontes oficiais: [skills](https://hermes-agent.nousresearch.com/docs/user-guide/features/skills/), [contexto do projeto](https://hermes-agent.nousresearch.com/docs/user-guide/features/context-files/) e [delegação](https://hermes-agent.nousresearch.com/docs/user-guide/features/delegation/).
+
+## OpenClaw
+
+Instale com `prumo install --openclaw --project <workspace-do-agente>`. A skill compartilhada fica em `<OPENCLAW_STATE_DIR>/skills/prumo`, com padrão `~/.openclaw/skills/prumo`; `OPENCLAW_PROFILE` seleciona o diretório do perfil. O PO First é acrescentado ao `AGENTS.md` do workspace, preservando configurações, personalidade e credenciais.
+
+Sem `--project`, o instalador respeita `OPENCLAW_WORKSPACE_DIR` ou os workspaces declarados em `openclaw.json` no formato JSON. Para configurações JSON5, informe o workspace explicitamente com `--project`. Peça um plano, aprove e invoque `/prumo`; o Prumo não acrescenta um comando nativo de planejamento. Os agentes precisam de execução de comandos e delegação. Em sandbox ou host remoto, Node, o pacote e os arquivos persistidos precisam estar disponíveis no ambiente onde os comandos rodam; o navegador local não acessa automaticamente o localhost de outro computador.
+
+Fontes oficiais: [skills](https://docs.openclaw.ai/tools/skills), [workspace](https://docs.openclaw.ai/concepts/agent-workspace) e [subagentes](https://docs.openclaw.ai/tools/subagents).

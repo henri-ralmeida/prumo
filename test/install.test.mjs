@@ -477,6 +477,8 @@ test('explicit install refuses each absent harness before writing anything', asy
     ['opencode', 'OpenCode'],
     ['grok', 'Grok Build'],
     ['copilot', 'GitHub Copilot'],
+    ['hermes', 'Hermes Agent'],
+    ['openclaw', 'OpenClaw'],
   ]) await t.test(`${harness} absent`, t => {
     const f = fixture(t)
     const cli = isolatedCli(f)

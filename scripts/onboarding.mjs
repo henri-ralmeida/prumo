@@ -237,7 +237,7 @@ export function createPrumoOnboarding({ root, launcher, document, window, transl
     if (fullscreenPending && document.fullscreenElement === root) fullscreenOwned = true
     else if (fullscreenOwned && document.fullscreenElement !== root) {
       fullscreenOwned = false
-      if (!root.hidden) close()
+      // Abrir documentação em outra aba pode encerrar a tela cheia sem encerrar o guia.
     }
   })
   document.addEventListener('keydown', event => {

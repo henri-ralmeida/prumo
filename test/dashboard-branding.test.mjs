@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto'
 test('guia preserva vetores oficiais completos sem depender de rede', () => {
   const html = readFileSync(new URL('../scripts/dashboard.html', import.meta.url), 'utf8')
   const brands = [...html.matchAll(/<img class="guide-brand-logo" src="data:image\/svg\+xml;base64,([^"]+)" alt="([^"]+)" width="40" height="40" data-brand-source="([^"]+)" data-brand-sha256="([^"]+)">/g)]
-  assert.deepEqual(brands.map(match => match[2]), ['Antigravity', 'OpenCode', 'Grok'])
+  assert.deepEqual(brands.map(match => match[2]), ['Antigravity', 'OpenCode', 'Grok', 'Hermes Agent', 'OpenClaw'])
   assert.match(html, /<h3>Grok<\/h3>/)
   assert.doesNotMatch(html, /<h3>Grok Build<\/h3>/)
   for (const [, encoded, , source, digest] of brands) {
@@ -14,7 +14,7 @@ test('guia preserva vetores oficiais completos sem depender de rede', () => {
     assert.equal(createHash('sha256').update(asset).digest('hex'), digest)
     assert.match(asset.toString(), /<svg\b/)
     assert.doesNotMatch(asset.toString(), /<script\b|\bonload=|\bonerror=/i)
-    assert.match(source, /^https:\/\/(antigravity\.google|opencode\.ai|grok\.com)\//)
+    assert.match(source, /^https:\/\/(antigravity\.google|opencode\.ai|grok\.com|raw\.githubusercontent\.com)\//)
   }
   assert.doesNotMatch(html, /guide-harness-grid-new svg \{ color:/)
 })
@@ -49,4 +49,35 @@ test('OpenCode preserva o cinza interno oficial e orienta a invocacao por versao
   assert.match(html, /<h3>Deep Seek<\/h3>/)
   assert.doesNotMatch(html, /<h3>DSH<\/h3>|<code>Plan \/ \/plan<\/code>/)
   assert.match(html, /<h3>GitHub Copilot<\/h3><code>\/plan<\/code>/)
+})
+
+test('guia distribui dez ambientes em cinco colunas e adapta telas estreitas', () => {
+  const html = readFileSync(new URL('../scripts/dashboard.html', import.meta.url), 'utf8')
+  const panel = html.split('<section id="guideCommandPanel"')[1].split('</section>')[0]
+  assert.equal((panel.match(/<article>/g) ?? []).length, 10)
+  assert.equal((panel.match(/class="guide-harness-grid"/g) ?? []).length, 1)
+  assert.match(html, /guide-harness-grid \{[^}]*repeat\(5,minmax\(0,1fr\)\)/)
+  assert.match(html, /max-width:1100px[^}]*repeat\(3,minmax\(0,1fr\)\)/)
+  assert.match(html, /max-width:440px[^}]*grid-template-columns: 1fr/)
+  for (const title of ['Hermes Agent', 'OpenClaw']) assert.ok(panel.includes('<h3>' + title + '</h3>'))
+  assert.ok(panel.includes('https://hermes-agent.nousresearch.com/docs/user-guide/features/skills/'))
+  assert.ok(panel.includes('https://docs.openclaw.ai/tools/skills'))
+})
+
+test('Hermes remove o fundo oficial escuro e conserva o desenho branco', () => {
+  const html = readFileSync(new URL('../scripts/dashboard.html', import.meta.url), 'utf8')
+  assert.ok(html.includes('.guide-brand-logo[alt="Hermes Agent"] { filter: url(#guide-brand-tint-hermes); }'))
+  const encoded = html.match(/class="guide-brand-logo" src="data:image\/svg\+xml;base64,([^"]+)" alt="Hermes Agent"/)[1]
+  const svg = Buffer.from(encoded, 'base64').toString()
+  const background = svg.match(/<ns0:rect[^>]*fill="(#[0-9a-f]+)"/)[1]
+  const filter = html.match(/<filter id="guide-brand-tint-hermes"[^]*?<\/filter>/)[0]
+  const transfer = filter.match(/feFuncA type="linear" slope="([^"]+)" intercept="([^"]+)"/)
+  const alpha = color => {
+    const rgb = color.slice(1).match(/../g).map(channel => parseInt(channel, 16) / 255)
+    const luminance = rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722
+    return Math.max(0, Math.min(1, luminance * Number(transfer[1]) + Number(transfer[2])))
+  }
+  assert.equal(alpha(background), 0, 'o fundo oficial precisa ficar completamente transparente')
+  assert.equal(alpha('#ffffff'), 1, 'o desenho branco precisa continuar visível')
+  assert.ok(html.includes('[alt="Grok"] { filter: url(#guide-brand-tint-luminance); }'))
 })
