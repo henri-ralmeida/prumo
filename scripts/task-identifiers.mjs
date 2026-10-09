@@ -2,7 +2,7 @@ const taskId = /^T(\d+)([a-z]?)$/i
 const problem = (message, ...values) => ({ message, values })
 
 // O plano inicial fixa os números; ampliações vinculadas preservam esses números e o histórico.
-export function taskIdentifierProblem(tasks, existingIds, existingTasks) {
+export function taskIdentifierProblem(tasks, existingIds, existingTasks, { phases = [], existingPhases = [] } = {}) {
   const numbered = tasks.filter(task => /^t\d/i.test(task.id))
   if (existingIds === undefined) {
     if (numbered.length && numbered.length !== tasks.length)
@@ -38,8 +38,20 @@ export function taskIdentifierProblem(tasks, existingIds, existingTasks) {
       return problem('Extension {0} must remain in the same phase as its existing parent {1} ({2}); do not create a new phase for a task extension', task.id, parent, phase ?? '—')
   }
   const added = (roots.size ? tasks : numbered).filter(task => !existing.has(task.id))
+  const priorPhases = new Set([...existingPhases, ...Object.values(existingTasks ?? {}).map(task => task.phase).filter(Boolean)])
+  const lastPriorIndex = Math.max(-1, ...phases.map((phase, index) => priorPhases.has(phase.id) ? index : -1))
+  const appendedPhases = new Set(phases.filter((phase, index) => index > lastPriorIndex && !priorPhases.has(phase.id)).map(phase => phase.id))
+  const newNumbers = added.filter(task => /^T[1-9]\d*$/.test(task.id) && appendedPhases.has(task.phase))
+    .sort((a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1)))
+  let nextNumber = Math.max(0, ...existingIds.filter(id => /^T\d+[a-z]?$/i.test(id)).map(id => Number(taskId.exec(id)[1]))) + 1
+  for (const task of newNumbers) {
+    if (task.id !== 'T' + nextNumber) return problem('New task {0} in an appended phase must use the next number T{1}; existing identifiers are preserved', task.id, nextNumber)
+    nextNumber++
+  }
+  const appendedIds = new Set(newNumbers.map(task => task.id))
   const groups = new Map()
   for (const task of added) {
+    if (appendedIds.has(task.id)) continue
     const match = taskId.exec(task.id)
     if (!match || !/^T[1-9]\d*[a-z]$/.test(task.id))
       return problem('New task {0} must extend an existing task with a lowercase suffix, such as T9a; original task numbers are preserved', task.id)

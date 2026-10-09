@@ -83,7 +83,7 @@ import { runValidation, assertValidation, assertValidationEnvironment, validatio
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { findRoot, inside, storageHome } from './storage.mjs'
+import { findRoot, inside, storageHome, personalAgentLimit, savePersonalAgentLimit } from './storage.mjs'
 import { log, errorLog, tr } from './i18n.mjs'
 import {
   auditSyncPlan, contractChanges, displayIdentifier, formatContractChange,
@@ -279,9 +279,9 @@ function migrateState(name, { check = false, quiet = false } = {}) {
   state.schemaVersion = STATE_SCHEMA_VERSION
   state.plan.planningMode = status.mode
   if (state.plan.maxAgents === undefined) {
-    state.plan.maxAgents = 3
+    state.plan.maxAgents = personalAgentLimit()
     state.agentLimitHistory ??= []
-    state.agentLimitHistory.push({ previous: null, maxAgents: 3, actor: 'migration', at: new Date().toISOString(),
+    state.agentLimitHistory.push({ previous: null, maxAgents: state.plan.maxAgents, actor: 'migration', at: new Date().toISOString(),
       previousLimits: { maxParallel: state.plan.maxParallel ?? null, maxExecutors: state.plan.maxExecutors ?? null } })
   }
   if (status.mode === 'phase') {
@@ -930,7 +930,8 @@ function readPlan(planPath, state) {
   validatePlan(validationPlan, args['allow-overlap'] === true, historicalTasks(state), projectCwd(state?.plan.cwd))
   const identifierTasks = state ? plan.tasks.map(task => ['done', 'skipped'].includes(state.tasks[task.id]?.state)
     ? { ...task, deps: state.tasks[task.id].deps } : task) : plan.tasks
-  const identifierProblem = taskIdentifierProblem(identifierTasks, state ? Object.keys(state.tasks) : undefined, state?.tasks)
+  const identifierProblem = taskIdentifierProblem(identifierTasks, state ? Object.keys(state.tasks) : undefined, state?.tasks,
+    { phases: plan.phases ?? [], existingPhases: (state?.plan.phases ?? []).map(phase => phase.id) })
   if (identifierProblem) die(tr(identifierProblem.message, ...identifierProblem.values))
   const phaseProblem = phaseIdentifierProblem(plan.phases ?? [], (state?.plan.phases ?? []).map(phase => phase.id))
   if (phaseProblem) die(tr(phaseProblem.message, ...phaseProblem.values))
@@ -1986,7 +1987,7 @@ const commands = {
         phases: plan.phases ?? [],
         maxParallel: plan.maxParallel ?? DEFAULT_MAX_PARALLEL,
         maxExecutors: plan.maxExecutors ?? DEFAULT_MAX_EXECUTORS,
-        maxAgents: plan.maxAgents ?? 3,
+        maxAgents: plan.maxAgents ?? personalAgentLimit(),
         requireReview: plan.requireReview !== false,
         planningMode: plan.planningMode ?? ((plan.phases?.length ?? 0) ? 'phase' : 'task'),
         ...(plan.scopePolicy === undefined ? {} : { scopePolicy: plan.scopePolicy }),
@@ -2100,7 +2101,7 @@ const commands = {
       phases: plan.phases ?? [],
       maxParallel: plan.maxParallel ?? DEFAULT_MAX_PARALLEL,
       maxExecutors: plan.maxExecutors ?? DEFAULT_MAX_EXECUTORS,
-      maxAgents: state.plan.maxAgents ?? 3,
+      maxAgents: state.plan.maxAgents ?? personalAgentLimit(),
       requireReview: plan.requireReview !== false,
       ...(state.plan.planningMode ? { planningMode: state.plan.planningMode } : {}),
       ...((plan.scopePolicy ?? state.plan.scopePolicy) === undefined ? {} : { scopePolicy: plan.scopePolicy ?? state.plan.scopePolicy }),
@@ -2341,7 +2342,11 @@ const commands = {
         task: Object.fromEntries(Object.entries(value.task ?? {}).filter(([field]) => taskFields.has(field))),
       }
     }
+    const display = Object.fromEntries(['label', 'summary', 'validationSummary'].filter(field => task[field] !== undefined).map(field => [field, task[field]]))
     console.log(JSON.stringify({ task: id, source, ...(changedAt ? { changedAt } : {}),
+      display, displayNote: tr(Object.values(display).some(value => typeof value === 'string' && value.trim())
+        ? 'Display metadata is separate from the contract and does not change its digest'
+        : 'No display metadata recorded; this does not mean the contract is empty'),
       diff: args.diff === true, fields, before: select(before), after: select(after) }, null, 2))
   },
 
@@ -2437,6 +2442,7 @@ const commands = {
     state.agentLimitHistory.push(change)
     saveState(name, state)
     emit(name, 'agent_limit_changed', null, change)
+    if (args.default) savePersonalAgentLimit(max)
     log('[prumo] ' + tr('Agent limit updated: {0}; {1} in use', max, occupancy(state).busy.length))
   },
 
@@ -3959,8 +3965,8 @@ if (!['init', 'runs', 'migrate', 'sync-plan'].includes(cmd)) {
   if (!cmd.includes('phase') && args._[0] && Object.hasOwn(aliases, args._[0])) args._[0] = aliases[args._[0]]
   if (args.scope?.startsWith('tasks:')) args.scope = 'tasks:' + args.scope.slice(6).split(',').map(id => Object.hasOwn(aliases, id) ? aliases[id] : id).join(',')
   const initialMigration = migrationStatus(initialState)
-  // Um limite ausente usa o padrão 3; consultas e recusas não devem reescrever um plano atual.
-  if (initialMigration.needed && (initialState.schemaVersion !== STATE_SCHEMA_VERSION || initialMigration.structural)) withLock(name, () => {
+  // Alterar a capacidade não migra identificadores ou planejamento de uma execução legada.
+  if (cmd !== 'set-agent-limit' && initialMigration.needed && (initialState.schemaVersion !== STATE_SCHEMA_VERSION || initialMigration.structural)) withLock(name, () => {
     const state = loadState(name)
     if (!migrationStatus(state).needed) return
     const status = migrationStatus(state)

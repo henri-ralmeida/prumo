@@ -183,3 +183,7 @@ Validation-only changes can still use `refresh-contract` and fresh review in the
   do not force completed or active legacy work through planning. Tasks added to an old run get
   the new planning requirement. Installation never resets a run.
 - `sync-plan` preserves `done` and `skipped` contracts as history. Their old prose does not block synchronization or retry of other tasks. Do not relabel completed functional work as inspection. New and nonterminal tasks still need valid contracts; graph structure is checked for every task.
+
+### Acrescentar uma fase ao plano
+
+Após aprovação do novo escopo, `sync-plan` aceita fases novas anexadas ao final, com os próximos IDs `F` e tarefas com os próximos números `T` livres. Preserve IDs, fases e histórico anteriores; declare as dependências reais da fase nova e confira `sync-plan --dry-run` antes de gravar. Números novos em fases já existentes continuam recusados; ampliações nessas fases usam letras vinculadas à tarefa-base. A fase nova segue os mesmos gates de discussão, planejamento, autorização, execução e revisão.

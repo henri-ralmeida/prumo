@@ -522,14 +522,27 @@ const server = createServer((req, res) => {
     if (req.headers['content-type'] !== 'application/json') return json(res, 415, { error: 'JSON required' })
     let body = '', oversized = false
     req.on('data', chunk => { if (!oversized) { body += chunk; if (Buffer.byteLength(body) > 2048) { oversized = true; body = '' } } })
-    req.on('end', () => {
+    req.on('end', async () => {
       if (oversized) return json(res, 413, { error: 'request too large' })
-      let max
-      try { max = JSON.parse(body).maxAgents } catch { return json(res, 400, { error: 'invalid JSON' }) }
+      let max, allRuns
+      try { const value = JSON.parse(body); max = value.maxAgents; allRuns = value.allRuns ?? false } catch { return json(res, 400, { error: 'invalid JSON' }) }
       if (!Number.isSafeInteger(max) || max < 1) return json(res, 400, { error: 'maxAgents must be a positive integer' })
-      execFile(process.execPath, [ENGINE, 'set-agent-limit', '--max', String(max), '--actor', 'dashboard-user', '--confirmed-by-user', '--run', run],
-        { cwd: selected.root, env: { ...process.env, PRUMO_ROOT: selected.root, GRAPH_ROOT: selected.root, PRUMO_LANG: LANG }, windowsHide: true, timeout: 30000 },
-        (error, stdout, stderr) => error ? json(res, 409, { error: (stderr || stdout || error.message).trim() }) : json(res, 200, { maxAgents: max }))
+      if (typeof allRuns !== 'boolean') return json(res, 400, { error: 'allRuns must be a boolean' })
+      const snapshot = allRuns ? catalog() : null
+      const targets = allRuns ? snapshot.runs.map(item => ({ run: item.run, root: snapshot.roots.find(root => root.name === item.root).path })) : [{ run, root: selected.root }]
+      const updated = []
+      try {
+        for (const [index, target] of targets.entries()) {
+          await new Promise((resolve, reject) => execFile(process.execPath,
+            [ENGINE, 'set-agent-limit', '--max', String(max), '--actor', 'dashboard-user', '--confirmed-by-user', '--run', target.run,
+              ...(allRuns && index === targets.length - 1 ? ['--default'] : [])],
+            { cwd: target.root, env: { ...process.env, PRUMO_ROOT: target.root, GRAPH_ROOT: target.root, PRUMO_LANG: LANG }, windowsHide: true, timeout: 30000 },
+            (error, stdout, stderr) => error ? reject(new Error((stderr || stdout || error.message).trim())) : resolve()))
+          updated.push({ root: target.root, run: target.run })
+        }
+        json(res, 200, { maxAgents: max, ...(allRuns ? { allRuns: true, updated: updated.length, defaultMaxAgents: max } : {}) })
+      } catch (error) { json(res, 409, { error: error.message, updated: updated.length }) }
+
     })
     req.on('error', error => { if (!res.writableEnded) json(res, 400, { error: error.message }) })
     return

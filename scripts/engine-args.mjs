@@ -17,7 +17,7 @@ const definitions = {
   'skip-phase-planning': [1, 'reason', 'confirmed-by-user'],
   'finish-phase-planning': [1, 'plan-dir', 'reuse-unchanged-plans'],
   'begin-discussion': [1, 'agent', 'adopt-legacy'],
-  'set-agent-limit': [0, 'max actor', 'confirmed-by-user'],
+  'set-agent-limit': [0, 'max actor', 'confirmed-by-user default'],
   'skip-discussion': [1, 'reason', 'confirmed-by-user'],
   'finish-discussion': [1, 'context', 'accept-premature-work'],
   'plan-task': [1, 'agent context', 'accept-premature-work'],

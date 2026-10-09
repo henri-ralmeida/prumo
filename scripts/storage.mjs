@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, mkdirSync } from 'node:fs'
+import { writeAtomicState } from './atomic-state.mjs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve, relative, isAbsolute, sep, basename } from 'node:path'
 
@@ -16,6 +17,22 @@ export function legacyExecutionPending(state) {
 export function storageHome(env = process.env, home = homedir()) {
   if (env.PRUMO_HOME) return resolve(env.PRUMO_HOME)
   return resolve(join(home, '.local', 'share', 'prumo'))
+}
+
+// A preferência pertence a esta instalação; novos usuários continuam com três agentes.
+export function personalAgentLimit(env = process.env, home = homedir()) {
+  const file = join(storageHome(env, home), 'agent-preferences.json')
+  if (!existsSync(file)) return 3
+  const { maxAgents } = JSON.parse(readFileSync(file, 'utf8'))
+  if (!Number.isSafeInteger(maxAgents) || maxAgents < 1) throw new Error('Invalid personal agent limit')
+  return maxAgents
+}
+
+export function savePersonalAgentLimit(maxAgents, env = process.env, home = homedir()) {
+  if (!Number.isSafeInteger(maxAgents) || maxAgents < 1) throw new Error('Invalid personal agent limit')
+  const directory = storageHome(env, home)
+  mkdirSync(directory, { recursive: true })
+  writeAtomicState(join(directory, 'agent-preferences.json'), JSON.stringify({ maxAgents }) + '\n')
 }
 
 export function findRoot(env = process.env, cwd = process.cwd(), home = homedir()) {

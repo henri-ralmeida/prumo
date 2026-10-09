@@ -2366,3 +2366,53 @@ for (const lang of ['en', 'pt-BR']) for (const scope of ['phase', 'task']) {
     f.rejects(/fresh answered contract confirmation/, scope === 'phase' ? 'skip-phase-discussion' : 'skip-discussion', scope === 'phase' ? 'F1' : 'T1', '--reason', 'Dispensa não é aceite', '--confirmed-by-user')
   })
 }
+
+test('sync-plan anexa fase com tarefas novas e preserva tarefas concluídas e histórico', t => {
+  const f = phaseFixture(t, [{ id: 'T1', phase: 'F1', title: 'Entrega inicial' }])
+  const state = f.state()
+  state.tasks.T1.state = 'done'
+  state.tasks.T1.attempts = [{ n: 1, agent: 'executor', endedAt: '2026-01-01T00:00:00Z' }]
+  f.save(state)
+  const before = JSON.stringify(f.state().tasks.T1), events = f.events()
+  f.plan.phases.push({ id: 'F3', title: 'Produção' })
+  f.plan.tasks.push({ id: 'T2', phase: 'F3', title: 'Prontidão', summary: 'Conferir a prontidão para produção', deps: ['T1'], validation })
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.ok('sync-plan', '--plan', f.planPath, '--dry-run')
+  assert.equal(JSON.stringify(f.state().tasks.T1), before)
+  assert.equal(f.events(), events)
+  f.ok('sync-plan', '--plan', f.planPath)
+  assert.equal(JSON.stringify(f.state().tasks.T1), before)
+  assert.equal(f.state().tasks.T2.phase, 'F3')
+  assert.equal(f.state().tasks.T2.state, 'pending')
+  assert.ok(f.state().phaseWorkflows.F3)
+  assert.ok(f.events().startsWith(events))
+  f.plan.tasks.push({ id: 'T3', phase: 'F1', title: 'Inválida', summary: 'Não deslocar trabalho novo', deps: ['T1'], validation })
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  const saved = JSON.stringify(f.state()), recorded = f.events()
+  f.rejects(/lowercase suffix/, 'sync-plan', '--plan', f.planPath)
+  assert.equal(JSON.stringify(f.state()), saved)
+  assert.equal(f.events(), recorded)
+})
+for (const lang of ['en', 'pt-BR']) test('show-contract separa apresentação do contrato sem alterar digest em ' + lang, t => {
+  const f = phaseFixture(t, [{ id: 'T1', phase: 'F1', title: 'Contrato' }])
+  const env = { ...process.env, PRUMO_ROOT: f.root, PRUMO_HOME: dirname(f.root), PRUMO_LANG: lang }
+  const show = diff => {
+    const result = spawnSync(process.execPath, [engine, 'show-contract', 'T1', ...(diff ? ['--diff'] : [])], { cwd: f.project, env, encoding: 'utf8', windowsHide: true })
+    assert.equal(result.status, 0, result.stdout + result.stderr)
+    return JSON.parse(result.stdout)
+  }
+  const state = f.state(), digest = validationRuntime.phasePlanningContext(state, state.tasks.T1)
+  for (const field of ['label', 'summary', 'validationSummary']) delete state.tasks.T1[field]
+  f.save(state)
+  assert.deepEqual(show(false).display, {})
+  assert.match(show(false).displayNote, lang === 'en' ? /No display metadata/ : /Sem textos de apresentação/)
+  const display = { label: 'Contrato front', summary: 'Entrega do comportamento aprovado', validationSummary: 'Resultado validado' }
+  Object.assign(state.tasks.T1, display)
+  f.save(state)
+  for (const diff of [false, true]) {
+    const value = show(diff)
+    assert.deepEqual(value.display, display)
+    for (const field of Object.keys(display)) assert.equal(value.after.task[field], undefined)
+  }
+  assert.equal(validationRuntime.phasePlanningContext(f.state(), f.state().tasks.T1), digest)
+})

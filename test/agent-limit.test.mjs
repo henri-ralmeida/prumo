@@ -722,3 +722,35 @@ test('reduzir maxAgents abaixo da ocupação mantém agentes atuais e só libera
   assert.equal(f.state().tasks.T4.state, 'discussing')
   assert.equal(occupancy(f.state()).busy.length, 2)
 })
+
+test('preferência pessoal passa a novas execuções sem substituir limite explícito do plano', t => {
+  const f = fixture(t)
+  assert.equal(f.state().plan.maxAgents, 3)
+  f.ok('set-agent-limit', '--max', '6', '--actor', 'usuario', '--confirmed-by-user', '--default')
+  f.ok('init', '--plan', f.planPath, '--run', 'future')
+  const future = JSON.parse(readFileSync(join(f.root, '.specs/graph/future/state.json'), 'utf8'))
+  assert.equal(future.plan.maxAgents, 6)
+  const plan = JSON.parse(readFileSync(f.planPath, 'utf8'))
+  plan.maxAgents = 2
+  writeFileSync(f.planPath, JSON.stringify(plan))
+  f.ok('init', '--plan', f.planPath, '--run', 'explicit')
+  assert.equal(JSON.parse(readFileSync(join(f.root, '.specs/graph/explicit/state.json'), 'utf8')).plan.maxAgents, 2)
+})
+
+test('alterar capacidade preserva identificadores e histórico de execução legada', t => {
+  const f = fixture(t, { tasks: ['T1'], run: 'legacy-capacity-only' })
+  const state = f.state()
+  state.schemaVersion = 0
+  delete state.plan.planningMode
+  state.tasks.legacy = { ...state.tasks.T1, id: 'legacy', state: 'done', attempts: [{ n: 1, agent: 'executor', endedAt: '2026-01-01T00:00:00Z' }] }
+  delete state.tasks.T1
+  f.saveState(state)
+  const before = structuredClone(state.tasks)
+  f.ok('set-agent-limit', '--max', '6', '--actor', 'usuario', '--confirmed-by-user')
+  const saved = f.state()
+  assert.equal(saved.plan.maxAgents, 6)
+  assert.equal(saved.schemaVersion, 0)
+  assert.equal(saved.plan.planningMode, undefined)
+  assert.deepEqual(saved.tasks, before)
+  assert.equal(f.events().at(-1).type, 'agent_limit_changed')
+})

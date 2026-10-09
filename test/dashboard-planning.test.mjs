@@ -6148,3 +6148,18 @@ test('checkpoint após retomada separa duração da etapa de trabalho aferido e 
   ui.render(state)
   assert.match(ui.nodes.get('#orch').innerHTML, /Execução pausada: Pausa encerrada<\/b>/)
 })
+
+test('checkbox dos agentes envia alcance global somente quando marcado', async () => {
+  const ui = dashboard('pt-BR'), requests = []
+  ui.render({ run: 'limite', plan: {}, tasks: {}, agentControlToken: 'token' })
+  ui.run('tick = async () => {}')
+  ui.nodes.get('#agentLimitValue').value = '6'
+  ui.run("document.querySelector('#agentLimitAll').checked = true")
+  ui.run('fetch = handler', { handler: async (url, options) => { requests.push(JSON.parse(options.body)); return { ok: true, json: async () => ({ allRuns: true }) } } })
+  await ui.run('changeAgentLimit({preventDefault(){}})')
+  assert.deepEqual(requests[0], { maxAgents: 6, allRuns: true })
+  assert.match(ui.nodes.get('#agentLimitFeedback').textContent, /atuais e futuras/)
+  ui.run("document.querySelector('#agentLimitAll').checked = false")
+  await ui.run('changeAgentLimit({preventDefault(){}})')
+  assert.deepEqual(requests[1], { maxAgents: 6 })
+})

@@ -72,7 +72,8 @@ Declare as fases na ordem do plano com `F1`, `F2`, ...; novas fases usam o próx
 Novos planos não podem usar `HO1`, `REL1`, `T01`, `F0`, `F1B` ou outros formatos legados.
 Nomes antigos persistidos permanecem legíveis; uma padronização deles exige uma migração explícita
 das referências, preservando o conteúdo das tarefas e as provas já registradas.
-Ao ampliar o plano por `sync-plan`, preserve os números originais: uma correção vinculada a `T9`
+Ao acrescentar uma fase nova após todas as fases existentes por `sync-plan`, use os próximos números livres para as tarefas dessa fase; preserve os IDs, as fases e o histórico das tarefas anteriores. Números novos em fases existentes continuam recusados.
+Ao ampliar uma fase existente por `sync-plan`, preserve os números originais: uma correção vinculada a `T9`
 usa `T9a`, a próxima `T9b`, até `T9z`. Toda derivada permanece na mesma fase original de `T9`;
 não crie uma fase nova para acomodar letras e não mova a tarefa-base para contornar essa regra.
 Registre a ligação nas dependências: se a correção
@@ -438,3 +439,5 @@ whole-run pause/resume, run selection shortcuts and check discovery are document
 for explicit resume-run; --until is a forecast. Recording a pause does not interrupt
 external agents. Recorded stage duration may include waiting; never call it measured
 active work or use it as measured savings.
+
+O controle de agentes permite aplicar a cota somente à execução selecionada ou, com “aplicar para todos os fluxos”, às execuções atuais e ao padrão das futuras neste computador. Novas instalações usam 3; preferências pessoais não são distribuídas no pacote.

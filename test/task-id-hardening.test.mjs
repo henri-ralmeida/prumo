@@ -254,3 +254,25 @@ for (const [name, change, mapping, error] of rejectionCases) {
     assert.deepEqual(original, before)
   })
 }
+
+test('fases anexadas aceitam próximos números sem permitir números novos em fases antigas', () => {
+  const existing = { T1: { ...task('T1'), phase: 'F1' }, T2: { ...task('T2'), phase: 'F2' } }
+  const options = { phases: [{ id: 'F1' }, { id: 'F2' }, { id: 'F3' }], existingPhases: ['F1', 'F2'] }
+  const check = added => taskIdentifierProblem([...Object.values(existing), ...added], Object.keys(existing), existing, options)
+  assert.equal(check([{ ...task('T3', ['T2']), phase: 'F3' }, { ...task('T4', ['T3']), phase: 'F3' }]), null)
+  assert.ok(check([{ ...task('T3', ['T2']), phase: 'F2' }]))
+  assert.ok(check([{ ...task('T4', ['T2']), phase: 'F3' }]))
+  assert.equal(check([{ ...task('T2a', ['T2']), phase: 'F2' }, { ...task('T3', ['T2a']), phase: 'F3' }]), null)
+  assert.ok(taskIdentifierProblem([...Object.values(existing), { ...task('T3'), phase: 'F3' }], Object.keys(existing), existing,
+    { phases: [{ id: 'F1' }, { id: 'F3' }, { id: 'F2' }], existingPhases: ['F1', 'F2'] }))
+})
+
+test('fase legada já usada não vira fase nova por ausência no catálogo de fases', () => {
+  const existing = { T9: { ...task('T9'), phase: 'F1' } }
+  const options = { phases: [{ id: 'F1' }, { id: 'F2' }], existingPhases: [] }
+  const tasks = Object.values(existing)
+  assert.ok(taskIdentifierProblem([...tasks, { ...task('T10'), phase: 'F1' }], ['T9'], existing, options))
+  assert.equal(taskIdentifierProblem([...tasks, { ...task('T10'), phase: 'F2' }], ['T9'], existing, options), null)
+  const legacy = { t9: { ...task('t9'), phase: 'F1' } }
+  assert.equal(taskIdentifierProblem([...Object.values(legacy), { ...task('T10'), phase: 'F2' }], ['t9'], legacy, options), null)
+})

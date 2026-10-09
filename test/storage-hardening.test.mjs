@@ -9,7 +9,7 @@ import {
   graphRoots,
   inside,
   legacyExecutionPending,
-  storageHome,
+  storageHome, personalAgentLimit, savePersonalAgentLimit,
 } from '../scripts/storage.mjs'
 
 function temporary(t, label = 'prumo-storage-hardening-') {
@@ -182,4 +182,17 @@ test('seleção exige workspace quando não há raiz explícita e preserva alias
   assert.equal(new Set(roots.map(item => item.name)).size, roots.length)
   assert.equal(roots[0].path, selected)
   assert.equal(roots.filter(item => item.name.startsWith('alpha')).length, 3)
+})
+
+test('preferência de agentes é local e instalações novas continuam com três', t => {
+  const home = temporary(t), env = { PRUMO_HOME: join(home, 'central') }
+  assert.equal(personalAgentLimit(env, home), 3)
+  savePersonalAgentLimit(6, env, home)
+  assert.equal(personalAgentLimit(env, home), 6)
+  assert.equal(personalAgentLimit({ PRUMO_HOME: join(home, 'other') }, home), 3)
+  for (const value of [0, -1, 1.5, '6']) assert.throws(() => savePersonalAgentLimit(value, env, home), /Invalid personal/)
+  writeFileSync(join(env.PRUMO_HOME, 'agent-preferences.json'), JSON.stringify({ maxAgents: 0 }))
+  assert.throws(() => personalAgentLimit(env, home), /Invalid personal/)
+  writeFileSync(join(env.PRUMO_HOME, 'agent-preferences.json'), 'inválido')
+  assert.throws(() => personalAgentLimit(env, home))
 })

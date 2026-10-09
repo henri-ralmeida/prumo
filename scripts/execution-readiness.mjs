@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { personalAgentLimit } from './storage.mjs'
 import { hasCurrentTaskPlan, usesCurrentPlanning } from './validation.mjs'
 import { scopeConflicts } from './task-scope.mjs'
 
@@ -151,7 +152,7 @@ export function occupancy(state) {
   })
   const phasePlanners = phaseAgents.filter(agent => agent.state === 'planning')
   const phaseDiscussers = phaseAgents.filter(agent => agent.state === 'discussing')
-  const cap = state.plan.maxAgents ?? 3
+  const cap = state.plan.maxAgents ?? personalAgentLimit()
   return {
     executors,
     reviewers,
