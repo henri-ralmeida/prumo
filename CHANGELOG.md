@@ -2,6 +2,15 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.9.0 — 2026-10-09
+
+- Instale o Prumo e o PO First nos perfis do Hermes Agent e workspaces do OpenClaw, preservando instruções pessoais, modelos e credenciais.
+- Mantenha o workspace configurado do OpenClaw ao atualizar de outro diretório e informe o workspace explicitamente para configurações JSON5.
+- Documente planejamento nativo, invocação da skill, delegação e requisitos de sandbox das duas integrações.
+- Mostre dez harnesses em cinco colunas nas telas largas e adapte o layout às janelas menores.
+- Use logos oficiais do Hermes e OpenClaw com a paleta do Prumo, preserve os detalhes e remova o fundo residual do Hermes.
+- Mantenha o guia aberto na mesma etapa e posição de rolagem ao abrir documentação em outra aba; os controles explícitos de saída continuam funcionando.
+
 ## 2.8.0 — 2026-10-09
 
 - Abra o card do orquestrador para entender discussão, decisões e delegação, com sua atividade atual exibida ao vivo.

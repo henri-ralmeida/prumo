@@ -1,7 +1,7 @@
 {
   "name": "@henri-ralmeida/prumo",
-  "version": "2.8.0",
-  "description": "Evidence-driven task orchestration with PO First for Claude Code, Kiro, Codex, DeepSeek Harness, Antigravity, OpenCode, Grok Build and GitHub Copilot",
+  "version": "2.9.0",
+  "description": "Evidence-driven task orchestration with PO First for Claude Code, Kiro, Codex, DeepSeek Harness, Antigravity, OpenCode, Grok Build, GitHub Copilot, Hermes Agent and OpenClaw",
   "type": "module",
   "bin": {
     "prumo": "bin/prumo.mjs"
@@ -17,7 +17,7 @@
   },
   "homepage": "https://github.com/henri-ralmeida/prumo#readme",
   "bugs": "https://github.com/henri-ralmeida/prumo/issues",
-  "keywords": ["agent-skills", "claude-code", "kiro", "codex", "deepseek-harness", "dsh", "antigravity", "opencode", "grok-build", "github-copilot", "orchestration", "po-first"],
+  "keywords": ["agent-skills", "claude-code", "kiro", "codex", "deepseek-harness", "dsh", "antigravity", "opencode", "grok-build", "github-copilot", "orchestration", "po-first", "hermes-agent", "openclaw"],
   "files": ["bin/", "lib/", "scripts/*.mjs", "!scripts/*.test.mjs", "!scripts/*-smoke.mjs", "scripts/messages.json", "scripts/release-notes.json", "scripts/dashboard.html", "references/", "SKILL.md", "README.md", "README.pt-BR.md", "CHANGELOG.md", "LICENSE"],
   "scripts": {
     "test": "node --test scripts/*.test.mjs test/*.test.mjs",

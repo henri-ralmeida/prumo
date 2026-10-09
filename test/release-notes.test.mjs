@@ -181,3 +181,19 @@ test('notas da 2.8.0 explicam a atividade visual com tradução completa', () =>
   assert.ok(history[0].sections[0].items.some(item => item.includes('only toward active roles')))
   assert.deepEqual(releaseHistory(['2.8.0'], '2.8.0'), [])
 })
+
+test('atualização para 2.9.0 apresenta as duas integrações e traduz as melhorias do guia', () => {
+  const messages = JSON.parse(readFileSync(new URL('../scripts/messages.json', import.meta.url), 'utf8'))
+  const history = releaseHistory(['2.8.0'], '2.9.0')
+  assert.deepEqual(history.map(release => release.version), ['2.9.0'])
+  assert.equal(history[0].sections.length, 2)
+  for (const section of history[0].sections) {
+    assert.ok(messages[section.title]?.trim())
+    for (const item of section.items) assert.ok(messages[item]?.trim())
+  }
+  const items = history[0].sections.flatMap(section => section.items)
+  assert.ok(items.some(item => item.includes('Hermes Agent') && item.includes('OpenClaw')))
+  assert.ok(items.some(item => item.includes('five columns')))
+  assert.ok(items.some(item => item.includes('another tab')))
+  assert.deepEqual(releaseHistory(['2.9.0'], '2.9.0'), [])
+})

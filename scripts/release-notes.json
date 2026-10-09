@@ -1,4 +1,24 @@
 {
+  "2.9.0": {
+    "en": [
+      {
+        "title": "Added — Hermes Agent and OpenClaw integrations",
+        "items": [
+          "Install Prumo and PO First in Hermes Agent profiles and OpenClaw workspaces while preserving personal instructions, models and credentials",
+          "Keep the configured OpenClaw workspace when updating from another directory and require an explicit workspace for JSON5 configurations",
+          "Document native planning, skill invocation, delegation and sandbox requirements for both integrations"
+        ]
+      },
+      {
+        "title": "Improved — Responsive guide and official logos",
+        "items": [
+          "Show ten harnesses in five columns on wide screens and adapt the layout to smaller windows",
+          "Use official Hermes and OpenClaw logos with the Prumo palette, preserve their details and remove the residual Hermes background",
+          "Keep the guide open at the same step and scroll position when documentation opens in another tab; explicit exit controls still close it"
+        ]
+      }
+    ]
+  },
   "2.8.0": {
     "en": [
       {
