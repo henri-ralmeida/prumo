@@ -409,7 +409,7 @@ test('guia reutiliza as interfaces reais, documenta os oito ambientes e oferece 
   assert.match(section,/id="guideResultsFrame"/)
   assert.doesNotMatch(section,/guide-mock-card|Exemplo ilustrativo|no prumo|Legend/)
   assert.deepEqual([...section.matchAll(/<h3>([^<]+)<\/h3>/g)].map(match => match[1]),
-    ['Claude Code','Codex','Kiro','Deep Seek','Antigravity','OpenCode','Grok Build','GitHub Copilot'])
+    ['Claude Code','Codex','Kiro','Deep Seek','Antigravity','OpenCode','Grok','GitHub Copilot'])
   for (const href of ['https://code.claude.com/docs/en/common-workflows',
     'https://developers.openai.com/codex/cli/slash-commands', 'https://kiro.dev/docs/specs/plan/',
     'https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/plan/plan-mode/README.md',
