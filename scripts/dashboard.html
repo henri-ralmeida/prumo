@@ -1127,6 +1127,48 @@ SOFTWARE. -->
   html.guide-demo .node .tag { text-transform: none; }
   html.guide-demo .node .tag .tr { text-transform: none; }
   html.guide-demo #guideButton, html[data-guide-demo="results"] #resBtn { display: none; }
+  #onboarding.presenting { --guide-unit: clamp(1px, min(.075vw, .14vh), 2px); font-size: calc(14 * var(--guide-unit)); }
+  #onboarding.presenting .guide-head { width: min(calc(1440 * var(--guide-unit)), 100%); font-size: calc(12 * var(--guide-unit)); }
+  #onboarding.presenting #guideStepTitle { font-size: calc(16 * var(--guide-unit)); }
+  #onboarding.presenting h2 { font-size: calc(42 * var(--guide-unit)); }
+  #onboarding.presenting > p { width: min(calc(1080 * var(--guide-unit)), 100%); font-size: calc(16 * var(--guide-unit)); }
+  #onboarding.presenting .guide-head button { min-height: calc(42 * var(--guide-unit)); font-size: calc(13 * var(--guide-unit)); }
+  #onboarding.presenting .guide-intro { width: min(calc(1000 * var(--guide-unit)), 100%); margin-block: calc(36 * var(--guide-unit)); }
+  #onboarding.presenting .guide-intro > svg { width: calc(48 * var(--guide-unit)); height: calc(66 * var(--guide-unit)); }
+  #onboarding.presenting .guide-intro > strong { font-size: calc(72 * var(--guide-unit)); }
+  #onboarding.presenting .guide-intro > p { font-size: calc(24 * var(--guide-unit)); }
+  #onboarding.presenting .guide-purpose { gap: calc(28 * var(--guide-unit)); margin-top: calc(40 * var(--guide-unit)); }
+  #onboarding.presenting .guide-entities { grid-template-columns: repeat(3, calc(220 * var(--guide-unit))); gap: calc(38 * var(--guide-unit)) calc(36 * var(--guide-unit)); margin-block: calc(40 * var(--guide-unit)); }
+  #onboarding.presenting .guide-entities .role { width: calc(220 * var(--guide-unit)); height: calc(88 * var(--guide-unit)); padding: calc(10 * var(--guide-unit)) calc(14 * var(--guide-unit)); }
+  #onboarding.presenting .guide-entities .role-orchestrator { width: calc(260 * var(--guide-unit)); }
+  #onboarding.presenting .guide-entities .ric { width: calc(24 * var(--guide-unit)); height: calc(24 * var(--guide-unit)); }
+  #onboarding.presenting .guide-entities .oh { font-size: calc(18 * var(--guide-unit)); }
+  #onboarding.presenting .guide-entities .os { font-size: calc(12 * var(--guide-unit)); white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.35; }
+  #onboarding.presenting .guide-preview { width: min(calc(1440 * var(--guide-unit)), 100%); }
+  #onboarding.presenting .guide-preview iframe { height: clamp(470px, 62vh, 1200px); }
+  #onboarding.presenting .guide-harnesses { width: min(calc(1080 * var(--guide-unit)), 100%); }
+  #onboarding.presenting .guide-harness-grid h3 { font-size: calc(20 * var(--guide-unit)); }
+  #onboarding.presenting .guide-harness-grid code { font-size: calc(18 * var(--guide-unit)); }
+  #onboarding.presenting .guide-harness-grid :is(a, .guide-invoke) { font-size: calc(12 * var(--guide-unit)); }
+  #onboarding.presenting .guide-harness-grid .guide-invoke-options { font-size: clamp(11px, 1.3vw, calc(18 * var(--guide-unit))); }
+  #onboarding.presenting .guide-harness-grid :is(svg, .guide-brand-logo) { width: calc(40 * var(--guide-unit)); height: calc(40 * var(--guide-unit)); }
+  #onboarding.presenting .guide-handoff { font-size: calc(20 * var(--guide-unit)); }
+  @media (max-width: 700px) {
+    #onboarding.presenting .guide-entities { grid-template-columns: minmax(0, 260px); gap: 20px; margin-block: 24px; }
+    #onboarding.presenting .guide-purpose { gap: 16px; }
+    #onboarding.presenting .guide-head button { min-height: 42px; padding-inline: 10px; font-size: 12px; }
+    #onboarding.presenting .guide-harness-grid code { font-size: 16px; }
+  }
+  #guideMockRoles { position: relative; }
+  .guide-role-connections { position: absolute; top: calc(88 * var(--guide-unit)); left: 0; width: 100%; height: calc(38 * var(--guide-unit)); overflow: visible; pointer-events: none; }
+  .guide-role-connections path { fill: none; stroke-width: 1.5; }
+  .guide-role-connections .s-flow { stroke-width: 2.5; stroke-dasharray: 3 6; stroke-linecap: round; animation: flow9 .7s linear infinite; opacity: 0; }
+  #guideMockRoles:has([aria-pressed="true"]) .guide-role-connections [data-role="orchestrator"],
+  #guideMockRoles:has([data-guide-role="orchestrator"][aria-pressed="true"]) .guide-role-connections .s-flow,
+  #guideMockRoles:has([data-guide-role="planner"][aria-pressed="true"]) .guide-role-connections [data-role="plan"],
+  #guideMockRoles:has([data-guide-role="executor"][aria-pressed="true"]) .guide-role-connections [data-role="exec"],
+  #guideMockRoles:has([data-guide-role="reviewer"][aria-pressed="true"]) .guide-role-connections [data-role="rev"] { opacity: 1; }
+  @media (max-width: 700px) { .guide-role-connections { display: none; } }
   #onboarding [hidden] { display: none !important; }
   @media (max-width: 700px) { .guide-invitation { top: 108px; } }
   @media (prefers-reduced-motion: reduce) { html.guide-inviting #guideButton, .prumo-guide-target { animation: none !important; transition: none !important; } }
@@ -1268,7 +1310,7 @@ SOFTWARE. -->
     <p data-i18n="Approve the plan. Follow the work. Verify the result.">Approve the plan. Follow the work. Verify the result.</p>
     <div class="guide-purpose"><p data-i18n="Dependencies tell each agent what can start.">Dependencies tell each agent what can start.</p><p data-i18n="Independent review protects the completion gate.">Independent review protects the completion gate.</p><p data-i18n="The dashboard makes progress and measured gains visible.">The dashboard makes progress and measured gains visible.</p></div>
   </section>
-  <section id="guideMockRoles" class="guide-entities" hidden><button type="button" class="role guide-role role-orchestrator live" data-guide-role="orchestrator" aria-pressed="false"><svg class="ric" viewBox="0 0 30 30" aria-hidden="true"><circle cx="15" cy="7" r="4"/><path d="M15 11v5M6 24v-4h18v4M15 16v8"/><circle class="f" cx="6" cy="26" r="2"/><circle class="f" cx="15" cy="26" r="2"/><circle class="f" cx="24" cy="26" r="2"/></svg><span class="rt"><span class="oh"><span data-i18n="orchestrator">orchestrator</span></span><span class="os" data-i18n="Coordinates the approved plan">Coordinates the approved plan</span></span></span><span class="obeat"></span><i class="obar"></i></button><button type="button" class="role guide-role role-planner live" data-guide-role="planner" aria-pressed="false"><svg class="ric" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h10M4 19h6"/><circle cx="18" cy="17" r="3"/></svg><span class="rt"><span class="oh"><span data-i18n="planner">planner</span></span><span class="os" data-i18n="Turns scope into tasks">Turns scope into tasks</span></span></span><span class="obeat"></span><i class="obar"></i></button><button type="button" class="role guide-role role-executor live" data-guide-role="executor" aria-pressed="false"><svg class="ric" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3L5 14h6l-1 7 8-11h-6z"/></svg><span class="rt"><span class="oh"><span data-i18n="executor">executor</span><b class="rn"></b></span><span class="os" data-i18n="Implements and records evidence">Implements and records evidence</span></span></span><span class="obeat"></span><i class="obar"></i></button><button type="button" class="role guide-role role-reviewer live" data-guide-role="reviewer" aria-pressed="false"><svg class="ric" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M7.5 10.5l2 2 3.5-4M15.5 15.5L20 20"/></svg><span class="rt"><span class="oh"><span data-i18n="reviewer">reviewer</span></span><span class="os" data-i18n="Verifies independently">Verifies independently</span></span></span><span class="obeat"></span><i class="obar"></i></button></section>
+  <section id="guideMockRoles" class="guide-entities" hidden><svg class="guide-role-connections" viewBox="0 0 732 38" preserveAspectRatio="none" aria-hidden="true"><path style="stroke:#6a5222" d="M366 0V19"/><path class="s-flow" data-role="orchestrator" style="stroke:var(--accent)" d="M366 0V19"/><path style="stroke:#241d3d" d="M366 19H110V38"/><path class="s-flow" data-role="plan" style="stroke:var(--planning)" d="M366 19H110V38"/><path style="stroke:#34200f" d="M366 19V38"/><path class="s-flow" data-role="exec" style="stroke:var(--running)" d="M366 19V38"/><path style="stroke:#12293a" d="M366 19H622V38"/><path class="s-flow" data-role="rev" style="stroke:var(--review)" d="M366 19H622V38"/></svg><button type="button" class="role guide-role role-orchestrator live" data-guide-role="orchestrator" aria-pressed="false"><svg class="ric" viewBox="0 0 30 30" aria-hidden="true"><circle cx="15" cy="7" r="4"/><path d="M15 11v5M6 24v-4h18v4M15 16v8"/><circle class="f" cx="6" cy="26" r="2"/><circle class="f" cx="15" cy="26" r="2"/><circle class="f" cx="24" cy="26" r="2"/></svg><span class="rt"><span class="oh"><span data-i18n="orchestrator">orchestrator</span></span><span class="os" data-i18n="Coordinates the approved plan">Coordinates the approved plan</span></span></span><span class="obeat"></span><i class="obar"></i></button><button type="button" class="role guide-role role-planner live" data-guide-role="planner" aria-pressed="false"><svg class="ric" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h10M4 19h6"/><circle cx="18" cy="17" r="3"/></svg><span class="rt"><span class="oh"><span data-i18n="planner">planner</span></span><span class="os" data-i18n="Turns scope into tasks">Turns scope into tasks</span></span></span><span class="obeat"></span><i class="obar"></i></button><button type="button" class="role guide-role role-executor live" data-guide-role="executor" aria-pressed="false"><svg class="ric" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3L5 14h6l-1 7 8-11h-6z"/></svg><span class="rt"><span class="oh"><span data-i18n="executor">executor</span><b class="rn"></b></span><span class="os" data-i18n="Implements and records evidence">Implements and records evidence</span></span></span><span class="obeat"></span><i class="obar"></i></button><button type="button" class="role guide-role role-reviewer live" data-guide-role="reviewer" aria-pressed="false"><svg class="ric" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M7.5 10.5l2 2 3.5-4M15.5 15.5L20 20"/></svg><span class="rt"><span class="oh"><span data-i18n="reviewer">reviewer</span></span><span class="os" data-i18n="Verifies independently">Verifies independently</span></span></span><span class="obeat"></span><i class="obar"></i></button></section>
   <section id="guideExamplePanel" class="guide-preview" hidden><p class="guide-loading" role="status" hidden></p><iframe id="guideBoardFrame" title="Practice dashboard" data-i18n-title="Practice dashboard"></iframe></section>
   <section id="guideGainPanel" class="guide-preview" hidden><p class="guide-loading" role="status" hidden></p><iframe id="guideResultsFrame" title="Practice results" data-i18n-title="Practice results"></iframe></section>
   <section id="guideCommandPanel" class="guide-harnesses" hidden>
@@ -3646,9 +3688,11 @@ function render(s, events = []) {
       : `H ${x + (x < cx ? 4 : -4)} Q ${x} ${busY} ${x} ${busY + 4} V ${ROLES_Y}`
   }
   const hubHtml = [
-    ...Object.keys(live).map((key) => `<path class="s-frame" data-connection="${key}" style="stroke:${track[key]}" d="M ${cx} ${ocy} V ${busY} ${branch(key)}"/>`),
+    `<path class="s-frame" data-connection="orchestrator" style="stroke:#6a5222" d="M ${cx} ${ocy} V ${busY}"/>`,
+    ...(Object.values(live).some(Boolean) ? [`<path class="s-flow" data-role="orchestrator" style="stroke:var(--accent)" d="M ${cx} ${ocy} V ${busY}"/>`] : []),
+    ...Object.keys(live).map((key) => `<path class="s-frame" data-connection="${key}" style="stroke:${track[key]}" d="M ${cx} ${busY} ${branch(key)}"/>`),
     ...Object.keys(live).filter((key) => live[key]).map((key) =>
-      `<path class="s-flow" data-role="${key}" style="stroke:${colour[key]}" d="M ${cx} ${ocy} V ${busY} ${branch(key)}"/>`),
+      `<path class="s-flow" data-role="${key}" style="stroke:${colour[key]}" d="M ${cx} ${busY} ${branch(key)}"/>`),
   ].join('')
   if (hubHtml !== lastHubHtml) { $('#hubPaths').innerHTML = hubHtml; lastHubHtml = hubHtml }
   const hub = $('#hub')

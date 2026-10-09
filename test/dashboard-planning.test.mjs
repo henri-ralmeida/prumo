@@ -619,13 +619,15 @@ test('energia tracejada percorre conexão contínua apenas nos papéis ativos', 
   ui.render({ run: 'energia', plan: {}, tasks: {
     T1: task('T1', 'planning'), T2: task('T2', 'running'), T3: task('T3', 'reviewing'),
   } })
-  const paths = [...ui.nodes.get('#hubPaths').innerHTML.matchAll(/<path class="s-flow"[^>]+d="([^"]+)"/g)]
+  const paths = [...ui.nodes.get('#hubPaths').innerHTML.matchAll(/<path class="s-flow" data-role="(?:plan|exec|rev)"[^>]+d="([^"]+)"/g)]
   assert.equal(paths.length, 3)
   for (const [markup, path] of paths) {
     assert.equal((path.match(/M /g) ?? []).length, 1)
     assert.doesNotMatch(markup, /pathLength=/)
   }
   const base = ui.nodes.get('#hubPaths').innerHTML
+  assert.match(base, /data-role="orchestrator" style="stroke:var\(--accent\)"/)
+  assert.match(base, /data-connection="orchestrator" style="stroke:#6a5222"/)
   for (const [role, color] of [['plan', '#241d3d'], ['exec', '#34200f'], ['rev', '#12293a']]) {
     assert.ok(base.includes('class="s-frame" data-connection="' + role + '" style="stroke:' + color + '"'))
   }

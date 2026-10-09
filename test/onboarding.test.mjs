@@ -428,3 +428,24 @@ test('guia reutiliza as interfaces reais, documenta os oito ambientes e oferece 
   assert.match(html,/if \(GUIDE_DEMO\) \{[\s\S]*STATE = createGuideDemoData/)
   assert.match(html,/else \{\s*tick\(\)\s*loadIdentity\(\)/)
 })
+
+test('guia dimensiona conteúdo pela largura e altura sem fixar a escala nem cortar rolagem', () => {
+  const html = readFileSync(new URL('../scripts/dashboard.html', import.meta.url), 'utf8')
+  assert.match(html, /--guide-unit: clamp\(1px, min\(\.075vw, \.14vh\), 2px\)/)
+  for (const selector of ['h2', '.guide-intro > strong', '.guide-entities .oh', '.guide-harness-grid h3']) {
+    const rule = html.split('#onboarding.presenting ' + selector + ' {').at(-1).split('}')[0]
+    assert.match(rule, /font-size: calc\(\d+ \* var\(--guide-unit\)\)/)
+  }
+  assert.match(html, /height: 100dvh; overflow-y: auto; overflow-x: hidden/)
+  assert.match(html, /#onboarding.presenting \.guide-entities \{ grid-template-columns: minmax\(0, 260px\)/)
+})
+
+test('guia preserva saída amarela do orquestrador e ramificações nas cores dos três papéis', () => {
+  const html = readFileSync(new URL('../scripts/dashboard.html', import.meta.url), 'utf8')
+  const connections = html.match(/<svg class="guide-role-connections"[\s\S]*?<\/svg>/)?.[0]
+  assert.ok(connections)
+  assert.match(connections, /aria-hidden="true"/)
+  assert.match(connections, /data-role="orchestrator" style="stroke:var\(--accent\)" d="M366 0V19"/)
+  for (const role of ['plan', 'exec', 'rev']) assert.ok(connections.includes('data-role="' + role + '"'))
+  assert.match(html, /@media \(max-width: 700px\) \{ \.guide-role-connections \{ display: none;/)
+})
