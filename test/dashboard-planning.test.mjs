@@ -4730,9 +4730,17 @@ test('onboarding inline abre, percorre um papel e fecha o guia', async () => {
   await Promise.resolve()
   document.fullscreenElement = root
   document.listeners.get('fullscreenchange')?.()
+  const currentTitle = children.get('#guideTitle').textContent
+  const currentStep = children.get('#guideCount').textContent
+  root.scrollTop = 420
   document.fullscreenElement = null
   document.listeners.get('fullscreenchange')?.()
-  assert.equal(root.hidden, true)
+  assert.equal(root.hidden, false, 'perder tela cheia ao abrir documentação mantém o guia aberto')
+  assert.equal(children.get('#guideTitle').textContent, currentTitle)
+  assert.equal(children.get('#guideCount').textContent, currentStep)
+  assert.equal(root.scrollTop, 420, 'a posição no guia é preservada ao consultar a documentação')
+  keydown({ key: 'Escape', target: root, preventDefault() {} })
+  assert.equal(root.hidden, true, 'a saída explícita continua encerrando o guia')
 
   const defaultRoot = makeNode(), defaultLauncher = makeNode()
   defaultRoot.hidden = true
