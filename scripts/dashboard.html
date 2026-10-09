@@ -386,6 +386,8 @@ SOFTWARE. -->
                 letter-spacing: .04em; white-space: nowrap; }
   .lane-state.discussion { color: var(--discussion); border: 1px solid color-mix(in srgb, var(--discussion) 45%, transparent); }
   .lane-state.planning { color: var(--planning); border: 1px solid color-mix(in srgb, var(--planning) 45%, transparent); }
+  .lane-state.running { color: var(--running); border: 1px solid color-mix(in srgb, var(--running) 45%, transparent); }
+  .lane-state.reviewing { color: var(--review); border: 1px solid color-mix(in srgb, var(--review) 45%, transparent); }
   .phase-task-state { display: inline; margin-left: 4px; color: var(--dim); font-size: 8px; }
   .lbtn { height: var(--control-height); background: transparent; color: var(--text); border: 1px solid var(--line);
           border-radius: var(--control-radius); padding: 0 13px; font: inherit; font-size: 11.5px; cursor: pointer; margin-right: 0;
@@ -2374,6 +2376,10 @@ function refreshLiveClock() {
   const clock = elapsed > 0 ? fmtClock(Math.floor(elapsed / 1000)) : LIVE_CLOCK.emptyLabel
   setText('#agentClock', clock)
   $('#agentClock').setAttribute('aria-label', `${tr('Agent time')}: ${clock}${LIVE_CLOCK.suffix}`)
+  for (const element of document.querySelectorAll('[data-phase-clock]')) {
+    const timing = phaseElapsedTiming(STATE, element.dataset.phaseClock, EVENTS, Date.now())
+    element.textContent = `${tr('Elapsed time')} · ${fmtClock(Math.floor(timing.elapsedMs / 1000))}`
+  }
   // A próxima virada pertence ao tempo acumulado, que pode começar entre dois segundos do sistema.
   LIVE_CLOCK_TIMER = setTimeout(refreshLiveClock, LIVE_CLOCK.advancing ? 1000 - elapsed % 1000 : 1000)
 }
@@ -3391,6 +3397,13 @@ function paintStable(selector, markup) {
   paintedMarkup.set(selector, markup)
 }
 
+// A duração da fase inclui espera registrada, une sobreposições e exclui pausas; atividade aferida é outra medida.
+function phaseElapsedTiming(state, phaseId, events, now) {
+  const tasks = Object.fromEntries(Object.entries(state.tasks).filter(([, task]) => task.phase === phaseId))
+  const phaseWorkflows = Object.fromEntries(Object.entries(state.phaseWorkflows ?? {}).filter(([id]) => id === phaseId))
+  return recordedAgentTiming({ ...state, tasks, phaseWorkflows }, events, now, EVENTS_COMPLETE)
+}
+
 function render(s, events = []) {
   EVENTS = events
   document.title = `${s.empty ? 'sem-plano-verificar-guia-01' : s.run} - prumo`
@@ -3438,9 +3451,16 @@ function render(s, events = []) {
     const workflow = s.phaseWorkflows?.[p.id]
     const phaseState = workflow?.state === 'discussing' ? { cls: 'discussion', label: tr('discussion · orchestrator') } :
       workflow?.state === 'planning' ? { cls: 'planning', label: tr('Active time not measured') } : null
+    const phaseTiming = phaseElapsedTiming(s, p.id, events, timing.clockAt)
+    const activeRole = phaseStats[i].roles.includes('running') ? 'running' : phaseStats[i].roles.includes('reviewing') ? 'reviewing' : phaseStats[i].roles.includes('discussing') ? 'discussion' : 'planning'
+    const elapsedLabel = phaseStats[i].active && list.some(task => task.phase === p.id && !['done', 'skipped'].includes(task.state)) && phaseTiming.elapsedMs > 0
+      ? `${tr('Elapsed time')} · ${fmtClock(Math.floor(phaseTiming.elapsedMs / 1000))}` : null
+    const activeTime = Object.values(phaseTiming.roles).reduce((total, role) => total + role.measuredMs, 0)
+    const activeLabel = activeTime > 0 ? `${tr('Active work')} · ${fmtMs(activeTime)}` : tr('Active time not measured')
     return `<div class="lane ${laneStatus(i)}" style="top:${p.y}px;height:${p.height}px">
       <span class="lane-h"><button type="button" class="ln" style="color:${phaseColour(p.id)}" onclick="jumpToPhase('${jsq(p.id)}')" aria-label="${esc(tr('Locate phase on board'))}: ${esc(eventIds(p.id))}">${esc(eventIds(p.id))}</button><span class="lt">${esc(p.title)}</span><span class="ls">${esc(laneLine(i))}</span></span>${phaseState ?
-        `<span class="lane-state ${phaseState.cls}">${esc(phaseState.label)}</span>` : ''}</div>`
+        `<span class="lane-state ${elapsedLabel ? activeRole : phaseState.cls}"${elapsedLabel ? ` title="${esc(activeLabel)}" data-phase-clock="${esc(p.id)}"` : ''}>${esc(elapsedLabel ?? phaseState.label)}</span>` : elapsedLabel ?
+        `<span class="lane-state ${activeRole}" title="${esc(activeLabel)}" data-phase-clock="${esc(p.id)}">${esc(elapsedLabel)}</span>` : ''}</div>`
   }).join('') + `<div class="run-sum" style="top:${sumY}px"><b>${esc(tr(GUIDE_DEMO ? '{0} of {1} Prumo' : '{0} of {1} in prumo', completedTasks, validTasks))}</b><span>${esc(tr(GUIDE_DEMO ? 'Completion requires independent review.' : 'a task only enters prumo after the independent reviewer'))}</span></div>`
 
   paintStable('#lanes', lanesHtml)

@@ -1833,6 +1833,51 @@ test('dashboard renders separate planning queues, active planner hub and executi
   }
 })
 
+test('fase mostra tempo corrido independente de atividade aferida, sem duplicar paralelismo', () => {
+  const now = Date.parse('2026-10-09T12:10:00Z'), startedAt = '2026-10-09T12:00:00Z'
+  const initial = { run: 'phase-clock', plan: { phases: [{ id: 'F1', title: 'Fase' }] }, tasks: {
+    A: task('A', 'running', { phase: 'F1', attempts: [{ startedAt, activityTiming: 'explicit', activityIntervals: [] }] }),
+    B: task('B', 'running', { phase: 'F1', attempts: [{ startedAt, activityTiming: 'explicit', activityIntervals: [] }] }),
+  }, phaseWorkflows: { F1: { id: 'F1', state: 'planning', planningAttempts: [{ startedAt, activityTiming: 'explicit', activityIntervals: [], targets: ['A', 'B'] }] } } }
+  for (const lang of ['en', 'pt-BR']) {
+    const state = structuredClone(initial)
+    const ui = dashboard(lang)
+    ui.run(`Date = class extends Date { static now() { return ${now} } }`)
+    ui.render(state)
+    const markup = ui.nodes.get('#lanes').innerHTML
+    assert.match(markup, lang === 'en' ? />Elapsed time · 00:10:00</ : />Tempo corrido · 00:10:00</)
+    assert.match(markup, /lane-state running/)
+    assert.match(markup, lang === 'en' ? /title="Active time not measured"/ : /title="tempo ativo não aferido"/)
+    assert.equal(ui.run(`phaseElapsedTiming(STATE, 'F1', [], ${now}).elapsedMs`), 600000)
+    ui.run(`globalThis.clockNode = document.querySelector('#clockFixture'); clockNode.dataset.phaseClock = 'F1';
+      const originalQuery = document.querySelectorAll.bind(document);
+      document.querySelectorAll = selector => selector === '[data-phase-clock]' ? [clockNode] : originalQuery(selector);
+      Date = class extends Date { static now() { return ${now + 1000} } }; refreshLiveClock()`)
+    assert.match(ui.nodes.get('#clockFixture').textContent, /00:10:01/)
+    state.runPause = { startedAt: '2026-10-09T12:05:00Z' }
+    ui.render(state)
+    assert.equal(ui.run(`phaseElapsedTiming(STATE, 'F1', [], ${now + 60000}).elapsedMs`), 300000)
+    delete state.runPause
+    state.tasks.A.attempts[0].activityIntervals = [{ role: 'execution', startedAt, endedAt: '2026-10-09T12:02:00Z' }]
+    ui.render(state)
+    assert.match(ui.nodes.get('#lanes').innerHTML, lang === 'en' ? /title="Active work · 2m00"/ : /title="Trabalho ativo · 2m00"/)
+    state.tasks.A.state = 'reviewing'; state.tasks.B.state = 'done'; state.phaseWorkflows.F1.state = 'planned'
+    ui.render(state)
+    assert.match(ui.nodes.get('#lanes').innerHTML, /lane-state reviewing/)
+    state.tasks.A.state = 'discussing'
+    state.tasks.A.discussionAttempts = [{ startedAt, activityTiming: 'explicit' }]
+    ui.render(state)
+    assert.match(ui.nodes.get('#lanes').innerHTML, /lane-state discussion/)
+    state.tasks.A.state = 'planning'
+    state.tasks.A.planningAttempts = [{ startedAt, activityTiming: 'explicit' }]
+    ui.render(state)
+    assert.match(ui.nodes.get('#lanes').innerHTML, /lane-state planning/)
+    state.tasks.A.state = 'done'
+    ui.render(state)
+    assert.doesNotMatch(ui.nodes.get('#lanes').innerHTML, /data-phase-clock/)
+  }
+})
+
 test('dashboard observes phase discussion, phase planning and per-task input readiness in both languages', () => {
   const tasks = {
     A: task('A', 'pending', { phase: 'F1', deps: ['C'], planningRequired: true,
@@ -1856,7 +1901,8 @@ test('dashboard observes phase discussion, phase planning and per-task input rea
     assert.match(ui.nodes.get('#orchSub').textContent, lang === 'en' ?
       /phase discussion F1: 2 tasks.*phase execution locked/ : /discussão da fase F1: 2 tarefas.*execução da fase bloqueada/)
     assert.match(ui.nodes.get('#planSub').textContent, lang === 'en' ? /phase planning F2: 1 tasks/ : /planejamento da fase F2: 1 tarefas/)
-    assert.match(ui.nodes.get('#lanes').innerHTML, lang === 'en' ? /discussion · orchestrator/ : /discussão · orquestrador/)
+    assert.match(ui.nodes.get('#lanes').innerHTML, /lane-state discussion/)
+    assert.match(ui.nodes.get('#lanes').innerHTML, lang === 'en' ? /Elapsed time · 00:00:20/ : /Tempo corrido · 00:00:20/)
     assert.match(ui.nodes.get('#lanes').innerHTML, lang === 'en' ? /Active time not measured/ : /tempo ativo não aferido/)
     assert.match(ui.nodes.get('#lanes').innerHTML, /lane-state planning/)
     assert.match(ui.nodes.get('#nodes').innerHTML, lang === 'en' ? /unresolved later-phase input/ : /entrada de fase posterior não resolvida/)
