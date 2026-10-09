@@ -747,10 +747,13 @@ function printPendingContractConfirmations(state) {
     if (!phase.contractConfirmationRequired) continue
     const tasks = (phase.contractConfirmationRequired.tasks ?? []).map(displayIdentifier).join(', ')
     log('[prumo] ' + tr('contract confirmation required for phase {0}: {1}', phase.id, tasks || tr('current phase tasks')))
+    log('[prumo] ' + tr('skipping discussion is unavailable: inspect each updated contract with show-contract <task> --diff, then use begin-phase-discussion {0} and record the explicit user acceptance with confirmsContract', phase.id))
   }
   for (const task of Object.values(state.tasks)) {
-    if (task.contractConfirmationRequired)
+    if (task.contractConfirmationRequired) {
       log('[prumo] ' + tr('contract confirmation required for task {0}', displayIdentifier(task.id)))
+      log('[prumo] ' + tr('skipping discussion is unavailable: inspect show-contract {0} --diff, then use begin-discussion {0} and record the explicit user acceptance with confirmsContract', displayIdentifier(task.id)))
+    }
   }
 }
 

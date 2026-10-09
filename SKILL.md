@@ -333,7 +333,7 @@ que o trabalho anterior ao primeiro START não foi medido nem presumido.
 
 | State (from `ready`/`status`) | Next move | Command | Read |
 | --- | --- | --- | --- |
-| `ready_for_discussion` | Recommend discuss or skip, with reasons; wait for the user's choice | `begin-phase-discussion` / `skip-phase-discussion --reason --confirmed-by-user` | discussion.md |
+| `ready_for_discussion` | Recomende discutir ou pular somente quando permitido; se houver `contractConfirmationRequired`, pular está indisponível: apresente os contratos alterados e registre o aceite explícito na discussão | `begin-phase-discussion` / `skip-phase-discussion --reason --confirmed-by-user` | discussion.md |
 | `discussing` | Ask in the principal conversation until no consequential gray area remains; write discovery JSON | `finish-phase-discussion --context` | discussion.md |
 | `ready_to_plan` | Recommend plan or skip; dispatch one read-only planner per active target within the shared limit, or skip by user choice | `plan-phase --agent [--plan-dir]` / `skip-phase-planning` | planning.md |
 | `planning` | Validate and record the returned artifacts; bring `user-now` questions to the user | `finish-phase-planning --plan-dir` | planning.md |

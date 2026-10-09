@@ -8,6 +8,8 @@ na conversa principal; a fase também pode atribuir trabalhadores aos alvos ativ
 registros do motor: o orquestrador precisa criar agentes nativos com os nomes exatos antes de despachá-los. O planejamento em si está em
 [planning.pt-BR.md](planning.pt-BR.md); o schema JSON da descoberta está em [runtime.pt-BR.md](runtime.pt-BR.md#artefato-de-plano-da-tarefa).
 
+Quando `status` ou `ready` indicar `contractConfirmationRequired`, não ofereça pular discussão ou planejamento: a dispensa não confirma um contrato alterado. Consulte `show-contract <task> --diff` para cada alvo, apresente o contrato ao usuário, abra `begin-phase-discussion <phase>` (ou `begin-discussion <task>`) e registre o aceite explícito em uma pergunta recém-respondida com `confirmsContract`. Só depois conclua a discussão com o artefato correspondente.
+
 ## Dois níveis de planejamento
 
 O modo global Plan/Spec define e aprova o grafo e continua obrigatório. Discussão e planejamento são

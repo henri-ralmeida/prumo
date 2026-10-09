@@ -2336,3 +2336,33 @@ test('migracao de descobertas ocorre somente em escrita valida e referencia ause
   f.rejects(/ENOENT/, 'note', 'A', '--text', 'Escrita recusada sem histórico')
   assert.equal(JSON.stringify(f.state()), before)
 })
+
+for (const lang of ['en', 'pt-BR']) for (const scope of ['phase', 'task']) {
+  test('status e ready explicam a confirmação obrigatória sem alterar estado em ' + lang + ' para ' + scope, t => {
+    const f = phaseFixture(t, [{ id: 'T1', phase: 'F1', title: 'Contrato' }], { planningMode: scope })
+    const env = { ...process.env, PRUMO_ROOT: f.root, PRUMO_HOME: dirname(f.root), PRUMO_LANG: lang }
+    const cli = command => spawnSync(process.execPath, [engine, command], { cwd: f.project, env, encoding: 'utf8', windowsHide: true })
+    const warning = lang === 'en' ? /skipping discussion is unavailable/ : /pular discussão está indisponível/
+    for (const command of ['status', 'ready']) {
+      const result = cli(command)
+      assert.equal(result.status, 0, result.stdout + result.stderr)
+      assert.doesNotMatch(result.stdout, warning)
+    }
+    const state = f.state()
+    const owner = scope === 'phase' ? state.phaseWorkflows.F1 : state.tasks.T1
+    owner.contractConfirmationRequired = { at: new Date().toISOString(), tasks: ['T1'] }
+    f.save(state)
+    const before = JSON.stringify(f.state()), events = f.events()
+    for (const command of ['status', 'ready']) {
+      const result = cli(command)
+      assert.equal(result.status, 0, result.stdout + result.stderr)
+      assert.match(result.stdout, warning)
+      assert.match(result.stdout, scope === 'phase' ? /begin-phase-discussion F1/ : /begin-discussion T1/)
+      assert.match(result.stdout, /show-contract .* --diff/)
+      assert.match(result.stdout, /confirmsContract/)
+    }
+    assert.equal(JSON.stringify(f.state()), before)
+    assert.equal(f.events(), events)
+    f.rejects(/fresh answered contract confirmation/, scope === 'phase' ? 'skip-phase-discussion' : 'skip-discussion', scope === 'phase' ? 'F1' : 'T1', '--reason', 'Dispensa não é aceite', '--confirmed-by-user')
+  })
+}

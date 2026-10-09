@@ -8,6 +8,8 @@ remain in the principal conversation; a phase may also assign active target work
 engine records only, so the orchestrator must create native agents with the exact names before dispatching them. Planning itself is in
 [planning.md](planning.md); the discovery JSON schema is in [runtime.md](runtime.md#task-plan-artifact).
 
+Quando `status` ou `ready` indicar `contractConfirmationRequired`, pular discussão ou planejamento está indisponível: consulte `show-contract <task> --diff`, apresente o contrato alterado e registre o aceite explícito em uma discussão nova com `confirmsContract`, conforme a seção sobre mudanças de contrato abaixo.
+
 ## Two planning levels
 
 Global Plan/Spec mode defines and approves the graph and remains mandatory. Discussion and planning are
