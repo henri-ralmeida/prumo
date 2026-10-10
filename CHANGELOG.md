@@ -2,6 +2,13 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.9.2 — 2026-10-10
+
+- Explore o limite de agentes simultâneos em uma demonstração própria do dashboard no guia, com limite editável e checkbox para aplicar a todos os fluxos.
+- Mantenha as alterações do guia isoladas dos fluxos reais e preserve o padrão de 3 agentes nas novas instalações.
+- Remova o fundo preto do favicon preservando o símbolo facetado do Prumo.
+- Verifique a conclusão do guia e as atualizações visuais atrasadas após o fechamento, sem reduzir os requisitos de cobertura.
+
 ## 2.9.1 — 2026-10-10
 
 - Inicie tarefas aprovadas sem Git quando o escopo incluir arquivos locais e destinos externos, mantendo os caminhos externos no contrato.

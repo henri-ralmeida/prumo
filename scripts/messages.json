@@ -1764,5 +1764,11 @@
   "Preserve completed planning artifact counts when a task is blocked and resume with the existing approved plan": "Preserve a contagem de artefatos do planejamento concluído ao bloquear uma tarefa e retome com o plano aprovado existente",
   "Keep open planning bound to the approved discussion when a task is blocked, preserving completed discussion history and the other tasks' staged plans": "Mantenha o planejamento aberto vinculado à discussão aprovada ao bloquear uma tarefa, preservando o histórico concluído da discussão e os planos já recebidos das outras tarefas",
   "Improved — Faceted Prumo symbol": "Melhorado — Símbolo facetado do Prumo",
-  "Use the faceted Prumo symbol throughout the dashboard and guide, with a contrasting rounded favicon": "Use o símbolo facetado do Prumo no dashboard e no guia, com favicon arredondado e fundo de contraste"
+  "Use the faceted Prumo symbol throughout the dashboard and guide, with a contrasting rounded favicon": "Use o símbolo facetado do Prumo no dashboard e no guia, com favicon arredondado e fundo de contraste",
+  "Improved — Interactive agent controls in the guide": "Melhorado — Controle interativo de agentes no guia",
+  "Explore simultaneous agent limits in a dedicated dashboard guide demonstration, with an editable limit and the apply-to-all-runs checkbox": "Explore o limite de agentes simultâneos em uma demonstração própria do dashboard no guia, com limite editável e checkbox para aplicar a todos os fluxos",
+  "Keep guide changes isolated from real runs and preserve the default of 3 agents on new installations": "Mantenha as alterações do guia isoladas dos fluxos reais e preserve o padrão de 3 agentes nas novas instalações",
+  "Fixed — Transparent favicon and guide coverage": "Corrigido — Favicon transparente e cobertura do guia",
+  "Remove the black favicon background while preserving the faceted Prumo symbol": "Remova o fundo preto do favicon preservando o símbolo facetado do Prumo",
+  "Verify guide completion and late visual updates after closing without reducing coverage requirements": "Verifique a conclusão do guia e as atualizações visuais atrasadas após o fechamento, sem reduzir os requisitos de cobertura"
 }

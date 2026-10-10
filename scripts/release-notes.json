@@ -1,4 +1,22 @@
 {
+  "2.9.2": {
+    "en": [
+      {
+        "title": "Improved — Interactive agent controls in the guide",
+        "items": [
+          "Explore simultaneous agent limits in a dedicated dashboard guide demonstration, with an editable limit and the apply-to-all-runs checkbox",
+          "Keep guide changes isolated from real runs and preserve the default of 3 agents on new installations"
+        ]
+      },
+      {
+        "title": "Fixed — Transparent favicon and guide coverage",
+        "items": [
+          "Remove the black favicon background while preserving the faceted Prumo symbol",
+          "Verify guide completion and late visual updates after closing without reducing coverage requirements"
+        ]
+      }
+    ]
+  },
   "2.9.1": {
     "en": [
       {
