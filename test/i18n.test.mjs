@@ -148,21 +148,26 @@ test('dashboard embeds the current translator and remains valid JavaScript', () 
   assert.match(script, /if \(generation !== TICK_GENERATION\) return/, 'A superseded run response must not repaint the dashboard')
 })
 
-test('favicon uses the inline header mark path, weight and amber color', () => {
+test('favicon, dashboard e guia usam o mesmo prumo facetado com contraste adequado', () => {
   const html = readFileSync(new URL('../scripts/dashboard.html', import.meta.url), 'utf8')
   const encoded = html.match(/<link rel="icon" href="data:image\/svg\+xml,([^"]+)"/)[1]
   const favicon = decodeURIComponent(encoded)
-  const header = html.match(/<h1>(<svg[\s\S]*?<\/svg>)/)[1]
-  const attribute = (svg, name) => svg.match(new RegExp(name + "=['\\\"]([^'\\\"]+)['\\\"]"))?.[1]
-  const path = (svg) => svg.match(/<path d=['\"]([^'\"]+)['\"]/)[1]
-  const line = (svg) => svg.match(/<line\b[^>]*>/)[0]
-  const mark = (svg) => svg.match(/<path\b[^>]*>/)[0]
-  assert.equal(attribute(favicon, 'viewBox'), attribute(header, 'viewBox'))
-  assert.equal(path(favicon), path(header))
-  assert.equal(attribute(line(favicon), 'stroke-width'), attribute(line(header), 'stroke-width'))
-  assert.deepEqual([attribute(line(favicon), 'stroke'), attribute(mark(favicon), 'fill')],
-    [attribute(line(header), 'stroke'), attribute(mark(header), 'fill')])
-  assert.equal(attribute(mark(favicon), 'fill'), '#e8b04b')
-  assert.equal(attribute(line(favicon), 'stroke'), '#e8b04b')
-  assert.match(favicon, /viewBox=['"]0 0 22 30['"]/)
+  const marks = [...html.matchAll(/<svg class="prumo-logo"[^]*?<\/svg>/g)].map(match => match[0])
+  assert.equal(marks.length, 2, 'dashboard e abertura do guia usam o mesmo símbolo')
+  const geometry = svg => [...svg.matchAll(/<(?:circle|line|path)\b[^>]*\/>/g)].map(match => match[0])
+  for (const mark of marks) {
+    assert.deepEqual(geometry(mark), geometry(favicon))
+    assert.match(mark, /viewBox="0 0 28 80"/)
+    assert.match(mark, /aria-hidden="true"/)
+    assert.doesNotMatch(mark, /<rect/, 'a interface mantém o fundo transparente')
+  }
+  assert.match(favicon, /<circle[^>]*fill="#f1ece3"/)
+  assert.match(favicon, /<line[^>]*stroke="#f1ece3"/)
+  assert.match(favicon, /<path[^>]*fill="#e8b04b"/)
+  assert.match(favicon, /<path[^>]*fill="#edc174"/)
+  assert.match(favicon, /viewBox="0 0 80 80"/)
+  assert.match(favicon, /<rect[^>]*rx="12"[^>]*fill="#0e0d0b"/,
+    'o fundo escuro mantém o fio claro visível em abas claras ou escuras')
+  assert.doesNotMatch(favicon, /<image|<script|http[^"]*\.(?:png|jpg)/)
+  assert.doesNotMatch(html, /M5 10h12l-1\.4 5L11 29 6\.4 15z/)
 })

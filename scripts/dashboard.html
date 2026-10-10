@@ -50,7 +50,7 @@ SOFTWARE. -->
 <meta charset="utf-8" />
 <title>prumo</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22 30' fill='none'%3E%3Cline x1='11' y1='0' x2='11' y2='9' stroke='%23e8b04b' stroke-width='1.5'/%3E%3Cpath d='M5 10h12l-1.4 5L11 29 6.4 15z' fill='%23e8b04b'/%3E%3C/svg%3E" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2080%2080%22%20fill%3D%22none%22%3E%3Crect%20width%3D%2280%22%20height%3D%2280%22%20rx%3D%2212%22%20fill%3D%22%230e0d0b%22%2F%3E%3Cg%20transform%3D%22translate(26%200)%22%3E%3Ccircle%20cx%3D%2214%22%20cy%3D%223%22%20r%3D%222%22%20fill%3D%22%23f1ece3%22%2F%3E%3Cline%20x1%3D%2214%22%20y1%3D%225%22%20x2%3D%2214%22%20y2%3D%2236%22%20stroke%3D%22%23f1ece3%22%20stroke-width%3D%221.2%22%2F%3E%3Cpath%20d%3D%22M14%2036%2027%2053%2014%2079%201%2053Z%22%20fill%3D%22%23e8b04b%22%2F%3E%3Cpath%20d%3D%22M14%2036%2027%2053%2014%2056Z%22%20fill%3D%22%23edc174%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E" />
 <style>
   /* ---- tipografia incorporada: o dashboard inclui suas fontes para manter a mesma aparência,
      mesmo sem rede e com a CSP da página (font-src data:). Subconjuntos latinos e peso variável.
@@ -1187,7 +1187,7 @@ SOFTWARE. -->
   <filter id="guide-brand-tint-hermes" color-interpolation-filters="sRGB"><feColorMatrix in="SourceGraphic" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.2126 0.7152 0.0722 0 0" result="luminance"/><feComponentTransfer in="luminance" result="silhouette"><feFuncA type="linear" slope="1.12" intercept="-0.12"/></feComponentTransfer><feFlood result="tint"/><feComposite in="tint" in2="silhouette" operator="in"/></filter>
 </defs></svg>
 <header>
-  <h1><svg viewBox="0 0 22 30" fill="none" aria-hidden="true"><line x1="11" y1="0" x2="11" y2="9" stroke="#e8b04b" stroke-width="1.5"/><path d="M5 10h12l-1.4 5L11 29 6.4 15z" fill="#e8b04b"/></svg>prumo</h1>
+  <h1><svg class="prumo-logo" viewBox="0 0 28 80" fill="none" aria-hidden="true"><circle cx="14" cy="3" r="2" fill="#f1ece3"/><line x1="14" y1="5" x2="14" y2="36" stroke="#f1ece3" stroke-width="1.2"/><path d="M14 36 27 53 14 79 1 53Z" fill="#e8b04b"/><path d="M14 36 27 53 14 56Z" fill="#edc174"/></svg>prumo</h1>
   <details class="run-menu" id="runMenu">
     <summary class="run-trigger" id="runTrigger" aria-label="Select graph run" data-i18n-aria="Select graph run">
       <span class="run-copy"><b id="runName"></b><span id="runLabel"></span></span>
@@ -1315,7 +1315,7 @@ SOFTWARE. -->
   <h2 id="guideTitle"></h2><p id="guideDescription"></p>
   <p id="guideAnnouncement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p>
   <section id="guideIntroPanel" class="guide-intro">
-    <svg viewBox="0 0 22 30" fill="none" aria-hidden="true"><line x1="11" y1="0" x2="11" y2="9" stroke="#e8b04b" stroke-width="1.5"/><path d="M5 10h12l-1.4 5L11 29 6.4 15z" fill="#e8b04b"/></svg><strong>prumo</strong>
+    <svg class="prumo-logo" viewBox="0 0 28 80" fill="none" aria-hidden="true"><circle cx="14" cy="3" r="2" fill="#f1ece3"/><line x1="14" y1="5" x2="14" y2="36" stroke="#f1ece3" stroke-width="1.2"/><path d="M14 36 27 53 14 79 1 53Z" fill="#e8b04b"/><path d="M14 36 27 53 14 56Z" fill="#edc174"/></svg><strong>prumo</strong>
     <p data-i18n="Approve the plan. Follow the work. Verify the result.">Approve the plan. Follow the work. Verify the result.</p>
     <div class="guide-purpose"><p data-i18n="Dependencies tell each agent what can start.">Dependencies tell each agent what can start.</p><p data-i18n="Independent review protects the completion gate.">Independent review protects the completion gate.</p><p data-i18n="The dashboard makes progress and measured gains visible.">The dashboard makes progress and measured gains visible.</p></div>
   </section>

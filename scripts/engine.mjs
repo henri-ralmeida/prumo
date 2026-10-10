@@ -1082,7 +1082,9 @@ function excludeBlockedPhaseTask(state, task) {
     if (record.activeTargets) record.activeTargets = record.activeTargets.filter(id => id !== task.id)
     if (record.queuedTargets) record.queuedTargets = record.queuedTargets.filter(id => id !== task.id)
     if (record.stagedPlans) record.stagedPlans = record.stagedPlans.filter(item => item.task !== task.id)
-    if (record.contextTargets) record.contextTargets = record.contextTargets.filter(id => id !== task.id)
+    const discussion = record === phase.planningAttempts?.at(-1) ? currentPhaseDiscussionDecision(state, phase) : null
+    if (discussion) record.contextTargets = [...discussion.targets]
+    else if (record.contextTargets) record.contextTargets = record.contextTargets.filter(id => id !== task.id)
     const targets = (record.contextTargets ?? record.targets).map(id => state.tasks[id]).filter(Boolean)
     record.context = phaseContext(state, phase.id, targets)
     record.contextSnapshot = phaseContextSnapshot(state, targets)

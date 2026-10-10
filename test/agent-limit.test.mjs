@@ -592,6 +592,40 @@ test('bloquear tarefa após planejamento preserva alvos e denominador da rodada 
     'histórico sem contador usa os artefatos vinculados aos alvos da rodada encerrada')
 })
 
+test('bloquear artefato recebido em rodada aberta preserva os planos das outras tarefas', t => {
+  const f = phaseFixture(t, { run: 'block-staged-plan' })
+  f.ok('skip-phase-discussion', 'F1', '--reason', 'Contratos confirmados', '--confirmed-by-user')
+  f.ok('plan-phase', 'F1', '--agent', 'T1=p1', '--agent', 'T2=p2', '--agent', 'T3=p3', '--agent', 'T4=p4')
+  f.finishPhasePlanning(['T1', 'T2', 'T3'])
+  const before = f.phase().planningAttempts.at(-1).stagedPlans.filter(item => item.task !== 'T1')
+  f.ok('block', 'T1', '--reason', 'Aguardar entrada externa antes de aceitar o artefato')
+  assert.deepEqual(f.phase().planningAttempts.at(-1).stagedPlans, before)
+  f.finishPhasePlanning(['T4'])
+  assert.equal(f.state().tasks.T1.taskPlan, undefined)
+  for (const id of ['T2', 'T3', 'T4']) assert.ok(f.state().tasks[id].taskPlan)
+  assert.match(f.ok('status').stdout, /planning round F1.*artifacts 3\/3/)
+})
+
+test('bloqueio atualiza caches da discussão aberta sem alterar descobertas de outra rodada', t => {
+  for (const matching of [true, false]) {
+    const f = phaseFixture(t, { run: `block-discussion-cache-${matching}` })
+    f.ok('begin-phase-discussion', 'F1')
+    const state = f.state(), phase = state.phaseWorkflows.F1
+    const round = phase.discussionAttempts.at(-1)
+    round.contextTargets = [...round.targets]
+    const discovery = { roundId: matching ? round.roundId : 'rodada-anterior', context: round.context }
+    round.discovery = { ...discovery }
+    phase.discovery = { ...discovery }
+    f.saveState(state)
+    f.ok('block', 'T1', '--reason', 'Entrada externa pendente')
+    const current = f.phase(), active = current.discussionAttempts.at(-1)
+    assert.deepEqual(active.contextTargets, ['T2', 'T3', 'T4'])
+    assert.notEqual(active.context, round.context)
+    assert.equal(active.discovery.context, matching ? active.context : discovery.context)
+    assert.equal(current.discovery.context, matching ? active.context : discovery.context)
+  }
+})
+
 test('bloqueio externo no meio da onda remove alvo ativo ou enfileirado e dispensa seus artefatos', t => {
   const active = phaseFixture(t, { run: 'phase-block-active' })
   active.ok('skip-phase-discussion', 'F1', '--reason', 'Discussão já confirmada', '--confirmed-by-user')
