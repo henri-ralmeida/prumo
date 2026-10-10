@@ -5,6 +5,22 @@ import { releaseHistory, releaseNotes } from '../lib/release-notes.mjs'
 
 const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 
+test('atualização para 2.9.1 informa segurança das evidências, histórico e símbolo com tradução completa', () => {
+  const messages = JSON.parse(readFileSync(new URL('../scripts/messages.json', import.meta.url), 'utf8'))
+  const history = releaseHistory(['2.9.0'], '2.9.1')
+  assert.deepEqual(history.map(release => release.version), ['2.9.1'])
+  assert.equal(history[0].sections.length, 2)
+  for (const section of history[0].sections) {
+    assert.ok(messages[section.title]?.trim())
+    for (const item of section.items) assert.ok(messages[item]?.trim())
+  }
+  const items = history[0].sections.flatMap(section => section.items)
+  for (const rule of ['without Git', 'independent reviewer', 'completed planning', 'approved discussion', 'rounded favicon']) {
+    assert.ok(items.some(item => item.includes(rule)))
+  }
+  assert.deepEqual(releaseHistory(['2.9.1'], '2.9.1'), [])
+})
+
 test('atualização para 2.7.1 explica reaproveitamento seguro e nomes compactos com tradução', () => {
   const messages = JSON.parse(readFileSync(new URL('../scripts/messages.json', import.meta.url), 'utf8'))
   const history = releaseHistory(['2.7.0'], '2.7.1')

@@ -1,4 +1,23 @@
 {
+  "2.9.1": {
+    "en": [
+      {
+        "title": "Fixed — External delivery evidence and planning history",
+        "items": [
+          "Start approved tasks without Git when their scope includes repository files and external destinations, keeping external paths in the contract",
+          "Require independent reviewer scope evidence for external destinations, with or without Git, while refusing unsafe delivery paths",
+          "Preserve completed planning artifact counts when a task is blocked and resume with the existing approved plan",
+          "Keep open planning bound to the approved discussion when a task is blocked, preserving completed discussion history and the other tasks' staged plans"
+        ]
+      },
+      {
+        "title": "Improved — Faceted Prumo symbol",
+        "items": [
+          "Use the faceted Prumo symbol throughout the dashboard and guide, with a contrasting rounded favicon"
+        ]
+      }
+    ]
+  },
   "2.9.0": {
     "en": [
       {

@@ -2,6 +2,14 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.9.1 — 2026-10-10
+
+- Inicie tarefas aprovadas sem Git quando o escopo incluir arquivos locais e destinos externos, mantendo os caminhos externos no contrato.
+- Exija evidência de escopo do revisor independente para destinos externos, com ou sem Git, preservando a recusa de caminhos inseguros nas entregas.
+- Preserve a contagem de artefatos do planejamento concluído ao bloquear uma tarefa e retome com o plano aprovado existente.
+- Mantenha o planejamento aberto vinculado à discussão aprovada ao bloquear uma tarefa, preservando o histórico concluído da discussão e os planos já recebidos das outras tarefas.
+- Use o símbolo facetado do Prumo no dashboard e no guia, com favicon arredondado e fundo de contraste.
+
 ## 2.9.0 — 2026-10-09
 
 - Instale o Prumo e o PO First nos perfis do Hermes Agent e workspaces do OpenClaw, preservando instruções pessoais, modelos e credenciais.

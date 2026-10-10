@@ -1757,5 +1757,12 @@
   "Improved — Responsive guide and official logos": "Melhorado — Guia responsivo e logos oficiais",
   "Show ten harnesses in five columns on wide screens and adapt the layout to smaller windows": "Mostre dez harnesses em cinco colunas nas telas largas e adapte o layout às janelas menores",
   "Use official Hermes and OpenClaw logos with the Prumo palette, preserve their details and remove the residual Hermes background": "Use logos oficiais do Hermes e OpenClaw com a paleta do Prumo, preserve os detalhes e remova o fundo residual do Hermes",
-  "Keep the guide open at the same step and scroll position when documentation opens in another tab; explicit exit controls still close it": "Mantenha o guia aberto na mesma etapa e posição de rolagem ao abrir documentação em outra aba; os controles explícitos de saída continuam funcionando"
+  "Keep the guide open at the same step and scroll position when documentation opens in another tab; explicit exit controls still close it": "Mantenha o guia aberto na mesma etapa e posição de rolagem ao abrir documentação em outra aba; os controles explícitos de saída continuam funcionando",
+  "Fixed — External delivery evidence and planning history": "Corrigido — Evidências externas de entrega e histórico de planejamento",
+  "Start approved tasks without Git when their scope includes repository files and external destinations, keeping external paths in the contract": "Inicie tarefas aprovadas sem Git quando o escopo incluir arquivos locais e destinos externos, mantendo os caminhos externos no contrato",
+  "Require independent reviewer scope evidence for external destinations, with or without Git, while refusing unsafe delivery paths": "Exija evidência de escopo do revisor independente para destinos externos, com ou sem Git, preservando a recusa de caminhos inseguros nas entregas",
+  "Preserve completed planning artifact counts when a task is blocked and resume with the existing approved plan": "Preserve a contagem de artefatos do planejamento concluído ao bloquear uma tarefa e retome com o plano aprovado existente",
+  "Keep open planning bound to the approved discussion when a task is blocked, preserving completed discussion history and the other tasks' staged plans": "Mantenha o planejamento aberto vinculado à discussão aprovada ao bloquear uma tarefa, preservando o histórico concluído da discussão e os planos já recebidos das outras tarefas",
+  "Improved — Faceted Prumo symbol": "Melhorado — Símbolo facetado do Prumo",
+  "Use the faceted Prumo symbol throughout the dashboard and guide, with a contrasting rounded favicon": "Use o símbolo facetado do Prumo no dashboard e no guia, com favicon arredondado e fundo de contraste"
 }
