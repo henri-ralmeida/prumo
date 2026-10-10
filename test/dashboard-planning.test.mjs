@@ -4820,7 +4820,15 @@ test('onboarding inline abre, percorre um papel e fecha o guia', async () => {
   await Promise.resolve()
   await new Promise(resolve => setImmediate(resolve))
   document.exitFullscreen = () => { throw new Error('saída bloqueada') }
+  queuedOnboarding.open()
+  for (let step = 0; step < 5; step += 1) children.get('#guideNext').emit('click')
+  const pendingBeforeClose = pendingFrames.shift()
+  assert.equal(typeof pendingBeforeClose, 'function')
   queuedOnboarding.close()
+  const closedTitle = children.get('#guideTitle').textContent
+  pendingBeforeClose()
+  assert.equal(root.hidden, true, 'atualizacao visual atrasada nao reabre o guia')
+  assert.equal(children.get('#guideTitle').textContent, closedTitle)
   document.fullscreenElement = null
   let resolveDelayedFullscreen
   root.requestFullscreen = () => {
