@@ -33,7 +33,7 @@ export function dashboardWithCatalog(html) {
     .replace(/\/\*PRUMO_I18N_START\*\/[\s\S]*?\/\*PRUMO_I18N_END\*\//, () => block)
     .replace(/\/\*PRUMO_GAIN_HELPERS_START\*\/[\s\S]*?\/\*PRUMO_GAIN_HELPERS_END\*\//, () => helpers)
     .replace(/\/\*PRUMO_GUIDE_START\*\/[\s\S]*?\/\*PRUMO_GUIDE_END\*\//, () => guide)
-    .replace(/(<section id="guideMockRoles"[^>]*>)[\s\S]*?<\/section>/, (_match, opening) => opening + guideConnections + guideRoles + '<p class="guide-agent-help" data-i18n="The default is 3 simultaneous agents per run, shared by discussion, planning, execution and review. Open the agents control to change it. Apply to all runs updates current runs and saves the default for future runs on this computer; leave it unchecked to change only the selected run.">The default is 3 simultaneous agents per run, shared by discussion, planning, execution and review. Open the agents control to change it. Apply to all runs updates current runs and saves the default for future runs on this computer; leave it unchecked to change only the selected run.</p>' + '</section>')
+    .replace(/(<section id="guideMockRoles"[^>]*>)[\s\S]*?<\/section>/, (_match, opening) => opening + guideConnections + guideRoles + '</section>')
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

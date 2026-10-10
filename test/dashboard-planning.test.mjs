@@ -6171,3 +6171,23 @@ test('checkbox dos agentes envia alcance global somente quando marcado', async (
   await ui.run('changeAgentLimit({preventDefault(){}})')
   assert.deepEqual(requests[1], { maxAgents: 6 })
 })
+
+test('guia abre controle de agentes e aplica limite apenas na demonstracao', async () => {
+  const mock = { state: null, urls: [] }
+  const ui = dashboard('pt-BR', 1000, new Map(), mock, { full: true, guideDemo: 'board' })
+  assert.equal(ui.nodes.get('#agentLimitMenu').hidden, false)
+  ui.run("window.prumoGuideDemo.focus('agents')")
+  assert.equal(ui.nodes.get('#agentLimitMenu').open, true)
+  assert.equal(ui.nodes.get('#filterPanel').hidden, true)
+  const before = mock.urls.length
+  ui.run("$('#agentLimitValue').value = '6'; $('#agentLimitAll').checked = true")
+  await ui.run('changeAgentLimit({preventDefault(){}})')
+  assert.equal(ui.run('STATE.plan.maxAgents'), 6)
+  assert.equal(mock.urls.length, before)
+  assert.match(ui.nodes.get('#agentLimitFeedback').textContent, /futuras/)
+  ui.run("$('#agentLimitAll').checked = false; $('#agentLimitValue').value = '3'")
+  await ui.run('changeAgentLimit({preventDefault(){}})')
+  assert.equal(ui.run('STATE.plan.maxAgents'), 3)
+  ui.run("window.prumoGuideDemo.focus('card')")
+  assert.equal(ui.nodes.get('#agentLimitMenu').open, false)
+})

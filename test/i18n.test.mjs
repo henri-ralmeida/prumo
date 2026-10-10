@@ -166,8 +166,7 @@ test('favicon, dashboard e guia usam o mesmo prumo facetado com contraste adequa
   assert.match(favicon, /<path[^>]*fill="#e8b04b"/)
   assert.match(favicon, /<path[^>]*fill="#edc174"/)
   assert.match(favicon, /viewBox="0 0 80 80"/)
-  assert.match(favicon, /<rect[^>]*rx="12"[^>]*fill="#0e0d0b"/,
-    'o fundo escuro mantém o fio claro visível em abas claras ou escuras')
+  assert.doesNotMatch(favicon, /<rect/, 'o favicon tem fundo transparente')
   assert.doesNotMatch(favicon, /<image|<script|http[^"]*\.(?:png|jpg)/)
   assert.doesNotMatch(html, /M5 10h12l-1\.4 5L11 29 6\.4 15z/)
 })

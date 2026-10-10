@@ -75,6 +75,7 @@ export function createPrumoOnboarding({ root, launcher, document, window, transl
     { title: 'Explore this dashboard', heading: 'Dashboard', demos: [
       { title: 'Phases and tasks', description: 'Phases organize the plan. Task IDs identify the work; their colors show the current state. Click a phase or a task.', target: 'board' },
       { title: 'Filters and counts', description: 'Try the filters. They change the visible cards; completed totals exclude skipped tasks and preserve the full plan.', target: 'filters' },
+      { title: 'Maximum simultaneous agents', description: 'The default is 3 simultaneous agents per run, shared by discussion, planning, execution and review. Open the agents control to change it. Apply to all runs updates current runs and saves the default for future runs on this computer; leave it unchecked to change only the selected run.', target: 'agents' },
       { title: 'Task card', description: 'Click a task to read its summary, validation and dependencies. The expansion arrow opens the full details.', target: 'card' },
       { title: 'Progress and activity', description: 'Green counts completed tasks. The other colored segments show discussion, planning, execution and review in progress, without increasing completion.', target: 'activity' },
     ] },

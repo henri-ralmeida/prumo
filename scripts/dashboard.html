@@ -50,7 +50,7 @@ SOFTWARE. -->
 <meta charset="utf-8" />
 <title>prumo</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2080%2080%22%20fill%3D%22none%22%3E%3Crect%20width%3D%2280%22%20height%3D%2280%22%20rx%3D%2212%22%20fill%3D%22%230e0d0b%22%2F%3E%3Cg%20transform%3D%22translate(26%200)%22%3E%3Ccircle%20cx%3D%2214%22%20cy%3D%223%22%20r%3D%222%22%20fill%3D%22%23f1ece3%22%2F%3E%3Cline%20x1%3D%2214%22%20y1%3D%225%22%20x2%3D%2214%22%20y2%3D%2236%22%20stroke%3D%22%23f1ece3%22%20stroke-width%3D%221.2%22%2F%3E%3Cpath%20d%3D%22M14%2036%2027%2053%2014%2079%201%2053Z%22%20fill%3D%22%23e8b04b%22%2F%3E%3Cpath%20d%3D%22M14%2036%2027%2053%2014%2056Z%22%20fill%3D%22%23edc174%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2080%2080%22%20fill%3D%22none%22%3E%3Cg%20transform%3D%22translate(26%200)%22%3E%3Ccircle%20cx%3D%2214%22%20cy%3D%223%22%20r%3D%222%22%20fill%3D%22%23f1ece3%22%2F%3E%3Cline%20x1%3D%2214%22%20y1%3D%225%22%20x2%3D%2214%22%20y2%3D%2236%22%20stroke%3D%22%23f1ece3%22%20stroke-width%3D%221.2%22%2F%3E%3Cpath%20d%3D%22M14%2036%2027%2053%2014%2079%201%2053Z%22%20fill%3D%22%23e8b04b%22%2F%3E%3Cpath%20d%3D%22M14%2036%2027%2053%2014%2056Z%22%20fill%3D%22%23edc174%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E" />
 <style>
   /* ---- tipografia incorporada: o dashboard inclui suas fontes para manter a mesma aparência,
      mesmo sem rede e com a CSP da página (font-src data:). Subconjuntos latinos e peso variável.
@@ -1165,7 +1165,6 @@ SOFTWARE. -->
     #onboarding.presenting .guide-harness-grid code { font-size: 16px; }
   }
   #guideMockRoles { position: relative; }
-  .guide-agent-help { grid-column: 1/-1; max-width: 72ch; justify-self: center; font-size: calc(14 * var(--guide-unit)); }
   .guide-role-connections { position: absolute; top: calc(88 * var(--guide-unit)); left: 0; width: 100%; height: calc(38 * var(--guide-unit)); overflow: visible; pointer-events: none; }
   .guide-role-connections path { fill: none; stroke-width: 1.5; }
   .guide-role-connections .s-flow { stroke-width: 2.5; stroke-dasharray: 3 6; stroke-linecap: round; animation: flow9 .7s linear infinite; opacity: 0; }
@@ -1319,7 +1318,7 @@ SOFTWARE. -->
     <p data-i18n="Approve the plan. Follow the work. Verify the result.">Approve the plan. Follow the work. Verify the result.</p>
     <div class="guide-purpose"><p data-i18n="Dependencies tell each agent what can start.">Dependencies tell each agent what can start.</p><p data-i18n="Independent review protects the completion gate.">Independent review protects the completion gate.</p><p data-i18n="The dashboard makes progress and measured gains visible.">The dashboard makes progress and measured gains visible.</p></div>
   </section>
-  <section id="guideMockRoles" class="guide-entities" hidden><svg class="guide-role-connections" viewBox="0 0 732 38" preserveAspectRatio="none" aria-hidden="true"><path style="stroke:#6a5222" d="M366 0V19"/><path class="s-flow" data-role="orchestrator" style="stroke:var(--accent)" d="M366 0V19"/><path style="stroke:#241d3d" d="M366 19H110V38"/><path class="s-flow" data-role="plan" style="stroke:var(--planning)" d="M366 19H110V38"/><path style="stroke:#34200f" d="M366 19V38"/><path class="s-flow" data-role="exec" style="stroke:var(--running)" d="M366 19V38"/><path style="stroke:#12293a" d="M366 19H622V38"/><path class="s-flow" data-role="rev" style="stroke:var(--review)" d="M366 19H622V38"/></svg><button type="button" class="role guide-role role-orchestrator live" data-guide-role="orchestrator" aria-pressed="false"><svg class="ric" viewBox="0 0 30 30" aria-hidden="true"><circle cx="15" cy="7" r="4"/><path d="M15 11v5M6 24v-4h18v4M15 16v8"/><circle class="f" cx="6" cy="26" r="2"/><circle class="f" cx="15" cy="26" r="2"/><circle class="f" cx="24" cy="26" r="2"/></svg><span class="rt"><span class="oh"><span data-i18n="orchestrator">orchestrator</span></span><span class="os" data-i18n="Coordinates the approved plan">Coordinates the approved plan</span></span></span><span class="obeat"></span><i class="obar"></i></button><button type="button" class="role guide-role role-planner live" data-guide-role="planner" aria-pressed="false"><svg class="ric" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h10M4 19h6"/><circle cx="18" cy="17" r="3"/></svg><span class="rt"><span class="oh"><span data-i18n="planner">planner</span></span><span class="os" data-i18n="Turns scope into tasks">Turns scope into tasks</span></span></span><span class="obeat"></span><i class="obar"></i></button><button type="button" class="role guide-role role-executor live" data-guide-role="executor" aria-pressed="false"><svg class="ric" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3L5 14h6l-1 7 8-11h-6z"/></svg><span class="rt"><span class="oh"><span data-i18n="executor">executor</span><b class="rn"></b></span><span class="os" data-i18n="Implements and records evidence">Implements and records evidence</span></span></span><span class="obeat"></span><i class="obar"></i></button><button type="button" class="role guide-role role-reviewer live" data-guide-role="reviewer" aria-pressed="false"><svg class="ric" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M7.5 10.5l2 2 3.5-4M15.5 15.5L20 20"/></svg><span class="rt"><span class="oh"><span data-i18n="reviewer">reviewer</span></span><span class="os" data-i18n="Verifies independently">Verifies independently</span></span></span><span class="obeat"></span><i class="obar"></i></button><p class="guide-agent-help" data-i18n="The default is 3 simultaneous agents per run, shared by discussion, planning, execution and review. Open the agents control to change it. Apply to all runs updates current runs and saves the default for future runs on this computer; leave it unchecked to change only the selected run.">The default is 3 simultaneous agents per run, shared by discussion, planning, execution and review. Open the agents control to change it. Apply to all runs updates current runs and saves the default for future runs on this computer; leave it unchecked to change only the selected run.</p></section>
+  <section id="guideMockRoles" class="guide-entities" hidden><svg class="guide-role-connections" viewBox="0 0 732 38" preserveAspectRatio="none" aria-hidden="true"><path style="stroke:#6a5222" d="M366 0V19"/><path class="s-flow" data-role="orchestrator" style="stroke:var(--accent)" d="M366 0V19"/><path style="stroke:#241d3d" d="M366 19H110V38"/><path class="s-flow" data-role="plan" style="stroke:var(--planning)" d="M366 19H110V38"/><path style="stroke:#34200f" d="M366 19V38"/><path class="s-flow" data-role="exec" style="stroke:var(--running)" d="M366 19V38"/><path style="stroke:#12293a" d="M366 19H622V38"/><path class="s-flow" data-role="rev" style="stroke:var(--review)" d="M366 19H622V38"/></svg><button type="button" class="role guide-role role-orchestrator live" data-guide-role="orchestrator" aria-pressed="false"><svg class="ric" viewBox="0 0 30 30" aria-hidden="true"><circle cx="15" cy="7" r="4"/><path d="M15 11v5M6 24v-4h18v4M15 16v8"/><circle class="f" cx="6" cy="26" r="2"/><circle class="f" cx="15" cy="26" r="2"/><circle class="f" cx="24" cy="26" r="2"/></svg><span class="rt"><span class="oh"><span data-i18n="orchestrator">orchestrator</span></span><span class="os" data-i18n="Coordinates the approved plan">Coordinates the approved plan</span></span></span><span class="obeat"></span><i class="obar"></i></button><button type="button" class="role guide-role role-planner live" data-guide-role="planner" aria-pressed="false"><svg class="ric" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h10M4 19h6"/><circle cx="18" cy="17" r="3"/></svg><span class="rt"><span class="oh"><span data-i18n="planner">planner</span></span><span class="os" data-i18n="Turns scope into tasks">Turns scope into tasks</span></span></span><span class="obeat"></span><i class="obar"></i></button><button type="button" class="role guide-role role-executor live" data-guide-role="executor" aria-pressed="false"><svg class="ric" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3L5 14h6l-1 7 8-11h-6z"/></svg><span class="rt"><span class="oh"><span data-i18n="executor">executor</span><b class="rn"></b></span><span class="os" data-i18n="Implements and records evidence">Implements and records evidence</span></span></span><span class="obeat"></span><i class="obar"></i></button><button type="button" class="role guide-role role-reviewer live" data-guide-role="reviewer" aria-pressed="false"><svg class="ric" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M7.5 10.5l2 2 3.5-4M15.5 15.5L20 20"/></svg><span class="rt"><span class="oh"><span data-i18n="reviewer">reviewer</span></span><span class="os" data-i18n="Verifies independently">Verifies independently</span></span></span><span class="obeat"></span><i class="obar"></i></button></section>
   <section id="guideExamplePanel" class="guide-preview" hidden><p class="guide-loading" role="status" hidden></p><iframe id="guideBoardFrame" title="Practice dashboard" data-i18n-title="Practice dashboard"></iframe></section>
   <section id="guideGainPanel" class="guide-preview" hidden><p class="guide-loading" role="status" hidden></p><iframe id="guideResultsFrame" title="Practice results" data-i18n-title="Practice results"></iframe></section>
   <section id="guideCommandPanel" class="guide-harnesses" hidden>
@@ -1453,6 +1452,7 @@ function createPrumoOnboarding({ root, launcher, document, window, translate = v
     { title: 'Explore this dashboard', heading: 'Dashboard', demos: [
       { title: 'Phases and tasks', description: 'Phases organize the plan. Task IDs identify the work; their colors show the current state. Click a phase or a task.', target: 'board' },
       { title: 'Filters and counts', description: 'Try the filters. They change the visible cards; completed totals exclude skipped tasks and preserve the full plan.', target: 'filters' },
+      { title: 'Maximum simultaneous agents', description: 'The default is 3 simultaneous agents per run, shared by discussion, planning, execution and review. Open the agents control to change it. Apply to all runs updates current runs and saves the default for future runs on this computer; leave it unchecked to change only the selected run.', target: 'agents' },
       { title: 'Task card', description: 'Click a task to read its summary, validation and dependencies. The expansion arrow opens the full details.', target: 'card' },
       { title: 'Progress and activity', description: 'Green counts completed tasks. The other colored segments show discussion, planning, execution and review in progress, without increasing completion.', target: 'activity' },
     ] },
@@ -3739,7 +3739,7 @@ function render(s, events = []) {
   $('#bar').setAttribute('aria-valuenow', String(Math.round(scale * done)))
   $('#doneFrac').textContent = `${done}/${total}`
   const agentSeconds = Math.floor(timing.liveElapsed / 1000)
-  $('#agentLimitMenu').hidden = !s.agentControlToken
+  $('#agentLimitMenu').hidden = !GUIDE_DEMO && !s.agentControlToken
   setText('#agentUsageLabel', tr('Agents: {0} of {1} in use', s.agentUsage?.used ?? 0, s.agentUsage?.maxAgents ?? s.plan.maxAgents ?? 3))
   if (!$('#agentLimitMenu').open) $('#agentLimitValue').value = String(s.agentUsage?.maxAgents ?? s.plan.maxAgents ?? 3)
   const agentClock = timing.liveElapsed > 0 ? fmtClock(agentSeconds) : timing.unmeasuredActivity ? tr('not measured') : fmtClock(0)
@@ -4051,6 +4051,12 @@ async function changeAgentLimit(event) {
   const maxAgents = Number($('#agentLimitValue').value)
   const feedback = $('#agentLimitFeedback'), button = $('#agentLimitApply')
   if (!Number.isSafeInteger(maxAgents) || maxAgents < 1) { feedback.textContent = tr('Enter a positive whole number'); return }
+  if (GUIDE_DEMO) {
+    STATE.plan.maxAgents = maxAgents
+    feedback.textContent = tr($('#agentLimitAll').checked ? 'Agent limit saved for all current and future runs on this computer' : 'Agent limit saved')
+    render(STATE, FULL_EVENTS)
+    return
+  }
   const key = STATE_RUN_KEY
   button.disabled = true
   try {
@@ -4597,10 +4603,11 @@ if (GUIDE_DEMO) {
     document.querySelectorAll('.prumo-guide-target').forEach(node => node.classList.remove('prumo-guide-target'))
     if (GUIDE_DEMO === 'board' && RESULTS_OPEN) backToGraph()
     if (target !== 'card') closePop()
-    const selectors = { board: '.lane-h', filters: '#filterToggle', card: '.node[data-id="T8"]', activity: '#agentsBox', gain: '#results .gcard', times: '#results .agent-activity', commands: '#results .gcard:last-child' }
+    const selectors = { board: '.lane-h', filters: '#filterToggle', agents: '#agentLimitMenu', card: '.node[data-id="T8"]', activity: '#agentsBox', gain: '#results .gcard', times: '#results .agent-activity', commands: '#results .gcard:last-child' }
     const node = document.querySelector(selectors[target])
     node?.classList.add('prumo-guide-target')
     if (['gain','times','commands'].includes(target)) node?.scrollIntoView({block:'nearest',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'})
+    $('#agentLimitMenu').open = target === 'agents'
     if (target === 'filters') { $('#filterPanel').hidden = false; $('#filterToggle').setAttribute('aria-expanded','true') }
     else { $('#filterPanel').hidden = true; $('#filterToggle').setAttribute('aria-expanded','false') }
     if (target === 'card') { setFilter('all'); openPop('T8', true); focusTask('T8') }
