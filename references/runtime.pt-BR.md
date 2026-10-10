@@ -205,6 +205,13 @@ efeitos externos além dos arquivos: caminhos diferentes não comprovam independ
 `--allow-overlap` pode aceitar um grafo com conflitos, mas o motor serializa arquivos/recursos conflitantes;
 isso não autoriza gravações paralelas. `writes` do task-plan fica dentro de `touches` para `files` e vazio para `read-only`.
 
+Em contratos legados que já aprovaram destinos absolutos em `touches`, esses caminhos permanecem no
+contrato, mas ficam separados da captura de arquivos locais. `deliveries` continua aceitando somente
+caminhos relativos seguros. Mesmo com Git, a aprovação exige `--scope-evidence` do revisor independente
+atual, descrevendo os destinos externos inspecionados, o método e as limitações. Os recibos registram
+essa separação; uma raiz externa não amplia o escopo local. A política `explicit` continua recusando
+`touches` absolutos e exige declarar recursos externos pelo mecanismo de recursos compartilhados.
+
 Planos sem a política preservam o comportamento legado. A adoção é uma alteração explícita de contrato por
 `sync-plan`, com a renovação aplicável de aprovação/planejamento; preserve o histórico e as escolhas explícitas
 dos gates existentes. Discussão → planejamento → execução → revisão independente continua sendo o fluxo,

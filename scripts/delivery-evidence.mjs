@@ -3,7 +3,7 @@ import { resolve, posix } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { isUtf8 } from 'node:buffer'
-import { insideTouches } from './task-scope.mjs'
+import { insideTouches, externalTouchPaths } from './task-scope.mjs'
 
 const MAX_FILE = 1024 * 1024, MAX_TOTAL = 8 * MAX_FILE, MAX_FILES = 256
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
@@ -13,10 +13,11 @@ export function safeEvidencePath(path) {
   return posix.normalize(path.replaceAll('\\', '/'))
 }
 export function assertEvidenceContract(task) {
+  const touches = (task.touches ?? []).filter(path => !externalTouchPaths(task).includes(path))
   if (task.deliveries !== undefined && !Array.isArray(task.deliveries)) throw new Error('deliveries must be an array')
   for (const path of task.deliveries ?? []) {
     safeEvidencePath(path)
-    if (!insideTouches(path, task.touches ?? [])) throw new Error('Deliveries must be inside approved touches')
+    if (!insideTouches(path, touches)) throw new Error('Deliveries must be inside approved touches')
   }
   const rules = task.textRules
   if (rules !== undefined) {
@@ -26,14 +27,14 @@ export function assertEvidenceContract(task) {
     for (const item of rules.exceptions ?? []) {
       if (!item || Object.keys(item).some(key => !['path', 'line', 'identifier'].includes(key)) || typeof item.identifier !== 'string' || !item.identifier.trim() || item.identifier.length > 128 || !Number.isSafeInteger(item.line) || item.line < 0) throw new Error('Exceptions require path, line (0 for filename) and identifier')
       safeEvidencePath(item.path)
-      if (!insideTouches(item.path, task.touches ?? [])) throw new Error('Text exceptions must be inside approved touches')
+      if (!insideTouches(item.path, touches)) throw new Error('Text exceptions must be inside approved touches')
     }
   }
   const numeric = task.numericProvenance
   if (numeric !== undefined) {
     if (!numeric || Object.keys(numeric).some(key => !['manifest', 'sources'].includes(key)) || !Array.isArray(numeric.sources) || !numeric.sources.length || numeric.sources.length > 64) throw new Error('numericProvenance requires manifest and approved sources')
     safeEvidencePath(numeric.manifest)
-    if (!insideTouches(numeric.manifest, task.touches ?? [])) throw new Error('Provenance manifest must be inside approved touches')
+    if (!insideTouches(numeric.manifest, touches)) throw new Error('Provenance manifest must be inside approved touches')
     numeric.sources.forEach(safeEvidencePath)
   }
 }
@@ -64,6 +65,7 @@ function readSafe(root, path, budget) {
   } finally { closeSync(fd) }
 }
 function deliveryFiles(task, cwd) {
+  const touches = task.touches.filter(path => !externalTouchPaths(task).includes(path))
   const result = spawnSync('git', ['-C', cwd, 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], { encoding: 'utf8', maxBuffer: MAX_TOTAL })
   if (result.status !== 0) {
     const paths = []
@@ -79,14 +81,19 @@ function deliveryFiles(task, cwd) {
       } else paths.push(path)
       if (paths.length > MAX_FILES) throw new Error('Delivery file count exceeds reading limit')
     }
-    for (const path of task.touches) walk(path.replace(/[\\/]+$/, ''))
+    for (const path of touches) walk(path.replace(/[\\/]+$/, ''))
     return [...new Set([...paths, ...(task.deliveries ?? [])])].sort()
   }
-  return [...new Set([...result.stdout.split('\0').filter(path => path && insideTouches(path, task.touches)), ...(task.deliveries ?? [])])].sort()
+  return [...new Set([...result.stdout.split('\0').filter(path => path && insideTouches(path, touches)), ...(task.deliveries ?? [])])].sort()
 }
 export function captureDelivery(task, cwd, content = false, declaredOnly = false) {
   cwd = task.project ?? cwd
   assertEvidenceContract(task)
+  const externalPaths = externalTouchPaths(task)
+  for (const path of externalPaths) {
+    if (/^[A-Za-z]:(?![/\\])/.test(path) || /[\x00-\x1f]/.test(path) || path.replaceAll('\\', '/').split('/').includes('..'))
+      throw new Error('Evidence paths must be safe repository-relative paths')
+  }
   if (!(task.touches ?? []).length) return { files: {}, limitation: 'No approved file scope; identifier content check unavailable.' }
   if (!cwd) {
     if (task.deliveries?.length || task.numericProvenance) throw new Error('Declared evidence requires a recorded project cwd')
@@ -101,7 +108,8 @@ export function captureDelivery(task, cwd, content = false, declaredOnly = false
       files[path] = { digest: hash(data.toString('base64')), ...(data.includes(0) || !isUtf8(data) ? { binary: true } : { lineHashes: data.toString('utf8').split(/\r?\n/).map(hash), ...(content ? { lines: data.toString('utf8').split(/\r?\n/) } : {}) }) }
     } catch (error) { if (error.code !== 'ENOENT') throw error }
   }
-  return { files }
+  return { files, ...(externalPaths.length ? { externalPaths,
+    limitation: 'External paths are not captured by repository evidence; independent inspection is required.' } : {}) }
 }
 export function checkDelivery(state, task, cwd) {
   cwd = task.project ?? cwd

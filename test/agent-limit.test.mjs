@@ -563,6 +563,35 @@ test('planejamento de fase executa ondas, preserva contexto dos quatro alvos e g
   assert.equal(occupancy(current).busy.length, 0)
 })
 
+test('bloquear tarefa após planejamento preserva alvos e denominador da rodada concluída', t => {
+  const f = phaseFixture(t, { run: 'historical-planning-block', maxAgents: 6 })
+  f.ok('skip-phase-discussion', 'F1', '--reason', 'Discussão confirmada', '--confirmed-by-user')
+  f.ok('plan-phase', 'F1', '--agent', 'T1=p1', '--agent', 'T2=p2', '--agent', 'T3=p3', '--agent', 'T4=p4')
+  f.finishPhasePlanning(['T1', 'T2', 'T3', 'T4'])
+  const round = f.phase().planningAttempts.at(-1)
+  const approvedPlan = f.state().tasks.T1.taskPlan
+  f.ok('block', 'T1', '--reason', 'Aguardando reparo do ambiente')
+  assert.deepEqual(f.phase().planningAttempts.at(-1), round)
+  assert.match(f.ok('status').stdout, /planning round F1.*artifacts 4\/4/)
+  assert.match(f.ok('ready').stdout, /planning round F1.*artifacts 4\/4/)
+  f.ok('unblock', 'T1')
+  f.ok('start', 'T1', '--agent', 'executor-retomada')
+  assert.equal(f.state().tasks.T1.attempts.length, 1)
+  assert.deepEqual(f.state().tasks.T1.taskPlan, approvedPlan)
+  const legacy = f.state()
+  const legacyRound = legacy.phaseWorkflows.F1.planningAttempts.at(-1)
+  legacyRound.originalTargets = [...legacyRound.targets]
+  legacyRound.targets = legacyRound.targets.filter(id => id !== 'T1')
+  legacyRound.excludedTargets = [{ task: 'T1', at: new Date(Date.parse(legacyRound.endedAt) + 1).toISOString() }]
+  f.saveState(legacy)
+  assert.match(f.ok('status').stdout, /planning round F1.*artifacts 4\/4/,
+    'histórico gravado pela versão anterior mantém o denominador sem reescrever a rodada')
+  delete legacyRound.artifactCount
+  f.saveState(legacy)
+  assert.match(f.ok('status').stdout, /planning round F1.*artifacts 4\/4/,
+    'histórico sem contador usa os artefatos vinculados aos alvos da rodada encerrada')
+})
+
 test('bloqueio externo no meio da onda remove alvo ativo ou enfileirado e dispensa seus artefatos', t => {
   const active = phaseFixture(t, { run: 'phase-block-active' })
   active.ok('skip-phase-discussion', 'F1', '--reason', 'Discussão já confirmada', '--confirmed-by-user')

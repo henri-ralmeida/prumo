@@ -70,7 +70,7 @@ import {
 import { randomUUID, createHash } from 'node:crypto'
 import { homedir } from 'node:os'
 import { isReadyForReview } from './review-readiness.mjs'
-import { assertExplicitScope, scopeConflicts, sameProject, captureScopeBaseline, scopeEvidenceRequirement, verifyTaskScope } from './task-scope.mjs'
+import { assertExplicitScope, scopeConflicts, sameProject, captureScopeBaseline, scopeEvidenceRequirement, verifyTaskScope, externalTouchPaths } from './task-scope.mjs'
 import { executionReadiness, planQuestionRef, openQuestionRecords, questionResolutionMap, targetHasStarted, overdueQuestions, questionIsOverdue, taskAuthorization, runHasAuthorizationScope, occupancy, isExternalBlock } from './execution-readiness.mjs'
 import { writeAtomicState } from './atomic-state.mjs'
 import { hydrateDiscoveries, compactDiscoveries } from './discovery-history.mjs'
@@ -720,12 +720,15 @@ function printPlanningRoundProgress(state) {
   for (const phase of Object.values(state.phaseWorkflows ?? {})) {
     const round = phase.planningAttempts?.at(-1)
     if (!round || (round.endedAt && round.result !== 'planned')) continue
-    const total = round.targets?.length ?? 0
+    const historicalTargets = round.endedAt ? (round.excludedTargets ?? [])
+      .filter(item => Date.parse(item.at) >= Date.parse(round.endedAt)).map(item => item.task) : []
+    const targets = [...new Set([...(round.targets ?? []), ...historicalTargets])]
+    const total = targets.length
     // Uma rodada aberta que conhece seu diretório de artefatos contabiliza os arquivos já gravados ali.
     const recorded = Number.isSafeInteger(round.artifactCount) ? round.artifactCount :
       !round.endedAt && typeof round.planDir === 'string' ?
-        (round.targets ?? []).filter(id => existsSync(join(round.planDir, `task-plan-${id}.json`))).length :
-      (round.targets ?? []).filter(id => {
+        targets.filter(id => existsSync(join(round.planDir, `task-plan-${id}.json`))).length :
+      targets.filter(id => {
         const plan = state.tasks[id]?.taskPlan
         return plan?.phaseId === phase.id && plan.phaseBinding?.discussionRoundId === round.discussionRoundId &&
           plan.phaseBinding?.plannerRound === round.n
@@ -1067,7 +1070,7 @@ function excludeBlockedPhaseTask(state, task) {
   if (!phase || !isExternalBlock(task)) return
   task.individualPlanning = true
   for (const record of [phase.discussionAttempts?.at(-1), phase.discussionSkips?.at(-1), phase.planningAttempts?.at(-1)]) {
-    if (!record?.targets?.includes(task.id)) continue
+    if (!record?.targets?.includes(task.id) || record.endedAt) continue
     record.originalTargets ??= [...record.targets]
     record.excludedTargets ??= []
     record.excludedTargets.push({ task: task.id, reason: task.blockReason, at: new Date().toISOString() })
@@ -3282,7 +3285,7 @@ const commands = {
     t.state = 'running'
     t.agent = agent
     t.attempts.push({ n: t.attempts.length + 1, agent, startedAt: new Date().toISOString(), deliveryBaseline,
-      ...(state.plan.scopePolicy === 'explicit' ? { scopeBaseline: captureScopeBaseline(t.project ?? state.plan.cwd) } : {}),
+      ...(state.plan.scopePolicy === 'explicit' || externalTouchPaths(t).length ? { scopeBaseline: captureScopeBaseline(t.project ?? state.plan.cwd) } : {}),
       ...(state.plan.scopePolicy === 'explicit' ? { concurrentScopes } : {}),
       activityTiming: 'explicit', activityIntervals: [],
       ...(t.retryPlan?.attempt === t.attempts.length + 1 ? {
@@ -3487,7 +3490,7 @@ const commands = {
           die(`${id} inspection criteria are not fully traversed; record reviewer-reported progress for each criterion with review-progress ${id} --step <index> --agent ${reviewer} (this is not proof of inspection)`)
       }
       if (requestedOk) {
-        if (state.plan.scopePolicy === 'explicit') {
+        if (state.plan.scopePolicy === 'explicit' || externalTouchPaths(t).length) {
           const reason = scopeEvidenceRequirement(t, t.attempts.at(-1)?.scopeBaseline, t.attempts.at(-1)?.concurrentScopes)
           if (reason && (!args['scope-evidence']?.trim() || by !== 'review' || !t.reviewer || t.reviewer === t.agent))
             die(tr('Independent reviewer --scope-evidence is required before validation ({0}); provide inspected paths and attribution; no checks or receipt were recorded', tr(reason)))
@@ -3503,7 +3506,7 @@ const commands = {
         ...(t.planningRequired ? { planningScope: currentPlanningScope(state, t) } : {}) })
       saveState(name, state)
       emit(name, 'task_validation_started', id, { token, attempt: t.attempts.length })
-      return { ...t, evidenceState: { run: state.run, plan: state.plan, tasks: state.tasks }, explicitScopeRequired: state.plan.scopePolicy === 'explicit' }
+      return { ...t, evidenceState: { run: state.run, plan: state.plan, tasks: state.tasks }, explicitScopeRequired: state.plan.scopePolicy === 'explicit' || externalTouchPaths(t).length > 0 }
     })
     // Testes não devem manter o bloqueio da execução: outras tarefas e o dashboard continuam utilizáveis.
     let result = {}
@@ -3593,7 +3596,7 @@ const commands = {
     if (last.by === 'review' && (!t.reviewer || last.agent !== t.reviewer || t.reviewer === t.agent))
       die('passing validation requires the current independent reviewer')
     try { assertValidation(t, last) } catch (e) { die(e.message) }
-    if (state.plan.scopePolicy === 'explicit') {
+    if (state.plan.scopePolicy === 'explicit' || externalTouchPaths(t).length) {
       try {
         const scope = verifyTaskScope(t, t.attempts.at(-1)?.scopeBaseline,
           last.scopeCheck?.method === 'independent-review' && last.scopeCheck.agent === t.reviewer ? last.scopeCheck :

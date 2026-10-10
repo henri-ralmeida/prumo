@@ -11,13 +11,14 @@ import { assertRolePreferences, recordDispatchMetadata, reportedUsageTotals, pau
 import { recordedAgentTiming } from '../scripts/recorded-timing.mjs'
 import { diagnoseShellFilter } from '../lib/shell-diagnostics.mjs'
 import { parseEngineArgs } from '../scripts/engine-args.mjs'
+import { verifyTaskScope } from '../scripts/task-scope.mjs'
 
 const engine = fileURLToPath(new URL('../scripts/engine.mjs', import.meta.url))
 const at = minute => new Date(Date.UTC(2026, 9, 7, 13, minute)).toISOString()
-function fixture(t) {
+function fixture(t, { git = true } = {}) {
   const home = fs.realpathSync(mkdtempSync(join(tmpdir(), 'prumo-evidence-'))), cwd = join(home, 'project'), root = join(home, 'store', 'workspace'), run = join(root, '.specs', 'graph', 'demo')
   mkdirSync(join(cwd, 'out'), { recursive: true }); mkdirSync(run, { recursive: true })
-  assert.equal(spawnSync('git', ['init', cwd], { encoding: 'utf8' }).status, 0)
+  if (git) assert.equal(spawnSync('git', ['init', cwd], { encoding: 'utf8' }).status, 0)
   const task = { id: 'T1', phase: null, title: 'Observable delivery', touches: ['out'], deps: [], state: 'pending', planningRequired: false, discussionRequired: false, discoveryRequired: false, validation: [{ kind: 'functional', run: 'node --version', expect: 'Node runs' }], attempts: [], validations: [], notes: [] }
   const state = { schemaVersion: 1, run: 'demo', createdAt: at(0), plan: { name: 'approved-delivery', planningMode: 'task', phases: [], maxAgents: 3, requireReview: true, cwd }, tasks: { T1: task } }
   const statePath = join(run, 'state.json')
@@ -33,6 +34,76 @@ function fixture(t) {
   t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
   return { home, cwd, root, run, state, task, save, write, cli, read }
 }
+
+test('destinos externos preservam contrato e exigem revisão independente com ou sem Git', t => {
+  for (const git of [false, true]) {
+    const f = fixture(t, { git })
+    const external = join(f.home, 'destino externo')
+    mkdirSync(external)
+    writeFileSync(join(external, 'instalacao.txt'), 'conteúdo externo aprovado')
+    f.task.touches.push(external + '/', 'G:/Utilities/RetroArch Thumbnails/ThumbDownloader/')
+    f.write('out/resultado.txt', 'entrega local')
+    f.save()
+    const original = structuredClone(f.task)
+    const baseline = captureDelivery(f.task, f.cwd)
+    assert.deepEqual(Object.keys(baseline.files), ['out/resultado.txt'])
+    assert.deepEqual(baseline.externalPaths, f.task.touches.slice(1))
+    assert.match(baseline.limitation, /independent inspection/)
+    assert.deepEqual(Object.keys(captureDelivery({ ...f.task, touches: ['/'] }, f.cwd).files), [],
+      'raiz externa não autoriza capturar arquivos locais')
+    assert.throws(() => captureDelivery({ ...f.task, touches: ['/'], deliveries: ['out/resultado.txt'] }, f.cwd), /inside approved touches/)
+    f.cli(['start', 'T1', '--agent', 'executor'])
+    f.write('out/resultado.txt', 'entrega local concluída')
+    for (const evidence of [undefined, {}, { evidence: 'Inspeção' }, { evidence: 'Inspeção', agent: 'executor' }]) {
+      assert.throws(() => verifyTaskScope({ ...f.task, agent: 'executor' },
+        f.read().tasks.T1.attempts.at(-1).scopeBaseline, evidence), /independent reviewer/)
+    }
+    assert.equal(f.read().tasks.T1.attempts.length, 1)
+    assert.deepEqual(f.read().tasks.T1.touches, original.touches)
+    f.cli(['review', 'T1', '--agent', 'revisor'])
+    const before = f.read()
+    f.cli(['validate', 'T1', '--ok', '--evidence', 'Arquivos locais conferidos', '--cwd', f.cwd], 1)
+    assert.deepEqual(f.read(), before, 'recusa não registra validação nem muda o contrato')
+    f.cli(['validate', 'T1', '--ok', '--evidence', 'Entrega conferida', '--scope-evidence',
+      'Arquivos locais e destino externo inspecionados independentemente; instalação e conteúdo conferidos', '--cwd', f.cwd])
+    const receipt = f.read().tasks.T1.validations.at(-1)
+    assert.equal(receipt.ok, true)
+    assert.deepEqual(receipt.scopeCheck.externalPaths, original.touches.slice(1))
+    assert.match(receipt.scopeCheck.externalLimitation, /independent inspection/)
+    assert.match(receipt.deliveryCheck.limitation, /External paths/)
+    if (git) {
+      f.write('fora.txt', 'não autorizado')
+      assert.throws(() => verifyTaskScope({ ...f.read().tasks.T1, touches: [...original.touches, '/'] },
+        f.read().tasks.T1.attempts.at(-1).scopeBaseline, { agent: 'revisor', evidence: 'Inspeção' }), /outside approved touches/)
+      fs.unlinkSync(join(f.cwd, 'fora.txt'))
+    }
+    assert.match(f.cli(['brief', 'T1', '--role', 'reviewer']), /independent inspection/)
+    f.cli(['done', 'T1'])
+    assert.deepEqual(f.read().tasks.T1.touches, original.touches)
+    assert.equal(readFileSync(join(external, 'instalacao.txt'), 'utf8'), 'conteúdo externo aprovado')
+  }
+})
+
+test('captura recusada antes de start preserva zero tentativas e caminhos de entrega seguros', t => {
+  const f = fixture(t, { git: false })
+  f.write('out/resultado.txt', 'entrega')
+  for (const path of ['/absoluto.txt', 'C:/absoluto.txt', '../fora.txt', 'out/../fora.txt']) {
+    assert.throws(() => captureDelivery({ ...f.task, deliveries: [path] }, f.cwd), /safe repository-relative/)
+  }
+  assert.throws(() => captureDelivery({ ...f.task, touches: ['C:/externo/../segredo'] }, f.cwd), /safe repository-relative/)
+  assert.throws(() => captureDelivery({ ...f.task, touches: ['C:relativo'] }, f.cwd), /safe repository-relative/)
+  assert.throws(() => captureDelivery({ ...f.task, touches: ['C:/externo\0'] }, f.cwd), /safe repository-relative/)
+  const outside = join(f.home, 'fora')
+  mkdirSync(outside)
+  writeFileSync(join(outside, 'arquivo.txt'), 'fora do escopo')
+  symlinkSync(outside, join(f.cwd, 'out', 'link'), process.platform === 'win32' ? 'junction' : 'dir')
+  f.task.deliveries = ['out/link/arquivo.txt']
+  f.save()
+  const before = readFileSync(join(f.run, 'state.json'))
+  assert.match(f.cli(['start', 'T1', '--agent', 'executor'], 1), /link refused/)
+  assert.deepEqual(readFileSync(join(f.run, 'state.json')), before)
+  assert.equal(f.read().tasks.T1.attempts.length, 0)
+})
 
 test('consultas e autorizacao durante uma pausa nao sugerem trabalho nem removem o motivo', t => {
   const f = fixture(t)

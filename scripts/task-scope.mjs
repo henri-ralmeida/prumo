@@ -7,6 +7,9 @@ export const scopePath = value => {
   const normalized = value.replace(/\\/g, '/').split('/').filter(part => part && part !== '.').join('/')
   return process.platform === 'win32' ? normalized.toLowerCase() : normalized
 }
+export function externalTouchPaths(task) {
+  return (task.touches ?? []).filter(path => /^(?:[/\\]|[A-Za-z]:)/.test(path))
+}
 export function insideTouches(path, touches) {
   const candidate = scopePath(path)
   return touches.some(value => { const prefix = scopePath(value); return prefix === '' || candidate === prefix || candidate.startsWith(prefix + '/') })
@@ -63,6 +66,7 @@ export function captureScopeBaseline(cwd) {
 }
 // A falta de argumento deve ser detectada antes dos comandos; alterações reais continuam sujeitas ao gate final.
 export function scopeEvidenceRequirement(task, baseline, concurrentScopes = []) {
+  if (externalTouchPaths(task).length) return 'External approved paths require independent scope evidence'
   const current = captureScopeBaseline(baseline?.cwd)
   if (baseline?.method !== 'git' || current.method !== 'git') return 'Git scope unavailable'
   const paths = [...new Set([...Object.keys(baseline.files), ...Object.keys(current.files)])].filter(path => baseline.files[path] !== current.files[path])
@@ -71,16 +75,24 @@ export function scopeEvidenceRequirement(task, baseline, concurrentScopes = []) 
   return null
 }
 export function verifyTaskScope(task, baseline, independentEvidence, concurrentScopes = []) {
+  const externalPaths = externalTouchPaths(task)
+  const fileScope = task.writeScope === 'files' || (task.writeScope === undefined && externalPaths.length > 0)
+  const touches = (task.touches ?? []).filter(path => !externalPaths.includes(path))
+  if (externalPaths.length && (!independentEvidence?.evidence?.trim() || !independentEvidence.agent || independentEvidence.agent === task.agent))
+    throw new Error('External approved paths require an independent reviewer --scope-evidence with inspected paths and method')
   const current = captureScopeBaseline(baseline?.cwd)
   if (baseline?.method !== 'git' || current.method !== 'git') {
     if (!independentEvidence?.evidence?.trim() || !independentEvidence.agent || independentEvidence.agent === task.agent)
       throw new Error('Scope check unavailable; an independent reviewer must provide --scope-evidence with the inspected delivery paths and method')
-    return { method: 'independent-review', limitation: baseline?.limitation ?? current.limitation, ...independentEvidence }
+    return { method: 'independent-review', limitation: baseline?.limitation ?? current.limitation, ...independentEvidence,
+      ...(externalPaths.length ? { externalPaths, externalLimitation: 'External paths are not captured by repository evidence; independent inspection is required.' } : {}) }
   }
   const paths = [...new Set([...Object.keys(baseline.files), ...Object.keys(current.files)])].filter(path => baseline.files[path] !== current.files[path])
-  const excludedPaths = paths.filter(path => task.writeScope !== 'files' || !insideTouches(path, task.touches)).filter(path =>
+  const excludedPaths = paths.filter(path => !fileScope || !insideTouches(path, touches)).filter(path =>
     independentEvidence?.evidence?.trim() && independentEvidence.agent && independentEvidence.agent !== task.agent && concurrentScopes.some(scope => insideTouches(path, scope)))
-  const outside = paths.filter(path => (task.writeScope !== 'files' || !insideTouches(path, task.touches)) && !excludedPaths.includes(path))
+  const outside = paths.filter(path => (!fileScope || !insideTouches(path, touches)) && !excludedPaths.includes(path))
   if (outside.length) throw new Error('Delivery changes are outside approved touches: ' + outside.join(', '))
-  return { method: 'git', paths, excludedPaths, ...(excludedPaths.length ? { independentEvidence } : {}), fingerprint: createHash('sha256').update(JSON.stringify(current.files)).digest('hex'), limitation: current.limitation }
+  return { method: 'git', paths, excludedPaths, ...(excludedPaths.length || externalPaths.length ? { independentEvidence } : {}),
+    ...(externalPaths.length ? { externalPaths, externalLimitation: 'External paths are not captured by repository evidence; independent inspection is required.' } : {}),
+    fingerprint: createHash('sha256').update(JSON.stringify(current.files)).digest('hex'), limitation: current.limitation }
 }
