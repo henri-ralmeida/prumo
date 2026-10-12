@@ -3,6 +3,8 @@ import { resolve, posix } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 
+const canonicalRoot = realpathSync.native
+
 export function safeRepositoryPath(path) {
   if (typeof path !== 'string' || !path || /[\x00-\x1f]/.test(path) || /^(?:[/\\]|[A-Za-z]:)/.test(path) || path.replaceAll('\\', '/').split('/').some(part => part === '..' || part === ''))
     throw new Error('Evidence paths must be safe repository-relative paths')
@@ -16,7 +18,7 @@ export function gitInventoryPath(value) {
 }
 
 export function evidenceLocation(root, path) {
-  root = realpathSync(root)
+  root = canonicalRoot(root)
   path = safeRepositoryPath(path)
   let current = root
   for (const part of path.split('/')) {
@@ -33,7 +35,11 @@ export function gitDirectoryEvidence(root, path, budget = { bytes: 0, files: 0 }
     if (result.status !== 0) throw new Error(`Git submodule or nested repository evidence unavailable: ${path}`)
     return result.stdout
   }
-  if (realpathSync(git('rev-parse', '--show-toplevel').trim()) !== realpathSync(directory))
+  // Windows Git and Node may spell one directory differently (case or 8.3
+  // aliases). Exact filesystem identities prove ownership without trusting text.
+  const reportedRoot = lstatSync(realpathSync(git('rev-parse', '--show-toplevel').trim()), { bigint: true })
+  const expectedRoot = lstatSync(directory, { bigint: true })
+  if (!reportedRoot.isDirectory() || reportedRoot.dev !== expectedRoot.dev || reportedRoot.ino !== expectedRoot.ino)
     throw new Error(`Git submodule or nested repository must have its own root: ${path}`)
   evidenceLocation(directory, '.git')
   const head = git('rev-parse', '--revs-only', 'HEAD').trim() || null

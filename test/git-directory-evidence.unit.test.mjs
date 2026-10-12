@@ -7,8 +7,27 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gitDirectoryEvidence } from '../scripts/git-directory-evidence.mjs'
 
+test('Windows short-name and case aliases identify the same nested repository without accepting a parent root', t => {
+  if (process.platform !== 'win32') return t.skip('Windows directory aliases')
+  const root = fs.mkdtempSync(join(tmpdir(), 'prumo-nested-directory-alias-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
+  const nested = join(root, 'nested')
+  fs.mkdirSync(nested)
+  assert.equal(childProcess.spawnSync('git', ['init', nested], { encoding: 'utf8' }).status, 0)
+  const short = childProcess.spawnSync(process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', `for %I in ("${root}") do @echo %~sI`], { encoding: 'utf8', windowsHide: true, windowsVerbatimArguments: true })
+  assert.equal(short.status, 0, short.stderr)
+  const alias = short.stdout.trim().toLowerCase()
+  assert.ok(alias)
+  const before = gitDirectoryEvidence(root, 'nested')
+  assert.deepEqual(gitDirectoryEvidence(alias, 'nested'), before)
+  fs.writeFileSync(join(nested, 'payload.txt'), 'Observable source')
+  assert.deepEqual(gitDirectoryEvidence(alias, 'nested'), gitDirectoryEvidence(root, 'nested'))
+  fs.mkdirSync(join(nested, 'ordinary'))
+  assert.throws(() => gitDirectoryEvidence(alias, 'nested/ordinary'), /own root/)
+})
+
 test('nested evidence refuses forged inventory, replaced handles and unsafe tracked paths while accepting partial reads', t => {
-  const root = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'prumo-nested-hardening-')))
+  const root = fs.realpathSync.native(fs.mkdtempSync(join(tmpdir(), 'prumo-nested-hardening-')))
   t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
   const repository = join(root, 'nested'), payload = join(repository, 'payload.txt')
   fs.mkdirSync(repository)
@@ -24,6 +43,15 @@ test('nested evidence refuses forged inventory, replaced handles and unsafe trac
   }
   try {
     const baseline = probe().digest
+    forged(args => args.includes('--show-toplevel'), payload + '\n')
+    assert.throws(probe, /own root/); restore()
+    let roots = 0
+    fs.lstatSync = (path, options) => {
+      const stat = original.lstatSync(path, options)
+      if (path === repository && options?.bigint && ++roots === 1) stat.dev++
+      return stat
+    }; syncBuiltinESMExports()
+    assert.throws(probe, /own root/); restore()
     forged(args => args.includes('--stage'), '160000 abc 0\tchild\0')
     assert.throws(probe, /separate evidence coverage/); restore()
     forged(args => args.includes('--stage'), '100644 abc 0\t..\/outside\0')
