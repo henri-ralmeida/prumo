@@ -35,7 +35,7 @@ export function assertEvidenceContract(task) {
     numeric.sources.forEach(safeEvidencePath)
   }
 }
-function readSafe(root, path, budget) {
+function readSafe(root, path, budget, allowLargeBinary = false) {
   path = safeEvidencePath(path)
   root = realpathSync(root)
   const absolute = resolve(root, path)
@@ -52,13 +52,46 @@ function readSafe(root, path, budget) {
   try {
     const stat = fstatSync(fd, { bigint: true })
     if (stat.dev !== expected.dev || stat.ino !== expected.ino || realpathSync(absolute) !== absolute) throw new Error(`Evidence path changed: ${path}`)
-    if (!stat.isFile() || stat.size > MAX_FILE || budget.bytes + Number(stat.size) > MAX_TOTAL) throw new Error(`Evidence reading limit: ${path}`)
+    if (!stat.isFile() || (!allowLargeBinary && stat.size > MAX_FILE) ||
+        (!allowLargeBinary && budget.bytes + Number(stat.size) > MAX_TOTAL)) throw new Error(`Evidence reading limit: ${path}`)
+    const unchanged = bytes => {
+      const after = fstatSync(fd, { bigint: true }), location = lstatSync(evidenceLocation(root, path), { bigint: true })
+      if (after.dev !== stat.dev || after.ino !== stat.ino || location.dev !== stat.dev || location.ino !== stat.ino ||
+          after.size !== stat.size || BigInt(bytes) !== stat.size || after.mtimeNs !== stat.mtimeNs || after.ctimeNs !== stat.ctimeNs)
+        throw new Error(`Evidence changed during capture: ${path}`)
+    }
+    if (stat.size > MAX_FILE) {
+      // Hash large binary deliveries in bounded chunks; a digest is identity evidence, not content approval.
+      const chunk = Buffer.alloc(64 * 1024), digest = createHash('sha256'), decoder = new TextDecoder('utf-8', { fatal: true })
+      let bytes = 0, binary = false, count
+      do {
+        count = readSync(fd, chunk, 0, chunk.length, bytes)
+        bytes += count
+        if (BigInt(bytes) > stat.size) throw new Error(`Evidence changed during capture: ${path}`)
+        const data = chunk.subarray(0, count)
+        digest.update(data)
+        if (!binary) {
+          if (data.includes(0)) binary = true
+          else { try { decoder.decode(data, { stream: true }) } catch { binary = true } }
+        }
+      } while (count)
+      if (!binary) { try { decoder.decode() } catch { binary = true } }
+      unchanged(bytes)
+      if (!binary) throw new Error(`Evidence reading limit: ${path}; text exceeds 1 MiB and requires bounded independent inspection`)
+      return { binary: true, size: bytes, digest: digest.digest('hex'), digestMethod: 'sha256',
+        identity: { device: stat.dev.toString(), inode: stat.ino.toString() } }
+    }
     // Bound the actual read as well as stat: growth cannot allocate an unbounded buffer.
     const data = Buffer.alloc(MAX_FILE + 1)
     let bytes = 0, count
     do { count = readSync(fd, data, bytes, data.length - bytes, bytes); bytes += count } while (count && bytes < data.length)
-    if (bytes > MAX_FILE || (budget.bytes += bytes) > MAX_TOTAL) throw new Error(`Evidence reading limit: ${path}`)
+    if (bytes > MAX_FILE || ((!allowLargeBinary || !(data.subarray(0, bytes).includes(0) || !isUtf8(data.subarray(0, bytes)))) &&
+        (budget.bytes += bytes) > MAX_TOTAL)) throw new Error(`Evidence reading limit: ${path}`)
+    unchanged(bytes)
     return data.subarray(0, bytes)
+  } catch (error) {
+    if (error.code === 'ENOENT') throw new Error(`Evidence changed during capture: ${path}`)
+    throw error
   } finally { closeSync(fd) }
 }
 function deliveryFiles(task, cwd) {
@@ -105,13 +138,14 @@ export function captureDelivery(task, cwd, content = false, declaredOnly = false
         nestedRepositories.push(gitDirectoryEvidence(cwd, path, budget))
         continue
       }
-      const data = readSafe(cwd, path, budget)
-      files[path] = { digest: hash(data.toString('base64')), ...(data.includes(0) || !isUtf8(data) ? { binary: true } : { lineHashes: data.toString('utf8').split(/\r?\n/).map(hash), ...(content ? { lines: data.toString('utf8').split(/\r?\n/) } : {}) }) }
+      const data = readSafe(cwd, path, budget, true)
+      files[path] = Buffer.isBuffer(data) ? { digest: hash(data.toString('base64')), ...(data.includes(0) || !isUtf8(data) ? { binary: true } : { lineHashes: data.toString('utf8').split(/\r?\n/).map(hash), ...(content ? { lines: data.toString('utf8').split(/\r?\n/) } : {}) }) } : data
     } catch (error) { if (error.code !== 'ENOENT') throw error }
   }
   const limitations = []
   if (externalPaths.length) limitations.push('External paths are not captured by repository evidence; independent inspection is required.')
   if (nestedRepositories.length) limitations.push('Nested repository source text and ignored files require independent inspection.')
+  if (Object.values(files).some(file => file.digestMethod === 'sha256')) limitations.push('Large binary files are fingerprinted in bounded memory, not inspected as text; independent inspection is required.')
   return { files, ...(externalPaths.length ? { externalPaths } : {}),
     ...(nestedRepositories.length ? { nestedRepositories } : {}), ...(limitations.length ? { limitation: limitations.join(' ') } : {}) }
 }

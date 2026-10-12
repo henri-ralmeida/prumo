@@ -1,4 +1,13 @@
 {
+  "Fixed — Bounded-memory binary evidence": "Corrigido — Evidências binárias com memória limitada",
+  "Fingerprint large binary deliveries in bounded chunks instead of rejecting them by file size, preserving path, identity and concurrent-change checks": "Registre a impressão digital de entregas binárias grandes em blocos limitados, sem recusá-las pelo tamanho, preservando verificações de caminho, identidade e alterações concorrentes",
+  "Keep fingerprints distinct from independent inspection and preserve post-validation freshness checks": "Diferencie impressões digitais de inspeção independente e preserve a conferência de alterações após a validação",
+  "Improved — Single acceptance for exact contract proposals": "Melhorado — Aceite único de propostas de contrato exatas",
+  "Stage candidate contracts without authorizing execution and collect one acceptance after presenting the full executable contract and its digest": "Registre contratos candidatos sem autorizar execução e receba um único aceite após apresentar o contrato executável completo e sua impressão digital",
+  "Require a new acceptance when a contract changes, preserve active attempts and never bind an old generic answer to a new discussion round": "Exija novo aceite quando um contrato mudar, preserve tentativas ativas e nunca vincule uma resposta genérica antiga a uma nova rodada de discussão",
+  "Proposed contract requires exact user acceptance before execution or review": "O contrato proposto precisa do aceite exato do usuário antes da execução ou revisão",
+  "Contract proposals require current discussion and planning gates": "Propostas de contrato precisam dos gates atuais de discussão e planejamento",
+  "Large binary files are fingerprinted in bounded memory, not inspected as text; independent inspection is required.": "Arquivos binários grandes recebem uma impressão digital com memória limitada, mas não são inspecionados como texto; é necessária inspeção independente.",
   "Fixed — Safe replanning resumption": "Corrigido — Retomada segura do replanejamento",
   "Preserve the replanning return state after an answered external decision so completing discussion does not leave a task blocked without resumption information": "Preserve o estado de retorno do replanejamento após uma decisão externa respondida, para que concluir a discussão não deixe uma tarefa bloqueada sem informações de retomada",
   "Recover affected blocks only with matching recorded history and a backup, preserving attempts and unanswered decisions without automatic approval": "Recupere bloqueios afetados somente com histórico registrado correspondente e backup, preservando tentativas e decisões não respondidas sem aprovação automática",

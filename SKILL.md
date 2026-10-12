@@ -61,7 +61,10 @@ Keep them with the plan context; after `init` or `sync-plan`, persist them with 
 Recommend discussion for the eligible phase, obtain the user's gate choice, and successfully run
 `begin-phase-discussion` (or `begin-discussion` for task-scoped runs) before asking its first question.
 General "confirm understanding before acting" guidance does not move phase discovery outside this round.
-Questions necessary to approve the global scope or authorize a contract change, gate choices and recorded
+For contract changes, use `sync-plan --propose` to stage the exact candidate without authorizing execution,
+then open the discussion, present `show-contract --full` and obtain one acceptance covering that contract
+and the requested continuation scope/mode. Do not ask an earlier generic scope approval and then repeat it.
+Questions necessary to approve the global scope, gate choices and recorded
 execution blockers still belong in their respective flows. Reuse prior answers as settled context and
 record them in discovery `decisions`/`coverage`; do not repeat settled questions or attach the current
 `roundId` to an answer received before the round. The current round still needs its own freshly answered

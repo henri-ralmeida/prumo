@@ -107,6 +107,10 @@ changing behavior, scope, acceptance or execution remains. Put out-of-scope idea
 
 ## Contract changes before and during a round
 
+To avoid two approvals for one change, prepare the candidate plan and run `sync-plan --plan <candidate.json> --propose` before asking for acceptance. This stages the proposal, revokes affected execution authorization and requires exact contract confirmation; it does not authorize execution. Existing invalidation safeguards still apply. Open the task or phase discussion, then show `show-contract <task> --full` for each target (including executable checks and its digest). Ask once whether the user accepts this exact contract and the requested continuation scope/mode. Record that answer in the current discovery question with the printed `confirmsContract` values; use the same actual answer to record `authorize` only for the scope/mode the user accepted. Do not invent continuation consent from contract acceptance alone.
+
+If synchronization or a later answer changes the displayed contract, the current round is stale: show the new contract and obtain a new acceptance. Never reuse an earlier generic approval or relabel an old answer with a new round ID. This path avoids the preliminary authorization question; it does not retroactively validate an answer received before the exact contract and round existed. Unanswered external blockers still need their recorded resolution, and active attempts retain their pause and explicit resumption.
+
 Edit the approved plan and run `sync-plan` BEFORE `begin-phase-discussion` or `begin-discussion`. Changing a
 task contract while its round is open invalidates that round: `sync-plan` warns, and the next `begin-*`
 prints the superseded round with its cause, including the contract fields `sync-plan` changed. If the

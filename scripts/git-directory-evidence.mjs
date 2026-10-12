@@ -28,6 +28,31 @@ export function evidenceLocation(root, path) {
   return current
 }
 
+export function scopeFileDigest(root, path, mode) {
+  const absolute = evidenceLocation(root, path), expected = lstatSync(absolute, { bigint: true })
+  if (!expected.isFile()) throw new Error(`Evidence is not a regular file: ${path}`)
+  const fd = openSync(absolute, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
+  try {
+    const before = fstatSync(fd, { bigint: true }), digest = createHash('sha256'), chunk = Buffer.alloc(64 * 1024)
+    if (!before.isFile() || before.dev !== expected.dev || before.ino !== expected.ino) throw new Error(`Evidence path changed: ${path}`)
+    let bytes = 0, count
+    do {
+      count = readSync(fd, chunk, 0, chunk.length, bytes)
+      bytes += count
+      if (BigInt(bytes) > before.size) throw new Error(`Evidence changed during capture: ${path}`)
+      digest.update(chunk.subarray(0, count))
+    } while (count)
+    const after = fstatSync(fd, { bigint: true }), location = lstatSync(evidenceLocation(root, path), { bigint: true })
+    if (after.size !== before.size || BigInt(bytes) !== before.size || after.mtimeNs !== before.mtimeNs || after.ctimeNs !== before.ctimeNs ||
+        after.dev !== before.dev || after.ino !== before.ino || location.dev !== before.dev || location.ino !== before.ino)
+      throw new Error(`Evidence changed during capture: ${path}`)
+    return digest.update(String(mode)).digest('hex')
+  } catch (error) {
+    if (error.code === 'ENOENT') throw new Error(`Evidence changed during capture: ${path}`)
+    throw error
+  } finally { closeSync(fd) }
+}
+
 export function gitDirectoryEvidence(root, path, budget = { bytes: 0, files: 0 }) {
   const directory = evidenceLocation(root, path)
   const git = (...args) => {

@@ -1,4 +1,22 @@
 {
+  "2.9.5": {
+    "en": [
+      {
+        "title": "Fixed — Bounded-memory binary evidence",
+        "items": [
+          "Fingerprint large binary deliveries in bounded chunks instead of rejecting them by file size, preserving path, identity and concurrent-change checks",
+          "Keep fingerprints distinct from independent inspection and preserve post-validation freshness checks"
+        ]
+      },
+      {
+        "title": "Improved — Single acceptance for exact contract proposals",
+        "items": [
+          "Stage candidate contracts without authorizing execution and collect one acceptance after presenting the full executable contract and its digest",
+          "Require a new acceptance when a contract changes, preserve active attempts and never bind an old generic answer to a new discussion round"
+        ]
+      }
+    ]
+  },
   "2.9.4": {
     "en": [
       {

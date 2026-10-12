@@ -398,6 +398,7 @@ confirm the changed contract as described below. When `plan-phase` received `--p
 
 Use `show-contract <task> [--diff]` to inspect the complete before/after business contract before accepting a
 change. It includes full `expect` and inspection text while omitting executable `validation.run` commands.
+Use `show-contract <task> --full` when presenting an exact proposal: it also prints the persisted task contract with executable checks and its digest. `sync-plan --propose` stages a candidate without execution authorization, requiring one acceptance in the ensuing current discussion. See [the single-acceptance path](discussion.md#contract-changes-before-and-during-a-round).
 When a contract change reopens a phase that already had a discussion, planning round or current skip, the
 new discussion must ask the user to accept the changed contract. Inspect every current target, then include
 the exact task/digest entries printed by `begin-phase-discussion` in `questions[].confirmsContract` on one
@@ -872,7 +873,7 @@ Resolve `scripts/engine.mjs` from the installed skill. Add `--run <name>` to sel
 | `status`, `ready`, `graph`, `runs` | State, work ready now, full JSON or the list of runs |
 | `status --verify-install` | Also compares the installed files with the installation marker |
 | `authorize --scope run\|phase:<phase>\|tasks:<T1,T2> [--mode auto\|manual] [--channel <name>] --confirmed-by-user` | Records the dispatch scope and mode the user accepted; `auto` is the default |
-| `show-contract <task> [--diff]` | Shows the business contract before/after without `validation.run` commands |
+| `show-contract <task> [--diff] [--full]` | Shows before/after business text; `--full` also prints the current executable contract and digest |
 | `show-check <task> --check <N> --attempt <K>` | Shows the stored check's stdout, stderr, directory, exit code and reuse status |
 | `begin-phase-discussion <phase> [--agent <task>=<name>]... [--adopt-legacy]` | Persists the phase discussion and exact per-target worker assignments; one unqualified name expands to `<name>:<task>` |
 | `skip-phase-discussion <phase> --reason <text> --confirmed-by-user` | Records the explicit choice to skip the phase discussion |

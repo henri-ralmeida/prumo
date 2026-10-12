@@ -5,7 +5,50 @@ import childProcess from 'node:child_process'
 import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { gitDirectoryEvidence } from '../scripts/git-directory-evidence.mjs'
+import { gitDirectoryEvidence, scopeFileDigest } from '../scripts/git-directory-evidence.mjs'
+import { createHash } from 'node:crypto'
+
+test('scope fingerprints stream file bytes without changing historical digests and refuse unstable identities', t => {
+  const root = fs.realpathSync.native(fs.mkdtempSync(join(tmpdir(), 'prumo-scope-file-')))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
+  const path = join(root, 'payload'), data = Buffer.from('Observable payload')
+  fs.writeFileSync(path, data)
+  const mode = fs.statSync(path).mode
+  const probe = () => scopeFileDigest(root, 'payload', mode)
+  const original = { lstatSync: fs.lstatSync, fstatSync: fs.fstatSync, readSync: fs.readSync, closeSync: fs.closeSync }
+  const restore = () => { Object.assign(fs, original); syncBuiltinESMExports() }
+  t.after(restore)
+  assert.equal(probe(), createHash('sha256').update(data).update(String(mode)).digest('hex'))
+  try {
+    fs.lstatSync = (...args) => { const stat = original.lstatSync(...args); stat.isFile = () => false; return stat }
+    syncBuiltinESMExports(); assert.throws(probe, /not a regular file/); restore()
+    for (const field of ['dev', 'ino', 'isFile']) {
+      fs.fstatSync = (...args) => { const stat = original.fstatSync(...args); if (field === 'isFile') stat.isFile = () => false; else stat[field]++; return stat }
+      syncBuiltinESMExports(); assert.throws(probe, /path changed/); restore()
+    }
+    for (const field of ['size', 'mtimeNs', 'ctimeNs', 'dev', 'ino']) {
+      let calls = 0
+      fs.fstatSync = (...args) => { const stat = original.fstatSync(...args); if (++calls === 2) stat[field]++; return stat }
+      syncBuiltinESMExports(); assert.throws(probe, /changed during capture/); restore()
+    }
+    for (const field of ['dev', 'ino']) {
+      let calls = 0
+      fs.lstatSync = (value, options) => { const stat = original.lstatSync(value, options); if (options?.bigint && ++calls === 2) stat[field]++; return stat }
+      syncBuiltinESMExports(); assert.throws(probe, /changed during capture/); restore()
+    }
+    fs.readSync = (fd, chunk) => { chunk.fill(0); return chunk.length }
+    syncBuiltinESMExports(); assert.throws(probe, /changed during capture/); restore()
+    fs.readSync = () => 0
+    syncBuiltinESMExports(); assert.throws(probe, /changed during capture/); restore()
+    fs.readSync = () => { throw new Error('Read denied') }
+    syncBuiltinESMExports(); assert.throws(probe, /Read denied/); restore()
+    fs.readSync = () => { throw Object.assign(new Error('Gone'), { code: 'ENOENT' }) }
+    syncBuiltinESMExports(); assert.throws(probe, /changed during capture/)
+    restore()
+    fs.closeSync = fd => { original.closeSync(fd); throw new Error('Close denied') }
+    syncBuiltinESMExports(); assert.throws(probe, /Close denied/)
+  } finally { restore() }
+})
 
 test('Windows short-name and case aliases identify the same nested repository without accepting a parent root', t => {
   if (process.platform !== 'win32') return t.skip('Windows directory aliases')

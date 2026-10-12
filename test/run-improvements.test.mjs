@@ -100,6 +100,115 @@ test('nested evidence refuses unsafe links, ordinary directories and bounded rea
   assert.throws(() => gitDirectoryEvidence(f.cwd, 'out/vendor', { bytes: 8 * 1024 * 1024, files: 0 }), /reading limit/)
   assert.throws(() => gitDirectoryEvidence(f.cwd, 'out/vendor', { bytes: 0, files: 257 }), /file count/)
 })
+test('large binary evidence reaches independent review and refuses stale completion without losing the attempt', t => {
+  const f = fixture(t)
+  const data = Buffer.alloc(4478032, 0x42)
+  data[0] = 0
+  f.write('out/installer.exe', data)
+  const captured = captureDelivery(f.task, f.cwd, true)
+  assert.equal(captured.files['out/installer.exe'].size, data.length)
+  assert.equal(captured.files['out/installer.exe'].digestMethod, 'sha256')
+  assert.equal(captured.files['out/installer.exe'].lines, undefined)
+  assert.match(captured.limitation, /not inspected as text/)
+  f.cli(['start', 'T1', '--agent', 'executor'])
+  f.cli(['review', 'T1', '--agent', 'executor'], 1)
+  f.cli(['review', 'T1', '--agent', 'independent'])
+  f.cli(['done', 'T1'], 1)
+  const validate = () => f.cli(['validate', 'T1', '--ok', '--cwd', f.cwd, '--evidence', 'Binary origin and behavior independently inspected'])
+  validate()
+  data[data.length - 1] = 0x43
+  f.write('out/installer.exe', data)
+  assert.match(f.cli(['done', 'T1'], 1), /changed after validation/)
+  validate()
+  f.cli(['done', 'T1'])
+  assert.equal(f.read().tasks.T1.attempts.length, 1)
+  assert.equal(f.read().tasks.T1.state, 'done')
+})
+
+test('binary file size does not block review and text classification scans beyond the first chunk', t => {
+  const f = fixture(t), path = 'out/payload'
+  const data = Buffer.alloc(1024 * 1024 + 1, 0x41)
+  f.write(path, data)
+  assert.throws(() => captureDelivery(f.task, f.cwd), /text exceeds 1 MiB/)
+  data[data.length - 1] = 0
+  f.write(path, data)
+  assert.equal(captureDelivery(f.task, f.cwd).files[path].binary, true)
+  data[data.length - 1] = 0xff
+  f.write(path, data)
+  assert.equal(captureDelivery(f.task, f.cwd).files[path].binary, true)
+  data[data.length - 1] = 0xc3
+  f.write(path, data)
+  assert.equal(captureDelivery(f.task, f.cwd).files[path].binary, true)
+  f.write(path, Buffer.alloc(8 * 1024 * 1024 + 1))
+  assert.equal(captureDelivery(f.task, f.cwd).files[path].size, 8 * 1024 * 1024 + 1)
+  f.write(path, Buffer.alloc(5 * 1024 * 1024))
+  f.write('out/second', Buffer.alloc(4 * 1024 * 1024))
+  assert.equal(Object.keys(captureDelivery(f.task, f.cwd).files).length, 2)
+  rmSync(join(f.cwd, 'out'), { recursive: true }); mkdirSync(join(f.cwd, 'out'))
+  for (let i = 0; i < 17; i++) f.write(`out/binary-${i}`, Buffer.alloc(512 * 1024))
+  assert.equal(Object.keys(captureDelivery(f.task, f.cwd).files).length, 17)
+})
+
+test('large binary hashing bounds each read and rejects concurrent mutation, growth and path replacement', t => {
+  const f = fixture(t), path = join(f.cwd, 'out/payload')
+  const original = { readSync: fs.readSync, fstatSync: fs.fstatSync, lstatSync: fs.lstatSync, closeSync: fs.closeSync }
+  const restore = () => { Object.assign(fs, original); syncBuiltinESMExports() }
+  t.after(restore)
+  f.write('out/payload', Buffer.alloc(1024 * 1024 + 1))
+  try {
+    fs.readSync = (fd, buffer, offset, length, position) => {
+      assert.ok(buffer.length <= 64 * 1024)
+      return original.readSync(fd, buffer, offset, Math.min(length, 7000), position)
+    }
+    syncBuiltinESMExports()
+    assert.equal(captureDelivery(f.task, f.cwd).files['out/payload'].size, 1024 * 1024 + 1)
+    restore()
+    let reads = 0
+    fs.readSync = (...args) => {
+      const result = original.readSync(...args)
+      if (++reads === 2) fs.appendFileSync(path, Buffer.from([0]))
+      return result
+    }
+    syncBuiltinESMExports()
+    assert.throws(() => captureDelivery(f.task, f.cwd), /changed during capture/)
+    restore()
+    let calls = 0
+    fs.fstatSync = (...args) => { const stat = original.fstatSync(...args); if (++calls === 2) stat.mtimeNs++; return stat }
+    syncBuiltinESMExports()
+    assert.throws(() => captureDelivery(f.task, f.cwd), /changed during capture/)
+    restore()
+    fs.lstatSync = (value, options) => { const stat = original.lstatSync(value, options); if (value === path && options?.bigint && ++calls > 3) stat.ino++; return stat }
+    calls = 0
+    syncBuiltinESMExports()
+    // The final path identity must still name the opened file, not a replacement.
+    let readsAgain = 0
+    fs.readSync = (...args) => { const count = original.readSync(...args); if (++readsAgain === 1) calls = 4; return count }
+    syncBuiltinESMExports()
+    assert.throws(() => captureDelivery(f.task, f.cwd), /changed during capture/)
+    restore()
+    fs.readSync = (fd, buffer) => { buffer.fill(0); return buffer.length }
+    syncBuiltinESMExports()
+    assert.throws(() => captureDelivery(f.task, f.cwd), /changed during capture/)
+    restore()
+    fs.readSync = () => { throw Object.assign(new Error('Gone during read'), { code: 'ENOENT' }) }
+    syncBuiltinESMExports()
+    assert.throws(() => captureDelivery(f.task, f.cwd), /changed during capture/)
+    restore()
+    fs.readSync = () => { throw new Error('Read denied') }
+    syncBuiltinESMExports()
+    assert.throws(() => captureDelivery(f.task, f.cwd), /Read denied/)
+    restore()
+    fs.closeSync = fd => { original.closeSync(fd); throw new Error('Close denied') }
+    syncBuiltinESMExports()
+    assert.throws(() => captureDelivery(f.task, f.cwd), /Close denied/)
+    restore()
+    f.task.numericProvenance = { manifest: 'out/payload', sources: ['out/source'] }
+    fs.lstatSync = (value, options) => { const stat = original.lstatSync(value, options); if (value === path) stat.isSymbolicLink = () => true; return stat }
+    syncBuiltinESMExports()
+    assert.throws(() => verifyNumericProvenance(f.task, f.cwd), /link refused/)
+  } finally { restore() }
+})
+
 function fixture(t, { git = true } = {}) {
   const home = fs.realpathSync(mkdtempSync(join(tmpdir(), 'prumo-evidence-'))), cwd = join(home, 'project'), root = join(home, 'store', 'workspace'), run = join(root, '.specs', 'graph', 'demo')
   mkdirSync(join(cwd, 'out'), { recursive: true }); mkdirSync(run, { recursive: true })
@@ -659,7 +768,7 @@ test('non-Git projects inspect only approved files and enforce file/traversal/to
   const original = fs.fstatSync
   try {
     fs.fstatSync = (...args) => { const stat = original(...args); stat.size = 0; return stat }; syncBuiltinESMExports()
-    assert.throws(() => captureDelivery(f.task, f.cwd), /reading limit/)
+    assert.throws(() => captureDelivery(f.task, f.cwd), /changed during capture|reading limit/)
   } finally { fs.fstatSync = original; syncBuiltinESMExports() }
 })
 test('file replacement, special entries, partial reads and growth cannot bypass safe evidence reads', t => {

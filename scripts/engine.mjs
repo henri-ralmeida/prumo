@@ -30,10 +30,10 @@
  *
  * Uso (ENGINE = caminho para este arquivo, onde quer que a skill esteja instalada):
  *   node $ENGINE init --plan <plan.json> --run <name>
- *   node $ENGINE sync-plan --plan <plan.json> [--run <name>] [--cwd <project>] [--dry-run] [--confirm-invalidation]
+ *   node $ENGINE sync-plan --plan <plan.json> [--run <name>] [--cwd <project>] [--dry-run] [--confirm-invalidation] [--propose]
  *   node $ENGINE migrate [--check] [--run <name>]
  *   node $ENGINE status [--verify-install]|ready|graph [--run <name>]
- *   node $ENGINE show-contract <task> [--diff] [--run <name>]
+ *   node $ENGINE show-contract <task> [--diff] [--full] [--run <name>]
  *   node $ENGINE begin-phase-discussion <phase> [--adopt-legacy]
  *   node $ENGINE skip-phase-discussion <phase> --reason <text> --confirmed-by-user
  *   node $ENGINE finish-phase-discussion <phase> --context <discovery.json> [--accept-premature-work]
@@ -2171,6 +2171,10 @@ const commands = {
       return
     }
 
+    if (args.propose && Object.values(state.tasks).some(task =>
+        !['done', 'skipped'].includes(task.state) && (updated.includes(task.id) || added.includes(task.id) || changedPlanFields.length) &&
+        !usesCurrentPlanning({ ...state, plan: nextPlan }, task)))
+      die('Contract proposals require current discussion and planning gates')
     copyFileSync(join(runDir(name), 'state.json'), join(runDir(name), 'state.pre-sync.json'))
     state.plan = nextPlan
     if (state.plan.planningMode === 'phase') {
@@ -2205,6 +2209,10 @@ const commands = {
 
     if (state.plan.planningMode === 'phase') {
       const confirmationPhases = new Set()
+      if (args.propose) for (const id of historyTaskIds) {
+        const task = state.tasks[id]
+        confirmationPhases.add(task.phase)
+      }
       for (const item of invalidatedWorkflows) {
         if (item.scope === 'phase') confirmationPhases.add(item.id)
         if (item.scope === 'task') {
@@ -2227,6 +2235,7 @@ const commands = {
       const confirmationTasks = new Set(invalidatedWorkflows
         .filter(item => item.scope === 'task' && item.task)
         .map(item => item.task))
+      if (args.propose) for (const id of historyTaskIds) confirmationTasks.add(id)
       for (const id of confirmationTasks) {
         const task = state.tasks[id]
         if (!task || ['done', 'skipped'].includes(task.state) || !usesCurrentPlanning(state, task)) continue
@@ -2242,6 +2251,7 @@ const commands = {
       metadataUpdated: sanitizeTaskIds(metadataUpdated),
       preserved: sanitizeTaskIds(preserved),
       changes: sanitizeChanges(changes),
+      ...(args.propose ? { proposed: true } : {}),
       diagnostics: sanitizeDiagnostics(diagnostics),
       tasks: Object.keys(state.tasks).length,
       revokedAuthorizationTasks: sanitizeTaskIds(Object.keys(state.tasks).filter(id => beforeState.tasks[id]?.executionAuthorization &&
@@ -2354,7 +2364,8 @@ const commands = {
       display, displayNote: tr(Object.values(display).some(value => typeof value === 'string' && value.trim())
         ? 'Display metadata is separate from the contract and does not change its digest'
         : 'No display metadata recorded; this does not mean the contract is empty'),
-      diff: args.diff === true, fields, before: select(before), after: select(after) }, null, 2))
+      diff: args.diff === true, fields, before: select(before), after: select(after),
+      ...(args.full ? { contractDigest: phasePlanningContext(state, task), contract: planTaskFromState(task) } : {}) }, null, 2))
   },
 
   'show-check'() {
@@ -4017,6 +4028,12 @@ if (!['init', 'runs', 'migrate', 'sync-plan'].includes(cmd)) {
 }
 const BLOCKED_ACTIONS = new Set(['begin-discussion', 'finish-discussion', 'skip-discussion', 'plan-task', 'finish-planning', 'skip-planning', 'start', 'progress', 'review', 'review-progress', 'validate', 'done', 'fail', 'retry', 'skip', 'activity-start', 'pause-replanning'])
 function runCommand() {
+  if (['start', 'review', 'validate', 'done'].includes(cmd)) {
+    const state = loadState(runName()), task = state.tasks[args._[0]]
+    const phase = state.phaseWorkflows?.[task?.phase]
+    if (task?.contractConfirmationRequired || phase?.contractConfirmationRequired?.tasks?.includes(task?.id))
+      die('Proposed contract requires exact user acceptance before execution or review')
+  }
   if (BLOCKED_ACTIONS.has(cmd) && args.scope !== 'phase') assertExternalBlockAction(loadState(runName()), args._[0])
   const paused = !['init', 'runs'].includes(cmd) ? loadState(runName()).runPause : null
   if (paused && !paused.endedAt && /^(?:begin-|plan-|finish-|skip-|start$|review$|retry$|unblock$|activity-start$|validate$|done$|progress$|review-progress$)/.test(cmd)) die('Run is paused; resume-run explicitly. External harness processes are not interrupted.')

@@ -2,6 +2,14 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.9.5 — 2026-10-12
+
+- Capture binários grandes em blocos, sem recusa pelo tamanho, registrando identidade, tamanho e hash; preserve a recusa de caminhos inseguros e alterações durante a captura, sem tratar a impressão digital como aprovação funcional.
+- Mantenha a conferência de escopo com memória limitada e preserve seus hashes históricos, a revisão independente e a recusa de alterações após a validação.
+- Apresente o contrato candidato completo e receba um único aceite com `sync-plan --propose` e `show-contract --full`, sem liberar execução antes da confirmação exata nem reaproveitar respostas antigas em rodadas novas.
+- Preserve a tentativa ativa ao retomar o replanejamento e exija novo aceite somente quando o contrato apresentado mudar.
+- Oriente as futuras alterações do repositório a preservar compatibilidade e evitar configurações, restrições e etapas genéricas que impeçam trabalho legítimo sem risco concreto.
+
 ## 2.9.4 — 2026-10-12
 
 - Preserve o estado de retorno do replanejamento após uma decisão externa respondida, para que encerrar a discussão não produza um bloqueio sem informações de retomada.

@@ -5,6 +5,21 @@ import { releaseHistory, releaseNotes } from '../lib/release-notes.mjs'
 
 const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 
+test('update highlights distinguish binary fingerprints and one exact acceptance from approval', () => {
+  const messages = JSON.parse(readFileSync(new URL('../scripts/messages.json', import.meta.url), 'utf8'))
+  const history = releaseHistory(['2.9.4'], '2.9.5')
+  assert.deepEqual(history.map(release => release.version), ['2.9.5'])
+  for (const section of history[0].sections) {
+    assert.ok(messages[section.title]?.trim())
+    for (const item of section.items) assert.ok(messages[item]?.trim())
+  }
+  const items = history[0].sections.flatMap(section => section.items)
+  for (const rule of ['bounded chunks', 'independent inspection', 'without authorizing execution', 'one acceptance', 'old generic answer'])
+    assert.ok(items.some(item => item.includes(rule)), rule)
+  assert.deepEqual(releaseHistory(['2.9.5'], '2.9.5'), [])
+  assert.deepEqual(releaseHistory(['2.9.5'], '2.9.4'), [])
+})
+
 test('update highlights explain safe resumption and nested Git coverage without repeating installed releases', () => {
   const messages = JSON.parse(readFileSync(new URL('../scripts/messages.json', import.meta.url), 'utf8'))
   const history = releaseHistory(['2.9.3'], '2.9.4')

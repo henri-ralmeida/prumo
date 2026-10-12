@@ -95,6 +95,127 @@ function fixture(t, dependent = false, { requireReview = true } = {}) {
     save: state => writeFileSync(statePath, JSON.stringify(state)) }
 }
 
+test('staged contract receives one exact acceptance without reusing generic approval', t => {
+  const f = fixture(t)
+  const oldDiscovery = structuredClone(f.state().tasks.T1.discovery)
+  const plan = JSON.parse(readFileSync(f.planPath, 'utf8'))
+  plan.tasks[0].touches = ['src/Preview.ps1', 'tests/Preview.Tests.ps1']
+  writeFileSync(f.planPath, JSON.stringify(plan))
+  f.ok('sync-plan', '--plan', f.planPath, '--propose')
+  assert.ok(f.state().tasks.T1.contractConfirmationRequired)
+  assert.equal(f.state().tasks.T1.executionAuthorization, undefined)
+  for (const action of ['start', 'review', 'validate', 'done'])
+    f.rejects(/exact user acceptance/, action, 'T1', ...(action === 'start' || action === 'review' ? ['--agent', 'executor'] : []))
+  f.rejects(/fresh answered contract confirmation/, 'skip-discussion', 'T1', '--reason', 'An earlier generic approval', '--confirmed-by-user')
+  f.ok('begin-discussion', 'T1')
+  const round = f.state().tasks.T1.discussionAttempts.at(-1)
+  const shown = JSON.parse(f.ok('show-contract', 'T1', '--full').stdout)
+  assert.equal(shown.contractDigest, round.confirmsContract[0].digest)
+  assert.deepEqual(shown.contract.touches, plan.tasks[0].touches)
+  assert.equal(shown.contract.validation[0].run, validation[0].run)
+  const path = join(dirname(f.planPath), 'exact-acceptance.json')
+  writeFileSync(path, JSON.stringify(oldDiscovery))
+  f.rejects(/roundId and nonce/, 'finish-discussion', 'T1', '--context', path)
+  const discovery = { ...oldDiscovery, roundId: round.roundId, nonce: round.nonce,
+    questions: [{ question: 'Accept this exact contract and continue automatically for this task?',
+      answer: 'Yes, accept this contract and continue automatically for this task.', channel: 'chat-fallback', round: 1,
+      roundId: round.roundId, confirmsContract: round.confirmsContract }] }
+  writeFileSync(path, JSON.stringify({ ...discovery, questions: [{ ...discovery.questions[0],
+    confirmsContract: [{ task: 'T1', digest: 'a'.repeat(64) }] }] }))
+  f.rejects(/confirmsContract matching/, 'finish-discussion', 'T1', '--context', path)
+  writeFileSync(path, JSON.stringify(discovery))
+  f.ok('finish-discussion', 'T1', '--context', path)
+  assert.equal(f.state().tasks.T1.contractConfirmationRequired, null)
+  assert.equal(f.state().tasks.T1.contractConfirmations.at(-1).roundId, round.roundId)
+  f.ok('authorize', '--scope', 'tasks:T1', '--mode', 'auto', '--confirmed-by-user')
+  assert.equal(f.state().tasks.T1.executionAuthorization.mode, 'auto')
+  assert.equal(f.state().tasks.T1.discussionAttempts.filter(item => item.roundId === round.roundId).length, 1)
+  // A changed proposal needs a new round, not another use of the old acceptance.
+  plan.tasks[0].touches.push('src/Other.ps1')
+  writeFileSync(f.planPath, JSON.stringify(plan))
+  f.ok('sync-plan', '--plan', f.planPath, '--propose')
+  f.ok('begin-discussion', 'T1')
+  f.rejects(/roundId and nonce/, 'finish-discussion', 'T1', '--context', path)
+  plan.tasks[0].touches.push('src/Later.ps1')
+  writeFileSync(f.planPath, JSON.stringify(plan))
+  f.ok('sync-plan', '--plan', f.planPath, '--propose')
+  f.rejects(/discussion is stale/, 'finish-discussion', 'T1', '--context', path)
+})
+
+test('contract proposal keeps a paused execution attempt and original planning history', t => {
+  const f = fixture(t)
+  f.ok('start', 'T1', '--agent', 'executor')
+  f.ok('pause-replanning', 'T1', '--reason', 'Contract needs revised scope')
+  const before = f.state().tasks.T1
+  const plan = JSON.parse(readFileSync(f.planPath, 'utf8'))
+  plan.tasks[0].touches = ['out']
+  writeFileSync(f.planPath, JSON.stringify(plan))
+  f.ok('sync-plan', '--plan', f.planPath, '--propose')
+  f.ok('begin-discussion', 'T1')
+  const current = f.state().tasks.T1
+  assert.deepEqual(current.attempts, before.attempts)
+  assert.deepEqual(current.planningHistory, before.planningHistory)
+  assert.equal(current.planningReturn.stateBeforeBlock, 'running')
+  assert.equal(current.discussionAttempts.at(-1).attempt, 1)
+  const round = current.discussionAttempts.at(-1), path = join(dirname(f.planPath), 'resumption-acceptance.json')
+  const discovery = { ...before.discovery, roundId: round.roundId, nonce: round.nonce,
+    questions: [{ question: 'Accept this exact scope and resume automatically?', answer: 'Yes, accept and resume.',
+      channel: 'chat-fallback', round: 1, roundId: round.roundId, confirmsContract: round.confirmsContract }] }
+  writeFileSync(path, JSON.stringify(discovery))
+  f.ok('finish-discussion', 'T1', '--context', path)
+  f.ok('plan-task', 'T1', '--agent', 'new-planner')
+  f.ok('finish-planning', 'T1', '--plan', join(dirname(f.planPath), 'task-plan.json'))
+  f.ok('authorize', '--scope', 'tasks:T1', '--mode', 'auto', '--confirmed-by-user')
+  f.ok('unblock', 'T1')
+  assert.equal(f.state().tasks.T1.state, 'running')
+  assert.deepEqual(f.state().tasks.T1.attempts, before.attempts)
+})
+
+test('phase proposals require acceptance for affected targets before any dispatch', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Delivery' }])
+  f.plan.tasks[0].touches = ['out']
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.ok('sync-plan', '--plan', f.planPath, '--propose')
+  assert.ok(f.state().phaseWorkflows.F1.contractConfirmationRequired)
+  f.rejects(/exact user acceptance/, 'start', 'A', '--agent', 'executor')
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  assert.equal(f.state().phaseWorkflows.F1.contractConfirmationRequired, null)
+})
+
+test('a contract proposal refuses legacy gates before saving or replacing the recovery backup', t => {
+  const f = fixture(t), state = f.state()
+  state.tasks.T1.planningRequired = false
+  state.tasks.T1.discussionRequired = false
+  f.save(state)
+  const plan = JSON.parse(readFileSync(f.planPath, 'utf8'))
+  plan.tasks[0].touches = ['out']
+  writeFileSync(f.planPath, JSON.stringify(plan))
+  f.rejects(/current discussion and planning gates/, 'sync-plan', '--plan', f.planPath, '--propose')
+  assert.deepEqual(f.state(), state)
+})
+
+test('contract proposals preserve terminal dependencies when global context changes', t => {
+  const f = fixture(t, true), before = f.state().tasks.T2
+  const plan = JSON.parse(readFileSync(f.planPath, 'utf8'))
+  plan.description = 'Candidate behavior with preserved delivered dependencies'
+  writeFileSync(f.planPath, JSON.stringify(plan))
+  f.ok('sync-plan', '--plan', f.planPath, '--propose', '--confirm-invalidation')
+  assert.deepEqual(f.state().tasks.T2, before)
+  assert.ok(f.state().tasks.T1.contractConfirmationRequired)
+})
+
+test('a task-local proposal preserves unrelated nonterminal execution authorization', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'First delivery' },
+    { id: 'B', phase: 'F2', title: 'Independent delivery' }])
+  const before = f.state().tasks.B
+  f.plan.tasks[0].touches = ['out']
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.ok('sync-plan', '--plan', f.planPath, '--propose')
+  assert.deepEqual(f.state().tasks.B, before)
+  assert.equal(f.state().phaseWorkflows.F2.contractConfirmationRequired, undefined)
+})
+
 test('STOP de execucao mostra espera e review inicia apenas o despacho da revisao', t => {
   const f=fixture(t)
   f.ok('start','T1','--agent','executor')

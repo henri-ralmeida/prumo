@@ -1,8 +1,8 @@
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { lstatSync, readFileSync, readlinkSync, realpathSync } from 'node:fs'
+import { lstatSync, readlinkSync, realpathSync } from 'node:fs'
 import { resolve, relative, dirname, isAbsolute } from 'node:path'
-import { gitInventoryPath, gitDirectoryEvidence } from './git-directory-evidence.mjs'
+import { gitInventoryPath, gitDirectoryEvidence, scopeFileDigest } from './git-directory-evidence.mjs'
 
 export const scopePath = value => {
   const normalized = value.replace(/\\/g, '/').split('/').filter(part => part && part !== '.').join('/')
@@ -65,7 +65,7 @@ export function captureScopeBaseline(cwd) {
           nestedRepositories.push(path)
           continue
         }
-        files[path] = createHash('sha256').update(stat.isSymbolicLink() ? readlinkSync(absolute) : readFileSync(absolute)).update(String(stat.mode)).digest('hex')
+        files[path] = stat.isSymbolicLink() ? createHash('sha256').update(readlinkSync(absolute)).update(String(stat.mode)).digest('hex') : scopeFileDigest(root, path, stat.mode)
       } catch (error) { if (error.code !== 'ENOENT') throw error }
     }
     return { method: 'git', cwd: root, files, ...(nestedRepositories.length ? { nestedRepositories } : {}),

@@ -214,6 +214,8 @@ approved material contract change requires fresh planning while preserving prior
 
 ## Briefing and provenance checklist
 
+Large binary deliveries are hashed in 64 KiB chunks and record size and filesystem identity, without a file-size rejection; this does not inspect their text, authenticity or behavior. Inspect origin and behavior independently. Text inspection remains limited to 1 MiB per file with an 8 MiB aggregate text budget. Oversized text fails explicitly rather than disappearing from evidence. Changes during capture or after validation invalidate the evidence; never bypass independent review to accept a fingerprint.
+
 Generate `brief <task> --role reviewer` after handoff, including unblock --reviewer.
 Inspect current contract/diff; old receipts are not the new reviewer's inspection.
 Check new delivery names/lines and specific text exceptions inside approved scope.
