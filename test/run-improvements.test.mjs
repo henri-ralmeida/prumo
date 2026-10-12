@@ -12,9 +12,94 @@ import { recordedAgentTiming } from '../scripts/recorded-timing.mjs'
 import { diagnoseShellFilter } from '../lib/shell-diagnostics.mjs'
 import { parseEngineArgs } from '../scripts/engine-args.mjs'
 import { verifyTaskScope } from '../scripts/task-scope.mjs'
+import { gitInventoryPath, gitDirectoryEvidence } from '../scripts/git-directory-evidence.mjs'
 
 const engine = fileURLToPath(new URL('../scripts/engine.mjs', import.meta.url))
 const at = minute => new Date(Date.UTC(2026, 9, 7, 13, minute)).toISOString()
+
+function nestedGit(f, path) {
+  mkdirSync(join(f.cwd, path), { recursive: true })
+  const git = (...args) => {
+    const result = spawnSync('git', ['-C', join(f.cwd, path), ...args], { encoding: 'utf8', windowsHide: true })
+    assert.equal(result.status, 0, result.stderr)
+    return result.stdout
+  }
+  git('init')
+  return git
+}
+
+test('nested repositories and Git fixtures have explicit coverage without relaxing contract path safety', t => {
+  const f = fixture(t)
+  f.write('out/report.txt', 'Observable result')
+  const vendor = nestedGit(f, 'out/vendor'), wrongPin = nestedGit(f, 'out/fixtures/wrong-pin')
+  f.write('out/vendor/source.txt', 'Original source')
+  f.write('out/fixtures/wrong-pin/pin.txt', 'A deliberately incorrect pin')
+  vendor('add', 'source.txt')
+  const captured = captureDelivery(f.task, f.cwd)
+  assert.deepEqual(Object.keys(captured.files), ['out/report.txt'])
+  assert.deepEqual(captured.nestedRepositories.map(item => item.path), ['out/fixtures/wrong-pin', 'out/vendor'])
+  assert.match(captured.limitation, /independent inspection/)
+  const before = captured.nestedRepositories[1].digest
+  f.write('out/vendor/source.txt', 'Changed source')
+  assert.notEqual(captureDelivery(f.task, f.cwd).nestedRepositories[1].digest, before)
+  wrongPin('add', 'pin.txt')
+  assert.equal(gitInventoryPath('out/vendor/'), 'out/vendor')
+  for (const path of ['out/vendor/', '../out/', '/out/', 'C:/out/', 'out//', 'out/../vendor/', 'out\0/']) {
+    assert.throws(() => safeEvidencePath(path), /safe repository-relative/)
+    if (path !== 'out/vendor/') assert.throws(() => gitInventoryPath(path), /safe repository-relative/)
+  }
+  f.task.deliveries = ['out/vendor/']
+  assert.throws(() => captureDelivery(f.task, f.cwd), /safe repository-relative/)
+})
+
+test('nested evidence keeps independent approval, outside-scope refusal and post-validation freshness', t => {
+  const f = fixture(t)
+  f.state.plan.scopePolicy = 'explicit'
+  f.task.writeScope = 'files'
+  nestedGit(f, 'out/vendor')
+  f.write('out/vendor/source.txt', 'Original source')
+  f.save()
+  f.cli(['start', 'T1', '--agent', 'executor'])
+  f.cli(['review', 'T1', '--agent', 'reviewer'])
+  const paused = f.read()
+  f.cli(['validate', 'T1', '--ok', '--evidence', 'Inspected'], 1)
+  assert.deepEqual(f.read(), paused)
+  f.cli(['done', 'T1'], 1)
+  const validate = () => f.cli(['validate', 'T1', '--ok', '--cwd', f.cwd, '--evidence', 'Behavior inspected',
+    '--scope-evidence', 'Nested source and ignored outputs inspected independently; directory scope unchanged'])
+  validate()
+  assert.match(f.read().tasks.T1.validations.at(-1).deliveryCheck.limitation, /independent inspection/)
+  f.write('out/vendor/source.txt', 'Changed after validation')
+  assert.match(f.cli(['done', 'T1'], 1), /changed after/)
+  validate()
+  f.write('unauthorized.txt', 'Outside approved scope')
+  const baseline = f.read().tasks.T1.attempts[0].scopeBaseline
+  assert.throws(() => verifyTaskScope(f.read().tasks.T1, baseline, { agent: 'reviewer', evidence: 'Inspected' }), /outside approved touches/)
+  fs.unlinkSync(join(f.cwd, 'unauthorized.txt'))
+  f.cli(['done', 'T1'])
+  assert.equal(f.read().tasks.T1.attempts.length, 1)
+  assert.equal(f.read().tasks.T1.state, 'done')
+})
+
+test('nested evidence refuses unsafe links, ordinary directories and bounded reading violations', t => {
+  const f = fixture(t)
+  mkdirSync(join(f.cwd, 'out/ordinary'))
+  assert.throws(() => gitDirectoryEvidence(f.cwd, 'out/ordinary'), /own root/)
+  const git = nestedGit(f, 'out/vendor')
+  f.write('out/vendor/source.txt', 'Source')
+  git('add', 'source.txt')
+  git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Record source')
+  fs.unlinkSync(join(f.cwd, 'out/vendor/source.txt'))
+  assert.ok(gitDirectoryEvidence(f.cwd, 'out/vendor').digest)
+  f.write('out/vendor/source.txt', 'Source')
+  symlinkSync(join(f.cwd, 'out/vendor'), join(f.cwd, 'out/link'), process.platform === 'win32' ? 'junction' : 'dir')
+  assert.throws(() => gitDirectoryEvidence(f.cwd, 'out/link'), /link refused/)
+  f.write('out/vendor/large.bin', Buffer.alloc(1024 * 1024 + 1))
+  assert.throws(() => gitDirectoryEvidence(f.cwd, 'out/vendor'), /reading limit/)
+  fs.unlinkSync(join(f.cwd, 'out/vendor/large.bin'))
+  assert.throws(() => gitDirectoryEvidence(f.cwd, 'out/vendor', { bytes: 8 * 1024 * 1024, files: 0 }), /reading limit/)
+  assert.throws(() => gitDirectoryEvidence(f.cwd, 'out/vendor', { bytes: 0, files: 257 }), /file count/)
+})
 function fixture(t, { git = true } = {}) {
   const home = fs.realpathSync(mkdtempSync(join(tmpdir(), 'prumo-evidence-'))), cwd = join(home, 'project'), root = join(home, 'store', 'workspace'), run = join(root, '.specs', 'graph', 'demo')
   mkdirSync(join(cwd, 'out'), { recursive: true }); mkdirSync(run, { recursive: true })

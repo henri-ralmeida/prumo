@@ -1,17 +1,14 @@
 import { constants, lstatSync, openSync, closeSync, fstatSync, realpathSync, readSync, readdirSync } from 'node:fs'
-import { resolve, posix } from 'node:path'
+import { resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { isUtf8 } from 'node:buffer'
 import { insideTouches, externalTouchPaths } from './task-scope.mjs'
+import { safeRepositoryPath, gitInventoryPath, evidenceLocation, gitDirectoryEvidence } from './git-directory-evidence.mjs'
 
 const MAX_FILE = 1024 * 1024, MAX_TOTAL = 8 * MAX_FILE, MAX_FILES = 256
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
-export function safeEvidencePath(path) {
-  if (typeof path !== 'string' || !path || /[\x00-\x1f]/.test(path) || /^(?:[/\\]|[A-Za-z]:)/.test(path) || path.replaceAll('\\', '/').split('/').some(part => part === '..' || part === ''))
-    throw new Error('Evidence paths must be safe repository-relative paths')
-  return posix.normalize(path.replaceAll('\\', '/'))
-}
+export const safeEvidencePath = safeRepositoryPath
 export function assertEvidenceContract(task) {
   const touches = (task.touches ?? []).filter(path => !externalTouchPaths(task).includes(path))
   if (task.deliveries !== undefined && !Array.isArray(task.deliveries)) throw new Error('deliveries must be an array')
@@ -99,17 +96,24 @@ export function captureDelivery(task, cwd, content = false, declaredOnly = false
     if (task.deliveries?.length || task.numericProvenance) throw new Error('Declared evidence requires a recorded project cwd')
     return { files: {}, limitation: 'Project cwd unknown; identifier content check unavailable.' }
   }
-  const paths = [...new Set((declaredOnly ? task.deliveries ?? [] : deliveryFiles(task, cwd)).map(safeEvidencePath))]
+  const paths = [...new Set((declaredOnly ? task.deliveries ?? [] : deliveryFiles(task, cwd)).map(declaredOnly ? safeEvidencePath : gitInventoryPath))]
   if (paths.length > MAX_FILES) throw new Error('Delivery file count exceeds reading limit')
-  const budget = { bytes: 0 }, files = Object.create(null)
+  const budget = { bytes: 0, files: paths.length }, files = Object.create(null), nestedRepositories = []
   for (const path of paths) {
     try {
+      if (lstatSync(evidenceLocation(cwd, path)).isDirectory()) {
+        nestedRepositories.push(gitDirectoryEvidence(cwd, path, budget))
+        continue
+      }
       const data = readSafe(cwd, path, budget)
       files[path] = { digest: hash(data.toString('base64')), ...(data.includes(0) || !isUtf8(data) ? { binary: true } : { lineHashes: data.toString('utf8').split(/\r?\n/).map(hash), ...(content ? { lines: data.toString('utf8').split(/\r?\n/) } : {}) }) }
     } catch (error) { if (error.code !== 'ENOENT') throw error }
   }
-  return { files, ...(externalPaths.length ? { externalPaths,
-    limitation: 'External paths are not captured by repository evidence; independent inspection is required.' } : {}) }
+  const limitations = []
+  if (externalPaths.length) limitations.push('External paths are not captured by repository evidence; independent inspection is required.')
+  if (nestedRepositories.length) limitations.push('Nested repository source text and ignored files require independent inspection.')
+  return { files, ...(externalPaths.length ? { externalPaths } : {}),
+    ...(nestedRepositories.length ? { nestedRepositories } : {}), ...(limitations.length ? { limitation: limitations.join(' ') } : {}) }
 }
 export function checkDelivery(state, task, cwd) {
   cwd = task.project ?? cwd
@@ -143,7 +147,9 @@ export function checkDelivery(state, task, cwd) {
   }
   if (findings.length) throw new Error('Delivery identifiers refused: ' + [...new Set(findings.map(item => `${item.path}:${item.line}`))].join(', '))
   const fingerprints = Object.fromEntries(Object.entries(current.files).map(([path, { lines, ...file }]) => [path, file]))
-  return { fingerprint: hash({ ...current, files: fingerprints }), binaryPaths, limitation: baseline ? current.limitation : 'Legacy attempt has no content baseline; only declared deliveries were checked.' }
+  return { fingerprint: hash({ ...current, files: fingerprints }), binaryPaths,
+    ...(current.nestedRepositories ? { nestedRepositories: current.nestedRepositories } : {}),
+    limitation: baseline ? current.limitation : 'Legacy attempt has no content baseline; only declared deliveries were checked.' }
 }
 function pointerValue(value, pointer) {
   if (typeof pointer !== 'string' || (pointer !== '' && !pointer.startsWith('/')) || /~(?![01])/.test(pointer)) throw new Error('Invalid provenance JSON pointer')

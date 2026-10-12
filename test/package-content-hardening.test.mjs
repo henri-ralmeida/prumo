@@ -37,7 +37,7 @@ function bundleFixture(t) {
   writeFileSync(join(root, 'references', 'nested', 'detail.md'), 'detalhe')
   mkdirSync(join(root, 'lib'), { recursive: true })
   copyFileSync(join(repository, 'lib', 'release-notes.mjs'), join(root, 'lib', 'release-notes.mjs'))
-  for (const name of [...bundleScripts, 'replanning-recovery.mjs', 'release-notes.json']) {
+  for (const name of [...bundleScripts, 'replanning-recovery.mjs', 'git-directory-evidence.mjs', 'release-notes.json']) {
     mkdirSync(dirname(join(root, 'scripts', name)), { recursive: true })
     copyFileSync(join(repository, 'scripts', name), join(root, 'scripts', name))
   }

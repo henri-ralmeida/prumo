@@ -131,6 +131,15 @@ A rejection is recorded the same way with `validate <task> --failed --summary ".
 
 ## Delivered scope verification
 
+Git inventory can report a nested repository or submodule as a directory, with or without
+a terminal slash. Evidence capture recognizes that directory only after verifying safe path
+components and its own Git root. It records an index/diff/untracked-hash fingerprint and an explicit
+source-text/ignored-file inspection limitation, rather than silently dropping it or reading it as a file.
+An independent reviewer must inspect those sources and provide `--scope-evidence`. Directory-scope
+fingerprints preserve freshness checks; observed changes outside approved scope remain refused even
+with reviewer evidence. Nested Git links inside that repository require separate coverage and are
+refused rather than treated as fully inspected. Existing file-count and reading limits still apply.
+
 With `scopePolicy: "explicit"`, compare actual delivery to the pre-`start` baseline, including tracked and untracked files visible to Git. New `files` changes must fit `touches`; `read-only` may not change files. A path already dirty before execution and unchanged afterward is not this task's delivery. Also check authorized external-resource access and its evidence; Git does not observe tables, services or environments.
 
 The engine checks scope during `validate` and again at `done`, but Git-ignored files are outside this observation. When Git or its baseline is unavailable, record that limitation and require current evidence from the independent reviewer through `validate --ok --scope-evidence "<scope observations and limitations>"`. This receipt does not pretend an automatic comparison happened or waive observed unauthorized writes. Preserve production validation and independent review.

@@ -306,7 +306,7 @@ test('Git confere novos, removidos e alterados sem atribuir sujeira anterior ina
   const readMock = t.mock.method(fs, 'readFileSync', () => { throw new Error('read failed') }); syncBuiltinESMExports()
   assert.match(captureScopeBaseline(cwd).limitation, /read failed/)
   readMock.mock.restore(); syncBuiltinESMExports()
-  const directoryMock = t.mock.method(fs, 'lstatSync', () => ({ isDirectory: () => true })); syncBuiltinESMExports()
+  const directoryMock = t.mock.method(fs, 'lstatSync', () => ({ isDirectory: () => true, isSymbolicLink: () => false })); syncBuiltinESMExports()
   assert.match(captureScopeBaseline(cwd).limitation, /submodule/)
   directoryMock.mock.restore(); syncBuiltinESMExports()
   const linkMock = t.mock.method(fs, 'lstatSync', path => String(path).endsWith('dirty') ? { isDirectory: () => false, isSymbolicLink: () => true, mode: 0 } : originalStat(path))

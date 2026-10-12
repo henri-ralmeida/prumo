@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { lstatSync, readFileSync, readlinkSync, realpathSync } from 'node:fs'
 import { resolve, relative, dirname, isAbsolute } from 'node:path'
+import { gitInventoryPath, gitDirectoryEvidence } from './git-directory-evidence.mjs'
 
 export const scopePath = value => {
   const normalized = value.replace(/\\/g, '/').split('/').filter(part => part && part !== '.').join('/')
@@ -49,19 +50,26 @@ export function captureScopeBaseline(cwd) {
     const git = (...args) => { const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }); if (result.status !== 0) throw new Error('Git repository snapshot is unavailable'); return result.stdout }
     const repository = realpathSync.native(git('rev-parse', '--show-toplevel').trim())
     if (relative(root, repository) !== '') throw new Error('project directory must be the Git repository root')
-    const files = Object.create(null)
-    for (const path of new Set(git('ls-files', '-z', '--cached', '--others', '--exclude-standard').split('\0').filter(Boolean))) {
+    const files = Object.create(null), nestedRepositories = []
+    for (const entry of new Set(git('ls-files', '-z', '--cached', '--others', '--exclude-standard').split('\0').filter(Boolean))) {
+      const path = gitInventoryPath(entry)
       const absolute = resolve(root, path)
       try {
         for (let parent = dirname(absolute); parent !== root; parent = dirname(parent)) {
           if (lstatSync(parent).isSymbolicLink()) throw new Error('A parent directory is a symbolic link; independent scope evidence is required')
         }
         const stat = lstatSync(absolute)
-        if (stat.isDirectory()) throw new Error('Git submodule needs independent scope evidence')
+        if (stat.isDirectory()) {
+          const snapshot = gitDirectoryEvidence(root, path)
+          files[path] = snapshot.digest
+          nestedRepositories.push(path)
+          continue
+        }
         files[path] = createHash('sha256').update(stat.isSymbolicLink() ? readlinkSync(absolute) : readFileSync(absolute)).update(String(stat.mode)).digest('hex')
       } catch (error) { if (error.code !== 'ENOENT') throw error }
     }
-    return { method: 'git', cwd: root, files, limitation: 'Ignored files are not included in the Git scope check.' }
+    return { method: 'git', cwd: root, files, ...(nestedRepositories.length ? { nestedRepositories } : {}),
+      limitation: 'Ignored files are not included in the Git scope check.' + (nestedRepositories.length ? ' Nested repositories require independent inspection; their directory scope is fingerprinted.' : '') }
   } catch (error) { return { method: 'unavailable', limitation: error.message } }
 }
 // A falta de argumento deve ser detectada antes dos comandos; alterações reais continuam sujeitas ao gate final.
@@ -69,6 +77,7 @@ export function scopeEvidenceRequirement(task, baseline, concurrentScopes = []) 
   if (externalTouchPaths(task).length) return 'External approved paths require independent scope evidence'
   const current = captureScopeBaseline(baseline?.cwd)
   if (baseline?.method !== 'git' || current.method !== 'git') return 'Git scope unavailable'
+  if (baseline.nestedRepositories?.length || current.nestedRepositories?.length) return 'Nested repositories require independent scope evidence'
   const paths = [...new Set([...Object.keys(baseline.files), ...Object.keys(current.files)])].filter(path => baseline.files[path] !== current.files[path])
   if (paths.some(path => (task.writeScope !== 'files' || !insideTouches(path, task.touches)) && concurrentScopes.some(scope => insideTouches(path, scope))))
     return 'changes outside approved touches overlap concurrent delivery scopes'
@@ -92,7 +101,10 @@ export function verifyTaskScope(task, baseline, independentEvidence, concurrentS
     independentEvidence?.evidence?.trim() && independentEvidence.agent && independentEvidence.agent !== task.agent && concurrentScopes.some(scope => insideTouches(path, scope)))
   const outside = paths.filter(path => (!fileScope || !insideTouches(path, touches)) && !excludedPaths.includes(path))
   if (outside.length) throw new Error('Delivery changes are outside approved touches: ' + outside.join(', '))
-  return { method: 'git', paths, excludedPaths, ...(excludedPaths.length || externalPaths.length ? { independentEvidence } : {}),
+  if ((baseline.nestedRepositories?.length || current.nestedRepositories?.length) &&
+      (!independentEvidence?.evidence?.trim() || !independentEvidence.agent || independentEvidence.agent === task.agent))
+    throw new Error('Nested repositories require an independent reviewer --scope-evidence with inspected paths and method')
+  return { method: 'git', paths, excludedPaths, ...(excludedPaths.length || externalPaths.length || current.nestedRepositories?.length || baseline.nestedRepositories?.length ? { independentEvidence } : {}),
     ...(externalPaths.length ? { externalPaths, externalLimitation: 'External paths are not captured by repository evidence; independent inspection is required.' } : {}),
     fingerprint: createHash('sha256').update(JSON.stringify(current.files)).digest('hex'), limitation: current.limitation }
 }
