@@ -210,7 +210,9 @@ test('large binary hashing bounds each read and rejects concurrent mutation, gro
 })
 
 function fixture(t, { git = true } = {}) {
-  const home = fs.realpathSync(mkdtempSync(join(tmpdir(), 'prumo-evidence-'))), cwd = join(home, 'project'), root = join(home, 'store', 'workspace'), run = join(root, '.specs', 'graph', 'demo')
+  // Resolve Windows runner aliases before path-specific identity mocks so they
+  // intercept the same file on initial and post-capture checks.
+  const home = fs.realpathSync.native(mkdtempSync(join(tmpdir(), 'prumo-evidence-'))), cwd = join(home, 'project'), root = join(home, 'store', 'workspace'), run = join(root, '.specs', 'graph', 'demo')
   mkdirSync(join(cwd, 'out'), { recursive: true }); mkdirSync(run, { recursive: true })
   if (git) assert.equal(spawnSync('git', ['init', cwd], { encoding: 'utf8' }).status, 0)
   const task = { id: 'T1', phase: null, title: 'Observable delivery', touches: ['out'], deps: [], state: 'pending', planningRequired: false, discussionRequired: false, discoveryRequired: false, validation: [{ kind: 'functional', run: 'node --version', expect: 'Node runs' }], attempts: [], validations: [], notes: [] }
@@ -801,6 +803,26 @@ test('file replacement, special entries, partial reads and growth cannot bypass 
     assert.throws(() => captureDelivery(f.task, f.cwd), /Denied/)
   } finally { restore() }
 })
+test('Windows runner aliases resolve before path-specific identity checks', t => {
+  if (process.platform !== 'win32') return t.skip('Windows temporary directory aliases')
+  const parent = fs.realpathSync.native(mkdtempSync(join(tmpdir(), 'prumo-runner-alias-')))
+  t.after(() => rmSync(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
+  const result = spawnSync(process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', `for %I in ("${parent}") do @echo %~sI`],
+    { encoding: 'utf8', windowsHide: true, windowsVerbatimArguments: true })
+  assert.equal(result.status, 0, result.stderr)
+  const previous = { TEMP: process.env.TEMP, TMP: process.env.TMP }
+  let f
+  try {
+    process.env.TEMP = process.env.TMP = result.stdout.trim().toLowerCase()
+    f = fixture(t)
+  } finally {
+    for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value }
+  }
+  assert.equal(f.home, fs.realpathSync.native(f.home))
+  f.write('out/payload', Buffer.alloc(1024 * 1024 + 1))
+  assert.equal(captureDelivery(f.task, f.cwd).files['out/payload'].size, 1024 * 1024 + 1)
+})
+
 test('exact large file identities reject replacements hidden by Number rounding', t => {
   const f = fixture(t), target = join(f.cwd, 'out/report.txt')
   f.write('out/report.txt', 'Approved product content'); f.task.deliveries = ['out/report.txt']

@@ -649,6 +649,8 @@ test('task contract changes invalidate completed planning, including a later ret
     f.writePlan()
     f.ok('sync-plan', '--plan', f.planPath)
     assert.equal(f.graph().derived.T1.effective, 'ready_for_discussion')
+    assert.equal(f.state().tasks.T1.contractConfirmationRequired.proposed, undefined,
+      'ordinary contract changes retain current-planning checks without adopting the proposal flow')
     f.ok('authorize', '--scope', 'tasks:T1', '--confirmed-by-user')
     f.rejected(/completed current planning/, 'start', 'T1', '--agent', 'executor', '--force')
   }

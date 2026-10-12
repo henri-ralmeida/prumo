@@ -567,6 +567,8 @@ test('execution authorization records scope and mode, gates only selected tasks,
   f.savePlan(changed)
   f.ok('sync-plan', '--plan', f.planPath)
   assert.equal(f.state().tasks.A.executionAuthorization, undefined)
+  assert.equal(f.state().tasks.A.contractConfirmationRequired.proposed, undefined,
+    'ordinary synchronization preserves its existing authorization gate instead of selecting the proposal gate')
   assert.ok(f.state().tasks.B.executionAuthorization)
   f.rejects(/no execution authorization/, 'start', 'A', '--agent', 'executor-A')
   f.ok('start', 'B', '--agent', 'executor-B')

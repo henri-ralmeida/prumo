@@ -2227,6 +2227,7 @@ const commands = {
           usesCurrentPlanning(state, task) && !['done', 'skipped'].includes(task.state))
         if (!targets.length) continue
         phase.contractConfirmationRequired = { at: historyAt, source,
+          ...(args.propose ? { proposed: true } : {}),
           tasks: targets.map(task => task.id),
           invalidated: invalidatedWorkflows.filter(item => item.id === phaseId || item.task &&
             state.tasks[item.task].phase === phaseId) }
@@ -2240,6 +2241,7 @@ const commands = {
         const task = state.tasks[id]
         if (!task || ['done', 'skipped'].includes(task.state) || !usesCurrentPlanning(state, task)) continue
         task.contractConfirmationRequired = { at: historyAt, source, task: id,
+          ...(args.propose ? { proposed: true } : {}),
           invalidated: invalidatedWorkflows.filter(item => item.scope === 'task' && item.task === id) }
       }
     }
@@ -4031,7 +4033,8 @@ function runCommand() {
   if (['start', 'review', 'validate', 'done'].includes(cmd)) {
     const state = loadState(runName()), task = state.tasks[args._[0]]
     const phase = state.phaseWorkflows?.[task?.phase]
-    if (task?.contractConfirmationRequired || phase?.contractConfirmationRequired?.tasks?.includes(task?.id))
+    if (task?.contractConfirmationRequired?.proposed ||
+        phase?.contractConfirmationRequired?.proposed && phase.contractConfirmationRequired.tasks.includes(task?.id))
       die('Proposed contract requires exact user acceptance before execution or review')
   }
   if (BLOCKED_ACTIONS.has(cmd) && args.scope !== 'phase') assertExternalBlockAction(loadState(runName()), args._[0])
