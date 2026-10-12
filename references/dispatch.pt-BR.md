@@ -100,6 +100,12 @@ Contexto aprovado relevante: <propósito, restrições e referências de origem;
 Seu trabalho precisa atender, cláusula por cláusula: <validation>
   Um agente DIFERENTE confere sua entrega contra esse contrato e nunca vê esta mensagem.
 <em uma nova tentativa: o --reason do revisor, literalmente>
+Comprove o caminho realmente usado pela pessoa ou operação, não apenas um helper isolado. Quando escala conhecida,
+tamanho de arquivo, estado persistido, concorrência ou trabalho demorado criar um risco material, use dados reais
+com segurança ou dados sintéticos representativos e justifique a escolha. Diferencie estado vazio de estado
+persistido existente quando o comportamento mudar. Relate as condições testadas, os resultados observáveis e as
+limitações materiais; testes aprovados ou sua contagem não são garantia geral. Mantenha a validação proporcional
+para trabalho delimitado de baixo risco.
 Trate um obstáculo recuperável como trabalho do executor, não como motivo para passar trabalho incompleto para revisão:
 inspecione a falha, faça pesquisa adicional direcionada quando necessário, mude de estratégia, tente alternativas seguras
 dentro do contrato aprovado e rode de novo as verificações de implementação relevantes. Continue até que o plano
@@ -109,7 +115,7 @@ ou impossibilidade comprovada. Registre esse bloqueio e as tentativas feitas; n�
 Ao começar cada passo planejado, rode esta linha de progresso com o índice desse passo, começando em 1:
 <o comando de progresso impresso por start, com --step <índice>>
 Política de commit: <Project overrides>. Nunca mexa em .specs/graph/ — o orquestrador é dono do estado.
-Relate: o que você mudou e o que um revisor precisa para reproduzir.
+Relate: o que você mudou, as condições e os resultados comprovados, o que permanece sem verificação e o que um revisor precisa para reproduzir.
 ```
 
 Antes de o executor começar, registre a linha de base anterior ao início descrita em

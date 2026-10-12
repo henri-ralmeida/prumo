@@ -420,6 +420,11 @@ terms into their practical effect. Add one to three prioritized suggestions only
 risk, pending verification or useful next action remains; never manufacture follow-up work merely to
 populate a section.
 
+State the tested operating conditions and exactly what they prove, then identify any relevant condition
+that remains unverified. Completed tasks, passing commands and test counts are not a general guarantee of
+the whole workflow. Preserve completed history and human approvals; an evidence gap informs the current
+verdict or an explicit follow-up and never silently reopens a completed task.
+
 Then point the dev at the dashboard's **results** tab (`r`): wall clock vs agent time, the
 planning/build/verify split, the critical path against the wall clock, and which tasks were reviewed
 above the median cost without ever being rejected. That last list is the input to the NEXT

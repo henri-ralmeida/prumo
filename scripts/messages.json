@@ -1770,5 +1770,10 @@
   "Keep guide changes isolated from real runs and preserve the default of 3 agents on new installations": "Mantenha as alterações do guia isoladas dos fluxos reais e preserve o padrão de 3 agentes nas novas instalações",
   "Fixed — Transparent favicon and guide coverage": "Corrigido — Favicon transparente e cobertura do guia",
   "Remove the black favicon background while preserving the faceted Prumo symbol": "Remova o fundo preto do favicon preservando o símbolo facetado do Prumo",
-  "Verify guide completion and late visual updates after closing without reducing coverage requirements": "Verifique a conclusão do guia e as atualizações visuais atrasadas após o fechamento, sem reduzir os requisitos de cobertura"
+  "Verify guide completion and late visual updates after closing without reducing coverage requirements": "Verifique a conclusão do guia e as atualizações visuais atrasadas após o fechamento, sem reduzir os requisitos de cobertura",
+  "Fixed — Representative behavioral evidence": "Corrigido — Evidência comportamental representativa",
+  "Require planning, execution and review to account for known material operating conditions and prove the user-facing path with justified representative data": "Exija que planejamento, execução e revisão considerem condições operacionais materiais conhecidas e comprovem o caminho usado pela pessoa com dados representativos e justificados",
+  "Reject small fixtures that do not cover a known material risk while keeping bounded low-risk fixes proportional without generic load tests": "Reprove amostras pequenas que não cubram um risco material conhecido e mantenha correções delimitadas de baixo risco proporcionais, sem testes de carga genéricos",
+  "Report the tested conditions and limitations instead of treating completed tasks or passing test counts as general assurance": "Informe as condições testadas e as limitações em vez de tratar tarefas concluídas ou contagens de testes aprovados como garantia geral",
+  "Show all ten supported AI harnesses in the README with direct documentation and skill invocation links": "Mostre no README todos os dez harnesses de IA compatíveis, com links diretos para a documentação e a invocação da skill"
 }

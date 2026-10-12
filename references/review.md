@@ -51,6 +51,10 @@ Check each verification item's `requires`; report manual inspection as pending u
 Run the gate YOURSELF through engine validate: <Project overrides, engine path, absolute project cwd>.
 Check the recorded output, actual relevant test count, and results against every criterion.
 Never accept lint/build/typecheck, echo instructions, or zero relevant tests as functional proof.
+When context establishes materially larger volume, files, persisted state, concurrency or slow operations,
+challenge small fixtures and require evidence that the exercised condition is representative. Independently
+probe the highest-risk known condition on the relevant user path. Reject insufficient coverage even when
+the existing tests pass; do not invent a performance threshold or generic load suite.
 Answer:
   verdict:  ok | failed
   summary: one sentence stating the result and why it meets or misses acceptance
@@ -79,6 +83,13 @@ commands and broad speculative checks add cost without strengthening the verdict
 Browser/API workflows need checks that exercise that workflow at the
 appropriate layer; a pure helper test cannot prove a user journey. Keep tests scoped to the
 task and add a final integration check when separate tasks must work together.
+
+Apply the same counterexample rule to known operating conditions. If the context says a collection is
+large or persisted state exists, a few records or an empty state are not representative without a concrete
+reason they exercise the same risk. Derive one safe probe using representative real or synthetic data on
+the user-facing path and inspect effects on other relevant operations. Record the tested conditions and
+limitations. For a bounded low-risk correction with no material scale or state risk, keep the probe focused;
+do not require load testing merely because it is available.
 
 ## Inspecting checks and recording the verdict
 

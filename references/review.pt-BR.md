@@ -51,6 +51,11 @@ Confira o `requires` de cada item de verificação; informe a inspeção manual 
 Execute a etapa de controle VOCÊ MESMO por meio de engine validate: <Project overrides, caminho do motor, cwd absoluto do projeto>.
 Confira a saída registrada, a contagem real de testes relevantes e os resultados contra cada critério.
 Nunca aceite lint/build/typecheck, instruções de echo ou zero testes relevantes como prova funcional.
+Quando o contexto estabelecer volume, arquivos, estado persistido, concorrência ou operações demoradas
+materialmente maiores, conteste amostras pequenas e exija evidência de que a condição exercitada é representativa.
+Sonde de forma independente a condição conhecida de maior risco no caminho relevante usado pela pessoa. Reprove
+cobertura insuficiente mesmo quando os testes existentes passarem; não invente um limite de desempenho nem uma
+bateria genérica de carga.
 Responda:
   verdict:  ok | failed
   summary: uma frase dizendo o resultado e por que ele atende ou não ao aceite
@@ -79,6 +84,13 @@ repetidos e verificações amplas e especulativas acrescentam custo sem fortalec
 Fluxos de navegador/API precisam de verificações que exercitem esse fluxo na
 camada apropriada; um teste de helper puro não prova uma jornada do usuário. Mantenha os testes restritos à
 tarefa e acrescente uma verificação final de integração quando tarefas separadas precisarem funcionar juntas.
+
+Aplique a mesma regra de contraprova às condições operacionais conhecidas. Se o contexto disser que uma coleção é
+grande ou que existe estado persistido, poucos registros ou um estado vazio não são representativos sem um motivo
+concreto para exercitarem o mesmo risco. Derive uma sondagem segura com dados reais ou sintéticos representativos no
+caminho usado pela pessoa e inspecione os efeitos sobre outras operações relevantes. Registre as condições testadas
+e as limitações. Para uma correção delimitada de baixo risco sem risco material de escala ou estado, mantenha a
+sondagem focada; não exija teste de carga apenas porque ele está disponível.
 
 ## Inspecionar verificações e registrar o veredito
 

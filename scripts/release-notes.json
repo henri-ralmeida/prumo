@@ -1,4 +1,17 @@
 {
+  "2.9.3": {
+    "en": [
+      {
+        "title": "Fixed — Representative behavioral evidence",
+        "items": [
+          "Require planning, execution and review to account for known material operating conditions and prove the user-facing path with justified representative data",
+          "Reject small fixtures that do not cover a known material risk while keeping bounded low-risk fixes proportional without generic load tests",
+          "Report the tested conditions and limitations instead of treating completed tasks or passing test counts as general assurance",
+          "Show all ten supported AI harnesses in the README with direct documentation and skill invocation links"
+        ]
+      }
+    ]
+  },
   "2.9.2": {
     "en": [
       {

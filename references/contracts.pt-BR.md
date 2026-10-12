@@ -90,6 +90,15 @@ anteriores com caminhos de saída distintos quando uma verificação gravar arte
 com verificações somente leitura quando isso bastar; repetir um efeito colateral operacional exige autorização
 própria e não deve sobrescrever a entrega em revisão.
 
+Quando o contexto aprovado ou os artefatos atuais estabelecerem uma condição operacional material, a prova deve
+exercitar o caminho relevante usado pela pessoa sob uma condição representativa. Considere quantidades conhecidas
+de registros, tamanhos de arquivos, estado persistido, concorrência e operações demoradas; diferencie estado vazio
+de cache existente quando seguirem caminhos distintos. Use dados reais com segurança ou dados sintéticos com forma
+e escala representativas e justificadas. Um conjunto menor só basta quando a evidência explicar por que ele aciona
+o mesmo risco. Registre condições, resultados e limitações. A presença de campos, a contagem de testes e comandos
+aprovados não estabelecem representatividade por si só. Não invente uma meta de desempenho nem exija teste de carga
+genérico quando o risco aplicável e os critérios de aceite não pedirem isso.
+
 ## Inspeção legítima
 
 Documentação e outras tarefas que não afetam o comportamento em tempo de execução podem usar

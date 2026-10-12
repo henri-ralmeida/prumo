@@ -8,6 +8,18 @@ O plano define o resultado esperado; o motor controla estados e registros. O amb
 
 Contratos novos declaram o escopo de escrita antes da execução: caminhos investigados, ausência de escrita em arquivos ou escopo que ainda precisa de pesquisa. Recursos compartilhados identificam conflitos além dos arquivos, como alterações na mesma tabela do banco. A discussão esclarece dúvidas, o planejamento detalha a abordagem, a execução respeita o escopo aprovado e a revisão independente confere a entrega contra a referência anterior à execução. O dashboard explica a prontidão e os impedimentos. Contratos antigos permanecem compatíveis; adotar a política explícita exige uma atualização aprovada do plano.
 
+## Harnesses de IA compatíveis
+
+O Prumo leva o mesmo fluxo orientado por evidências aos dez harnesses apresentados no guia integrado. Cada harness preserva seus próprios modelos, controles de planejamento e capacidades de agentes.
+
+| [Claude Code](https://code.claude.com/docs/en/common-workflows) | [Codex](https://developers.openai.com/codex/cli/slash-commands) | [Kiro](https://kiro.dev/docs/specs/plan/) | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/plan/plan-mode/README.md) | [Antigravity](https://antigravity.google/docs/skills/) |
+|:---:|:---:|:---:|:---:|:---:|
+| `/prumo` | `$prumo` | `/prumo` | `/prumo` | `/prumo` |
+
+| [OpenCode](https://opencode.ai/v2/docs/skills) | [Grok Build](https://docs.x.ai/build/features/skills-plugins-marketplaces) | [GitHub Copilot](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills) | [Hermes Agent](https://hermes-agent.nousresearch.com/docs/user-guide/features/skills/) | [OpenClaw](https://docs.openclaw.ai/tools/skills) |
+|:---:|:---:|:---:|:---:|:---:|
+| `@prumo` / `/prumo` | `/prumo` | `/prumo` | `/prumo` | `/prumo` |
+
 ## Conheça o dashboard
 
 Estas capturas vêm do guia integrado e usam um plano fictício de checkout. Abra **Guia** no dashboard para experimentar os mesmos controles sem alterar seus planos. As imagens mostram a interface em inglês.

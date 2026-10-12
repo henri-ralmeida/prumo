@@ -89,6 +89,15 @@ evidence with distinct output paths when a check writes artifacts. Review existi
 with read-only checks where sufficient; repeating an operational side effect needs its own
 authorization and must not overwrite the delivery being reviewed.
 
+When approved context or current artifacts establish a material operating condition, the proof must
+exercise the relevant user-facing path under a representative condition. Consider known record counts,
+file sizes, persisted state, concurrency and slow operations; distinguish an empty state from an existing
+cache when they use different paths. Use safe real data or synthetic data of a justified representative
+shape and scale. A smaller data set is sufficient only when the evidence explains why it triggers the same
+risk. Record conditions, results and limitations. Field presence, test counts and passing commands do not
+by themselves establish representativeness. Do not invent a performance target or require generic load
+testing when the applicable risk and acceptance criteria do not call for it.
+
 ## Legitimate inspection
 
 Documentation and other tasks that do not affect runtime behavior may use

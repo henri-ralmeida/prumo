@@ -50,6 +50,14 @@ Encerre a pesquisa quando cada critério material e cada dependência estiverem 
 restar risco concreto sem resolução. Não releia fontes equivalentes nem amplie a investigação só
 para acumular confiança; registre uma lacuna real em vez de buscar certeza indefinidamente.
 
+Trate condições operacionais conhecidas como parte dessa decisão de evidência quando puderem mudar materialmente
+o resultado: volume e tamanho dos dados, estado persistido existente, concorrência e operações demoradas. Relacione
+cada risco material a um critério observável e a um cenário representativo, explicando por que os dados reais ou
+sintéticos escolhidos representam a condição conhecida. Uma amostra pequena não cobre uma carga grande conhecida
+sem o plano demonstrar que ela exercita o mesmo risco. Registre limitações em vez de inventar um limite de
+desempenho. Mantenha a proporcionalidade: uma mudança delimitada de baixo risco não exige teste de carga quando
+escala ou estado não conseguem afetar materialmente o resultado.
+
 ## O que o planejador produz
 
 Quando se escolhe planejar, o trabalhador ativo grava `task-plan-<id>.json` para seu alvo. Nunca transforme passos, lacunas de evidência,
@@ -86,6 +94,11 @@ Read the persisted phase discovery and its locked decisions: <phaseWorkflows.F2.
 Use the available tools to inspect the current implementation/artifacts, real project rules, dependency outputs
 and relevant sources; identify existing solutions and impacts.
 Apply PO First. Do not repeat discovery questions; return newly found consequential gaps to the orchestrator.
+Consider known result-shaping operating conditions, including data volume and file size, persisted state,
+concurrency and slow operations. For each material risk, plan an observable check on the path people use with
+representative real or synthetic data; justify why the data represents that condition and record limitations.
+Do not let a small fixture stand in for a known large workload without evidence that it exercises the same risk,
+and do not impose generic load tests or invent performance limits for a bounded low-risk change.
 For product text you recommend, state the observable business rule and why; name its owner only when approved
 context establishes it, otherwise surface the ownership question to the PO. Keep workflow identifiers and
 internal process details out of comments, tests, messages and README drafts; required planning identifiers
@@ -133,6 +146,12 @@ Leia a descoberta persistida da fase e suas decisões travadas: <phaseWorkflows.
 Use as ferramentas disponíveis para inspecionar a implementação e os artefatos atuais, as regras reais do
 projeto, as saídas de dependências e as fontes relevantes; identifique soluções existentes e impactos.
 Aplique PO First. Não repita perguntas da descoberta; devolva ao orquestrador novas lacunas consequenciais.
+Considere condições operacionais conhecidas que moldam o resultado, inclusive volume e tamanho dos dados,
+estado persistido, concorrência e operações demoradas. Para cada risco material, planeje uma verificação observável
+no caminho usado pelas pessoas com dados reais ou sintéticos representativos; justifique essa representatividade e
+registre limitações. Não deixe uma amostra pequena representar uma carga grande conhecida sem evidência de que ela
+exercita o mesmo risco, nem imponha testes de carga genéricos ou limites de desempenho inventados a uma correção
+delimitada de baixo risco.
 Se recomendar texto de produto, descreva a regra observável e o motivo; nomeie a área responsável apenas
 quando o contexto aprovado confirmar essa informação; caso contrário, leve a dúvida de responsabilidade ao PO.
 Mantenha identificadores e detalhes internos do fluxo fora de comentários, testes, mensagens e rascunhos de

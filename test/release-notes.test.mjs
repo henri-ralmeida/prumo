@@ -225,3 +225,20 @@ test('atualização para 2.9.2 explica o guia interativo e favicon com traduçã
   }
   assert.deepEqual(releaseHistory(['2.9.2'], '2.9.2'), [])
 })
+
+test('atualização para 2.9.3 explica evidência representativa e proporcional com tradução completa', () => {
+  const messages = JSON.parse(readFileSync(new URL('../scripts/messages.json', import.meta.url), 'utf8'))
+  const history = releaseHistory(['2.9.2'], '2.9.3')
+  assert.deepEqual(history.map(release => release.version), ['2.9.3'])
+  assert.equal(history[0].sections.length, 1)
+  const items = history[0].sections[0].items
+  for (const section of history[0].sections) {
+    assert.ok(messages[section.title]?.trim())
+    for (const item of section.items) assert.ok(messages[item]?.trim())
+  }
+  assert.ok(items.some(item => item.includes('user-facing path')))
+  assert.ok(items.some(item => item.includes('without generic load tests')))
+  assert.ok(items.some(item => item.includes('test counts as general assurance')))
+  assert.ok(items.some(item => item.includes('all ten supported AI harnesses')))
+  assert.deepEqual(releaseHistory(['2.9.3'], '2.9.3'), [])
+})

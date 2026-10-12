@@ -2,6 +2,13 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.9.3 — 2026-10-11
+
+- Exija que planejamento, execução e revisão considerem condições operacionais materiais já conhecidas e comprovem o caminho usado pela pessoa com dados representativos e justificados.
+- Reprove amostras pequenas que não cubram riscos conhecidos, mesmo com testes aprovados, e preserve validação proporcional para correções delimitadas de baixo risco.
+- Informe as condições comprovadas e as limitações em vez de tratar tarefas concluídas ou contagens de testes como garantia geral.
+- Apresente no README os dez harnesses compatíveis já mostrados no guia, com acesso direto à documentação e à invocação da skill.
+
 ## 2.9.2 — 2026-10-10
 
 - Explore o limite de agentes simultâneos em uma demonstração própria do dashboard no guia, com limite editável e checkbox para aplicar a todos os fluxos.

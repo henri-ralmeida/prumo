@@ -8,6 +8,18 @@ The plan defines the expected outcome; the engine enforces transitions and recor
 
 New contracts declare their write scope before execution: investigated file paths, no file writes, or a scope still requiring research. Shared resources identify conflicts beyond files, such as changes to the same database table. Discussion settles uncertainties, planning refines the approach, execution stays inside the approved scope, and independent review checks the delivered changes against the pre-execution baseline. The dashboard explains readiness and blockers. Existing contracts remain compatible; adopting the explicit scope policy requires an approved plan update.
 
+## Supported AI harnesses
+
+Prumo brings the same evidence-driven workflow to the ten harnesses shown in the built-in guide. Each harness keeps its own models, planning controls and agent capabilities.
+
+| [Claude Code](https://code.claude.com/docs/en/common-workflows) | [Codex](https://developers.openai.com/codex/cli/slash-commands) | [Kiro](https://kiro.dev/docs/specs/plan/) | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/plan/plan-mode/README.md) | [Antigravity](https://antigravity.google/docs/skills/) |
+|:---:|:---:|:---:|:---:|:---:|
+| `/prumo` | `$prumo` | `/prumo` | `/prumo` | `/prumo` |
+
+| [OpenCode](https://opencode.ai/v2/docs/skills) | [Grok Build](https://docs.x.ai/build/features/skills-plugins-marketplaces) | [GitHub Copilot](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills) | [Hermes Agent](https://hermes-agent.nousresearch.com/docs/user-guide/features/skills/) | [OpenClaw](https://docs.openclaw.ai/tools/skills) |
+|:---:|:---:|:---:|:---:|:---:|
+| `@prumo` / `/prumo` | `/prumo` | `/prumo` | `/prumo` | `/prumo` |
+
 ## See the dashboard
 
 These screenshots come from the built-in guide and use a fictional checkout plan. Open **Guide** in the dashboard to try the same controls without changing your plans.

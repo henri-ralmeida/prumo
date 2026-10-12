@@ -100,6 +100,11 @@ Relevant approved context: <purpose, constraints and source references; identify
 Your work must satisfy, clause by clause: <validation>
   A DIFFERENT agent checks your delivery against that contract and never sees this message.
 <on a retry: the reviewer's --reason, verbatim>
+Prove the path the person or operation actually uses, not only an isolated helper. When known scale,
+file size, persisted state, concurrency or slow work creates a material risk, use safe real data or
+representative synthetic data and justify the choice. Distinguish empty state from existing persisted
+state when behavior differs. Report the tested conditions, observable results and material limitations;
+passing tests or their count is not a general guarantee. Keep validation proportional for bounded low-risk work.
 Treat a recoverable obstacle as executor work, not as a reason to hand incomplete work to review:
 inspect the failure, do targeted additional research when needed, change strategy, try safe alternatives
 inside the approved contract, and rerun the relevant implementation checks. Continue until the complete
@@ -109,7 +114,7 @@ or evidenced impossibility. Record that blocker and the attempts made; do not wi
 As you begin each planned step, run this progress line with that step's 1-based index:
 <the progress command printed by start, with --step <index>>
 Commit policy: <Project overrides>. Never touch .specs/graph/ — the orchestrator owns the state.
-Report back: what you changed, and what a reviewer needs to reproduce it.
+Report back: what you changed, the conditions and results you proved, what remains unverified, and what a reviewer needs to reproduce it.
 ```
 
 Before the executor starts, record the pre-start baseline described in
