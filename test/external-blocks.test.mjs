@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -90,7 +90,8 @@ function fixture(t, { planningMode = 'phase', scopePolicy, tasks = [{ id: 'T1', 
     const round = state().tasks[id].discussionAttempts.at(-1)
     return {
       research: [{ source: 'check.cjs', findings: 'O comportamento atual foi inspecionado.' }],
-      questions: [{ question: 'Preservar o comportamento aprovado?', answer: 'Sim.', channel: 'chat-fallback', round: 1, roundId: round.roundId }],
+      questions: [{ question: 'Preservar o comportamento aprovado?', answer: 'Sim.', channel: 'chat-fallback', round: 1, roundId: round.roundId,
+        ...(round.confirmsContract ? { confirmsContract: round.confirmsContract } : {}) }],
       coverage: {
         problem: 'O comportamento precisa seguir o contrato aprovado.', affected: 'Pessoas que usam a entrega.',
         outcome: 'A entrega mantém o comportamento aprovado.', currentBehavior: 'A implementação existente foi inspecionada.',
@@ -392,6 +393,112 @@ test('unblock de bloqueio externo com escopo obsoleto vira replanejamento intern
   assert.equal(resumed.reviewer, 'reviewer-T1')
   assert.equal(resumed.attempts.length, 1)
   assert.equal(resumed.attempts[0].startedAt, original.attempts[0].startedAt)
+})
+
+function interruptedReplanning(f) {
+  f.ok('begin-discussion', 'T1')
+  f.finishTaskDiscussion('T1')
+  f.ok('plan-task', 'T1', '--agent', 'planner-original')
+  f.finishTaskPlanning('T1')
+  f.ok('start', 'T1', '--agent', 'executor-original')
+  f.ok('review', 'T1', '--agent', 'reviewer-original')
+  const original = f.state().tasks.T1
+  f.plan.tasks[0].touches = ['delivery.cjs', 'next.cjs']
+  f.writePlan()
+  f.ok('sync-plan', '--plan', f.planPath)
+  f.ok('pause-replanning', 'T1', '--reason', 'Approved scope needs a revised plan')
+  f.ok('begin-discussion', 'T1')
+  f.finishTaskDiscussion('T1')
+  f.ok('plan-task', 'T1', '--agent', 'planner-revised')
+  f.ok('block', 'T1', '--reason', 'A test file needs approval', '--question', 'Include integration.cjs?')
+  return original
+}
+
+test('an answered external block during replanning preserves the original review through a fresh discussion', t => {
+  const f = fixture(t, { planningMode: 'task', scopePolicy: 'explicit', tasks: [
+    { id: 'T1', title: 'Scoped delivery', writeScope: 'files', touches: ['delivery.cjs'] },
+  ] })
+  const original = interruptedReplanning(f)
+  const paused = f.state().tasks.T1
+  f.rejected(/needs --answer/, 'unblock', 'T1')
+  f.rejected(/is blocked/, 'begin-discussion', 'T1')
+  assert.deepEqual(f.state().tasks.T1, paused)
+  f.plan.tasks[0].touches.push('integration.cjs')
+  f.writePlan()
+  f.ok('sync-plan', '--plan', f.planPath)
+  f.ok('unblock', 'T1', '--answer', 'Include only the integration test')
+  assert.equal(f.state().tasks.T1.state, 'planning')
+  f.ok('begin-discussion', 'T1')
+  f.finishTaskDiscussion('T1')
+  const discussed = f.state().tasks.T1
+  assert.equal(discussed.state, 'blocked')
+  assert.equal(discussed.blockKind, 'replan')
+  assert.equal(discussed.stateBeforeBlock, 'reviewing')
+  assert.equal(discussed.blockReason, 'Approved scope needs a revised plan')
+  assert.deepEqual(discussed.attempts, original.attempts)
+  assert.equal(discussed.blockHistory.at(-1).answer, 'Include only the integration test')
+  f.ok('plan-task', 'T1', '--agent', 'planner-current')
+  f.finishTaskPlanning('T1')
+  assert.equal(f.state().tasks.T1.planningReturn, undefined)
+  f.ok('authorize', '--scope', 'tasks:T1', '--confirmed-by-user')
+  f.ok('unblock', 'T1')
+  assert.equal(f.state().tasks.T1.state, 'reviewing')
+  assert.equal(f.state().tasks.T1.reviewer, 'reviewer-original')
+  assert.equal(f.state().tasks.T1.attempts[0].startedAt, original.attempts[0].startedAt)
+})
+
+test('history-backed recovery restores only missing pause metadata and keeps approvals and terminal tasks intact', t => {
+  const f = fixture(t, { planningMode: 'task', scopePolicy: 'explicit', tasks: [
+    { id: 'T1', title: 'Scoped delivery', writeScope: 'files', touches: ['delivery.cjs'] },
+    { id: 'T2', title: 'Unrelated delivery', writeScope: 'read-only', touches: [] },
+  ] })
+  f.ok('skip', 'T2', '--reason', 'Unrelated work is not required')
+  interruptedReplanning(f)
+  f.plan.tasks[0].touches.push('integration.cjs')
+  f.writePlan()
+  f.ok('sync-plan', '--plan', f.planPath)
+  f.ok('unblock', 'T1', '--answer', 'Include only the integration test')
+  f.ok('begin-discussion', 'T1')
+  f.finishTaskDiscussion('T1')
+  const broken = f.state()
+  for (const field of ['blockKind', 'blockReason', 'stateBeforeBlock']) delete broken.tasks.T1[field]
+  f.save(broken) // Simulate the persisted defect produced by previous engine versions.
+  const before = f.state(), history = f.events()
+  f.rejected(/recover-replanning <task>/, 'recover-replanning')
+  f.ok('recover-replanning', 'T1', '--check')
+  assert.deepEqual(f.state(), before)
+  assert.equal(f.events(), history)
+  f.rejected(/requires --confirmed-by-user/, 'recover-replanning', 'T1')
+  assert.deepEqual(f.state(), before)
+  f.ok('recover-replanning', 'T1', '--confirmed-by-user')
+  const repaired = f.state()
+  assert.equal(repaired.tasks.T1.blockKind, 'replan')
+  assert.equal(repaired.tasks.T1.stateBeforeBlock, 'reviewing')
+  const expected = structuredClone(before)
+  expected.updatedAt = repaired.updatedAt
+  Object.assign(expected.tasks.T1, { blockKind: 'replan', stateBeforeBlock: 'reviewing', blockReason: 'Approved scope needs a revised plan' })
+  assert.deepEqual(repaired, expected)
+  assert.ok(f.events().startsWith(history))
+  const runDirectory = join(f.root, '.specs', 'graph', 'external-blocks')
+  const backups = readdirSync(runDirectory).filter(name => name.startsWith('state.pre-replanning-recovery-'))
+  assert.equal(backups.length, 1)
+  assert.deepEqual(JSON.parse(readFileSync(join(runDirectory, backups[0]), 'utf8')), before)
+  const repairedHistory = f.events()
+  f.rejected(/recovery requires/, 'recover-replanning', 'T1', '--confirmed-by-user')
+  assert.deepEqual(f.state(), repaired)
+  assert.equal(f.events(), repairedHistory)
+  f.ok('plan-task', 'T1', '--agent', 'planner-after-recovery')
+})
+
+test('recovery never resolves an unanswered external block during replanning', t => {
+  const f = fixture(t, { planningMode: 'task', scopePolicy: 'explicit', tasks: [
+    { id: 'T1', title: 'Scoped delivery', writeScope: 'files', touches: ['delivery.cjs'] },
+  ] })
+  interruptedReplanning(f)
+  const before = f.state(), history = f.events()
+  f.rejected(/recovery requires/, 'recover-replanning', 'T1', '--confirmed-by-user')
+  assert.deepEqual(f.state(), before)
+  assert.equal(f.events(), history)
 })
 
 test('bloqueio legado sem blockKind continua externo mesmo quando a razão menciona replanejamento', t => {

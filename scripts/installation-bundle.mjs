@@ -25,6 +25,7 @@ function walk(path, base = path) {
 export function installationBundle(lang, packageRoot = PACKAGE) {
   const files = ['README.md', 'README.pt-BR.md', 'LICENSE', ...walk(join(packageRoot, 'references')).map(path => join('references', path))]
   files.push(join('lib', 'release-notes.mjs'), join('scripts', 'release-notes.json'))
+  files.push(join('scripts', 'replanning-recovery.mjs'))
   // Primeiro as dependências, depois os pontos de entrada e por último a descoberta. Clientes ativos concluem o trabalho sem reiniciar.
   for (const name of ['messages.json', 'region.mjs', 'i18n.mjs', 'storage.mjs', 'atomic-state.mjs', 'discovery-history.mjs', 'task-scope.mjs', 'delivery-evidence.mjs', 'run-metadata.mjs', 'recorded-timing.mjs', 'validation.mjs', 'execution-readiness.mjs', 'contract-drift.mjs', 'sync-plan-audit.mjs', 'task-identifiers.mjs', 'dashboard-diagnostics.mjs', 'dashboard-update.mjs', 'dashboard.html', 'installation-bundle.mjs', 'engine-args.mjs', 'command-metrics.mjs', 'review-readiness.mjs', 'engine.mjs', 'serve-args.mjs', 'serve.mjs']) files.push(join('scripts', name))
   files.push('SKILL.md')

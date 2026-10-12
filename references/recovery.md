@@ -148,6 +148,21 @@ later reader needs and the states cannot say.
 
 ## Resuming paused work
 
+An answered external block during task replanning must preserve the original attempt's internal
+return state and reason through the next discussion and planning round. Completing discussion
+does not reopen an external decision or resume execution; planning completion still requires an
+explicit `unblock` before the same attempt continues.
+
+For an older engine's interrupted transition that left a task `blocked` with no block metadata,
+but retained `planningReturn`, inspect `recover-replanning <task> --check --run <name>`.
+Recovery requires matching current discussion/discovery, the superseded planning round, the
+answered external block, and the original open execution/review in the append-only event history.
+Missing or contradictory evidence is a refusal, never permission to infer readiness from wording.
+After authorization, `recover-replanning <task> --confirmed-by-user --run <name>` saves a uniquely
+named `state.pre-replanning-recovery-<id>.json` backup and records the repair event. It restores only
+the lost internal pause metadata, leaving the task blocked for current planning. It does not
+dispatch agents, resolve new questions, change contracts, reset attempts or waive independent review.
+
 `unblock <task>` restores the recorded phase (pending, planning, running, reviewing or failed), preserving
 the attempt and previous work. For delivered work paused during execution or review, use
 `unblock <task> --reviewer <independent-agent>` to hand it directly to review in the same attempt.

@@ -59,13 +59,14 @@
  *   node $ENGINE authorize --scope run|phase:<phase>|tasks:<task,...> [--mode auto|manual] --confirmed-by-user
  *   node $ENGINE block <task> --reason [--question <text>] [--option <text>...]
  *   node $ENGINE unblock <task> [--answer <text>] [--reviewer <agent>] [--confirmed-by-user]   (manual active resume)
+ *   node $ENGINE recover-replanning <task> --check|--confirmed-by-user
  *   node $ENGINE skip <task> --reason
  *   node $ENGINE note <task> --text "<text>"
  *   node $ENGINE runs
  */
 import {
   mkdirSync, readFileSync, writeFileSync, appendFileSync, existsSync, readdirSync,
-  rmSync, statSync, copyFileSync, realpathSync,
+  rmSync, statSync, copyFileSync, realpathSync, constants,
 } from 'node:fs'
 import { randomUUID, createHash } from 'node:crypto'
 import { homedir } from 'node:os'
@@ -91,6 +92,7 @@ import {
 } from './sync-plan-audit.mjs'
 import { businessContract, contractDrift, GLOBAL_PLAN_FIELDS, TASK_CONTRACT_FIELDS } from './contract-drift.mjs'
 import { parseEngineArgs } from './engine-args.mjs'
+import { replanningRecovery } from './replanning-recovery.mjs'
 import { taskIdentifierProblem, phaseIdentifierProblem } from './task-identifiers.mjs'
 import { captureDelivery, checkDelivery, verifyNumericProvenance, assertEvidenceContract } from './delivery-evidence.mjs'
 import { assertRolePreferences, recordDispatchMetadata, dispatchOwners, reportedUsageTotals, pauseRun, resumeRun, shellCommand, taskBrief, agentRoles, repeatedPlanQuestions, recordedPlanIdentity } from './run-metadata.mjs'
@@ -3100,6 +3102,9 @@ const commands = {
       t.contractConfirmationRequired = null
     }
     t.state = t.planningReturn ? 'blocked' : 'pending'
+    // Keep the original execution pause resumable after discussion, even when
+    // an answered external block interrupted the intermediate planning round.
+    if (t.planningReturn) Object.assign(t, t.planningReturn)
     recordQuestionResolutions(state, round.questionRefs, discovery.decisions, { task: id })
     saveState(name, state)
     emit(name, 'task_discussed', id, { roundId: round.roundId, questions: discovery.questions.length, state: t.state,
@@ -3743,6 +3748,31 @@ const commands = {
 
   'pause-replanning'() { commands.block() },
 
+  'recover-replanning'() {
+    const name = runName()
+    const id = args._[0] ?? die('recover-replanning <task> --check|--confirmed-by-user')
+    const state = loadState(name)
+    const task = getTask(state, id)
+    let proof
+    try {
+      const events = readFileSync(join(runDir(name), 'events.ndjson'), 'utf8').split(/\r?\n/)
+        .filter(line => line.trim()).map(line => JSON.parse(line))
+      const discussion = currentDiscussion(state, task)
+      proof = replanningRecovery(task, events, planningContext(state, task), Boolean(discussion))
+    } catch (error) { die(tr(error.message)) }
+    if (args.check) {
+      log('[prumo] ' + tr('Replanning recovery verified; no state changed: {0}', JSON.stringify(proof)))
+      return
+    }
+    if (!args['confirmed-by-user']) die(tr('recover-replanning requires --confirmed-by-user; inspect --check first'))
+    const backup = `state.pre-replanning-recovery-${randomUUID()}.json`
+    copyFileSync(join(runDir(name), 'state.json'), join(runDir(name), backup), constants.COPYFILE_EXCL)
+    Object.assign(task, { stateBeforeBlock: proof.stateBeforeBlock, blockKind: proof.blockKind, blockReason: proof.blockReason })
+    saveState(name, state)
+    emit(name, 'task_replanning_recovered', id, { ...proof, backup, confirmedByUser: true })
+    log('[prumo] ' + tr('Replanning pause recovered; plan the current contract before explicitly resuming the original attempt; backup: {0}', backup))
+  },
+
   unblock() {
     const name = runName()
     const id = args._[0] ?? die('unblock <task> [--reviewer <agent>]')
@@ -3811,6 +3841,9 @@ const commands = {
     delete t.blockQuestion
     delete t.blockOptions
     delete t.stateBeforeBlock
+    // Resolving an external decision does not discard the internal return path
+    // of the execution attempt that was already being replanned.
+    if (target === 'planning' && t.planningReturn) Object.assign(t, t.planningReturn)
     if (needsReplanning) {
       t.blockKind = 'replan'
       t.blockReason = 'approved scope needs current planning'

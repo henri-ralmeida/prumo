@@ -33,6 +33,7 @@ const definitions = {
   block: [1, 'reason question option'],
   'pause-replanning': [1, 'reason'],
   unblock: [1, 'answer reviewer channel', 'confirmed-by-user'],
+  'recover-replanning': [1, '', 'check confirmed-by-user'],
   skip: [1, 'reason'], note: [1, 'text'],
   'activity-start': [1, 'scope role agent'], 'activity-stop': [1, 'scope role agent'],
 }
