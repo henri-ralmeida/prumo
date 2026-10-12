@@ -1,4 +1,10 @@
 {
+  "Fixed — Safe replanning resumption": "Corrigido — Retomada segura do replanejamento",
+  "Preserve the replanning return state after an answered external decision so completing discussion does not leave a task blocked without resumption information": "Preserve o estado de retorno do replanejamento após uma decisão externa respondida, para que concluir a discussão não deixe uma tarefa bloqueada sem informações de retomada",
+  "Recover affected blocks only with matching recorded history and a backup, preserving attempts and unanswered decisions without automatic approval": "Recupere bloqueios afetados somente com histórico registrado correspondente e backup, preservando tentativas e decisões não respondidas sem aprovação automática",
+  "Fixed — Explicit nested Git evidence": "Corrigido — Evidências explícitas de Git aninhado",
+  "Capture nested Git repository changes and coverage limitations explicitly while preserving scope checks and independent review before completion": "Capture explicitamente alterações de repositórios Git aninhados e limitações de cobertura, preservando verificações de escopo e revisão independente antes da conclusão",
+  "Compare filesystem identity on Windows to accept short aliases and case differences for the same Git root while rejecting parent repositories": "Compare a identidade no sistema de arquivos do Windows para aceitar aliases curtos e diferenças de caixa da mesma raiz Git, recusando repositórios pais",
   "Invalid discovery archive reference": "Referência inválida ao histórico de descobertas",
   "Discovery archive digest mismatch": "O conteúdo do histórico de descobertas não corresponde ao resumo verificado",
   "phase {0} discussion {1}: {2}": "fase {0} discussão {1}: {2}",

@@ -2,6 +2,13 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.9.4 — 2026-10-12
+
+- Preserve o estado de retorno do replanejamento após uma decisão externa respondida, para que encerrar a discussão não produza um bloqueio sem informações de retomada.
+- Ofereça recuperação fundamentada no histórico para esse bloqueio, com backup e preservação da tentativa, sem responder decisões pendentes nem aprovar tarefas automaticamente.
+- Capture evidências explícitas de repositórios Git aninhados, incluindo alterações e limitações, mantendo controles de escopo e revisão independente antes da conclusão.
+- Compare a identidade real dos diretórios no Windows, aceitando aliases curtos e diferenças de caixa do mesmo repositório sem aceitar um repositório pai como cobertura.
+
 ## 2.9.3 — 2026-10-11
 
 - Exija que planejamento, execução e revisão considerem condições operacionais materiais já conhecidas e comprovem o caminho usado pela pessoa com dados representativos e justificados.

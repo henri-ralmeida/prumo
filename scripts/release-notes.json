@@ -1,4 +1,22 @@
 {
+  "2.9.4": {
+    "en": [
+      {
+        "title": "Fixed — Safe replanning resumption",
+        "items": [
+          "Preserve the replanning return state after an answered external decision so completing discussion does not leave a task blocked without resumption information",
+          "Recover affected blocks only with matching recorded history and a backup, preserving attempts and unanswered decisions without automatic approval"
+        ]
+      },
+      {
+        "title": "Fixed — Explicit nested Git evidence",
+        "items": [
+          "Capture nested Git repository changes and coverage limitations explicitly while preserving scope checks and independent review before completion",
+          "Compare filesystem identity on Windows to accept short aliases and case differences for the same Git root while rejecting parent repositories"
+        ]
+      }
+    ]
+  },
   "2.9.3": {
     "en": [
       {
