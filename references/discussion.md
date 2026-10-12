@@ -1,14 +1,14 @@
 # Phase discussion
 
-[Português](discussion.pt-BR.md)
-
 Read this when a phase or task is `ready_for_discussion` or `discussing`, when the user must choose
 whether to discuss or plan, or when the engine reports a newly eligible phase. Decisions and questions
 remain in the principal conversation; a phase may also assign active target workers. Those assignments are
 engine records only, so the orchestrator must create native agents with the exact names before dispatching them. Planning itself is in
 [planning.md](planning.md); the discovery JSON schema is in [runtime.md](runtime.md#task-plan-artifact).
 
-Quando `status` ou `ready` indicar `contractConfirmationRequired`, pular discussão ou planejamento está indisponível: consulte `show-contract <task> --diff`, apresente o contrato alterado e registre o aceite explícito em uma discussão nova com `confirmsContract`, conforme a seção sobre mudanças de contrato abaixo.
+When `status` or `ready` reports `contractConfirmationRequired`, discussion and planning cannot be skipped:
+inspect `show-contract <task> --diff`, present the changed contract and record explicit acceptance in a
+fresh discussion with `confirmsContract`, following the contract-change section below.
 
 ## Two planning levels
 

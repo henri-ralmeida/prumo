@@ -7,7 +7,8 @@
           "Require planning, execution and review to account for known material operating conditions and prove the user-facing path with justified representative data",
           "Reject small fixtures that do not cover a known material risk while keeping bounded low-risk fixes proportional without generic load tests",
           "Report the tested conditions and limitations instead of treating completed tasks or passing test counts as general assurance",
-          "Show all ten supported AI harnesses in the README with direct documentation and skill invocation links"
+          "Show all ten supported AI harnesses in the README with direct documentation and skill invocation links",
+          "Use one English workflow instruction source with responses in the user's language, keeping PO First in the installation locale, translated READMEs and interface, and recoverable backups of retired copies"
         ]
       }
     ]

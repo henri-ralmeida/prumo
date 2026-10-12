@@ -1,7 +1,5 @@
 # Independent review, validation and rejection
 
-[Português](review.pt-BR.md)
-
 `validate --ok` checks `requiresEnv` for every step before recording a receipt or running any command. Missing or blank values refuse the request without changing validation history; diagnostics contain names and configuration guidance, never values. The same preflight protects direct `runValidation` calls, and each command receives the checked effective environment. A static step with nonempty `requiresEnv` cannot reuse an earlier cached check even when the workspace is unchanged.
 
 Read this when a task is `reviewing` or has a current validation receipt, before dispatching a reviewer,

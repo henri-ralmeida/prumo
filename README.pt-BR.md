@@ -36,7 +36,7 @@ Estas capturas vêm do guia integrado e usam um plano fictício de checkout. Abr
 
 ![Guia mostrando um card aberto com resumo, validação e vínculo de dependência](https://raw.githubusercontent.com/henri-ralmeida/prumo/main/docs/images/guide-task.jpg)
 
-O [guia de integração dos harnesses](references/harnesses.pt-BR.md) também mostra os pontos nativos de planejamento e escolha de modelo do Antigravity, OpenCode e Grok Build.
+O [guia de integração dos harnesses](references/harnesses.md) também mostra os pontos nativos de planejamento e escolha de modelo do Antigravity, OpenCode e Grok Build.
 
 ## Instalação
 
@@ -91,6 +91,10 @@ bunx @henri-ralmeida/prumo@latest install --grok --lang pt-BR
 
 O idioma é detectado pelo **país/região configurado no sistema operacional**: Brasil seleciona português do Brasil; outras regiões ou configuração indisponível selecionam inglês. Usa a região residencial do Windows, as preferências regionais do macOS ou a localidade de endereços do Linux, independentemente do idioma de exibição/navegador. Não usa geolocalização por IP. Para escolher explicitamente, use `--lang pt-BR` ou `--lang en`. Por exemplo:
 
+Essa preferência controla o dashboard, as mensagens da CLI e o idioma do PO First instalado. As regras
+do fluxo do Prumo usam uma fonte única em inglês e orientam os agentes a responder no idioma do usuário,
+salvo quando ele pedir outro. O PO First mantém modelos de instalação em inglês e português do Brasil.
+
 ```sh
 bunx @henri-ralmeida/prumo@latest install --claude --lang en
 ```
@@ -117,7 +121,7 @@ bunx @henri-ralmeida/prumo@latest doctor --dsh --lang pt-BR
 | OpenCode | `@prumo` (V2) / `/prumo` (V1) | Skill em `~/.config/opencode/skills/prumo` e PO First gerenciado em `~/.config/opencode/AGENTS.md` |
 | Grok Build | `/prumo` | Skill em `$GROK_HOME/skills/prumo` (ou `~/.grok/skills/prumo`) e PO First gerenciado no `AGENTS.md` da mesma raiz |
 
-Consulte o [guia de integração dos harnesses](references/harnesses.pt-BR.md) para as raízes distintas do IDE/CLI do Antigravity, os caminhos de descoberta do OpenCode, as regras de projeto do Grok Build, os controles nativos de planejamento e os seletores de modelo. O Prumo preserva o catálogo e os padrões de modelo do harness; escolha o modelo atual nesse ambiente depois da instalação.
+Consulte o [guia de integração dos harnesses](references/harnesses.md) para as raízes distintas do IDE/CLI do Antigravity, os caminhos de descoberta do OpenCode, as regras de projeto do Grok Build, os controles nativos de planejamento e os seletores de modelo. O Prumo preserva o catálogo e os padrões de modelo do harness; escolha o modelo atual nesse ambiente depois da instalação.
 
 No DSH, `DSH_HOME` prevalece quando não está vazio; caso contrário, a raiz é `~/.dsh`. O Prumo grava somente sua skill em `<DSH_HOME>/skills/prumo` e seu bloco PO First gerenciado no `<DSH_HOME>/AGENTS.md` global; com a raiz de fallback, esses caminhos são `~/.dsh/skills/prumo` e `~/.dsh/AGENTS.md`. `install --all` e o `postinstall` global incluem DSH somente quando ele é detectado. Update e reparo reutilizam instalações Prumo detectadas ou registradas, inclusive caminhos personalizados de `DSH_HOME`, sem criar uma instalação DSH do zero.
 
@@ -239,7 +243,7 @@ A descoberta usa a caixa nativa de perguntas do ambiente quando disponível e um
 
 Obstáculos recuperáveis pertencem ao executor: ele inspeciona a falha, faz pesquisa adicional direcionada quando necessário, troca para alternativas seguras dentro do contrato aprovado e repete as verificações relevantes até entregar o plano inteiro. A passagem ocorre somente quando ele acredita, com base nas evidências, que todos os critérios passam. O revisor é uma etapa de validação, não uma triagem de falhas. Bloqueio antecipado fica reservado para falta de autoridade, decisão consequencial ainda indefinida, risco destrutivo não autorizado, dependência externa ainda indisponível após tentativas proporcionais ou impossibilidade comprovada. Mudanças de estratégia reutilizam o mesmo plano; o planejador continua executando exatamente uma vez por contrato aprovado.
 
-Runs existentes no modo por tarefa preservam fluxo e histórico. Antes de continuá-los, a skill do Prumo inspeciona e normaliza todos os contratos legados não terminais na fonte aprovada e sincroniza o run original. A migração de contratos não amplia o escopo do planejamento: uma tarefa escolhida explicitamente mantém um único planner por tarefa; nos demais casos, as fases elegíveis são adotadas em ordem com `begin-phase-discussion <fase> --adopt-legacy`. Ela não cria um segundo run para evitar a migração; adoção insegura é recusada de forma atômica. Consulte [artefato de planejamento por fase](references/runtime.pt-BR.md#descoberta-e-planejamento-por-fase) e [planos em andamento](references/runtime.pt-BR.md#planos-em-andamento).
+Runs existentes no modo por tarefa preservam fluxo e histórico. Antes de continuá-los, a skill do Prumo inspeciona e normaliza todos os contratos legados não terminais na fonte aprovada e sincroniza o run original. A migração de contratos não amplia o escopo do planejamento: uma tarefa escolhida explicitamente mantém um único planner por tarefa; nos demais casos, as fases elegíveis são adotadas em ordem com `begin-phase-discussion <fase> --adopt-legacy`. Ela não cria um segundo run para evitar a migração; adoção insegura é recusada de forma atômica. Consulte [artefato de planejamento por fase](references/runtime.md#task-plan-artifact) e [planos em andamento](references/runtime.md#task-plan-artifact).
 
 Para novos planos, selecione um workspace central. No PowerShell:
 
@@ -262,7 +266,7 @@ Planos locais preservam o workspace original. `GRAPH_FOREMAN_HOME` localiza dado
 
 Claude Code, Kiro, Codex, DSH, Antigravity, OpenCode e Grok Build locais, executados pelo mesmo usuário, compartilham a pasta central do Prumo. Os comandos criam as pastas ausentes. O acesso depende das permissões de cada ambiente; sessões na nuvem não compartilham automaticamente os arquivos locais.
 
-Os scripts ficam em `scripts/`, junto da skill. Resolva caminhos a partir dela. Consulte a [referência do motor](references/runtime.pt-BR.md) para comandos, contratos e estados.
+Os scripts ficam em `scripts/`, junto da skill. Resolva caminhos a partir dela. Consulte a [referência do motor](references/runtime.md) para comandos, contratos e estados.
 
 ## O que significa aprovar
 
@@ -272,7 +276,7 @@ Documentação e outras tarefas sem efeito de execução podem usar `validationM
 
 Atualizar um contrato aprovado não exige inventar falha ou nova tentativa. `refresh-contract` preserva trabalho e estado, inclusive bloqueios, e invalida recibos antigos. Desbloquear e retomar são decisões separadas; instalar não faz nenhuma delas.
 
-Mantenha contexto e requisitos substituídos nos documentos aprovados e no histórico, critérios vigentes em `expect` e provas reais em `run`. Cada critério funcional precisa de evidência relevante; um rótulo funcional não comprova a tarefa inteira. Após reprovação real **com** mudança aprovada do contrato: registre a falha, edite o plano, rode `sync-plan` enquanto está failed, confira a definição persistida e siga com `retry`, planejamento exigido e `start` junto dos disparos reais dos agentes. Consulte [reprovação e alteração de contrato](references/runtime.pt-BR.md#reprovação-real-com-alteração-aprovada-do-contrato). Após interrupções, retome da fase registrada; não invente tentativas por um disparo que não aconteceu.
+Mantenha contexto e requisitos substituídos nos documentos aprovados e no histórico, critérios vigentes em `expect` e provas reais em `run`. Cada critério funcional precisa de evidência relevante; um rótulo funcional não comprova a tarefa inteira. Após reprovação real **com** mudança aprovada do contrato: registre a falha, edite o plano, rode `sync-plan` enquanto está failed, confira a definição persistida e siga com `retry`, planejamento exigido e `start` junto dos disparos reais dos agentes. Consulte [reprovação e alteração de contrato](references/runtime.md#rejection-with-an-approved-contract-change). Após interrupções, retome da fase registrada; não invente tentativas por um disparo que não aconteceu.
 
 Revisões corretivas retomam na primeira etapa inválida quando as verificações estáticas determinísticas anteriores declaram `cacheable: true` e `cachePaths` relativos seguros. O Prumo reutiliza esses recibos somente enquanto os arquivos declarados permanecem iguais. Verificações funcionais sempre executam novamente.
 
@@ -298,4 +302,4 @@ Ao editar traduções: `node scripts/build-dashboard.mjs --write`. O dashboard i
 
 O Prumo nasceu como fork do graph-foreman de **JrSantiaggo** e hoje é um projeto independente, sob [licença MIT](LICENSE). As alterações estão documentadas no [changelog](CHANGELOG.md).
 
-Hermes Agent e OpenClaw também aceitam a instalação do Prumo. Use `prumo install --hermes --project <projeto>` ou `prumo install --openclaw --project <workspace>` e confira os caminhos, permissões e planejamento no [guia de harnesses](references/harnesses.pt-BR.md).
+Hermes Agent e OpenClaw também aceitam a instalação do Prumo. Use `prumo install --hermes --project <projeto>` ou `prumo install --openclaw --project <workspace>` e confira os caminhos, permissões e planejamento no [guia de harnesses](references/harnesses.md).

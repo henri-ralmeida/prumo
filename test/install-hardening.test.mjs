@@ -565,6 +565,14 @@ test('idioma instalado desconhecido não é inferido de conteúdo arbitrário', 
   assert.equal(installedPoFirstLanguage('claude', f.config), undefined)
 })
 
+test('legacy Portuguese PO First remains recognizable before replacement by the shared instructions', t => {
+  const f = fixture(t, 'prumo-install-legacy-language-', false)
+  const file = join(f.config, 'output-styles', 'po-first.md')
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, '## Texto entregue junto ao produto\n')
+  assert.equal(installedPoFirstLanguage('claude', f.config), 'pt-BR')
+})
+
 test('planInstall valida harness, alvo ausente, settings e limites de idioma', t => {
   const f = fixture(t, 'prumo-install-plan-boundaries-', false)
   assert.throws(() => planInstall({ harness: 'inexistente', home: f.home, cwd: f.cwd, env: f.env }), /Choose exactly one/)

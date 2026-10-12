@@ -8,6 +8,7 @@ Historical tag and commit corrections are documented in [Release history recover
 - Reprove amostras pequenas que não cubram riscos conhecidos, mesmo com testes aprovados, e preserve validação proporcional para correções delimitadas de baixo risco.
 - Informe as condições comprovadas e as limitações em vez de tratar tarefas concluídas ou contagens de testes como garantia geral.
 - Apresente no README os dez harnesses compatíveis já mostrados no guia, com acesso direto à documentação e à invocação da skill.
+- Unifique as regras do fluxo do Prumo em inglês, com respostas no idioma do usuário; mantenha o PO First no idioma configurado da instalação, preserve README e interface traduzidos e retire as cópias antigas com backup recuperável.
 
 ## 2.9.2 — 2026-10-10
 

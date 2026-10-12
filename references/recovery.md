@@ -1,7 +1,5 @@
 # Blocks, resumption, plan changes and legacy runs
 
-[Português](recovery.pt-BR.md)
-
 Read this when a task is `blocked`, when a block or an executor needs a user decision, when the approved
 plan changed after `init` (before continuing any discussion, planning or execution), when `status`/`ready`
 warn that the approved source differs from persisted contracts, and before resuming an existing or
@@ -184,6 +182,10 @@ Validation-only changes can still use `refresh-contract` and fresh review in the
   the new planning requirement. Installation never resets a run.
 - `sync-plan` preserves `done` and `skipped` contracts as history. Their old prose does not block synchronization or retry of other tasks. Do not relabel completed functional work as inspection. New and nonterminal tasks still need valid contracts; graph structure is checked for every task.
 
-### Acrescentar uma fase ao plano
+### Appending a phase to the plan
 
-Após aprovação do novo escopo, `sync-plan` aceita fases novas anexadas ao final, com os próximos IDs `F` e tarefas com os próximos números `T` livres. Preserve IDs, fases e histórico anteriores; declare as dependências reais da fase nova e confira `sync-plan --dry-run` antes de gravar. Números novos em fases já existentes continuam recusados; ampliações nessas fases usam letras vinculadas à tarefa-base. A fase nova segue os mesmos gates de discussão, planejamento, autorização, execução e revisão.
+After approval of the new scope, `sync-plan` accepts phases appended at the end with the next `F` IDs
+and next available `T` numbers. Preserve previous IDs, phases and history; declare the new phase's actual
+dependencies and inspect `sync-plan --dry-run` before writing. New numbers in existing phases remain
+refused; extensions use letters linked to the base task. The new phase follows the same discussion,
+planning, authorization, execution and review gates.

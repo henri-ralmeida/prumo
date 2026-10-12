@@ -7,8 +7,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { spawnSync, spawn } from 'node:child_process'
 import { setTimeout } from 'node:timers/promises'
 import { createServer } from 'node:net'
-import { planInstall, applyInstall, restoreInstall, installationStatus, detectHarnesses, discoverInstallations, reconcileDashboardInstall, dashboardPackageRoot, contentId, packageIdentity, inspectInstallation, installationFilesCurrent } from '../lib/install.mjs'
-import { installationBundle } from '../scripts/installation-bundle.mjs'
+import { HARNESSES, planInstall, applyInstall, restoreInstall, installationStatus, detectHarnesses, discoverInstallations, reconcileDashboardInstall, dashboardPackageRoot, contentId, packageIdentity, inspectInstallation, installationFilesCurrent } from '../lib/install.mjs'
+import { installationBundle, retiredInstructionFiles } from '../scripts/installation-bundle.mjs'
 import { ensureGlobalCliContent, globalCliContentCurrent, globalCliState, updateGlobalCliFromPackage, npmProcess } from '../lib/update.mjs'
 import { enableDashboard } from '../lib/autostart.mjs'
 import { runPostinstall } from '../scripts/postinstall.mjs'
@@ -27,6 +27,60 @@ test('pacote de instalação inclui o histórico e todas as dependências relati
 const put = (path, value) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, typeof value === 'string' ? value : JSON.stringify(value, null, 2)) }
 const read = path => readFileSync(path, 'utf8')
 const packageVersion = JSON.parse(read(join(source, 'package.json'))).version
+
+test('workflow instructions are identical across locales while PO First templates and the dashboard retain localization', () => {
+  const english = new Map(installationBundle('en'))
+  const portuguese = new Map(installationBundle('pt-BR'))
+  assert.deepEqual([...english.keys()], [...portuguese.keys()])
+  for (const [name, content] of english) {
+    if (name === join('scripts', 'dashboard.html')) assert.notDeepEqual(content, portuguese.get(name))
+    else assert.deepEqual(content, portuguese.get(name), name)
+  }
+  assert.ok([...english.keys()].filter(name => name.startsWith('references')).every(name => !name.endsWith('.pt-BR.md') || name === join('references', 'po-first.pt-BR.md')))
+  assert.ok(portuguese.has(join('references', 'po-first.pt-BR.md')))
+  assert.ok(portuguese.has('README.pt-BR.md'))
+})
+
+for (const harness of HARNESSES) test(`${harness}: localized installation retires duplicate instructions with reversible recovery`, t => {
+  const f = fixture(t, harness)
+  const initial = f.plan({ lang: 'pt-BR', projects: [f.cwd] })
+  const installed = applyInstall(initial)
+  assert.ok(installed.groups.every(group => group.status !== 'conflict'), JSON.stringify(installed))
+  const root = initial.groups.find(group => group.name.startsWith('skill:')).name.slice(6)
+  const destination = join(root, 'prumo')
+  const marker = JSON.parse(read(join(destination, '.prumo-install.json')))
+  assert.equal(marker.lang, 'pt-BR')
+  assert.equal(installationFilesCurrent(root, marker), true)
+  const poGroup = initial.groups.find(group => group.name.startsWith('po-first:'))
+  assert.match(read(poGroup.snapshots[0]), /Responda no idioma do usuário/)
+  assert.match(read(join(destination, 'scripts', 'dashboard.html')), /const defaultLanguage = "pt-BR"/)
+  const personal = join(destination, 'references', 'personal.pt-BR.md')
+  put(personal, 'Personal instructions remain intact.')
+  for (const name of retiredInstructionFiles) put(join(destination, name), `Previous managed instructions: ${name}`)
+  assert.equal(installationFilesCurrent(root, marker), false, 'obsolete copies prevent an incorrect already-current result')
+  const plan = f.plan({ lang: 'pt-BR', projects: [f.cwd] })
+  applyInstall(plan, { dryRun: true })
+  for (const name of retiredInstructionFiles) assert.ok(existsSync(join(destination, name)))
+  const updated = applyInstall(plan)
+  assert.ok(updated.groups.every(group => group.status !== 'conflict'), JSON.stringify(updated))
+  for (const name of retiredInstructionFiles) assert.equal(existsSync(join(destination, name)), false)
+  assert.equal(read(personal), 'Personal instructions remain intact.')
+  assert.equal(installationFilesCurrent(root, marker), true)
+  assert.equal(applyInstall(f.plan({ lang: 'pt-BR', projects: [f.cwd] })).backup, null)
+  restoreInstall(updated.backup, { home: f.home, env: {} })
+  for (const name of retiredInstructionFiles) assert.equal(read(join(destination, name)), `Previous managed instructions: ${name}`)
+  assert.equal(read(personal), 'Personal instructions remain intact.')
+})
+
+test('retiring instructions refuses a directory occupying a managed file without deleting its contents', t => {
+  const f = fixture(t)
+  f.install()
+  const file = join(f.skillRoot, 'prumo', retiredInstructionFiles[0])
+  put(join(file, 'personal.txt'), 'Preserve unexpected contents.')
+  const result = applyInstall(f.plan())
+  assert.ok(result.groups.some(group => group.status === 'conflict'))
+  assert.equal(read(join(file, 'personal.txt')), 'Preserve unexpected contents.')
+})
 
 function fixture(t, harness = 'claude') {
   const parent = realpathSync(tmpdir())
@@ -909,7 +963,7 @@ for (const harness of ['claude', 'kiro', 'codex', 'dsh']) test(`${harness}: pers
   assert.match(read(join(skill, 'references', 'po-first.md')), /senior product partner/)
   assert.match(read(join(skill, 'references', 'po-first.pt-BR.md')), /parceiro sênior de produto/)
   assert.match(read(join(skill, 'references', 'runtime.md')), /refreshes the CLI, skill, both READMEs, references, scripts and PO First/)
-  assert.match(read(join(skill, 'references', 'runtime.pt-BR.md')), /atualiza a CLI, a skill, os dois READMEs, as referências, os scripts e a configuração PO First/)
+  assert.equal(existsSync(join(skill, 'references', 'runtime.pt-BR.md')), false)
   assert.ok(existsSync(join(skill, 'scripts', 'engine.mjs')))
   const configured = installationStatus(f.plan())
   assert.equal(configured.installed, true)

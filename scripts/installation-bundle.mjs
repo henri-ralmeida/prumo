@@ -5,6 +5,9 @@ import { fileURLToPath } from 'node:url'
 import { localizeDashboard } from './i18n.mjs'
 
 const PACKAGE = dirname(dirname(fileURLToPath(import.meta.url)))
+// Workflow instructions share one source; PO First retains its localized installation template.
+export const retiredInstructionFiles = ['contracts', 'discussion', 'dispatch', 'harnesses', 'planning', 'recovery', 'review', 'runtime']
+  .map(name => join('references', `${name}.pt-BR.md`))
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex')
 
 function walk(path, base = path) {

@@ -5,7 +5,7 @@ planners and executors, refusing to sign off any task a fresh reviewer has not i
 watching the whole site on a live dashboard.
 
 This file documents the MECHANISM (schemas, commands, states, dashboard). The workflow for each step is
-in [SKILL.md](../SKILL.md) and the step references beside this file. [Português](runtime.pt-BR.md)
+in [SKILL.md](../SKILL.md) and the step references beside this file.
 
 ## Contents
 
@@ -1125,8 +1125,11 @@ After explicit run resume, a checkpoint closed by pause contributes new recorded
 Each task may declare optional `project`, an absolute Git repository root. Its `touches` and delivery paths are relative to that root; never use `..` or absolute touches. Tasks without `project` retain the run project. `start` does not accept `--cwd`: it captures the approved task project automatically. `validate` defaults to this project, while step.cwd or --cwd selects the command directory and warns on a different explicit --cwd; scope and delivery evidence remain bound to the approved project. Shared resource IDs remain global across repositories. Changing project via sync-plan changes the task contract and requires replanning.
 Completed discussion rounds keep their digest and `discoveryArtifact` in `state.json`. The reference is relative to the run directory and points to a content-verified JSON artifact under `discoveries/`, preserving research, questions, decisions and discussion batches. Only the latest discovery stays inline on its phase or task; open rounds keep their batches until completion. Readers recover the historical content in memory without rewriting state; the next successful write migrates older inline records. A missing or altered archive cannot validate a historical plan and blocks further writes until the original artifact is restored.
 
-### Apresentação e limite local
+### Display metadata and local agent limit
 
-`show-contract` inclui `display` com `label`, `summary` e `validationSummary` persistidos, separado de `before` e `after`. Esses textos não entram no digest do contrato; `displayNote` indica quando não há apresentação registrada.
+`show-contract` includes `display` with persisted `label`, `summary` and `validationSummary`, separate from
+`before` and `after`. These texts are excluded from the contract digest; `displayNote` reports missing display metadata.
 
-O limite padrão distribuído continua 3. A preferência em `agent-preferences.json` no armazenamento local fornece a cota de novas execuções quando o plano não declara `maxAgents`. No board, “aplicar para todos os fluxos” atualiza todas as execuções conhecidas e salva esse padrão local; desmarcado altera somente a execução selecionada. Um limite explícito no plano continua válido. Diminuir a cota não encerra trabalho ativo.
+The distributed default limit remains 3. Local `agent-preferences.json` supplies the limit for new runs
+when the plan omits `maxAgents`. "Apply to all runs" updates all known runs and saves this local default;
+unchecked, it changes only the selected run. An explicit plan limit remains valid. Lowering the limit does not stop active work.

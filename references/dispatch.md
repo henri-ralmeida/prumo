@@ -1,7 +1,5 @@
 # Authorization, dispatch and execution
 
-[Português](dispatch.pt-BR.md)
-
 Before `start` opens an attempt, every validation step must have the environment variables named in its optional `requiresEnv`. Configure missing values in the executor process environment or the approved `step.env` and retry. A refusal lists only variable names and creates no attempt; it does not waive authorization, planning or reviewer requirements.
 
 Read this when a task is `ready` or `running`: before recording an execution authorization, before each

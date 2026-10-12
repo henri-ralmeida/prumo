@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { resolve, join, dirname, delimiter } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { spawnSync, fork } from 'node:child_process'
+import { retiredInstructionFiles } from './installation-bundle.mjs'
 import assert from 'node:assert/strict'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -241,7 +242,7 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
     assert.ok(installedPlanning.includes('block opened with ' + String.fromCharCode(96).repeat(3) + 'json'))
   }
   const stepReferences = ['contracts', 'discussion', 'dispatch', 'planning', 'recovery', 'review', 'runtime']
-    .flatMap(name => [`references/${name}.md`, `references/${name}.pt-BR.md`])
+    .map(name => `references/${name}.md`)
   for (const harness of ['.claude', '.kiro', '.agents', '.dsh']) {
     const skill = join(home, harness, 'skills', 'prumo')
     for (const file of ['SKILL.md', 'references/po-first.md', 'references/po-first.pt-BR.md', ...stepReferences, 'scripts/engine.mjs', 'scripts/serve.mjs', 'scripts/installation-bundle.mjs', 'scripts/validation.mjs', 'scripts/atomic-state.mjs', 'scripts/storage.mjs', 'scripts/dashboard.html']) {
@@ -252,7 +253,7 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
     assert.match(marker.engineHash, /^[a-f0-9]{64}$/)
   }
   for (const skill of newHarnessRoots) {
-    for (const file of ['SKILL.md', 'references/harnesses.md', 'references/harnesses.pt-BR.md', 'references/planning.md', 'scripts/engine.mjs'])
+    for (const file of ['SKILL.md', 'references/harnesses.md', 'references/planning.md', 'scripts/engine.mjs'])
       assert.ok(existsSync(join(skill, file)), `a nova integração deve conter ${file}`)
     assert.match(JSON.parse(readFileSync(join(skill, '.prumo-install.json'), 'utf8')).contentId, /^[a-f0-9]{12}$/)
   }
@@ -271,6 +272,7 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
     writeFileSync(markerPath, JSON.stringify(marker))
     writeFileSync(join(destination, 'scripts', 'engine.mjs'), '// previous engine\n')
     writeFileSync(join(destination, 'SKILL.md'), '# Previous instructions\n')
+    for (const name of retiredInstructionFiles) writeFileSync(join(destination, name), 'Previous managed translation\n')
   }
   const globalPackageJson = join(globalPackage, 'package.json')
   const oldGlobal = JSON.parse(readFileSync(globalPackageJson, 'utf8'))
@@ -279,6 +281,7 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
   for (const destination of installedRoots) {
     assert.equal(JSON.parse(readFileSync(join(destination, '.prumo-install.json'), 'utf8')).version, '0.0.9')
     assert.equal(readFileSync(join(destination, 'SKILL.md'), 'utf8'), '# Previous instructions\n')
+    for (const name of retiredInstructionFiles) assert.equal(readFileSync(join(destination, name), 'utf8'), 'Previous managed translation\n')
   }
   assert.equal(JSON.parse(readFileSync(globalPackageJson, 'utf8')).version, '0.0.9')
   const updateOutput = run(globalExecutable, ['update'])
@@ -293,6 +296,7 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
     assert.equal(JSON.parse(readFileSync(join(destination, '.prumo-install.json'), 'utf8')).version, version)
     assert.equal(readFileSync(join(destination, 'scripts', 'engine.mjs'), 'utf8'), readFileSync(join(root, 'scripts', 'engine.mjs'), 'utf8'))
     assert.equal(readFileSync(join(destination, 'SKILL.md'), 'utf8'), readFileSync(join(root, 'SKILL.md'), 'utf8'))
+    for (const name of retiredInstructionFiles) assert.equal(existsSync(join(destination, name)), false)
   }
   const backupCount = readdirSync(join(home, '.local', 'share', 'prumo', 'backups')).length
   writeFileSync(failureFile, '503')

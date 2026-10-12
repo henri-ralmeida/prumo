@@ -50,10 +50,10 @@ is fixed under the central Prumo workspace.
 
 Apply [PO First](references/po-first.md), also configured globally by the installer, in every role. Respond in the user's language. A functional check means evidence of the requested effect, whether the work concerns data, automation, migration, software, or another domain. Use the host's native subagent tools; if dedicated planning, execution or independent review are unavailable, report that limitation rather than inventing agent dispatch. The engine records transitions; it does not create agents. In Codex invoke this skill as `$prumo`; Claude Code, Kiro and DeepSeek Harness (DSH) use `/prumo`. DSH integration (`prumo install --dsh`, `prumo doctor --dsh`, `DSH_HOME`) is described in [runtime.md](references/runtime.md#dsh-integration).
 
-Antigravity e Grok Build também permitem `/prumo`. No OpenCode, peça ao agente para carregar a skill
-`prumo` com sua ferramenta nativa de skills. Os modos nativos de planejamento não substituem os gates
-do Prumo nem autorizam gravações: confira as permissões reais antes de produzir os artefatos aprovados.
-Consulte [as integrações](references/runtime.md#additional-harnesses) para os diretórios de instalação.
+Antigravity and Grok Build also support `/prumo`. In OpenCode, ask the agent to load `prumo` with its
+native skill tool. Native planning modes do not replace Prumo gates or authorize writes: inspect actual
+permissions before producing approved artifacts. See [integrations](references/runtime.md#additional-harnesses)
+for installation directories.
 
 **Open the discussion before asking its questions.** When creating or updating tasks from an approved
 global plan, collect unresolved phase/task questions instead of starting discovery during graph authoring.
@@ -67,20 +67,20 @@ record them in discovery `decisions`/`coverage`; do not repeat settled questions
 `roundId` to an answer received before the round. The current round still needs its own freshly answered
 question. Read [discussion.md](references/discussion.md) for recording and skip rules.
 
-**Identificadores estáveis.** No plano inicial, use `T1`, `T2`, ... sem lacunas ou letras.
-Declare as fases na ordem do plano com `F1`, `F2`, ...; novas fases usam o próximo número.
-Novos planos não podem usar `HO1`, `REL1`, `T01`, `F0`, `F1B` ou outros formatos legados.
-Nomes antigos persistidos permanecem legíveis; uma padronização deles exige uma migração explícita
-das referências, preservando o conteúdo das tarefas e as provas já registradas.
-Ao acrescentar uma fase nova após todas as fases existentes por `sync-plan`, use os próximos números livres para as tarefas dessa fase; preserve os IDs, as fases e o histórico das tarefas anteriores. Números novos em fases existentes continuam recusados.
-Ao ampliar uma fase existente por `sync-plan`, preserve os números originais: uma correção vinculada a `T9`
-usa `T9a`, a próxima `T9b`, até `T9z`. Toda derivada permanece na mesma fase original de `T9`;
-não crie uma fase nova para acomodar letras e não mova a tarefa-base para contornar essa regra.
-Registre a ligação nas dependências: se a correção
-destrava `T9`, `T9` depende de `T9a`; se é um complemento posterior, `T9a` depende de `T9`.
-Nunca crie esse vínculo nos dois sentidos, pois isso gera um ciclo. Tarefas já concluídas mantêm
-seu contrato; uma ampliação posterior precisa depender delas. Execuções antigas preservam seus
-identificadores existentes. O motor recusa novas numerações incrementais durante a sincronização.
+**Stable identifiers.** Initial plans use `T1`, `T2`, ... without gaps or letters.
+Declare phases in plan order as `F1`, `F2`, ...; new phases use the next number.
+New plans cannot use `HO1`, `REL1`, `T01`, `F0`, `F1B` or other legacy formats.
+Persisted legacy names remain readable; standardizing them requires an explicit reference migration
+that preserves task contents and recorded evidence.
+When `sync-plan` appends a new phase after all existing phases, use the next available task numbers for
+that phase; preserve prior IDs, phases and history. New numbers in existing phases remain refused.
+When extending an existing phase through `sync-plan`, preserve original numbers: a correction linked
+to `T9` uses `T9a`, then `T9b`, through `T9z`. Every derivative stays in `T9`'s original phase;
+do not create a phase to accommodate letters or move the base task to bypass this rule.
+Record the link in dependencies: if the correction unblocks `T9`, `T9` depends on `T9a`;
+if it is a later addition, `T9a` depends on `T9`. Never create both directions, which form a cycle.
+Completed tasks keep their contracts; later additions must depend on them. Legacy runs preserve
+existing identifiers. The engine refuses new incremental numbering during synchronization.
 
 **Role-written summaries.** Before creating or synchronizing a new task, the orchestrator must write a
 nonblank `summary` of 1–2 sentences stating the expected result and why it matters, using the approved
@@ -112,14 +112,17 @@ the PO before naming an owner.
 | --- | --- |
 | [po-first.md](references/po-first.md) | Always in force for every role (installed globally) |
 | [discussion.md](references/discussion.md) | A phase/task is `ready_for_discussion` or `discussing`; the user must choose discuss/plan or skip; a `phase_eligible` event appears |
-| [planning.md](references/planning.md) | `ready_to_plan` or `planning`: dispatching the planner (prompts in English and Portuguese), recording task plans, open questions, pre-start baseline |
+| [planning.md](references/planning.md) | `ready_to_plan` or `planning`: dispatching the planner, recording task plans, open questions, pre-start baseline |
 | [dispatch.md](references/dispatch.md) | Recording the execution authorization; `ready`/`running`: executor prompt, obstacles, progress, capacity, interruptions |
 | [contracts.md](references/contracts.md) | Writing, translating or adapting `validation`; checking the plan's behavioral checks before the first dispatch |
 | [review.md](references/review.md) | `reviewing` or a validation receipt exists; `validate`/`done`; a verdict failed or the task is `failed` |
 | [recovery.md](references/recovery.md) | `blocked`; a user decision is needed; the plan changed after `init`; resuming or migrating an existing/legacy run |
 | [runtime.md](references/runtime.md) | Exact plan/task-plan/discovery schemas, CLI flags, effective states, dashboard |
 
-Each reference has a Portuguese counterpart beside it (`*.pt-BR.md`) with the same content.
+Workflow instructions have one maintained English source for every harness and locale. Respond in the user's
+language unless they request another; English instructions do not select the response language.
+PO First is installed in the configured locale using its English or Brazilian Portuguese template.
+README documentation, dashboard and CLI messages retain their supported translations.
 
 ## Invocation router
 
@@ -318,23 +321,21 @@ node $ENGINE validate T4 --ok --evidence "..." --cwd <absolute-project>  # the R
 node $ENGINE done T4
 ```
 
-Para medir trabalho real, marque o começo quando a pessoa ou agente efetivamente iniciar cada papel e
-marque a parada antes de aguardar resposta, pausar ou encerrar a atividade. Use
-`activity-start <id> --scope task|phase --role discussion|planning|execution|review --agent <name>` e
-`activity-stop` com os mesmos argumentos. Em rodadas de fase, use `--scope task` com o ID e o nome
-exato de cada worker registrado; `--scope phase` também aceita esse nome. Execução e revisão usam
-`--scope task`. Os comandos de despacho e de abertura de rodada não iniciam
-atividade automaticamente, pois pode haver espera até o trabalho começar. Ao retomar, abra outro
-intervalo. O motor fecha um intervalo ainda aberto quando a rodada ou tentativa muda de estado;
-isso impede que uma pausa conte como trabalho após o bloqueio. Uma rodada antiga ainda aberta
-pode começar a medir no primeiro `activity-start`; recebe `activityLegacy: true` para indicar
-que o trabalho anterior ao primeiro START não foi medido nem presumido.
+To measure actual work, mark the start when the person or agent begins each role and mark the stop
+before waiting for a response, pausing or ending activity. Use
+`activity-start <id> --scope task|phase --role discussion|planning|execution|review --agent <name>` and
+`activity-stop` with matching arguments. For phase rounds, use `--scope task` with each registered
+worker's exact ID and name; `--scope phase` also accepts that name. Execution and review use `--scope task`.
+Dispatch and round-opening commands do not start activity automatically because work may begin later.
+Open another interval on resumption. The engine closes an open interval when its round or attempt
+changes state, so waiting after a block is not counted as work. An open legacy round can begin measuring
+at its first `activity-start`; `activityLegacy: true` indicates that earlier work was neither measured nor assumed.
 
 ### State machine
 
 | State (from `ready`/`status`) | Next move | Command | Read |
 | --- | --- | --- | --- |
-| `ready_for_discussion` | Recomende discutir ou pular somente quando permitido; se houver `contractConfirmationRequired`, pular está indisponível: apresente os contratos alterados e registre o aceite explícito na discussão | `begin-phase-discussion` / `skip-phase-discussion --reason --confirmed-by-user` | discussion.md |
+| `ready_for_discussion` | Recommend discussing or skipping only when permitted; with `contractConfirmationRequired`, skipping is unavailable: present changed contracts and record explicit acceptance in discussion | `begin-phase-discussion` / `skip-phase-discussion --reason --confirmed-by-user` | discussion.md |
 | `discussing` | Ask in the principal conversation until no consequential gray area remains; write discovery JSON | `finish-phase-discussion --context` | discussion.md |
 | `ready_to_plan` | Recommend plan or skip; dispatch one read-only planner per active target within the shared limit, or skip by user choice | `plan-phase --agent [--plan-dir]` / `skip-phase-planning` | planning.md |
 | `planning` | Validate and record the returned artifacts; bring `user-now` questions to the user | `finish-phase-planning --plan-dir` | planning.md |
@@ -445,4 +446,5 @@ for explicit resume-run; --until is a forecast. Recording a pause does not inter
 external agents. Recorded stage duration may include waiting; never call it measured
 active work or use it as measured savings.
 
-O controle de agentes permite aplicar a cota somente à execução selecionada ou, com “aplicar para todos os fluxos”, às execuções atuais e ao padrão das futuras neste computador. Novas instalações usam 3; preferências pessoais não são distribuídas no pacote.
+Agent controls apply the limit to the selected run or, with "Apply to all runs", to current runs and the
+default for future runs on this computer. New installations use 3; personal preferences are not shipped in the package.

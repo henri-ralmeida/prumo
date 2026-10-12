@@ -12,7 +12,6 @@ test('executor owns recoverable obstacles before independent review', () => {
   const english = read('README.md')
   const portuguese = read('README.pt-BR.md')
   const runtimeEnglish = read('references/runtime.md')
-  const runtimePortuguese = read('references/runtime.pt-BR.md')
 
   assert.match(skill, /A recoverable obstacle is executor work, not a reason to hand incomplete work to review/)
   assert.match(skill, /The reviewer is a validation gate, not failure triage/)
@@ -21,5 +20,4 @@ test('executor owns recoverable obstacles before independent review', () => {
   assert.match(portuguese, /O revisor é uma etapa de validação, não uma triagem de falhas/)
   assert.match(portuguese, /o planejador continua executando exatamente uma vez por contrato aprovado/)
   assert.match(runtimeEnglish, /strategy rotations reuse the same immutable plan/)
-  assert.match(runtimePortuguese, /rotações de estratégia\s+reutilizam o mesmo plano imutável/)
 })

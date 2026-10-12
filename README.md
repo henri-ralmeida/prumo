@@ -91,6 +91,10 @@ bunx @henri-ralmeida/prumo@latest install --grok --lang en
 
 Language is detected from the **country/region configured in the operating system**: Brazil selects Brazilian Portuguese; other regions or an unavailable setting select English. This uses Windows home region, macOS regional preferences, or Linux address locale, independently of display/browser language. It does not use IP geolocation. To override it explicitly, choose `--lang en` or `--lang pt-BR`. For example:
 
+This preference controls dashboard and CLI messages and the installed PO First language. Prumo workflow
+instructions use one English source for every locale and direct agents to respond in the user's language
+unless another language is requested. PO First retains English and Brazilian Portuguese installation templates.
+
 ```sh
 bunx @henri-ralmeida/prumo@latest install --claude --lang pt-BR
 ```
@@ -298,4 +302,6 @@ After changing translations, run `node scripts/build-dashboard.mjs --write`. The
 
 Prumo started as a fork of graph-foreman by **JrSantiaggo** and is now an independent project under the [MIT license](LICENSE). Prumo and PO First additions are described in the [changelog](CHANGELOG.md).
 
-Hermes Agent e OpenClaw também aceitam a instalação do Prumo. Use `prumo install --hermes --project <projeto>` ou `prumo install --openclaw --project <workspace>` e confira os caminhos, permissões e planejamento no [guia de harnesses](references/harnesses.pt-BR.md).
+Hermes Agent and OpenClaw also support Prumo installation. Use `prumo install --hermes --project <project>`
+or `prumo install --openclaw --project <workspace>` and check paths, permissions and planning in the
+[harness guide](references/harnesses.md).

@@ -1,7 +1,5 @@
 # Phase research and per-task plans
 
-[Português](planning.pt-BR.md)
-
 Read this when a phase or task is `ready_to_plan` or `planning`: before dispatching the planner (or
 planning locally), when a planner returns artifacts, and after `finish-phase-planning`/`finish-planning`
 prints open questions. The artifact schema is in [runtime.md](runtime.md#task-plan-artifact); discovery
@@ -12,7 +10,7 @@ comes first, in [discussion.md](discussion.md).
 - [Who plans, and with what permissions](#who-plans-and-with-what-permissions)
 - [What the planner produces](#what-the-planner-produces)
 - [Planner prompt](#planner-prompt)
-- [Portuguese planner prompt](#portuguese-planner-prompt)
+
 - [Recording the artifacts](#recording-the-artifacts)
 - [Baseline before execution](#baseline-before-execution)
 - [Open questions after planning](#open-questions-after-planning)
@@ -133,55 +131,7 @@ Do not edit .specs/graph/ state. Report the artifact path, findings and any deci
 The same artifact, capability, complete-JSON fallback and correction rules apply to task-scoped planning.
 Use the artifact directory and task schema given for that task, without adding phase-only binding fields.
 
-## Portuguese planner prompt
 
-When the planning conversation is in Portuguese, use this equivalent planner prompt:
-
-```text
-Você é o PLANEJADOR somente leitura da fase aprovada, atuando como WORKER DE PLANEJAMENTO atribuído aos alvos ativos. Confira as ferramentas
-e permissões de gravação reais disponíveis; não deduza capacidades pelo nome do harness. Trabalhe somente nos IDs
-atribuídos ao seu nome nativo exato; não atue sobre alvos enfileirados nem implemente tarefas.
-Leia as regras do projeto, o objetivo e as restrições aprovados, os contratos das tarefas e as saídas de
-dependências conhecidas: <referências>.
-Leia a descoberta persistida da fase e suas decisões travadas: <phaseWorkflows.F2.discovery do state.json>.
-Use as ferramentas disponíveis para inspecionar a implementação e os artefatos atuais, as regras reais do
-projeto, as saídas de dependências e as fontes relevantes; identifique soluções existentes e impactos.
-Aplique PO First. Não repita perguntas da descoberta; devolva ao orquestrador novas lacunas consequenciais.
-Considere condições operacionais conhecidas que moldam o resultado, inclusive volume e tamanho dos dados,
-estado persistido, concorrência e operações demoradas. Para cada risco material, planeje uma verificação observável
-no caminho usado pelas pessoas com dados reais ou sintéticos representativos; justifique essa representatividade e
-registre limitações. Não deixe uma amostra pequena representar uma carga grande conhecida sem evidência de que ela
-exercita o mesmo risco, nem imponha testes de carga genéricos ou limites de desempenho inventados a uma correção
-delimitada de baixo risco.
-Se recomendar texto de produto, descreva a regra observável e o motivo; nomeie a área responsável apenas
-quando o contexto aprovado confirmar essa informação; caso contrário, leve a dúvida de responsabilidade ao PO.
-Mantenha identificadores e detalhes internos do fluxo fora de comentários, testes, mensagens e rascunhos de
-README; identificadores exigidos pelo planejamento pertencem somente aos campos do contrato do task-plan.
-Preserve as decisões conhecidas; proponha qualquer mudança material de contrato para o fluxo autorizado do plano global.
-Inclua `summary` em cada artefato: 1–2 frases descrevendo a abordagem escolhida e por que ela atende ao resultado esperado.
-Grave SOMENTE o task-plan-<id>.json exato de cada alvo ativo em <diretório absoluto do artefato>: research, decisions,
-steps, verification, openQuestions, writes, phaseBinding e unresolvedInputs. Para cada pergunta em aberto,
-diga quem decide e até quando com `decideBy`: `executor` (com a resposta proposta em `answer`, que o executor
-aplica), `user-now`, `{ "beforeTask": "<id>" }` ou `{ "beforePhase": "<id>" }`. Cada item de verificação pode
-declarar recursos exigidos com `requires`; use somente o vocabulário documentado. Registre em `writes` os
-caminhos de projeto previstos, todos contidos nos `touches` da tarefa; não declare gravações de arquivos para `read-only`. Investigue acesso a recursos compartilhados e escopo pendente; não invente caminhos. Copie exatamente phaseBinding e os
-unresolvedInputs da tarefa do resultado de `plan-phase`; não os recalcule nem renumere plannerRound.
-Quando a discussão foi pulada, discussionRoundId é o decisionId da confirmação do pulo impresso pelo motor.
-Schema: references/runtime.md#task-plan-artifact.
-Inspecione o `git status --short` real e o diff relevante, staged e unstaged, durante o planejamento.
-Identifique mudanças já presentes antes da execução para que o revisor as distinga da entrega desta tarefa.
-Se puder gravar no diretório indicado, grave somente o arquivo exato task-plan-<id>.json para cada tarefa.
-Se não puder gravar, devolva um artefato completo por tarefa: escreva o nome exato do arquivo na linha
-imediatamente antes de um bloco aberto com ```json que contenha o objeto JSON inteiro e válido. Não abrevie,
-omita campos, use reticências nem devolva objeto parcial. O orquestrador decodifica &gt;, &lt;, &amp; e &quot;
-nos valores de texto do JSON, valida cada objeto completo, grava cada artefato no diretório indicado e então
-conclui o planejamento. Se a validação apontar uma correção, ela volta ao planejador; o orquestrador não
-inventa conteúdo de plano ausente.
-Se não houver subagente planejador disponível, informe essa limitação e faça o planejamento localmente, com
-pesquisa somente leitura, gravando apenas o artefato task-plan indicado. Não implemente o trabalho de produto.
-Não edite o estado em .specs/graph/. Reporte o caminho do artefato, as descobertas e qualquer decisão que
-bloqueie a execução.
-```
 
 ## Recording the artifacts
 

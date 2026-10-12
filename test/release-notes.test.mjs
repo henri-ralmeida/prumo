@@ -240,5 +240,6 @@ test('atualização para 2.9.3 explica evidência representativa e proporcional 
   assert.ok(items.some(item => item.includes('without generic load tests')))
   assert.ok(items.some(item => item.includes('test counts as general assurance')))
   assert.ok(items.some(item => item.includes('all ten supported AI harnesses')))
+  assert.ok(items.some(item => item.includes("responses in the user's language")))
   assert.deepEqual(releaseHistory(['2.9.3'], '2.9.3'), [])
 })

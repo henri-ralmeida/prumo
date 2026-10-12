@@ -228,7 +228,7 @@ test('instalar Antigravity preserva a skill Codex do projeto e configura seus do
   assert.ok(existsSync(join(f.home, '.gemini', 'antigravity-cli', 'skills', 'prumo', 'SKILL.md')))
 })
 
-test('Grok atualiza idioma gerenciado sem duplicar PO First nem alterar instruções pessoais', t => {
+test('Grok updates the installation locale and PO First while preserving personal content', t => {
   const f = fixture(t, 'grok')
   const rules = join(f.home, '.grok', 'AGENTS.md')
   put(rules, 'Instruções pessoais antes da instalação.\n')
