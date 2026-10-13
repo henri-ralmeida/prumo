@@ -4330,6 +4330,36 @@ test('o spinner ativo cobre os trilhos, com e sem fases', () => {
   }
 })
 
+test('menus do cabecalho fecham fora e preservam interacoes internas nos dois idiomas e tamanhos', () => {
+  for (const lang of ['en', 'pt-BR']) for (const width of [330, 1400]) {
+    const ui = dashboard(lang, width)
+    const plans = ui.nodes.get('#runMenu'), agents = ui.nodes.get('#agentLimitMenu')
+    const open = type => {
+      if (type === 'filters') ui.run('toggleFilterMenu(true)')
+      else { const selector = type === 'plans' ? '#runMenu' : '#agentLimitMenu'; ui.nodes.get(selector).open = true; ui.dispatchElement(selector, 'toggle') }
+    }
+    for (const type of ['plans', 'agents', 'filters', 'agents', 'plans', 'filters']) {
+      open(type)
+      assert.equal(Boolean(plans.open), type === 'plans')
+      assert.equal(Boolean(agents.open), type === 'agents')
+      assert.equal(ui.nodes.get('#filterToggle').getAttribute('aria-expanded'), String(type === 'filters'))
+      const selector = type === 'plans' ? '#runMenu' : type === 'agents' ? '#agentLimitMenu' : width <= 1100 ? '#headerMenu' : '#filterMenu'
+      const menu = ui.nodes.get(selector)
+      ui.dispatchDocument('click', { target: { closest: value => value === selector ? menu : null } })
+      assert.equal(type === 'filters' ? !ui.nodes.get('#filterPanel').hidden : menu.open, true)
+      ui.dispatchDocument('click', { composedPath: () => [menu] })
+      assert.equal(type === 'filters' ? !ui.nodes.get('#filterPanel').hidden : menu.open, true)
+      ui.dispatchDocument('click', {})
+      assert.equal(plans.open, false)
+      assert.equal(agents.open, false)
+      assert.equal(ui.nodes.get('#filterPanel').hidden, true)
+      ui.dispatchElement('#runMenu', 'toggle')
+      ui.dispatchElement('#agentLimitMenu', 'toggle')
+      assert.equal(ui.nodes.get('#filterPanel').hidden, true)
+    }
+  }
+})
+
 test('o seletor de planos fecha ao clicar fora e preserva cliques dentro dos dois grupos', () => {
   const ui = dashboard('pt-BR')
   ui.run("$('#runMenu')")

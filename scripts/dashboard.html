@@ -422,7 +422,9 @@ SOFTWARE. -->
   #resBtn:hover { color: #1a1408; background: #f2c06a; border-color: #f2c06a; }
   .filter-menu { position: relative; }
   .filter-toggle { display: flex; align-items: center; gap: 7px; }
-  .filter-toggle[aria-expanded="true"] { border-color: var(--accent); background: var(--card); }
+  .filter-toggle[aria-expanded="true"] { border-color: var(--text); background: var(--card); }
+  header .run-menu[open] .run-trigger, .agent-limit-menu[open] > summary { border-color: var(--text); }
+  header .run-trigger:focus-visible, .filter-toggle:focus-visible, .agent-limit-menu > summary:focus-visible { outline-color: var(--text); }
   .filter-panel { position: absolute; z-index: 16; top: calc(100% + 8px); right: 0; width: 280px; padding: 14px;
                   border: 1px solid var(--line); border-radius: var(--control-radius); background: var(--panel); box-shadow: 0 14px 36px rgba(0, 0, 0, .45); }
   .filter-panel[hidden] { display: none; }
@@ -2295,10 +2297,16 @@ function toggleRunFilter(group) {
 }
 
 document.addEventListener('click', (event) => {
-  const menu = $('#runMenu')
-  if (!menu.open) return
   const path = typeof event.composedPath === 'function' ? event.composedPath() : []
-  if (!path.includes(menu) && !event.target?.closest?.('#runMenu')) menu.open = false
+  for (const selector of ['#runMenu', '#agentLimitMenu']) {
+    const menu = $(selector)
+    if (menu.open && !path.includes(menu) && !event.target?.closest?.(selector)) menu.open = false
+  }
+  const selector = innerWidth <= 1100 ? '#headerMenu' : '#filterMenu'
+  if (!path.includes($(selector)) && !event.target?.closest?.(selector)) {
+    toggleFilterMenu(false)
+    if (innerWidth <= 1100) $('#headerMenu').open = false
+  }
 })
 
 function selectRun(value) {
@@ -2625,15 +2633,27 @@ function toggleSection(section, open = $(`#${section}Toggle`).getAttribute('aria
 
 function toggleFilterMenu(open = $('#filterToggle').getAttribute('aria-expanded') !== 'true') {
   const expanded = Boolean(open)
-  if (expanded) $('#runMenu').open = false
+  if (expanded) closeHeaderMenus('filters')
   $('#filterPanel').hidden = !expanded
   $('#filterToggle').setAttribute('aria-expanded', String(expanded))
 }
 
+function closeHeaderMenus(keep) {
+  if (keep !== 'plans') $('#runMenu').open = false
+  if (keep !== 'agents') $('#agentLimitMenu').open = false
+  if (keep !== 'filters') {
+    toggleFilterMenu(false)
+    if (innerWidth <= 1100) $('#headerMenu').open = false
+  }
+}
+
+$('#agentLimitMenu').addEventListener('toggle', () => {
+  if ($('#agentLimitMenu').open) closeHeaderMenus('agents')
+})
+
 $('#runMenu').addEventListener('toggle', () => {
   if (!$('#runMenu').open) return
-  toggleFilterMenu(false)
-  if (innerWidth <= 1100) $('#headerMenu').open = false
+  closeHeaderMenus('plans')
   syncActivitySpinners()
 })
 
