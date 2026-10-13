@@ -89,10 +89,11 @@ export function assertDiscovery(context) {
   insist(nonempty(context.closure), 'discovery closure must explain why no consequential gray area remains')
 }
 
-export function assertDiscussionBoundary(context, targetIds, { acceptPremature = false } = {}) {
+export function assertDiscussionBoundary(context, targetIds, { acceptPremature = false, queuedTargets = [] } = {}) {
   const deferred = [...new Set(context.executionBoundary.deferredToExecutor)].sort()
   const targets = [...new Set(targetIds)].sort()
   insist(JSON.stringify(deferred) === JSON.stringify(targets),
+    queuedTargets.length ? tr('discussion discovery must cover the active targets: [{0}]; received: [{1}]; queued targets: [{2}] must be closed in a later finish-phase-discussion call; the phase remains open', targets.join(', '), deferred.join(', '), queuedTargets.join(', ')) :
     `discovery must defer every discussion target to its executor; planner research cannot deliver the task; expected targets: [${targets.join(', ')}]; received targets: [${deferred.join(', ')}]`)
   const premature = context.executionBoundary.prematureTaskWork
   insist(premature.every(item => targets.includes(item.task)),

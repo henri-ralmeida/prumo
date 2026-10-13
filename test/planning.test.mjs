@@ -1533,3 +1533,60 @@ test('validation summary remains optional, nonblank when present, and separate f
   assert.equal(event.summary, summary)
   assert.equal(event.evidence, evidence)
 })
+
+for (const lang of ['en', 'pt-BR']) test('revisao numerada orienta seis criterios e ajuda preserva estado e historico em ' + lang, t => {
+  const f = fixture(t, [{ id: 'T1', title: 'Politica documentada', validationMode: 'inspection',
+    inspectionReason: 'Somente documentacao', validation: [{ ...check, kind: 'static' }] }], {}, { lang })
+  f.beginPlan('T1')
+  const verification = Array.from({ length: 6 }, (_, index) => ({ criterion: 'Regra ' + (index + 1), check: 1 }))
+  f.finish('T1', { ...f.artifact(), verification })
+  const shown = JSON.parse(f.ok('show-contract', 'T1').stdout)
+  assert.deepEqual(shown.reviewCriteria, verification.map((criterion, index) => ({ step: index + 1, criterion: criterion.criterion })))
+  f.ok('start', 'T1', '--agent', 'executor')
+  const review = f.ok('review', 'T1', '--agent', 'reviewer')
+  assert.match(review.output, /6\. .*Regra 6/)
+  assert.match(review.output, lang === 'en' ? /Review criteria for T1: 6/ : /Critérios de revisão de T1: 6/)
+  const before = f.state(), events = f.events()
+  const metricsPath = join(f.root, '.specs/graph/planning/.command-metrics.ndjson')
+  const metrics = readFileSync(metricsPath, 'utf8')
+  for (const args of [['--help'], ['T1', '--help']]) {
+    const help = f.ok('review-progress', ...args)
+    assert.match(help.output, /show-contract|review-progress/)
+    if (args[0] === 'T1') assert.match(help.output, /6\. .*Regra 6/)
+    assert.deepEqual(f.state(), before)
+    assert.equal(f.events(), events)
+    assert.equal(readFileSync(metricsPath, 'utf8'), metrics)
+  }
+  f.rejected(lang === 'en' ? /missing criteria: \[1, 2, 3, 4, 5, 6\] of 6/ : /critérios faltantes: \[1, 2, 3, 4, 5, 6\] de 6/, 'validate', 'T1', '--ok', '--evidence', 'Conferido')
+  assert.deepEqual(f.state(), before)
+  assert.equal(f.events(), events)
+  f.rejected(lang === 'en' ? /between 1 and 6/ : /entre 1 e 6/, 'review-progress', 'T1', '--step', '7', '--agent', 'reviewer')
+  for (let step = 1; step <= 4; step++) f.ok('review-progress', 'T1', '--step', String(step), '--agent', 'reviewer')
+  const partial = f.state(), partialEvents = f.events()
+  f.rejected(lang === 'en' ? /missing criteria: \[5, 6\] of 6/ : /critérios faltantes: \[5, 6\] de 6/, 'validate', 'T1', '--ok', '--evidence', 'Conferido')
+  assert.deepEqual(f.state(), partial)
+  assert.equal(f.events(), partialEvents)
+  for (const [key, value] of [['total', 1], ['basis', 'checks'], ['agent', 'outro'], ['contractRevision', -1], ['scopeRevision', -1], ['selfReported', false]]) {
+    const stale = structuredClone(partial)
+    stale.tasks.T1.attempts.at(-1).reviewProgress[key] = value
+    f.save(stale)
+    f.rejected(lang === 'en' ? /missing criteria: \[1, 2, 3, 4, 5, 6\]/ : /critérios faltantes: \[1, 2, 3, 4, 5, 6\]/, 'validate', 'T1', '--ok', '--evidence', 'Conferido')
+    assert.deepEqual(f.state(), stale)
+  }
+  f.save(partial)
+  for (const step of ['5', '6']) f.ok('review-progress', 'T1', '--step', step, '--agent', 'reviewer')
+  f.ok('validate', 'T1', '--ok', '--evidence', 'Os seis criterios foram inspecionados', '--cwd', f.project)
+  f.ok('done', 'T1')
+})
+
+test('ajuda da revisao conserva denominador desconhecido e lista verificacoes executaveis', t => {
+  const legacy = fixture(t, [{ id: 'T1', title: 'Inspecao legada', validationMode: 'inspection',
+    inspectionReason: 'Somente documentacao', validation: 'Inspecionar conteudo' }])
+  assert.deepEqual(JSON.parse(legacy.ok('show-contract', 'T1').stdout).reviewCriteria, [])
+  assert.match(legacy.ok('review-progress', 'T1', '--help').output, /No structured criteria recorded/)
+  const functional = fixture(t)
+  const criteria = JSON.parse(functional.ok('show-contract', 'T1').stdout).reviewCriteria
+  assert.equal(criteria.length, 1)
+  assert.deepEqual(criteria[0], { step: 1, criterion: check.expect })
+  assert.match(functional.ok('review-progress', 'T1', '--help').output, /1\. /)
+})

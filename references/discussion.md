@@ -136,9 +136,13 @@ Run `begin-phase-discussion` before presenting the first question. It persists t
 current `roundId` and `nonce`. Write the resulting discovery JSON with those values and bind at least
 one freshly answered question to that `roundId`; include light research, the real `native` or
 `chat-fallback` channel, PO First coverage, decisions, deferred ideas, `executionBoundary` and closure.
-`executionBoundary.deferredToExecutor` must name every target covered by the complete round and
+`executionBoundary.deferredToExecutor` must name exactly the current `activeTargets`, not the queued targets, and
 `prematureTaskWork` is normally empty. `finish-phase-discussion` validates discovery only for the current
 `activeTargets`; it accumulates each completed wave and opens the next one until all targets are covered.
+The start command lists active targets and targets waiting for a slot. If the artifact includes queued
+targets, the refusal identifies them and explains that they need a later closure call. After each
+wave, inspect the next active targets and repeat `finish-phase-discussion`; the phase remains open
+until every wave closes. This preserves the shared agent limit and each recorded discovery.
 If task work occurred during discussion, record its task and action, stop, tell the user, and do not
 reuse its result. Only after explicit user approval may `finish-*-discussion --accept-premature-work` close
 the round; the executor still repeats the work. Then run:

@@ -47,7 +47,7 @@ function fixture(t, { tasks = ['T1', 'T2', 'T3', 'T4'], run = 'agent-limit', pla
   return { root, project, planPath, run, cli, ok, state, saveState, stateBytes, events, eventsBytes }
 }
 
-function phaseFixture(t, { run = 'phase-agent-limit', maxAgents = 3 } = {}) {
+function phaseFixture(t, { run = 'phase-agent-limit', maxAgents = 3, lang = 'en' } = {}) {
   const home = mkdtempSync(join(repoRoot, '.test-agent-limit-phase-'))
   t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }))
   const root = join(home, 'workspace')
@@ -68,7 +68,7 @@ function phaseFixture(t, { run = 'phase-agent-limit', maxAgents = 3 } = {}) {
       id, phase: 'F1', title: `Entrega ${id}`, summary: `Entregar o resultado aprovado de ${id}.`, validation,
     })),
   }))
-  const env = { ...process.env, PRUMO_ROOT: root, PRUMO_HOME: home, PRUMO_LANG: 'en' }
+  const env = { ...process.env, PRUMO_ROOT: root, PRUMO_HOME: home, PRUMO_LANG: lang }
   const cli = (...args) => spawnSync(process.execPath, [engine, ...args], {
     cwd: root, env, encoding: 'utf8', timeout: 30000, windowsHide: true,
   })
@@ -129,7 +129,7 @@ function phaseFixture(t, { run = 'phase-agent-limit', maxAgents = 3 } = {}) {
   return {
     root, project, plans, planPath, run, cli, ok, state, phase, events,
     saveState: value => writeFileSync(statePath, JSON.stringify(value)),
-    finishPhaseDiscussion, finishPhasePlanning, writePhasePlans, planPathFor,
+    discoveryPath, finishPhaseDiscussion, finishPhasePlanning, writePhasePlans, planPathFor,
   }
 }
 
@@ -816,4 +816,43 @@ test('alterar capacidade preserva identificadores e histórico de execução leg
   assert.equal(saved.plan.planningMode, undefined)
   assert.deepEqual(saved.tasks, before)
   assert.equal(f.events().at(-1).type, 'agent_limit_changed')
+})
+
+for (const lang of ['en', 'pt-BR']) test('recusa de discovery informa a fila e preserva a onda em ' + lang, t => {
+  const f = phaseFixture(t, { lang })
+  const begin = f.ok('begin-phase-discussion', 'F1', '--agent', 'orchestrator')
+  assert.match(begin.stdout, lang === 'en' ? /waiting for a slot: T4/ : /aguardam slot: T4/)
+  const before = f.state(), events = f.events()
+  for (const targets of [['T1', 'T2', 'T3', 'T4'], ['T1']]) {
+    const result = f.cli('finish-phase-discussion', 'F1', '--context', f.discoveryPath(targets))
+    assert.equal(result.status, 1)
+    assert.match(result.stderr, /T1, T2, T3/)
+    assert.match(result.stderr, lang === 'en' ? /queued targets: \[T4\]/ : /alvos em fila: \[T4\]/)
+    assert.match(result.stderr, lang === 'en' ? /later finish-phase-discussion call; the phase remains open/ : /chamada posterior de finish-phase-discussion; a fase permanece aberta/)
+    assert.deepEqual(f.state(), before)
+    assert.deepEqual(f.events(), events)
+  }
+  f.finishPhaseDiscussion(['T1', 'T2', 'T3'])
+  assert.equal(f.phase().state, 'discussing')
+  assert.deepEqual(f.phase().discussionAttempts.at(-1).activeTargets, ['T4'])
+  assert.equal(occupancy(f.state()).busy.length, 1)
+  f.finishPhaseDiscussion(['T4'])
+  assert.equal(f.phase().state, 'pending')
+  assert.equal(f.phase().discussionAttempts.at(-1).result, 'discussed')
+})
+
+test('discussao legada sem campos de fila fecha somente seus alvos e conserva o historico', t => {
+  const f = phaseFixture(t)
+  f.ok('begin-phase-discussion', 'F1', '--agent', 'orchestrator')
+  const legacy = f.state(), round = legacy.phaseWorkflows.F1.discussionAttempts.at(-1)
+  for (const field of ['workers', 'assignments', 'activeTargets', 'queuedTargets']) delete round[field]
+  f.saveState(legacy)
+  const roundId = round.roundId
+  f.finishPhaseDiscussion(['T1', 'T2', 'T3', 'T4'])
+  const finished = f.phase().discussionAttempts.at(-1)
+  assert.equal(f.phase().state, 'pending')
+  assert.equal(finished.roundId, roundId)
+  assert.deepEqual(finished.targets, round.targets)
+  assert.equal(finished.result, 'discussed')
+  assert.ok(finished.endedAt)
 })

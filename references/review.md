@@ -96,6 +96,13 @@ for the full stdout, stderr, working directory, exit code and reuse status of a 
 review, run each approved check yourself and inspect its output before recording the verdict. Mark each
 reviewed check or structured inspection criterion with `review-progress <task> --step N --agent <reviewer>`;
 inspection tasks with structured criteria cannot pass validation until every criterion is traversed.
+Use `show-contract <task>` to read `reviewCriteria`, which maps each 1-based step to its current
+criterion. The `review` command prints the same numbered list. `review-progress --help` explains
+the syntax; `review-progress <task> --help` also lists that task's criteria without writing progress,
+migrating the run or changing its history. A refused passing validation lists the missing step
+numbers and total. Progress bound to an old contract, scope or reviewer cannot satisfy the current
+criteria; all current criteria must be reported again. Legacy work without structured criteria
+keeps progress unknown rather than inventing a checklist.
 This progress is a traceable reviewer report, not proof that an inspection happened or that work passed.
 Legacy inspection work without a recorded denominator stays unknown and does not gain invented criteria.
 `validate --ok` reruns the approved commands and prints up to 15 output lines from functional and failed

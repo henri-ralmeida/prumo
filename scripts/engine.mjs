@@ -121,7 +121,7 @@ if (recognizedCommand) {
   const metric = newCommandRecord(cmd)
   process.on('exit', code => {
     try {
-      if (cmd === 'sync-plan' && args?.['dry-run']) return
+      if (cmd === 'sync-plan' && args?.['dry-run'] || cmd === 'review-progress' && args?.help) return
       const runFlag = rest.lastIndexOf('--run')
       if (runFlag >= 0 && rest[runFlag + 1] === undefined) return
       const requestedRun = args?.run ?? process.env.PRUMO_RUN ?? (runFlag >= 0 ? rest[runFlag + 1] : undefined)
@@ -132,6 +132,12 @@ if (recognizedCommand) {
   })
 }
 try { args = parseEngineArgs(cmd, rest) } catch (error) { die(error.message) }
+if (cmd === 'review-progress' && args.help) {
+  log(tr('Usage: review-progress [<task>] --help | review-progress <task> --step <1-based index> --agent <reviewer> [--run <name>]'))
+  log(tr('Read the numbered current criteria with show-contract <task>; progress is a reviewer report, not proof of inspection or approval'))
+  if (args._[0]) printReviewCriteria(getTask(loadState(runName()), args._[0]))
+  process.exit(0)
+}
 
 function die(msg) {
   errorLog(`[prumo] ERROR: ${msg}`)
@@ -416,6 +422,20 @@ function reviewDenominator(task) {
     return { total: criteria.length, basis: 'inspection', inspection: true }
   if (contract.steps.length) return { total: contract.steps.length, basis: 'checks', inspection: contract.mode === 'inspection' }
   return null
+}
+
+function numberedReviewCriteria(task) {
+  const denominator = reviewDenominator(task)
+  if (!denominator) return []
+  const criteria = denominator.basis === 'inspection' ? task.taskPlan.verification : validationContract(task).steps
+  return criteria.map((criterion, index) => ({ step: index + 1, criterion: criterion.criterion ?? criterion.expect }))
+}
+
+function printReviewCriteria(task) {
+  const criteria = numberedReviewCriteria(task)
+  log('[prumo] ' + tr('Review criteria for {0}: {1}; use review-progress in this numbered order', task.id, criteria.length))
+  if (!criteria.length) log('[prumo] ' + tr('No structured criteria recorded; legacy review progress remains unknown'))
+  for (const { step, criterion } of criteria) log('[prumo] ' + step + '. ' + JSON.stringify(criterion))
 }
 
 function reviewProgressRecord(task, agent, denominator) {
@@ -2410,7 +2430,7 @@ const commands = {
       display, displayNote: tr(Object.values(display).some(value => typeof value === 'string' && value.trim())
         ? 'Display metadata is separate from the contract and does not change its digest'
         : 'No display metadata recorded; this does not mean the contract is empty'),
-      diff: args.diff === true, fields, before: select(before), after: select(after),
+      reviewCriteria: numberedReviewCriteria(task), diff: args.diff === true, fields, before: select(before), after: select(after),
       ...(args.full ? { contractDigest: phasePlanningContext(state, task), contract: planTaskFromState(task) } : {}) }, null, 2))
   },
 
@@ -2762,7 +2782,7 @@ const commands = {
     try {
       discovery = JSON.parse(readFileSync(resolve(args.context), 'utf8'))
       assertDiscovery(discovery)
-      assertDiscussionBoundary(discovery, round.activeTargets ?? round.targets, { acceptPremature: args['accept-premature-work'] === true })
+      assertDiscussionBoundary(discovery, round.activeTargets ?? round.targets, { queuedTargets: round.queuedTargets ?? [], acceptPremature: args['accept-premature-work'] === true })
       if (discovery.roundId !== round.roundId || discovery.nonce !== round.nonce)
         throw new Error('discovery roundId and nonce must match the current phase discussion')
       if (!discovery.questions.some(question => question.roundId === round.roundId))
@@ -3436,6 +3456,7 @@ const commands = {
       ...(denominator ? { current: 1, total: denominator.total, basis: denominator.basis } : {}),
       ...(dispatchConfirmation ? { manualDispatchConfirmation: dispatchConfirmation } : {}) })
     log(`[prumo] ${id} in review (reviewer ${reviewer})`)
+    printReviewCriteria(t)
     const executedStep = t.attempts.at(-1).executionStep ?? 1
     if (t.taskPlan?.steps?.length > 1 && executedStep < t.taskPlan.steps.length)
       log(`[prumo] WARNING: executor progress stayed at ${executedStep}/${t.taskPlan.steps.length}; the position is not proof of completed work`)
@@ -3457,7 +3478,7 @@ const commands = {
     const denominator = reviewDenominator(t)
     if (!denominator) die(`${id} has no structured review progress denominator; legacy criteria keep progress unknown`)
     const step = positiveIndex(args.step, 'review-progress step')
-    if (step > denominator.total) die(`review-progress step must be between 1 and ${denominator.total}`)
+    if (step > denominator.total) die(tr('review-progress step must be between 1 and {0}', denominator.total))
     const attempt = t.attempts.at(-1)
     let progress = attempt.reviewProgress
     if (!progress || progress.total !== denominator.total || progress.basis !== denominator.basis ||
@@ -3547,11 +3568,15 @@ const commands = {
       if (requestedOk && denominator?.inspection) {
         const progress = t.attempts.at(-1)?.reviewProgress
         const reviewer = by === 'review' ? t.reviewer : t.agent
-        if (!progress || progress.total !== denominator.total || progress.traversed !== denominator.total ||
-            progress.selfReported !== true ||
-            progress.basis !== denominator.basis || progress.agent !== reviewer ||
-            progress.contractRevision !== (t.contractRevision ?? 0) || progress.scopeRevision !== (t.scopeRevision ?? 0))
-          die(`${id} inspection criteria are not fully traversed; record reviewer-reported progress for each criterion with review-progress ${id} --step <index> --agent ${reviewer} (this is not proof of inspection)`)
+        const stale = !progress || progress.total !== denominator.total || progress.basis !== denominator.basis ||
+          progress.agent !== reviewer || progress.contractRevision !== (t.contractRevision ?? 0) ||
+          progress.scopeRevision !== (t.scopeRevision ?? 0) || progress.selfReported !== true
+        if (stale || progress.traversed !== denominator.total) {
+          if (stale) errorLog('[prumo] ' + tr('Current review progress is missing or stale; earlier reports cannot satisfy these criteria'))
+          const traversed = stale ? 0 : progress.traversed
+          const missing = Array.from({ length: denominator.total }, (_, index) => index + 1).filter(step => step > traversed)
+          die(tr('{0} inspection criteria are not fully traversed; missing criteria: [{1}] of {2}; record current reviewer-reported progress with review-progress {0} --step <index> --agent {3} (this is not proof of inspection)', id, missing.join(', '), denominator.total, reviewer))
+        }
       }
       if (requestedOk) {
         if (state.plan.scopePolicy === 'explicit' || externalTouchPaths(t).length) {

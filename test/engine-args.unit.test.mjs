@@ -82,3 +82,9 @@ for (const command of ['plan-phase', 'begin-phase-discussion']) test(`${command}
   assert.deepEqual(parseEngineArgs(command, ['F1', '--agent', 'T1=a', '--agent', 'T2=b', '--agent', 'T3=c']).agent,
     ['T1=a', 'T2=b', 'T3=c'])
 })
+
+test('review-progress aceita ajuda com e sem tarefa sem consumir o identificador', () => {
+  assert.deepEqual(parseEngineArgs('review-progress', ['--help']), { _: [], help: true })
+  assert.deepEqual(parseEngineArgs('review-progress', ['T1', '--help']), { _: ['T1'], help: true })
+  assert.throws(() => parseEngineArgs('review-progress', ['--help', '--help']), /Duplicate option/)
+})

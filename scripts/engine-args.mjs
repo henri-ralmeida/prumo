@@ -25,7 +25,7 @@ const definitions = {
   'finish-planning': [1, 'plan'],
   start: [1, 'agent executor channel', 'confirmed-by-user'],
   progress: [1, 'agent step'], review: [1, 'agent channel', 'confirmed-by-user'],
-  'review-progress': [1, 'agent step'],
+  'review-progress': [1, 'agent step', 'help'],
   'refresh-contract': [1, 'plan'],
   validate: [1, 'evidence scope-evidence summary cwd tail', 'ok failed'],
   done: [1], fail: [1, 'reason', 'plan-defect'],
