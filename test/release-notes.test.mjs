@@ -275,3 +275,17 @@ test('atualização para 2.9.3 explica evidência representativa e proporcional 
   assert.ok(items.some(item => item.includes("responses in the user's language")))
   assert.deepEqual(releaseHistory(['2.9.3'], '2.9.3'), [])
 })
+
+test('atualização para 2.9.6 explica propostas legadas e traduz as notas', () => {
+  const messages = JSON.parse(readFileSync(new URL('../scripts/messages.json', import.meta.url), 'utf8'))
+  const history = releaseHistory(['2.9.5'], '2.9.6')
+  assert.deepEqual(history.map(release => release.version), ['2.9.6'])
+  assert.equal(history[0].sections.length, 1)
+  const section = history[0].sections[0]
+  assert.ok(messages[section.title]?.trim())
+  assert.equal(section.items.length, 2)
+  for (const item of section.items) assert.ok(messages[item]?.trim())
+  assert.ok(section.items.some(item => item.includes('legacy tasks')))
+  assert.ok(section.items.some(item => item.includes('new tasks')))
+  assert.deepEqual(releaseHistory(['2.9.6'], '2.9.6'), [])
+})

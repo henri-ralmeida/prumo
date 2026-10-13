@@ -1,4 +1,15 @@
 {
+  "2.9.6": {
+    "en": [
+      {
+        "title": "Fixed — Contract proposal diagnostics",
+        "items": [
+          "Identify affected legacy tasks when refusing contract proposals and show the synchronization path without bypassing existing controls",
+          "Clarify that new tasks support proposals while preserving history, backups, execution authorization and independent review requirements"
+        ]
+      }
+    ]
+  },
   "2.9.5": {
     "en": [
       {

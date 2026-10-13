@@ -2,6 +2,11 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.9.6 — 2026-10-13
+
+- Identifique as tarefas legadas afetadas ao recusar propostas de contrato e informe o caminho de sincronização sem contornar os controles existentes.
+- Esclareça que tarefas novas aceitam propostas, preservando histórico, backups e requisitos de autorização de execução e revisão independente.
+
 ## 2.9.5 — 2026-10-12
 
 - Capture binários grandes em blocos, sem recusa pelo tamanho, registrando identidade, tamanho e hash; preserve a recusa de caminhos inseguros e alterações durante a captura, sem tratar a impressão digital como aprovação funcional.
