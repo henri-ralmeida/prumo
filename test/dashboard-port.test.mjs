@@ -51,6 +51,8 @@ test('somente dashboard com preload e token do cenário encerra o próprio proce
     assert.equal(child.exitCode, null, 'token errado não encerra o dashboard')
     const shutdown = await fetch(`http://127.0.0.1:${port}${shutdownPath}`, { method: 'POST' })
     assert.equal(shutdown.status, 200)
+    assert.equal(shutdown.headers.get('connection'), 'close')
+    assert.equal(await shutdown.text(), 'stopping', 'o servidor entrega a confirmacao inteira antes de encerrar')
     assert.equal(await closed, 0)
   } finally {
     if (child.exitCode === null) child.kill()

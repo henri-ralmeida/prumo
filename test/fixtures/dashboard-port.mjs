@@ -46,9 +46,10 @@ if (Number.isInteger(port) && port > 0 && port !== DASHBOARD_PORT) {
         if (event === 'request' && values[0]?.method === 'POST'
           && values[0]?.url === `/__prumo_test_dashboard_shutdown/${shutdownToken}`
           && ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(values[0]?.socket.remoteAddress)) {
-          values[1].writeHead(200)
+          // Aguarde a resposta e o fechamento das conexoes para nao interromper a confirmacao de desligamento.
+          values[1].writeHead(200, { Connection: 'close' })
           values[1].end('stopping')
-          setTimeout(() => process.exit(0), 10).unref()
+          this.close(() => process.exit(0))
           return true
         }
         return emit.call(this, event, ...values)

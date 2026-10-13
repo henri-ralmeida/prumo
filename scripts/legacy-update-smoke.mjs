@@ -82,7 +82,8 @@ function run(file, args, extra = {}, expected = 0) {
   const command = process.platform === 'win32' && file === 'npm'
     ? [process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', 'npm', ...args]] : [file, args]
   const result = spawnSync(...command, { cwd: project, env: { ...env, ...extra }, encoding: 'utf8', windowsHide: true, timeout: 120000 })
-  evidence.push({ args, status: result.status, stdout: result.stdout, stderr: result.stderr })
+  evidence.push({ args, status: result.status, stdout: result.stdout, stderr: result.stderr,
+    ...(result.error ? { error: { message: result.error.message, code: result.error.code }, signal: result.signal } : {}) })
   assert.ifError(result.error)
   let diagnostics = ''
   if (result.status !== expected) {
@@ -473,6 +474,7 @@ try {
     const response = await fetch(`http://127.0.0.1:${dashboardPort}/__prumo_test_dashboard_shutdown/${dashboardShutdownToken}`,
       { method: 'POST', signal: AbortSignal.timeout(2000) })
     if (response.status !== 200) throw new Error(`isolated dashboard refused shutdown: HTTP ${response.status}`)
+    assert.equal(await response.text(), 'stopping', 'isolated dashboard confirms shutdown before closing its connection')
     const deadline = Date.now() + 10000
     while (!(await dashboardPortClosed())) {
       if (Date.now() > deadline) throw new Error('isolated dashboard did not stop')
@@ -487,7 +489,9 @@ try {
   put(join(repo, `.test-output/legacy-update-${fromVersion}.json`), evidence)
   assert.equal(dirname(home), realpathSync(tmpdir()))
   assert.ok(basename(home).startsWith('prumo-legacy-smoke-'))
-  if (dashboardCleanupError) throw dashboardCleanupError
+  // A limpeza nao substitui o erro da atualizacao; ambos permanecem disponiveis no diagnostico.
+  if (dashboardCleanupError && scenarioError) console.error(`Falha adicional ao encerrar dashboard isolado: ${dashboardCleanupError.stack}`)
+  if (dashboardCleanupError && !scenarioError) throw dashboardCleanupError
   try {
     rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   } catch (error) {
