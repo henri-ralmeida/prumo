@@ -1805,5 +1805,8 @@
   "phase {0} discussion continues without skipped task {1}; remaining targets: {2}": "discussão da fase {0} continua sem a tarefa pulada {1}; alvos restantes: {2}",
   "Fixed — Phase discussion after task cancellation": "Corrigido — Discussão de fase após cancelar uma tarefa",
   "Remove a skipped task from pending phase contract confirmations and close discussions with no active targets, preserving their history and audit trail": "Remova a tarefa pulada das confirmações de contrato pendentes da fase e encerre discussões sem alvos ativos, preservando o histórico e o registro de auditoria",
-  "Keep discussions open for remaining targets without bypassing their acceptance, authorization or independent review requirements": "Mantenha a discussão aberta para os alvos restantes sem dispensar seus requisitos de aceite, autorização ou revisão independente"
+  "Keep discussions open for remaining targets without bypassing their acceptance, authorization or independent review requirements": "Mantenha a discussão aberta para os alvos restantes sem dispensar seus requisitos de aceite, autorização ou revisão independente",
+  "Fixed — Completed phase activity": "Corrigido — Atividade de fases concluídas",
+  "Show completed phases without activity animations even when historical discussion or planning rounds remain, preserving their records": "Mostre fases concluídas sem animações de atividade, mesmo com rodadas históricas de discussão ou planejamento, preservando seus registros",
+  "Wait for the isolated test dashboard to confirm shutdown and retain original update errors when cleanup also fails": "Aguarde a confirmação de desligamento do dashboard de teste isolado e preserve o erro original da atualização quando a limpeza também falhar"
 }

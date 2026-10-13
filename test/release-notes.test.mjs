@@ -303,3 +303,17 @@ test('atualização para 2.9.7 explica cancelamento da discussão sem dispensar 
   assert.ok(section.items.some(item => item.includes('independent review')))
   assert.deepEqual(releaseHistory(['2.9.7'], '2.9.7'), [])
 })
+
+
+test('atualizacao para 2.9.8 explica atividade concluida e diagnostico sem apagar historico', () => {
+  const messages = JSON.parse(readFileSync(new URL('../scripts/messages.json', import.meta.url), 'utf8'))
+  const history = releaseHistory(['2.9.7'], '2.9.8')
+  assert.deepEqual(history.map(release => release.version), ['2.9.8'])
+  const section = history[0].sections[0]
+  assert.ok(messages[section.title]?.trim())
+  assert.equal(section.items.length, 2)
+  for (const item of section.items) assert.ok(messages[item]?.trim())
+  assert.ok(section.items[0].includes('preserving their records'))
+  assert.ok(section.items[1].includes('original update errors'))
+  assert.deepEqual(releaseHistory(['2.9.8'], '2.9.8'), [])
+})

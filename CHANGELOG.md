@@ -2,6 +2,11 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.9.8 — 2026-10-13
+
+- Mostre fases concluídas sem animações de atividade, mesmo com rodadas históricas de discussão ou planejamento, preservando seus registros.
+- Aguarde a confirmação de desligamento do dashboard de teste isolado e preserve o erro original da atualização quando a limpeza também falhar.
+
 ## 2.9.7 — 2026-10-13
 
 - Remova a tarefa pulada das confirmações de contrato pendentes da fase e encerre discussões sem alvos ativos, preservando o histórico e o registro de auditoria.
