@@ -5,6 +5,8 @@ import { EventEmitter } from 'node:events'
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, rmdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+const service = fileURLToPath(new URL('../scripts/dashboard-service.mjs', import.meta.url))
 import { dashboardHealth, dashboardNeedsRepair, dashboardStatus, disableDashboard, enableDashboard, readDashboardEvents, restartDashboard, runDashboardForeground, stopDashboardForUpdate } from '../lib/autostart.mjs'
 
 test('readiness never reserves the startup port and protects occupied or uncertain ports', async t => {
@@ -412,7 +414,7 @@ test('Windows creates one ONLOGON task with absolute quoted paths and persists o
   assert.equal(enabled.ok, true)
   const create = f.calls.find(([file, args]) => file === 'schtasks' && args[0] === '/Create')[1]
   assert.deepEqual(create.slice(0, 6), ['/Create', '/F', '/SC', 'ONLOGON', '/TN', 'Prumo Dashboard'])
-  assert.match(create.at(-1), /^".*node\.exe" ".*serve\.mjs" "--global" "--port" "4949"$/)
+  assert.match(create.at(-1), /^".*node\.exe" ".*dashboard-service\.mjs" ".*serve\.mjs" "--global" "--port" "4949"$/)
   assert.ok(f.calls.some(([file, args]) => file === 'schtasks' && args[0] === '/Run'))
   assert.equal((await dashboardStatus(f.options)).registered, true)
   await enableDashboard(f.options)
@@ -438,7 +440,7 @@ test('O idioma escolhido para o dashboard continua após reiniciar, mantendo a i
   delete options.lang
   let invocation
   runDashboardForeground({ ...options, spawnSync(file, args) { invocation = args; return { status: 0 } } })
-  assert.deepEqual(invocation, [f.script, '--global', '--port', '4949', '--lang', 'pt-BR'])
+  assert.deepEqual(invocation, [service, f.script, '--global', '--port', '4949', '--lang', 'pt-BR'])
 })
 
 test('Windows falls back to one hidden per-user Startup entry when task creation is unavailable', async t => {
@@ -473,11 +475,11 @@ test('Windows falls back to one hidden per-user Startup entry when task creation
   assert.equal(preference(f.home).mechanism, 'windows-startup')
   assert.equal(f.calls.filter(([file, args]) => file === 'schtasks' && args[0] === '/Create').length, 1)
   assert.equal(existsSync(join(f.home, '.local', 'share', 'prumo')), true)
-  assert.deepEqual(f.calls.find(([file]) => file === f.node), [f.node, [f.script, '--global', '--port', '4949'], {
+  assert.deepEqual(f.calls.find(([file]) => file === f.node), [f.node, [service, f.script, '--global', '--port', '4949'], {
     cwd: join(f.home, '.local/share/prumo'), env: f.options.env, detached: true, stdio: 'ignore', windowsHide: true,
   }])
   assert.equal(f.calls.some(([file]) => file === 'wscript.exe'), false)
-  assert.match(readFileSync(startup, 'utf8'), /^CreateObject\("WScript\.Shell"\)\.Run """.*node\.exe"" "".*serve\.mjs"" ""--global"" ""--port"" ""4949""", 0, False\r?\n$/)
+  assert.match(readFileSync(startup, 'utf8'), /^CreateObject\("WScript\.Shell"\)\.Run """.*node\.exe"" "".*dashboard-service\.mjs"" "".*serve\.mjs"" ""--global"" ""--port"" ""4949""", 0, False\r?\n$/)
 
   assert.equal((await dashboardStatus(f.options)).registered, true)
   assert.equal((await enableDashboard(f.options)).ok, true)
@@ -878,7 +880,7 @@ test('Linux uses a systemd user unit when the user manager is available', async 
   const unit = join(f.home, '.config', 'systemd', 'user', 'prumo-dashboard.service')
   const content = readFileSync(unit, 'utf8')
   assert.match(content, /Restart=on-failure/)
-  assert.ok(content.includes(`"${f.node.replaceAll('\\', '\\\\')}" "${f.script.replaceAll('\\', '\\\\')}" "--global" "--port" "4949"`))
+  assert.ok(content.includes(`"${f.node.replaceAll('\\', '\\\\')}" "${service.replaceAll('\\', '\\\\')}" "${f.script.replaceAll('\\', '\\\\')}" "--global" "--port" "4949"`))
   assert.ok(f.calls.some(([file, args]) => file === 'systemctl' && args.join(' ') === '--user enable --now prumo-dashboard.service'))
   await disableDashboard(f.options)
   assert.equal(existsSync(unit), false)
@@ -903,8 +905,8 @@ test('Linux falls back to XDG, starts detached, and only stops a proven PID', as
   options = f.options
   await enableDashboard(options)
   const desktop = join(f.home, '.config', 'autostart', 'prumo-dashboard.desktop')
-  assert.ok(readFileSync(desktop, 'utf8').includes(`Exec="${f.node.replaceAll('\\', '\\\\')}" "${f.script.replaceAll('\\', '\\\\')}" "--global" "--port" "4949"`))
-  assert.deepEqual(spawned, [[f.node, [f.script, '--global', '--port', '4949'], {
+  assert.ok(readFileSync(desktop, 'utf8').includes(`Exec="${f.node.replaceAll('\\', '\\\\')}" "${service.replaceAll('\\', '\\\\')}" "${f.script.replaceAll('\\', '\\\\')}" "--global" "--port" "4949"`))
+  assert.deepEqual(spawned, [[f.node, [service, f.script, '--global', '--port', '4949'], {
     cwd: join(f.home, '.local', 'share', 'prumo'), env: f.options.env, detached: true, stdio: 'ignore', windowsHide: true,
   }]])
   assert.equal(preference(f.home).pid, 4321)
@@ -939,7 +941,7 @@ test('health identity reuses Prumo, rejects another product, and foreground stay
   let invocation
   const code = runDashboardForeground({ ...managed.options, spawnSync(file, args, settings) { invocation = [file, args, settings]; return { status: 7 } } })
   assert.equal(code, 7)
-  assert.deepEqual(invocation[1], [managed.script, '--global', '--port', '4949'])
+  assert.deepEqual(invocation[1], [service, managed.script, '--global', '--port', '4949'])
   assert.equal(invocation[1].includes('--sync-plan'), false)
 })
 

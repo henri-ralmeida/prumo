@@ -113,7 +113,7 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
   }
   childProcess.spawn = (file, args, options) => {
     if (args?.some(value => String(value).includes('@henri-ralmeida/prumo@'))) throw new Error('recursive global update attempted during postinstall')
-    if (String(args?.[0] ?? '').replaceAll('\\\\', '/').endsWith('/scripts/serve.mjs')) {
+    if (['/scripts/serve.mjs', '/scripts/dashboard-service.mjs'].some(suffix => String(args?.[0] ?? '').replaceAll('\\\\', '/').endsWith(suffix))) {
       appendFileSync(${JSON.stringify(autoEvents)}, JSON.stringify(['spawn', file, args, options?.cwd]) + '\\n')
       running = true
       return { pid: 49490, unref() {} }
@@ -170,7 +170,7 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
   if (process.platform === 'win32') {
     const launcher = startupCalls.trim().split('\n').map(line => JSON.parse(line)).find(call => call[0] === 'spawn')
     assert.equal(launcher?.[3], join(autoHome, '.local', 'share', 'prumo'), 'dashboard launcher uses stable user data cwd')
-    assert.deepEqual(launcher?.[2], [join(autoPackage, 'scripts', 'serve.mjs'), '--global', '--port', '4949', '--lang', 'en'], 'O processo usa o runtime instalado, o dashboard global e o idioma da instalação.')
+    assert.deepEqual(launcher?.[2], [join(autoPackage, 'scripts', 'dashboard-service.mjs'), join(autoPackage, 'scripts', 'serve.mjs'), '--global', '--port', '4949', '--lang', 'en'], 'O processo usa o runtime instalado, o dashboard global e o idioma da instalação.')
   }
   assert.equal(JSON.parse(readFileSync(join(autoPackage, 'package.json'), 'utf8')).version, version)
   mkdirSync(join(home, '.local', 'share', 'prumo'), { recursive: true })

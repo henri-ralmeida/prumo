@@ -10,6 +10,7 @@ import { assertUpdateVersion, ensureGlobalCliContent, globalCliContentCurrent, g
 import { releaseHistory } from '../lib/release-notes.mjs'
 import { dashboardNeedsRepair, dashboardStatus, disableDashboard, enableDashboard, readDashboardEvents, runDashboardForeground, stopDashboardForUpdate } from '../lib/autostart.mjs'
 import { openDashboardBrowser, BOARD_URL } from '../lib/browser.mjs'
+import { readDashboardErrors } from '../scripts/dashboard-diagnostics.mjs'
 import { selectHarnesses } from '../lib/prompt.mjs'
 import { diagnoseShellFilter } from '../lib/shell-diagnostics.mjs'
 import { assertCliOptions } from '../lib/cli-args.mjs'
@@ -178,6 +179,8 @@ try {
         const detail = event.signal ?? event.code ?? event.message ?? ''
         print(`${event.at ?? 'unknown time'}  ${event.event}  pid=${event.pid ?? '?'}${detail !== '' ? `  ${detail}` : ''}`)
       }
+      const errors = readDashboardErrors()
+      if (errors) print(errors)
     } else {
       if (!['enable', 'disable', 'status'].includes(action)) throw new Error(`Unknown dashboard action: ${action}`)
       const result = action === 'enable' ? await enableDashboard() : action === 'disable' ? await disableDashboard() : await dashboardStatus()

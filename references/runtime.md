@@ -957,6 +957,13 @@ installation preference or an explicit run choice; there is no browser selector.
 never translated. The derived numbers do not prove test coverage, defect causes or business rules.
 Stopping the dashboard never cancels work.
 
+The managed launcher preserves Node stderr in `~/.local/share/prumo/dashboard-stderr.log` and records
+the child process result, including a signal when the operating system reports it. `prumo dashboard logs`
+shows recent lifecycle events and bounded tails of the current and previous error file. Files larger than
+256 KiB rotate on the next launch. A forced termination of both launcher and server, a power loss or
+an unwritable log directory may prevent recording a cause; `status` detects a missing registered process
+when queried, and that observation does not prove why the process stopped.
+
 ### Layout
 
 The graph runs **top-down**: phases are horizontal bands, and a task's siblings spread across

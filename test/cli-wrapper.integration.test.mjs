@@ -794,6 +794,12 @@ test('dashboard logs mantém detalhes e valores ausentes sem escrever no log', t
   assert.match(logged.stdout, /exit  pid=\?  0/)
   assert.match(logged.stdout, /mensagem preservada/)
   assert.equal(readFileSync(file, 'utf8'), bytes)
+  const stderr = join(home, '.local', 'share', 'prumo', 'dashboard-stderr.log')
+  writeFileSync(stderr, 'stack da falha nativa preservada\n')
+  const native = runCli(home, ['dashboard', 'logs'], extra)
+  assert.equal(native.status, 0, native.output)
+  assert.match(native.stdout, /stack da falha nativa preservada/)
+  assert.equal(readFileSync(stderr, 'utf8'), 'stack da falha nativa preservada\n')
 })
 
 test('status e worker reportam marcador inválido e continuam as instalações válidas', t => {

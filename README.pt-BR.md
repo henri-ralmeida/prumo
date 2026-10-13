@@ -151,6 +151,8 @@ O servidor escuta somente em `127.0.0.1:4949` e é somente leitura. Ele descobre
 
 O dashboard mantém todos os cards no lugar enquanto os filtros reduzem a opacidade do trabalho não relacionado. Os filtros cobrem todos, concluídos, incompletos, aguardando dependências, prontos para discussão, em discussão, prontos para planejamento, planejando, prontos para executar, executando, revisando, bloqueados, falhos e ignorados; `done` e `skipped` são terminais. Ligue o contexto de dependências para revelar predecessores, sucessores diretos e suas curvas. A densidade é detalhada até 24 tarefas, compacta até 100 e densa acima disso; as fases também quebram conforme a largura da janela, e o painel lateral pode ser recolhido sem perder seleção ou navegação.
 
+O serviço registra a saída de erro do Node em `~/.local/share/prumo/dashboard-stderr.log`, incluindo a stack quando disponível; `prumo dashboard logs` mostra os eventos e o final desse arquivo. O lançador também registra o resultado do processo. Ao iniciar novamente, arquivos acima de 256 KiB são preservados como `.previous`; a leitura do comando é limitada ao final dos arquivos. Se o lançador também for encerrado à força ou o computador desligar, pode não haver erro nem código de saída: `status` identifica o processo ausente quando consultado, sem atribuir uma causa desconhecida.
+
 Em problemas de inicialização ou porta, comece por `prumo dashboard status`. Se outro Prumo ocupa a porta 4949, a configuração reutiliza ou reinicia o serviço gerenciado. Se for outro processo, o Prumo informa o conflito e nunca o encerra; resolva o processo identificado e execute `prumo dashboard enable`.
 
 ## Atualizar os ambientes instalados

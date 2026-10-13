@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, openSync, closeSync, fstatSync, readSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 
@@ -6,6 +6,33 @@ const MAX_BYTES = 256 * 1024
 const paths = home => {
   const directory = join(home, '.local', 'share', 'prumo')
   return { directory, file: join(directory, 'dashboard-events.ndjson') }
+}
+
+export function openDashboardErrorLog({ home = homedir() } = {}) {
+  const { directory } = paths(home)
+  mkdirSync(directory, { recursive: true })
+  const file = join(directory, 'dashboard-stderr.log')
+  if (existsSync(file) && statSync(file).size > MAX_BYTES) {
+    rmSync(`${file}.previous`, { force: true })
+    renameSync(file, `${file}.previous`)
+  }
+  return openSync(file, 'a')
+}
+
+export function readDashboardErrors({ home = homedir() } = {}) {
+  const file = join(paths(home).directory, 'dashboard-stderr.log')
+  const chunks = []
+  for (const candidate of [`${file}.previous`, file]) {
+    if (!existsSync(candidate)) continue
+    const fd = openSync(candidate, 'r')
+    try {
+      const size = fstatSync(fd).size
+      const buffer = Buffer.alloc(Math.min(size, 16384))
+      const count = readSync(fd, buffer, 0, buffer.length, size - buffer.length)
+      chunks.push(buffer.subarray(0, count).toString('utf8'))
+    } finally { closeSync(fd) }
+  }
+  return chunks.join('\n').trim()
 }
 
 export function recordDashboardEvent(event, fields = {}, { home = homedir(), pid = process.pid, version, port } = {}) {
