@@ -2,6 +2,11 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.9.7 — 2026-10-13
+
+- Remova a tarefa pulada das confirmações de contrato pendentes da fase e encerre discussões sem alvos ativos, preservando o histórico e o registro de auditoria.
+- Mantenha a discussão aberta para os alvos restantes sem dispensar seus requisitos de aceite, autorização ou revisão independente.
+
 ## 2.9.6 — 2026-10-13
 
 - Identifique as tarefas legadas afetadas ao recusar propostas de contrato e informe o caminho de sincronização sem contornar os controles existentes.

@@ -1802,5 +1802,8 @@
   "Identify affected legacy tasks when refusing contract proposals and show the synchronization path without bypassing existing controls": "Identifique as tarefas legadas afetadas ao recusar propostas de contrato e informe o caminho de sincronização sem contornar os controles existentes",
   "Clarify that new tasks support proposals while preserving history, backups, execution authorization and independent review requirements": "Esclareça que tarefas novas aceitam propostas, preservando histórico, backups e requisitos de autorização de execução e revisão independente",
   "phase {0} discussion closed after skipping {1}: no active targets remain": "discussão da fase {0} encerrada após pular {1}: não restam alvos ativos",
-  "phase {0} discussion continues without skipped task {1}; remaining targets: {2}": "discussão da fase {0} continua sem a tarefa pulada {1}; alvos restantes: {2}"
+  "phase {0} discussion continues without skipped task {1}; remaining targets: {2}": "discussão da fase {0} continua sem a tarefa pulada {1}; alvos restantes: {2}",
+  "Fixed — Phase discussion after task cancellation": "Corrigido — Discussão de fase após cancelar uma tarefa",
+  "Remove a skipped task from pending phase contract confirmations and close discussions with no active targets, preserving their history and audit trail": "Remova a tarefa pulada das confirmações de contrato pendentes da fase e encerre discussões sem alvos ativos, preservando o histórico e o registro de auditoria",
+  "Keep discussions open for remaining targets without bypassing their acceptance, authorization or independent review requirements": "Mantenha a discussão aberta para os alvos restantes sem dispensar seus requisitos de aceite, autorização ou revisão independente"
 }

@@ -1,4 +1,15 @@
 {
+  "2.9.7": {
+    "en": [
+      {
+        "title": "Fixed — Phase discussion after task cancellation",
+        "items": [
+          "Remove a skipped task from pending phase contract confirmations and close discussions with no active targets, preserving their history and audit trail",
+          "Keep discussions open for remaining targets without bypassing their acceptance, authorization or independent review requirements"
+        ]
+      }
+    ]
+  },
   "2.9.6": {
     "en": [
       {
