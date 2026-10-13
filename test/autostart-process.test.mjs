@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { setTimeout } from 'node:timers/promises'
 import { enableDashboard, restartDashboard, disableDashboard, stopDashboardForUpdate } from '../lib/autostart.mjs'
+import { readDashboardEvents } from '../scripts/dashboard-diagnostics.mjs'
 import { createTranslator, messages } from '../scripts/i18n.mjs'
 
 function dashboardRequestInit(init) {
@@ -44,8 +45,8 @@ test('Windows Startup launches and restarts a real isolated dashboard process', 
     if (response.ok) { const body = await response.clone().json(); if (body.pid) pids.add(body.pid) }
     return response
   }
-  t.after(() => {
-    for (const pid of pids) try { process.kill(pid) } catch {}
+  t.after(async () => {
+    await stopIsolatedLaunchers(home, pids)
     assert.ok(home.startsWith(join(tmpdir(), 'prumo startup process-')))
     rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   })
@@ -146,6 +147,14 @@ async function waitFor(check, attempts = 200) {
   }
   return null
 }
+async function stopIsolatedLaunchers(home, pids) {
+  const launchers = new Set(readDashboardEvents({ home })
+    .filter(event => event.event === 'process-started' && pids.has(event.pid))
+    .map(event => event.launcherPid))
+  for (const pid of pids) try { process.kill(pid) } catch {}
+  // O lancador termina de registrar a saida antes de remover a pasta isolada.
+  assert.ok(await waitFor(() => [...launchers].every(pid => !alive(pid))), 'os lancadores encerram antes da limpeza dos logs')
+}
 async function isolatedDashboard(t) {
   const home = mkdtempSync(join(tmpdir(), 'prumo-restart-ownership-'))
   const port = await freePort()
@@ -172,9 +181,9 @@ async function isolatedDashboard(t) {
   const file = join(home, '.local/share/prumo/dashboard.json')
   mkdirSync(dirname(file), { recursive: true })
   t.after(async () => {
-    for (const pid of pids) try { process.kill(pid) } catch {}
+    await stopIsolatedLaunchers(home, pids)
     for (const child of children) if (child.exitCode === null) child.kill()
-    await setTimeout(300)
+    assert.ok(await waitFor(() => children.every(child => child.exitCode !== null || child.signalCode !== null)), 'os processos isolados encerram antes da limpeza')
     assert.ok(home.startsWith(join(tmpdir(), 'prumo-restart-ownership-')))
     rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
   })

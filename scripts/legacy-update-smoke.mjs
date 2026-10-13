@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { spawnSync, spawn, fork } from 'node:child_process'
-import { createConnection, createServer } from 'node:net'
+import { createServer } from 'node:net'
+import { dashboardPortClosed } from '../test/fixtures/dashboard-port-closed.mjs'
 import { initializeLegacyPlanFixture } from '../test/fixtures/legacy-plan-init.mjs'
 
 // Exercite um atualizador publicado contra um registro local que fornece o pacote candidato.
@@ -99,15 +100,6 @@ async function freePort() {
   const { port } = probe.address()
   await new Promise(resolve => probe.close(resolve))
   return port
-}
-async function dashboardPortClosed() {
-  return new Promise((resolve, reject) => {
-    const socket = createConnection({ host: '127.0.0.1', port: dashboardPort })
-    socket.setTimeout(2000)
-    socket.once('connect', () => { socket.destroy(); resolve(false) })
-    socket.once('error', error => error.code === 'ECONNREFUSED' ? resolve(true) : reject(error))
-    socket.once('timeout', () => { socket.destroy(); reject(new Error('isolated dashboard port did not respond')) })
-  })
 }
 // O dashboard global atualizado precisa ler os estados antigos intactos sem erros.
 async function checkDashboard(labels) {
@@ -476,7 +468,7 @@ try {
     if (response.status !== 200) throw new Error(`isolated dashboard refused shutdown: HTTP ${response.status}`)
     assert.equal(await response.text(), 'stopping', 'isolated dashboard confirms shutdown before closing its connection')
     const deadline = Date.now() + 10000
-    while (!(await dashboardPortClosed())) {
+    while (!(await dashboardPortClosed(dashboardPort))) {
       if (Date.now() > deadline) throw new Error('isolated dashboard did not stop')
       await new Promise(resolve => setTimeout(resolve, 100))
     }

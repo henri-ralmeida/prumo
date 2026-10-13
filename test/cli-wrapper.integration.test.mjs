@@ -104,7 +104,7 @@ function preloadEnvironment(home, { tty = false, methods = false, noColor = fals
   if (dashboard) source.push(`await import(${JSON.stringify(new URL('./fixtures/dashboard-absent.mjs', import.meta.url).href)})`)
   if (subprocessResult) source.push(`import childProcess from 'node:child_process'; import { syncBuiltinESMExports } from 'node:module';
 const originalSpawnSync = childProcess.spawnSync;
-childProcess.spawnSync = (file, args, options) => /(?:engine|serve)\\.mjs$/.test(args?.[0] ?? '')
+childProcess.spawnSync = (file, args, options) => /(?:engine|serve|dashboard-service)\\.mjs$/.test(args?.[0] ?? '')
   ? ${JSON.stringify(subprocessResult)}.error ? { error: new Error(${JSON.stringify(subprocessResult.error ?? '')}) } : ${JSON.stringify(subprocessResult)}
   : originalSpawnSync(file, args, options);
 syncBuiltinESMExports()`)

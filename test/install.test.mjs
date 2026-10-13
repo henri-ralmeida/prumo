@@ -11,6 +11,7 @@ import { HARNESSES, planInstall, applyInstall, restoreInstall, installationStatu
 import { installationBundle, retiredInstructionFiles } from '../scripts/installation-bundle.mjs'
 import { ensureGlobalCliContent, globalCliContentCurrent, globalCliState, updateGlobalCliFromPackage, npmProcess } from '../lib/update.mjs'
 import { enableDashboard } from '../lib/autostart.mjs'
+import { readDashboardEvents } from '../scripts/dashboard-diagnostics.mjs'
 import { runPostinstall } from '../scripts/postinstall.mjs'
 import { inside, findRoot, storageHome, graphRoots, globalGraphRoots } from '../scripts/storage.mjs'
 
@@ -691,9 +692,23 @@ test('same-version CLI refresh persists new dashboard content across source remo
   let active
   const children = new Map()
   const commands = new Map()
+  const launchers = new Map()
+  function trackWorkers() {
+    for (const event of readDashboardEvents({ home, limit: 200 })) {
+      const launcher = launchers.get(event.launcherPid)
+      const args = commands.get(event.launcherPid)
+      if (event.event !== 'process-started' || !launcher || !args || children.has(event.pid)) continue
+      // A posse vem do filho registrado pelo lancador isolado, nunca de um PID arbitrario.
+      commands.set(event.pid, [args[0], ...args.slice(2)])
+      children.set(event.pid, { ref: () => launcher.ref(), once: (...args) => launcher.once(...args), kill: () => process.kill(event.pid) })
+      launcher.once('exit', () => { children.delete(event.pid); commands.delete(event.pid) })
+    }
+  }
   t.after(async () => {
+    trackWorkers()
+    for (const [pid] of children) if (!launchers.has(pid)) try { process.kill(pid) } catch {}
     if (active?.exitCode === null && active.signalCode === null && !active.startupError) {
-      await new Promise(resolve => { active.ref(); active.once('exit', resolve); active.kill() })
+      await new Promise(resolve => { active.ref(); active.once('exit', resolve) })
     }
     assert.ok(home.startsWith(join(realpathSync(tmpdir()), 'prumo-content-reconcile-')))
     rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
@@ -755,15 +770,16 @@ test('same-version CLI refresh persists new dashboard content across source remo
       const child = spawn(node, args, settings)
       active = child
       if (child.pid) {
+        launchers.set(child.pid, child)
         children.set(child.pid, child)
         commands.set(child.pid, [node, ...args])
-        child.once('exit', () => { children.delete(child.pid); commands.delete(child.pid) })
+        child.once('exit', () => { launchers.delete(child.pid); children.delete(child.pid); commands.delete(child.pid) })
       }
       if (settings.detached) child.unref()
       return child
     },
-    listProcessIds: script => [...commands].filter(([, args]) => args.includes(script)).map(([pid]) => pid),
-    readProcessCommand: pid => { if (!commands.has(pid)) throw new Error('unknown test process'); return commands.get(pid) },
+    listProcessIds: script => { trackWorkers(); return [...commands].filter(([pid, args]) => !launchers.has(pid) && args[1] === script).map(([pid]) => pid) },
+    readProcessCommand: pid => { trackWorkers(); if (!commands.has(pid)) throw new Error('unknown test process'); return commands.get(pid) },
     kill(pid) { const child = children.get(pid); if (child) { child.kill(); return true } return process.kill(pid) },
   }
 
