@@ -401,11 +401,17 @@ try {
     // Uma validação antiga pode exigir nova verificação sob as regras atuais. Critérios de inspeção
     // estruturados precisam ser percorridos pelo revisor; o motor informa o comando.
     const validate = ['validate', 'DONE', '--ok', '--evidence', 'Documentation inspected after update', '--run', 'legacy']
+    const beforeGate = readFileSync(stateFile, 'utf8')
+    const gateEventsPath = join(dirname(stateFile), 'events.ndjson')
+    const beforeGateEvents = readFileSync(gateEventsPath, 'utf8')
     const gated = spawnSync(process.execPath, [engine, ...validate], { cwd: project, env: { ...env, PRUMO_ROOT: root }, encoding: 'utf8', windowsHide: true, timeout: 120000 })
     evidence.push({ args: validate, status: gated.status, stdout: gated.stdout, stderr: gated.stderr })
     assert.ifError(gated.error)
     if (gated.status !== 0) {
-      assert.match(gated.stderr, /inspection criteria are not fully traversed; record reviewer-reported progress for each criterion with review-progress DONE --step <index> --agent reviewer/, gated.stdout + gated.stderr)
+      assert.equal(gated.status, 1, gated.stdout + gated.stderr)
+      assert.match(gated.stderr, /DONE inspection criteria are not fully traversed; missing criteria: \[1\] of 1; record current reviewer-reported progress with review-progress DONE --step <index> --agent reviewer \(this is not proof of inspection\)/, gated.stdout + gated.stderr)
+      assert.equal(readFileSync(stateFile, 'utf8'), beforeGate, 'a recusa sem progresso nao altera o estado historico')
+      assert.equal(readFileSync(gateEventsPath, 'utf8'), beforeGateEvents, 'a recusa sem progresso nao grava uma validacao no historico')
       resume('review-progress', 'DONE', '--step', '1', '--agent', 'reviewer')
       resume('validate', 'DONE', '--ok', '--evidence', 'Documentation inspected after update')
     }
