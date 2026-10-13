@@ -3233,7 +3233,7 @@ function phaseColour(id) {
   id = STATE?.plan?.phases?.find(phase => phase.id === id || eventIds(phase.id) === eventIds(id))?.id ?? id
   const states = Object.values(STATE?.tasks ?? {}).filter(task => task.phase === id && eff(task.id) !== 'skipped').map(task => eff(task.id))
   const workflow = STATE?.phaseWorkflows?.[id]?.state
-  if (states.length && states.every(state => state === 'done') && !['discussing', 'planning'].includes(workflow)) return 'var(--done)'
+  if (states.length && states.every(state => state === 'done')) return 'var(--done)'
   if (workflow === 'discussing' || states.includes('discussing')) return 'var(--planning)'
   return workflow === 'planning' || states.some(state => ['planning', 'running', 'reviewing'].includes(state)) ? 'var(--accent)' : 'var(--waiting)'
 }
@@ -3499,8 +3499,9 @@ function render(s, events = []) {
     const members = list.filter((t) => t.phase === p.id)
     const settled = members.filter((t) => ['done', 'skipped'].includes(eff(t.id))).length
     const workflow = s.phaseWorkflows?.[p.id]?.state
+    // Rodadas antigas permanecem no historico, mas nao animam fases com todas as tarefas encerradas.
     const roles = activeStates.filter((state) => members.some((t) => eff(t.id) === state) ||
-      (state === 'discussing' && workflow === 'discussing') || (state === 'planning' && workflow === 'planning'))
+      (settled < members.length && ((state === 'discussing' && workflow === 'discussing') || (state === 'planning' && workflow === 'planning'))))
     return { done: members.filter((t) => t.state === 'done').length, total: members.filter(task => task.state !== 'skipped').length,
       closed: members.length > 0 && settled === members.length && roles.length === 0,
       planning: members.filter((t) => eff(t.id) === 'planning').length, active: roles.length > 0, roles }
@@ -3516,8 +3517,8 @@ function render(s, events = []) {
   const laneStatus = (i) => phaseStats[i].closed ? 'done' : phaseStats[i].active ? 'live' : 'next'
   const lanesHtml = `<span class="lanes-cap" style="top:${BASE_Y + 8}px"><span data-i18n="phases and linked tasks">phases and linked tasks</span></span>` + lanes.map((p, i) => {
     const workflow = s.phaseWorkflows?.[p.id]
-    const phaseState = workflow?.state === 'discussing' ? { cls: 'discussion', label: tr('discussion · orchestrator') } :
-      workflow?.state === 'planning' ? { cls: 'planning', label: tr('Active time not measured') } : null
+    const phaseState = !phaseStats[i].closed && workflow?.state === 'discussing' ? { cls: 'discussion', label: tr('discussion · orchestrator') } :
+      !phaseStats[i].closed && workflow?.state === 'planning' ? { cls: 'planning', label: tr('Active time not measured') } : null
     const phaseTiming = phaseElapsedTiming(s, p.id, events, timing.clockAt)
     const activeRole = phaseStats[i].roles.includes('running') ? 'running' : phaseStats[i].roles.includes('reviewing') ? 'reviewing' : phaseStats[i].roles.includes('discussing') ? 'discussion' : 'planning'
     const elapsedLabel = phaseStats[i].active && list.some(task => task.phase === p.id && !['done', 'skipped'].includes(task.state)) && phaseTiming.elapsedMs > 0

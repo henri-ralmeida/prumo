@@ -6208,3 +6208,30 @@ test('guia abre controle de agentes e aplica limite apenas na demonstracao', asy
   ui.run("window.prumoGuideDemo.focus('card')")
   assert.equal(ui.nodes.get('#agentLimitMenu').open, false)
 })
+
+
+test('fases encerradas ignoram atividade antiga sem alterar historico nem outra fase ativa', () => {
+  for (const lang of ['en', 'pt-BR']) for (const workflow of ['planning', 'discussing']) for (const terminal of ['done', 'skipped']) {
+    const ui = dashboard(lang)
+    const state = { run: 'closed-phase', plan: { phases: [{ id: 'F2', title: 'Concluida' }, { id: 'F3', title: 'Ativa' }] }, tasks: {
+      T3: task('T3', 'done', { phase: 'F2' }), T4: task('T4', terminal, { phase: 'F2' }),
+      T5: task('T5', 'running', { phase: 'F3' }),
+    }, phaseWorkflows: { F2: { id: 'F2', state: workflow,
+      planningAttempts: [{ targets: [], startedAt: instant(0) }], discussionAttempts: [{ targets: [], startedAt: instant(0) }] } } }
+    const before = structuredClone(state)
+    ui.render(state)
+    const lanes = ui.nodes.get('#lanes').innerHTML
+    const closed = lanes.split('<div class="lane done"')[1]?.split('</div>')[0]
+    assert.ok(closed, 'tarefas encerradas tornam a fase concluida apesar da rodada antiga')
+    assert.match(closed, /Concluida/)
+    assert.doesNotMatch(closed, /lane-state|em andamento|in progress/)
+    assert.equal(ui.run("phaseColour('F2')"), 'var(--done)')
+    assert.match(lanes, /class="lane live"[^]*Ativa/)
+    assert.equal(ui.nodes.get('#execNode').classList.contains('live'), true)
+    assert.deepEqual(state, before, 'renderizar nao modifica o contrato nem o historico')
+    state.tasks.T4.state = workflow
+    ui.render(state)
+    assert.match(ui.nodes.get('#lanes').innerHTML, /class="lane live"[^]*Concluida/)
+    assert.match(ui.nodes.get('#lanes').innerHTML, new RegExp('lane-state ' + (workflow === 'discussing' ? 'discussion' : 'planning')))
+  }
+})
