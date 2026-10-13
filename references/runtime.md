@@ -398,7 +398,7 @@ confirm the changed contract as described below. When `plan-phase` received `--p
 
 Use `show-contract <task> [--diff]` to inspect the complete before/after business contract before accepting a
 change. It includes full `expect` and inspection text while omitting executable `validation.run` commands.
-Use `show-contract <task> --full` when presenting an exact proposal: it also prints the persisted task contract with executable checks and its digest. `sync-plan --propose` stages a candidate without execution authorization, requiring one acceptance in the ensuing current discussion. See [the single-acceptance path](discussion.md#contract-changes-before-and-during-a-round).
+Use `show-contract <task> --full` when presenting an exact proposal: it also prints the persisted task contract with executable checks and its digest. `sync-plan --propose` stages a candidate without execution authorization, requiring one acceptance in the ensuing current discussion. New tasks in the current lifecycle are supported; affected legacy tasks are listed in the refusal. For those tasks, use `sync-plan --plan <candidate.json>` without `--propose`, then follow `status` or `ready`, preserving blocks and authorization/review requirements. See [the single-acceptance path](discussion.md#contract-changes-before-and-during-a-round).
 When a contract change reopens a phase that already had a discussion, planning round or current skip, the
 new discussion must ask the user to accept the changed contract. Inspect every current target, then include
 the exact task/digest entries printed by `begin-phase-discussion` in `questions[].confirmsContract` on one

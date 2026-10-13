@@ -42,7 +42,7 @@ test('alterar descrição lista fases e tarefas concluídas, mas dispensa fases 
   assert.ok(f.state().phaseWorkflows.F1.contractConfirmationRequired)
 })
 
-function fixture(t, dependent = false, { requireReview = true } = {}) {
+function fixture(t, dependent = false, { requireReview = true, lang = 'en' } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'prumo-corrective-retry-'))
   t.after(() => rmSync(home, { recursive: true, force: true }))
   const root = join(home, 'workspace'), project = join(home, 'project')
@@ -64,7 +64,7 @@ function fixture(t, dependent = false, { requireReview = true } = {}) {
   const discoveryPath = join(root, 'discovery.json'), taskPlanPath = join(root, 'task-plan.json')
   writeFileSync(taskPlanPath, JSON.stringify({ research: [{ source: 'delivery', findings: 'Implementation inspected.' }], decisions: [],
     steps: ['Correct the implementation and run its check.'], verification: [{ criterion: 'delivery behavior passes', check: 1 }], openQuestions: [] }))
-  const env = { ...process.env, PRUMO_ROOT: root, PRUMO_HOME: home, PRUMO_LANG: 'en' }
+  const env = { ...process.env, PRUMO_ROOT: root, PRUMO_HOME: home, PRUMO_LANG: lang }
   const cli = (...args) => spawnSync(process.execPath, [engine, ...args], { cwd: project, env, encoding: 'utf8', windowsHide: true })
   const ok = (...args) => {
     if (args[0] === 'start' && !JSON.parse(readFileSync(join(root, '.specs/graph/retry/state.json'), 'utf8')).tasks[args[1]]?.executionAuthorization) {
@@ -78,7 +78,7 @@ function fixture(t, dependent = false, { requireReview = true } = {}) {
     }
     return result
   }
-  const rejects = (pattern, ...args) => { const result = cli(...args); assert.notEqual(result.status, 0); assert.match(result.stdout + result.stderr, pattern) }
+  const rejects = (pattern, ...args) => { const result = cli(...args); assert.notEqual(result.status, 0); assert.match(result.stdout + result.stderr, pattern); return result }
   ok('init', '--plan', planPath, '--run', 'retry')
   if (dependent) ok('skip', 'T2', '--reason', 'Dependency explicitly waived')
   ok('begin-discussion', 'T1')
@@ -2538,4 +2538,42 @@ for (const lang of ['en', 'pt-BR']) test('show-contract separa apresentação do
     for (const field of Object.keys(display)) assert.equal(value.after.task[field], undefined)
   }
   assert.equal(validationRuntime.phasePlanningContext(f.state(), f.state().tasks.T1), digest)
+})
+
+for (const lang of ['en', 'pt-BR']) {
+  test('proposta mista identifica tarefa legada e preserva estado e backup em ' + lang, t => {
+    const f = fixture(t, false, { lang })
+    const state = f.state()
+    state.tasks.T1.planningRequired = false
+    state.tasks.T1.discussionRequired = false
+    f.save(state)
+    const backup = join(dirname(f.planPath), '.specs/graph/retry/state.pre-sync.json')
+    writeFileSync(backup, JSON.stringify(state))
+    const beforeBackup = readFileSync(backup, 'utf8')
+    const plan = JSON.parse(readFileSync(f.planPath, 'utf8'))
+    plan.tasks[0].touches = ['out']
+    plan.tasks.push({ id: 'T1a', title: 'New work', summary: 'Verify new behavior.', deps: ['T1'], validation })
+    writeFileSync(f.planPath, JSON.stringify(plan))
+    const result = f.rejects(lang === 'en' ? /affected legacy tasks: T1\./ : /tarefas afetadas no fluxo legado: T1\./, 'sync-plan', '--plan', f.planPath, '--propose')
+    const output = result.stdout + result.stderr
+    assert.match(output, /sync-plan --plan <candidate.json>/)
+    assert.match(output, /status.*ready/)
+    assert.doesNotMatch(output, /(?:legacy tasks|fluxo legado):[^\n]*T1a/)
+    assert.deepEqual(f.state(), state)
+    assert.equal(readFileSync(backup, 'utf8'), beforeBackup)
+  })
+}
+
+test('proposta aceita tarefa nova sem discussão concluída nem autorização de execução', t => {
+  const f = fixture(t), before = f.state().tasks.T1
+  const plan = JSON.parse(readFileSync(f.planPath, 'utf8'))
+  plan.tasks.push({ id: 'T1a', title: 'New work', summary: 'Verify new behavior.', deps: ['T1'], validation })
+  writeFileSync(f.planPath, JSON.stringify(plan))
+  f.ok('sync-plan', '--plan', f.planPath, '--propose')
+  const state = f.state()
+  assert.deepEqual(state.tasks.T1, before)
+  assert.equal(state.tasks.T1a.planningRequired, true)
+  assert.equal(state.tasks.T1a.attempts.length, 0)
+  assert.equal(state.tasks.T1a.discussionAttempts.length, 0)
+  assert.equal(state.tasks.T1a.executionAuthorization, undefined)
 })

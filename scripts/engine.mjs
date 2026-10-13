@@ -2171,10 +2171,14 @@ const commands = {
       return
     }
 
-    if (args.propose && Object.values(state.tasks).some(task =>
+    if (args.propose) {
+      const legacyTasks = Object.values(state.tasks).filter(task =>
         !['done', 'skipped'].includes(task.state) && (updated.includes(task.id) || added.includes(task.id) || changedPlanFields.length) &&
-        !usesCurrentPlanning({ ...state, plan: nextPlan }, task)))
-      die('Contract proposals require current discussion and planning gates')
+        !usesCurrentPlanning({ ...state, plan: nextPlan }, task))
+      if (legacyTasks.length) die(tr(
+        'Contract proposals require current discussion and planning gates; affected legacy tasks: {0}. Run sync-plan --plan <candidate.json> without --propose, then use status or ready to follow the task or phase discussion and planning steps. Existing blocks, authorization and independent review requirements remain in effect.',
+        legacyTasks.map(task => displayIdentifier(task.id)).join(', ')))
+    }
     copyFileSync(join(runDir(name), 'state.json'), join(runDir(name), 'state.pre-sync.json'))
     state.plan = nextPlan
     if (state.plan.planningMode === 'phase') {

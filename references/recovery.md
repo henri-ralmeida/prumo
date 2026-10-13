@@ -38,7 +38,7 @@ metadata; blocked legacy tasks without `blockKind` remain external, regardless o
 
 ## Synchronizing an approved plan change
 
-For a change not yet accepted, use `sync-plan --propose` to stage a candidate for one exact acceptance, not to authorize execution. Then open discussion, present `show-contract --full`, and record the user's acceptance and requested continuation scope/mode once. See [discussion.md](discussion.md#contract-changes-before-and-during-a-round). The existing completed-round invalidation safeguards and active-attempt pause still apply; completed tasks are not reopened.
+For a change not yet accepted in the current planning lifecycle (including new tasks), use `sync-plan --propose` to stage a candidate for one exact acceptance, not to authorize execution. Then open discussion, present `show-contract --full`, and record the user's acceptance and requested continuation scope/mode once. See [discussion.md](discussion.md#contract-changes-before-and-during-a-round). The existing completed-round invalidation safeguards and active-attempt pause still apply; completed tasks are not reopened. If the proposal lists affected legacy tasks, use `sync-plan --plan <candidate.json>` without `--propose` and follow the next steps shown by `status` or `ready`; do not change historical lifecycle markers to force a proposal.
 
 The order matters: edit the approved plan and run `sync-plan` **before** `begin-phase-discussion` or
 `begin-discussion`, so the new round opens on the current contract (see
