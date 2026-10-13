@@ -1095,6 +1095,46 @@ function excludeBlockedPhaseTask(state, task) {
   }
 }
 
+function reconcileSkippedPhaseDiscussion(state, task) {
+  const phase = state.phaseWorkflows?.[task.phase]
+  if (!phase) return null
+  const at = new Date().toISOString()
+  const confirmation = phase.contractConfirmationRequired
+  if (confirmation?.tasks?.includes(task.id)) {
+    phase.contractConfirmationHistory ??= []
+    phase.contractConfirmationHistory.push({ confirmation: structuredClone(confirmation), at, task: task.id, reason: task.skipReason, result: 'skipped' })
+    const tasks = confirmation.tasks.filter(id => id !== task.id)
+    phase.contractConfirmationRequired = tasks.length ? { ...confirmation, tasks } : null
+  }
+  const round = phase.discussionAttempts?.at(-1)
+  if (!round || round.endedAt || !round.targets.includes(task.id)) return null
+  round.originalTargets ??= [...round.targets]
+  round.originalContext ??= round.context
+  round.excludedTargets ??= []
+  round.excludedTargets.push({ task: task.id, at, reason: task.skipReason, result: 'skipped' })
+  round.targets = round.targets.filter(id => id !== task.id)
+  for (const field of ['activeTargets', 'queuedTargets'])
+    if (round[field]) round[field] = round[field].filter(id => id !== task.id)
+  const worker = round.workers?.[task.id]
+  if (worker) { stopOpenActivity(worker, at); worker.endedAt = at; worker.result = 'skipped' }
+  const targets = round.targets.map(id => state.tasks[id]).filter(task => !['done', 'skipped'].includes(task.state))
+  const closed = targets.length === 0
+  if (closed) {
+    stopOpenActivity(round, at)
+    Object.assign(round, { endedAt: at, result: 'superseded', cause: 'All discussion targets are terminal after a task was skipped' })
+    if (phase.state === 'discussing') phase.state = 'pending'
+  } else {
+    round.context = phaseContext(state, phase.id, targets)
+    round.contextSnapshot = phaseContextSnapshot(state, targets)
+    if (round.requiresContractConfirmation) {
+      round.originalConfirmsContract ??= structuredClone(round.confirmsContract)
+      round.confirmsContract = phaseContractDigests(state, targets)
+    }
+    if (round.queuedTargets) activatePhaseWorkers(state, round, 'discussion')
+  }
+  return { phase: phase.id, roundId: round.roundId, excludedTask: task.id, remainingTargets: targets.map(task => task.id), closed }
+}
+
 function assertExternalBlockAction(state, id) {
   const task = state.tasks[id]
   if (isExternalBlock(task)) die(tr('{0} is blocked: {1}. Use unblock before discussing, planning, reviewing or executing.',
@@ -3890,6 +3930,7 @@ const commands = {
     if (t.state === 'discussing') closeDiscussion(t, 'skipped')
     t.state = 'skipped'
     t.skipReason = reason
+    const phaseDiscussion = reconcileSkippedPhaseDiscussion(state, t)
     const attempt = t.attempts?.at(-1)
     if (attempt && !attempt.endedAt && !attempt.result) {
       attempt.endedAt = new Date().toISOString()
@@ -3898,6 +3939,12 @@ const commands = {
     }
     saveState(name, state)
     emit(name, 'task_skip', id, { reason })
+    if (phaseDiscussion) {
+      emit(name, 'phase_discussion_target_skipped', id, phaseDiscussion)
+      log('[prumo] ' + (phaseDiscussion.closed ?
+        tr('phase {0} discussion closed after skipping {1}: no active targets remain', phaseDiscussion.phase, id) :
+        tr('phase {0} discussion continues without skipped task {1}; remaining targets: {2}', phaseDiscussion.phase, id, phaseDiscussion.remainingTargets.join(', '))))
+    }
     log(`[prumo] ${id} skipped: ${reason}`)
     announceNewlyEligiblePhases(name, previouslyEligible, state, 'skip')
     printDispatchSuggestions(state)

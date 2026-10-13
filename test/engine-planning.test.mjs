@@ -2577,3 +2577,102 @@ test('proposta aceita tarefa nova sem discussão concluída nem autorização de
   assert.equal(state.tasks.T1a.discussionAttempts.length, 0)
   assert.equal(state.tasks.T1a.executionAuthorization, undefined)
 })
+
+for (const lang of ['en', 'pt-BR']) test('skip encerra discussão de alvo único e libera confirmação pendente em ' + lang, t => {
+  const f = phaseFixture(t, [{ id: 'T1', phase: 'F1', title: 'Cancelled' }])
+  f.ok('begin-phase-discussion', 'F1')
+  f.plan.tasks[0].touches = ['cancelled.txt']
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.ok('sync-plan', '--plan', f.planPath)
+  f.ok('begin-phase-discussion', 'F1')
+  const before = f.state(), phase = before.phaseWorkflows.F1, round = phase.discussionAttempts.at(-1)
+  const discovery = JSON.parse(readFileSync(f.discovery('F1'), 'utf8'))
+  round.discoveries = [discovery]
+  f.save(before)
+  const output = f.ok('skip', 'T1', '--reason', 'User cancelled this work', '--lang', lang).stdout
+  const state = f.state(), after = state.phaseWorkflows.F1, closed = after.discussionAttempts.at(-1)
+  assert.match(output, lang === 'en' ? /discussion closed after skipping T1/ : /encerrada após pular T1/)
+  assert.equal(state.tasks.T1.state, 'skipped')
+  assert.equal(state.tasks.T1.attempts.length, 0)
+  assert.equal(after.contractConfirmationRequired, null)
+  assert.equal(after.state, 'pending')
+  assert.equal(closed.result, 'superseded')
+  assert.ok(closed.endedAt)
+  assert.deepEqual(closed.originalTargets, ['T1'])
+  const archived = hydrateDiscoveries(state, join(f.root, '.specs/graph/phase-negative')).phaseWorkflows.F1.discussionAttempts.at(-1)
+  assert.deepEqual(archived.discoveries, [discovery])
+  assert.deepEqual(after.discussionAttempts.slice(0, -1), phase.discussionAttempts.slice(0, -1))
+  assert.deepEqual(after.contractConfirmationHistory.at(-1).confirmation, phase.contractConfirmationRequired)
+  assert.ok(f.events().includes('phase_discussion_target_skipped'))
+  for (const command of ['status', 'ready']) assert.doesNotMatch(f.ok(command, '--lang', lang).stdout, /contract confirmation required|exige confirmação do contrato|skipping discussion is unavailable|pular discussão está indisponível/)
+})
+
+test('skip mantém discussão e aceite obrigatório dos outros alvos', t => {
+  const f = phaseFixture(t, [{ id: 'T1', phase: 'F1', title: 'Cancelled' }, { id: 'T2', phase: 'F1', title: 'Remaining' }])
+  f.ok('begin-phase-discussion', 'F1')
+  for (const task of f.plan.tasks) task.touches = [task.id + '.txt']
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.ok('sync-plan', '--plan', f.planPath)
+  f.ok('begin-phase-discussion', 'F1')
+  const before = f.state().phaseWorkflows.F1.discussionAttempts.at(-1)
+  assert.match(f.ok('skip', 'T1', '--reason', 'User cancelled only this task').stdout, /continues without skipped task T1; remaining targets: T2/)
+  const state = f.state(), phase = state.phaseWorkflows.F1, round = phase.discussionAttempts.at(-1)
+  assert.equal(phase.state, 'discussing')
+  assert.equal(round.roundId, before.roundId)
+  assert.equal(round.endedAt, undefined)
+  assert.deepEqual(round.targets, ['T2'])
+  assert.deepEqual(phase.contractConfirmationRequired.tasks, ['T2'])
+  assert.deepEqual(round.confirmsContract.map(item => item.task), ['T2'])
+  assert.equal(state.tasks.T2.executionAuthorization, undefined)
+  f.rejects(/fresh answered contract confirmation/, 'skip-phase-discussion', 'F1', '--reason', 'No acceptance', '--confirmed-by-user')
+  const path = f.discovery('F1'), discovery = JSON.parse(readFileSync(path, 'utf8'))
+  delete discovery.questions[0].confirmsContract
+  writeFileSync(path, JSON.stringify(discovery))
+  f.rejects(/confirmsContract/, 'finish-phase-discussion', 'F1', '--context', path)
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  assert.equal(f.state().phaseWorkflows.F1.contractConfirmationRequired, null)
+})
+
+test('skip preserva discussão legada com outro alvo sem confirmação exigida', t => {
+  const f = phaseFixture(t, [{ id: 'T1', phase: 'F1', title: 'Cancelled' }, { id: 'T2', phase: 'F1', title: 'Remaining' }])
+  f.ok('begin-phase-discussion', 'F1')
+  const state = f.state(), round = state.phaseWorkflows.F1.discussionAttempts.at(-1)
+  delete round.activeTargets
+  delete round.queuedTargets
+  delete round.workers
+  f.save(state)
+  f.ok('skip', 'T1', '--reason', 'User cancelled one legacy target')
+  const after = f.state().phaseWorkflows.F1
+  assert.equal(after.state, 'discussing')
+  assert.deepEqual(after.discussionAttempts.at(-1).targets, ['T2'])
+  assert.equal(after.discussionAttempts.at(-1).endedAt, undefined)
+  assert.doesNotMatch(f.ok('status').stdout, /phase F1 discussion[^\n]*stale/)
+})
+
+test('skip preserva rodada concluída e funciona sem rodada de fase aberta', t => {
+  const f = phaseFixture(t, [{ id: 'T1', phase: 'F1', title: 'First' }, { id: 'T2', phase: 'F1', title: 'Second' }])
+  f.ok('skip', 'T1', '--reason', 'User cancelled before discussion')
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  const before = f.state().phaseWorkflows.F1.discussionAttempts
+  f.ok('skip', 'T2', '--reason', 'User cancelled after discussion')
+  assert.deepEqual(f.state().phaseWorkflows.F1.discussionAttempts, before)
+})
+
+test('skip libera vaga de discussão para o próximo alvo sem dispensar seus gates', t => {
+  const f = phaseFixture(t, [{ id: 'T1', phase: 'F1', title: 'Cancelled' }, { id: 'T2', phase: 'F1', title: 'Queued' }], { maxAgents: 1 })
+  f.ok('begin-phase-discussion', 'F1')
+  const beforeState = f.state(), before = beforeState.phaseWorkflows.F1.discussionAttempts.at(-1)
+  assert.deepEqual(before.activeTargets, ['T1'])
+  assert.deepEqual(before.queuedTargets, ['T2'])
+  f.ok('activity-start', 'F1', '--scope', 'phase', '--role', 'discussion', '--agent', before.workers.T1.agent)
+  f.ok('skip', 'T1', '--reason', 'User cancelled the active target')
+  const state = f.state(), round = state.phaseWorkflows.F1.discussionAttempts.at(-1)
+  assert.deepEqual(round.activeTargets, ['T2'])
+  assert.deepEqual(round.queuedTargets, [])
+  assert.ok(round.workers.T1.endedAt)
+  assert.ok(round.workers.T1.activityIntervals.every(interval => interval.endedAt))
+  assert.deepEqual(state.tasks.T2.executionAuthorization, beforeState.tasks.T2.executionAuthorization)
+  f.rejects(/discussion|planning|plan|ready/, 'start', 'T2', '--agent', 'executor')
+  assert.equal(f.state().tasks.T2.attempts.length, 0)
+})

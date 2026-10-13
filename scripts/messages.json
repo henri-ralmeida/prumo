@@ -1800,5 +1800,7 @@
   "Use one English workflow instruction source with responses in the user's language, keeping PO First in the installation locale, translated READMEs and interface, and recoverable backups of retired copies": "Use uma fonte única de regras do fluxo em inglês com respostas no idioma do usuário, mantendo o PO First no idioma da instalação, READMEs e interface traduzidos e backups recuperáveis das cópias retiradas",
   "Fixed — Contract proposal diagnostics": "Corrigido — Diagnóstico de propostas de contrato",
   "Identify affected legacy tasks when refusing contract proposals and show the synchronization path without bypassing existing controls": "Identifique as tarefas legadas afetadas ao recusar propostas de contrato e informe o caminho de sincronização sem contornar os controles existentes",
-  "Clarify that new tasks support proposals while preserving history, backups, execution authorization and independent review requirements": "Esclareça que tarefas novas aceitam propostas, preservando histórico, backups e requisitos de autorização de execução e revisão independente"
+  "Clarify that new tasks support proposals while preserving history, backups, execution authorization and independent review requirements": "Esclareça que tarefas novas aceitam propostas, preservando histórico, backups e requisitos de autorização de execução e revisão independente",
+  "phase {0} discussion closed after skipping {1}: no active targets remain": "discussão da fase {0} encerrada após pular {1}: não restam alvos ativos",
+  "phase {0} discussion continues without skipped task {1}; remaining targets: {2}": "discussão da fase {0} continua sem a tarefa pulada {1}; alvos restantes: {2}"
 }

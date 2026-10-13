@@ -206,3 +206,5 @@ and next available `T` numbers. Preserve previous IDs, phases and history; decla
 dependencies and inspect `sync-plan --dry-run` before writing. New numbers in existing phases remain
 refused; extensions use letters linked to the base task. The new phase follows the same discussion,
 planning, authorization, execution and review gates.
+
+A user-cancelled task should be recorded with `skip <task> --reason "<user decision>"`. It no longer requires phase contract acceptance. An open phase discussion with no active targets closes as superseded, retaining its history; remaining targets keep their controls. Do not edit state or invent a contract acceptance to clear a cancelled task. This transition applies when `skip` is executed; it does not silently rewrite already-recorded runs.
