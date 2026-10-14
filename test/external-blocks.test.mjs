@@ -18,6 +18,25 @@ test('bloqueio sem motivo continua externo e informa a entrada pendente na rodad
   assert.deepEqual(f.phase('F1').discussionAttempts.at(-1).targets, ['T2'])
 })
 
+test('status de bloqueio pendente legado informa o retorno e exige resposta quando ha pergunta', t => {
+  const f = fixture(t)
+  f.ok('block', 'T1', '--reason', 'Decisão externa pendente')
+  const legacy = f.state()
+  delete legacy.tasks.T1.stateBeforeBlock
+  f.save(legacy)
+  const events = f.events()
+  assert.match(f.ok('status').output, /external block; return state pending; next: unblock T1/)
+  assert.deepEqual(f.state(), legacy)
+  assert.equal(f.events(), events)
+
+  legacy.tasks.T1.blockQuestion = 'Qual comportamento aprovar?'
+  f.save(legacy)
+  assert.match(f.ok('status').output, /external block; return state pending; next: unblock T1 --answer <answer>/)
+  f.rejected(/answer/, 'unblock', 'T1')
+  assert.deepEqual(f.state(), legacy)
+  assert.equal(f.events(), events)
+})
+
 test('pausa para replanejar exige tentativa ativa e mantém a correção individual na mesma fase', t => {
   const f = fixture(t)
   const pending = f.state()
