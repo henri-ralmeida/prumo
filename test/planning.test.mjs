@@ -174,6 +174,35 @@ function fixture(t, tasks = [{ id: 'T1', title: 'Delivery estimate' }], options 
     artifact, discovery, contextPath, discuss, beginPlan, finish, planTask, initialized }
 }
 
+for (const lang of ['en', 'pt-BR']) test(`posicao fora de ordem preserva historico e controles em ${lang}`, t => {
+  const f = fixture(t, [{ id: 'T1', title: 'Cinco etapas' }], {}, { lang })
+  f.beginPlan('T1')
+  f.finish('T1', { ...f.artifact('T1'), steps: ['Ler', 'Executar offline', 'Conferir rede', 'Validar', 'Documentar'] })
+  f.ok('start', 'T1', '--agent', 'executor')
+  const before = f.state(), history = f.events()
+  for (const step of [2, 5, 3]) f.ok('progress', 'T1', '--step', String(step), '--agent', 'executor')
+  const current = f.state(), events = f.events()
+  assert.equal(current.tasks.T1.attempts.at(-1).executionStep, 3)
+  assert.deepEqual(events.slice(history.length).trim().split('\n').map(JSON.parse).filter(e => e.type === 'task_progress').map(e => e.current), [2, 5, 3])
+  assert.deepEqual(current.tasks.T1.taskPlan, before.tasks.T1.taskPlan)
+  assert.deepEqual(current.tasks.T1.executionAuthorization, before.tasks.T1.executionAuthorization)
+  assert.deepEqual(current.tasks.T1.validations, before.tasks.T1.validations)
+  assert.equal(current.tasks.T1.state, 'running')
+  f.ok('progress', 'T1', '--step', '3', '--agent', 'executor')
+  assert.deepEqual(f.state(), current)
+  assert.equal(f.events(), events)
+  for (const step of ['0', '6', '1.5']) assert.notEqual(f.cli('progress', 'T1', '--step', step, '--agent', 'executor').status, 0)
+  assert.notEqual(f.cli('progress', 'T1', '--step', '2', '--agent', 'intruso').status, 0)
+  assert.deepEqual(f.state(), current)
+  assert.equal(f.events(), events)
+  assert.notEqual(f.cli('done', 'T1').status, 0, 'registrar posicao nao aprova a tarefa')
+  f.ok('review', 'T1', '--agent', 'revisor')
+  const reviewing = f.state(), reviewEvents = f.events()
+  assert.notEqual(f.cli('progress', 'T1', '--step', '2', '--agent', 'executor').status, 0)
+  assert.deepEqual(f.state(), reviewing)
+  assert.equal(f.events(), reviewEvents)
+})
+
 test('event progress counts executor plan steps and actual reviewer checks per attempt', t => {
   const f = fixture(t, [{ id: 'T1', title: 'Four steps', validation: [check, check, check, check] }])
   f.beginPlan('T1')
@@ -195,9 +224,9 @@ test('event progress counts executor plan steps and actual reviewer checks per a
   assert.match(f.ok('progress', 'T1', '--step', '4', '--agent', 'executor').output,
     /execution position already recorded at 4\/4/)
   assert.equal(f.events(), atFour)
-  f.rejected(/backwards/, 'progress', 'T1', '--step', '1', '--agent', 'executor')
+  f.ok('progress', 'T1', '--step', '1', '--agent', 'executor')
   assert.deepEqual(log().filter(e => ['task_start', 'task_progress'].includes(e.type)).map(e => [e.current, e.total]),
-    [[1, 4], [2, 4], [3, 4], [4, 4]])
+    [[1, 4], [2, 4], [3, 4], [4, 4], [1, 4]])
   f.ok('review', 'T1', '--agent', 'reviewer')
   const reviewStarted = log().find(event => event.type === 'task_review')
   assert.deepEqual([reviewStarted.current, reviewStarted.total], [1, 4])

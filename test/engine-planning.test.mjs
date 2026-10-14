@@ -391,7 +391,7 @@ test('material discovery, task scope and dependency changes invalidate a retry b
   }
 })
 
-function phaseFixture(t, tasks, { planningMode = 'phase', maxAgents } = {}) {
+function phaseFixture(t, tasks, { planningMode = 'phase', maxAgents, lang = 'en' } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'prumo-phase-negative-'))
   t.after(() => rmSync(home, { recursive: true, force: true }))
   const root = join(home, 'workspace'), project = join(home, 'project'), plans = join(root, 'plans')
@@ -402,7 +402,7 @@ function phaseFixture(t, tasks, { planningMode = 'phase', maxAgents } = {}) {
     phases: [{ id: 'F1', title: 'First' }, { id: 'F2', title: 'Second' }],
     tasks: tasks.map(task => ({ validation, ...task })) }
   writeFileSync(planPath, JSON.stringify(plan))
-  const env = { ...process.env, PRUMO_ROOT: root, PRUMO_HOME: home, PRUMO_LANG: 'en' }
+  const env = { ...process.env, PRUMO_ROOT: root, PRUMO_HOME: home, PRUMO_LANG: lang }
   const cli = (...args) => spawnSync(process.execPath, [engine, ...args], { cwd: project, env, encoding: 'utf8', windowsHide: true })
   const ok = (...args) => {
     if (args[0] === 'start' && !JSON.parse(readFileSync(join(root, '.specs/graph/phase-negative/state.json'), 'utf8')).tasks[args[1]]?.executionAuthorization) {
@@ -1141,6 +1141,42 @@ test('fase sem trabalho e fase já planejada não criam rodadas sem necessidade'
   f.rejects(/no nonterminal tasks/, 'begin-phase-discussion', 'F1')
   assert.deepEqual(f.state(), terminal)
   assert.equal(f.events(), terminalEvents)
+})
+
+for (const lang of ['en', 'pt-BR']) test(`perguntas respondidas ficam separadas das pendentes em ${lang}`, t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }], { lang })
+  f.ok('skip-phase-discussion', 'F1', '--reason', 'Contrato aceito', '--confirmed-by-user')
+  f.ok('plan-phase', 'F1', '--agent', 'planejador')
+  f.writeArtifacts('F1')
+  const path = join(f.plans, 'task-plan-A.json'), artifact = JSON.parse(readFileSync(path, 'utf8'))
+  artifact.openQuestions = [
+    { question: 'Regra confirmada?', blocking: true, answer: 'Manter a regra aprovada.' },
+    { question: 'Decisao futura confirmada?', blocking: false, decideBy: { beforePhase: 'F2' }, answer: 'Usar a mesma regra.' },
+    { question: 'Decisao ainda pendente?', blocking: false, decideBy: 'user-now' },
+    { question: 'Decisao futura pendente?', blocking: false, decideBy: { beforePhase: 'F2' } },
+    { question: 'Escolha do executor?', blocking: false, decideBy: 'executor', answer: 'Aplicar o padrao existente.' },
+  ]
+  writeFileSync(path, JSON.stringify(artifact))
+  const before = f.state(), oldEvents = f.events()
+  const output = f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans).stdout
+  const header = lang === 'en' ? 'answered questions recorded in the plan:' : 'perguntas respondidas registradas no plano:'
+  const pending = lang === 'en' ? 'open questions for the user now:' : 'perguntas em aberto para o usuário agora:'
+  assert.ok(output.includes(header), output)
+  const answeredSection = output.slice(output.indexOf(header), output.indexOf(pending))
+  assert.match(answeredSection, /Regra confirmada\?.*Manter a regra aprovada/)
+  assert.match(answeredSection, /Decisao futura confirmada\?.*Usar a mesma regra/)
+  assert.doesNotMatch(output.slice(output.indexOf(pending)), /Regra confirmada|Decisao futura confirmada/)
+  assert.match(output.slice(output.indexOf(pending)), /Decisao ainda pendente|Decisao futura pendente/)
+  assert.doesNotMatch(output, /proposed answer|resposta proposta|Escolha do executor/)
+  const current = f.state()
+  assert.deepEqual(current.tasks.A.taskPlan.openQuestions.map(({ questionRef, ...q }) => q), artifact.openQuestions)
+  assert.deepEqual(current.tasks.A.attempts, before.tasks.A.attempts)
+  assert.deepEqual(current.executionAuthorization, before.executionAuthorization)
+  assert.ok(f.events().startsWith(oldEvents))
+  const recordedEvents = f.events()
+  f.rejects(/unresolved questions|perguntas sem resposta/, 'start', 'A', '--agent', 'executor')
+  assert.deepEqual(f.state(), current)
+  assert.equal(f.events(), recordedEvents)
 })
 
 test('pergunta sem resposta para decidir agora aparece no plano e impede execução prematura', t => {

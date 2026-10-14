@@ -145,7 +145,10 @@ The printed line uses the syntax of the shell that ran `start`: outside Windows 
 it is POSIX when `MSYSTEM` or `SHELL` is set (Git Bash), PowerShell otherwise. The executor pastes it into a shell of the same kind; if its shell differs, it
 adapts only the quoting and call operator, never the paths or arguments.
 `review` and a direct `unblock --reviewer` warn when the recorded position is before the last step.
-`start` records step 1; repeated progress is a no-op, and a new attempt starts over. These counters describe
+`start` records step 1; repeated progress is a no-op, and a new attempt starts over. An executor may report
+any valid current step, including a lower index when work is performed out of order. Each position change
+appends an event while preserving earlier reports, the recorded plan and execution authorization.
+These counters describe
 the current step, not verified completion; they never replace review. Legacy tasks without a task plan
 have no invented denominator. During validation the engine automatically emits each check's index/total,
 including its start, pass, failure or cache reuse. A retry reruns functional checks as usual.

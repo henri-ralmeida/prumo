@@ -1276,21 +1276,24 @@ function printQuestionsForTarget(state, taskId, phaseId) {
    aguardam uma tarefa ou fase posterior, para que uma decisão futura não seja trazida junto com a
    autorização de execução. Perguntas que o executor aplica a partir da resposta proposta não são listadas. */
 function printPlannedQuestionSummary(tasks) {
-  const now = [], later = [], unanswered = []
+  const now = [], later = [], answered = [], unanswered = []
   for (const task of tasks) {
     for (const question of task.taskPlan.openQuestions) {
       const decideBy = question.blocking ? 'user-now' : (question.decideBy ?? 'executor')
       const item = { ref: question.questionRef, task: task.id, question }
-      if (decideBy === 'user-now') now.push(item)
-      else if (decideBy && typeof decideBy === 'object') later.push({ ...item, decideBy })
+      if (decideBy === 'user-now') (question.answer ? answered : now).push(item)
+      else if (decideBy && typeof decideBy === 'object') (question.answer ? answered : later).push({ ...item, decideBy })
       else if (question.decideBy === 'executor' && !question.answer) unanswered.push(item)
     }
   }
+  if (answered.length) {
+    log('[prumo] ' + tr('answered questions recorded in the plan:'))
+    for (const item of answered) log('[prumo]   ' + tr('{0} ({1}): {2} — recorded answer: {3}',
+      item.ref, item.task, item.question.question, item.question.answer))
+  }
   if (now.length) {
     log('[prumo] ' + tr('open questions for the user now:'))
-    for (const item of now) log('[prumo]   ' + (item.question.answer
-      ? tr('{0} ({1}): {2} — proposed answer: {3}', item.ref, item.task, item.question.question, item.question.answer)
-      : `${item.ref} (${item.task}): ${item.question.question}`))
+    for (const item of now) log(`[prumo]   ${item.ref} (${item.task}): ${item.question.question}`)
   }
   if (later.length) {
     log('[prumo] ' + tr('open questions with a later deadline; do not ask them now, they reappear at their target:'))
@@ -3414,7 +3417,6 @@ const commands = {
     if (!total || !Number.isSafeInteger(current) || current < 1 || current > total)
       die('progress step must be an index in the current task plan')
     const attempt = t.attempts.at(-1)
-    if (current < (attempt.executionStep ?? 1)) die('progress cannot move backwards within an attempt')
     if (current === attempt.executionStep) {
       log(`[prumo] ${id} execution position already recorded at ${current}/${total} (agent ${t.agent}, attempt ${t.attempts.length}); position is not completion evidence`)
       return

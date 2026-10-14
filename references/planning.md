@@ -164,7 +164,9 @@ The attempt records the disjoint file scopes of contemporaneous executors; a new
 
 ## Open questions after planning
 
-After `finish-phase-planning` or `finish-planning`, the engine lists open questions for the user now and
+After `finish-phase-planning` or `finish-planning`, user questions with an answer recorded in the plan
+appear separately as answered, with their recorded answer; they are not offered as pending decisions.
+No answer is inferred or rewritten. The engine lists unanswered questions for the user now and
 those with a later deadline, and warns when an `executor` question has no proposed answer. Before execution,
 take to the user only the `user-now` questions. A nonblocking question whose proposed answer the executor
 applies is not a user question. A question due before a later task or phase is not asked now and is not

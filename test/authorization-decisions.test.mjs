@@ -171,12 +171,12 @@ test('finish-planning summarizes questions for the user now, later deadlines and
     const output = f.ok('finish-planning', 'A', '--plan', path).stdout
     const refs = f.state().tasks.A.taskPlan.openQuestions.map(item => item.questionRef)
     if (lang === 'en') {
-      assert.ok(output.includes(`open questions for the user now:\n[prumo]   ${refs[0]} (A): Which cutoff should the report use? — proposed answer: Use 90 percent.`), output)
+      assert.ok(output.includes(`answered questions recorded in the plan:\n[prumo]   ${refs[0]} (A): Which cutoff should the report use? — recorded answer: Use 90 percent.`), output)
       assert.ok(output.includes(`do not ask them now, they reappear at their target:\n[prumo]   ${refs[1]} (A, before task B): Does B replace`), output)
       assert.ok(output.includes(`WARNING: open question ${refs[2]} (A) is decided by the executor but has no proposed answer`), output)
     } else {
-      assert.match(output, /perguntas em aberto para o usuário agora:/)
-      assert.match(output, /resposta proposta: Use 90 percent\./)
+      assert.match(output, /perguntas respondidas registradas no plano:/)
+      assert.match(output, /resposta registrada: Use 90 percent\./)
       assert.match(output, /antes da tarefa B/)
       assert.match(output, /é decidida pelo executor, mas não tem resposta proposta/)
     }
