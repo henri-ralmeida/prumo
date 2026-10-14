@@ -277,12 +277,15 @@ function startWithQuotedPaths(t, shellEnv) {
 test('start prints a PowerShell-safe command for paths and shell metacharacters', t => {
   if (process.platform !== 'win32') return t.skip('PowerShell command-line compatibility')
   const { f, env, agent, command } = startWithQuotedPaths(t, {})
-  assert.ok(command.startsWith('& '), command)
+  assert.ok(command.startsWith('$env:PRUMO_ROOT='), command)
+  assert.ok(command.includes(' $env:PRUMO_HOME='), command)
   assert.ok(command.includes("engine path & ''quoted''"), command)
   assert.ok(command.includes(`--agent '${agent.replaceAll("'", "''")}'`), command)
 
+  const cleanEnv = { ...env }
+  for (const key of ['PRUMO_ROOT', 'PRUMO_HOME', 'GRAPH_ROOT', 'GRAPH_FOREMAN_HOME']) delete cleanEnv[key]
   const executed = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command],
-    { cwd: f.project, env, encoding: 'utf8', timeout: 20000, windowsHide: true })
+    { cwd: f.project, env: cleanEnv, encoding: 'utf8', timeout: 20000, windowsHide: true })
   assert.ifError(executed.error)
   assert.equal(executed.status, 0, executed.stdout + executed.stderr)
   assert.match(executed.stdout + executed.stderr, /execution position already recorded at 1\/2/)
@@ -299,11 +302,15 @@ test('start prints a POSIX command when invoked from Git Bash or another POSIX s
   const { f, env, agent, command } = startWithQuotedPaths(t,
     process.platform === 'win32' ? { MSYSTEM: 'MINGW64', SHELL: '/usr/bin/bash' } : {})
   assert.ok(!command.startsWith('&'), command)
+  assert.ok(command.startsWith('PRUMO_ROOT='), command)
+  assert.ok(command.includes(' PRUMO_HOME='), command)
   assert.ok(command.includes(`engine path & '\\''quoted'\\''`), command)
   assert.ok(command.includes(`--agent 'executor & '\\''quoted'\\'''`), command)
 
+  const cleanEnv = { ...env }
+  for (const key of ['PRUMO_ROOT', 'PRUMO_HOME', 'GRAPH_ROOT', 'GRAPH_FOREMAN_HOME']) delete cleanEnv[key]
   const executed = spawnSync(shell, ['-c', command],
-    { cwd: f.project, env, encoding: 'utf8', timeout: 20000, windowsHide: true })
+    { cwd: f.project, env: cleanEnv, encoding: 'utf8', timeout: 20000, windowsHide: true })
   assert.ifError(executed.error)
   assert.equal(executed.status, 0, executed.stdout + executed.stderr)
   assert.match(executed.stdout + executed.stderr, /execution position already recorded at 1\/2/)

@@ -159,6 +159,9 @@ export function sanitizeDiagnostics(audit = {}) {
       indices: finding.indices.slice(0, MAX_SUMMARY_ITEMS),
       ...(finding.indices.length > MAX_SUMMARY_ITEMS && { truncated: true }),
     })),
+    activeDependencyChanges: (audit.activeDependencyChanges ?? []).map(finding => ({
+      ...finding, task: displayIdentifier(finding.task), dependencies: boundedIdentifiers(finding.dependencies),
+    })),
     invalidatedWorkflows: (audit.invalidatedWorkflows ?? []).map(item => ({
       scope: item.scope,
       workflow: boundedString(item.workflow ?? ''),
@@ -210,6 +213,14 @@ export function auditSyncPlan({ stateTasks = {}, planTasks = [], added = [], eff
   const ids = new Set([...Object.keys(before), ...Object.keys(after)])
   const blockReasonContradictions = []
   const preDiscussionFunctionalContracts = []
+  const activeDependencyChanges = []
+
+  for (const task of Object.values(after)) {
+    const current = before[task.id]
+    if (current?.state !== 'running') continue
+    const dependencies = task.deps.filter(id => !current.deps.includes(id) && !['done', 'skipped'].includes(before[id]?.state))
+    if (dependencies.length) activeDependencyChanges.push({ task: task.id, dependencies, severity: 'warning' })
+  }
 
   for (const task of planTasks) {
     const current = before[task.id]
@@ -264,7 +275,7 @@ export function auditSyncPlan({ stateTasks = {}, planTasks = [], added = [], eff
     })
   }
 
-  return { blockReasonContradictions, newLeaves, preDiscussionFunctionalContracts }
+  return { blockReasonContradictions, newLeaves, preDiscussionFunctionalContracts, activeDependencyChanges }
 }
 
 // `added` normalmente contém IDs. A função também aceita objetos de tarefas do plano

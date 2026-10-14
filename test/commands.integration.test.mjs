@@ -55,6 +55,58 @@ function fixture(t) {
   return { home, root, env, run, command, ok, init, prepare, state, snapshot, plan, planPath, graphDir, statePath }
 }
 
+for (const lang of ['en', 'pt-BR']) test(`ajuda e recusas orientam o revisor sem alterar o plano em ${lang}`, t => {
+  const f = fixture(t); f.init(); f.prepare()
+  f.ok('start', 'T1', '--agent', 'executor')
+  f.ok('review', 'T1', '--agent', 'reviewer')
+  const before = f.snapshot()
+  const metricsPath = join(f.graphDir, 'example/.command-metrics.ndjson')
+  const metrics = readFileSync(metricsPath, 'utf8')
+  for (const command of ['validate', 'start', 'block', 'review-progress']) {
+    const result = f.command(command, '--help', '--lang', lang)
+    assert.equal(result.status, 0, result.output)
+    assert.match(result.output, /--run <name>/)
+    assert.match(result.output, command === 'validate' ? /--failed.*--ok|--ok.*--failed/ : /--help/)
+  }
+  assert.equal(readFileSync(metricsPath, 'utf8'), metrics, 'ajuda não grava métricas de execução')
+  const unknown = f.command('show', 'T1', '--lang', lang)
+  assert.equal(unknown.status, 1)
+  assert.match(unknown.output, /show-contract.*review-progress.*--help/)
+  const wrong = f.command('review-progress', 'T1', '--step', '1', '--agent', 'wrong', '--lang', lang)
+  assert.equal(wrong.status, 1)
+  assert.match(wrong.output, lang === 'en' ? /expected reviewer; received wrong/ : /esperado reviewer; recebido wrong/)
+  const missing = f.command('review-progress', 'T1', '--step', '1', '--lang', lang)
+  assert.equal(missing.status, 1)
+  assert.match(missing.output, /reviewer/)
+  const invalidAgent = f.command('validate', 'T1', '--agent', 'reviewer', '--lang', lang)
+  assert.equal(invalidAgent.status, 1)
+  assert.match(invalidAgent.output, /review <task> --agent <reviewer>/)
+  assert.deepEqual(f.snapshot(), before)
+  const outside = { ...f.env, PRUMO_ROOT: join(f.home, 'absent'), PRUMO_LANG: lang }
+  const help = spawnSync(process.execPath, [engine, 'validate', '--help'], { env: outside, cwd: f.root, encoding: 'utf8', windowsHide: true })
+  assert.equal(help.status, 0, help.stderr)
+  assert.match(help.stdout, /--evidence/)
+})
+
+test('sincronizar novas dependências avisa sem pausar automaticamente a execução', t => {
+  const f = fixture(t); f.init(); f.prepare()
+  f.ok('start', 'T1', '--agent', 'executor')
+  const original = f.state().tasks.T1
+  f.plan.tasks[0].deps = ['T1a', 'T1b']
+  for (const id of ['T1a', 'T1b']) f.plan.tasks.push({ id, title: id, summary: 'Dependência aprovada', validation: f.plan.tasks[0].validation })
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  const before = f.snapshot()
+  const preview = f.ok('sync-plan', '--plan', f.planPath, '--dry-run')
+  assert.match(preview.output, /running task T1 gained unfinished dependencies T1a, T1b.*Use block T1/)
+  assert.deepEqual(f.snapshot(), before)
+  const applied = f.ok('sync-plan', '--plan', f.planPath)
+  assert.match(applied.output, /no task was automatically paused/)
+  const current = f.state().tasks.T1
+  assert.equal(current.state, 'running')
+  assert.deepEqual(current.attempts, original.attempts)
+  assert.equal(current.executionAuthorization, undefined)
+})
+
 test('todos os comandos rejeitam opção desconhecida sem alterar estado, histórico ou seleção', async t => {
   const f = fixture(t); f.init()
   for (const command of commands) await t.test(`${command}: rejeição atômica de argumento`, () => {

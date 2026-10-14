@@ -91,12 +91,27 @@ import {
   sanitizeChanges, sanitizeDiagnostics, sanitizeTaskIds,
 } from './sync-plan-audit.mjs'
 import { businessContract, contractDrift, GLOBAL_PLAN_FIELDS, TASK_CONTRACT_FIELDS } from './contract-drift.mjs'
-import { parseEngineArgs } from './engine-args.mjs'
+import { parseEngineArgs, engineCommandHelp } from './engine-args.mjs'
 import { replanningRecovery } from './replanning-recovery.mjs'
 import { taskIdentifierProblem, phaseIdentifierProblem } from './task-identifiers.mjs'
 import { captureDelivery, checkDelivery, verifyNumericProvenance, assertEvidenceContract } from './delivery-evidence.mjs'
 import { assertRolePreferences, recordDispatchMetadata, dispatchOwners, reportedUsageTotals, pauseRun, resumeRun, shellCommand, taskBrief, agentRoles, repeatedPlanQuestions, recordedPlanIdentity } from './run-metadata.mjs'
 import { newCommandRecord, recordCommand } from './command-metrics.mjs'
+
+// A ajuda geral também funciona fora de um workspace; consultar opções não grava métricas nem estado.
+const [, , cmd, ...rest] = process.argv
+let args
+if (rest.includes('--help')) {
+  try { args = parseEngineArgs(cmd, rest) } catch (error) { die(error.message) }
+}
+if (args?.help && !(cmd === 'review-progress' && args._[0])) {
+  const help = engineCommandHelp(cmd)
+  log(tr('Usage: {0}', help.usage))
+  log(tr('Options: {0}', help.flags.join(' ')))
+  if (cmd === 'validate') log(tr('validate uses the reviewer recorded by review; --evidence records independent observations, not a progress counter'))
+  if (cmd === 'review-progress') log(tr('Read the numbered current criteria with show-contract <task>; progress is a reviewer report, not proof of inspection or approval'))
+  process.exit(0)
+}
 
 let ROOT
 try { ROOT = findRoot() } catch (error) { errorLog('[prumo] ERROR: ' + error.message); process.exit(1) }
@@ -110,8 +125,6 @@ const LOCK_WAIT_MS = 5000         // quanto tempo um comando aguarda pelo bloque
 const LOCK_STALE_MS = 30000       // um bloqueio mais antigo que isso pertencia a um processo que morreu
 
 // ---------- analisador minúsculo de argumentos ----------
-const [, , cmd, ...rest] = process.argv
-let args
 let metricRunName
 let currentRunAtStart
 try { if (existsSync(CURRENT_FILE)) currentRunAtStart = readFileSync(CURRENT_FILE, 'utf8').trim() } catch { /* sem execução selecionada */ }
@@ -121,7 +134,7 @@ if (recognizedCommand) {
   const metric = newCommandRecord(cmd)
   process.on('exit', code => {
     try {
-      if (cmd === 'sync-plan' && args?.['dry-run'] || cmd === 'review-progress' && args?.help) return
+      if (cmd === 'sync-plan' && args?.['dry-run'] || args?.help) return
       const runFlag = rest.lastIndexOf('--run')
       if (runFlag >= 0 && rest[runFlag + 1] === undefined) return
       const requestedRun = args?.run ?? process.env.PRUMO_RUN ?? (runFlag >= 0 ? rest[runFlag + 1] : undefined)
@@ -940,6 +953,10 @@ function printSyncPlanAudit(changes, diagnostics) {
     const indices = finding.indices.join(', ')
     log(`[prumo] sync-plan warning: ${displayIdentifier(finding.task)} is ${tr(finding.effective)}, but validation now has ${finding.count} ${unit} (${indexLabel} ${indices}); is this planning?`)
   }
+  for (const finding of diagnostics.activeDependencyChanges) {
+    log('[prumo] ' + tr('sync-plan warning: running task {0} gained unfinished dependencies {1}; it still occupies its execution resources. Use block {0} --reason <reason> before dispatching dependencies that need those resources; no task was automatically paused',
+      displayIdentifier(finding.task), finding.dependencies.map(displayIdentifier).join(', ')))
+  }
   for (const invalidation of diagnostics.invalidatedWorkflows) {
     const workflow = tr(invalidation.workflow)
     const label = invalidation.task ? `${displayIdentifier(invalidation.task)} ${workflow}` :
@@ -1468,6 +1485,18 @@ function printDispatchSuggestions(state, tasks = null) {
     if (current.effective === 'ready' && taskAuthorization(current)?.mode === 'auto' && slots > 0 &&
         !overdueQuestions(state, current.id, current.phase).length) slots -= 1
   }
+}
+
+// Resolver a decisão externa e retomar uma tentativa são ações distintas; a mensagem mantém os gates visíveis.
+function blockedTaskNotice(state, task) {
+  if (task.state !== 'blocked') return ''
+  const current = hasCurrentTaskScope(state, task)
+  if (isExternalBlock(task)) return tr('external block; return state {0}; next: unblock {1}{2}{3}',
+    task.stateBeforeBlock ?? 'pending', task.id, task.blockQuestion ? ' --answer <answer>' : '',
+    task.planningRequired && !current ? tr('; current planning is also required before resuming the attempt') : '')
+  return current
+    ? tr('replanning pause; current plan recorded; return state {0}; next: unblock {1}', task.stateBeforeBlock, task.id)
+    : tr('replanning pause; return state {0}; next: begin-discussion {1}, plan-task {1}, finish-planning {1}, then unblock {1}', task.stateBeforeBlock, task.id)
 }
 
 /** Registra que uma revisão ou conclusão abriu capacidade de execução para trabalho pronto autorizado. */
@@ -2571,7 +2600,8 @@ const commands = {
       const auth = t.executionAuthorization ? `  [${tr('authorized')} ${t.executionAuthorization.mode}]` :
         `  [${tr(scoped ? 'authorization required' : 'no authorization scope recorded')}]`
       const action = actions.get(t.id) ?? ''
-      console.log(`  ${t.id.padEnd(width)}  ${tr(t.effective).padEnd(8)}${agent}${attempts}${wait}${manual}${plan}${auth}${action ? `  → ${action}` : ''}`)
+      const block = blockedTaskNotice(state, t)
+      console.log(`  ${t.id.padEnd(width)}  ${tr(t.effective).padEnd(8)}${agent}${attempts}${wait}${manual}${plan}${auth}${block ? `  [${block}]` : ''}${action ? `  → ${action}` : ''}`)
     }
     for (const phase of state.plan.phases) {
       console.log(`\n${phase.id} — ${phase.title}`)
@@ -3396,7 +3426,10 @@ const commands = {
     if (total) {
       const shell = invokingShell()
       const quote = value => quoteCommandArg(value, shell)
-      const command = [...(shell === 'powershell' ? ['&'] : []), quote(process.execPath),
+      const context = { PRUMO_ROOT: ROOT, PRUMO_HOME: storageHome() }
+      const environment = Object.entries(context).map(([key, value]) => shell === 'powershell'
+        ? `$env:${key}=${quote(value)};` : `${key}=${quote(value)}`).join(' ')
+      const command = environment + ' ' + [...(shell === 'powershell' ? ['&'] : []), quote(process.execPath),
         quote(process.argv[1]), 'progress', quote(id), '--step', '1', '--agent',
         quote(agent), '--run', quote(name)].join(' ')
       log('[prumo] report each actual execution step with:')
@@ -3474,7 +3507,7 @@ const commands = {
     const reviewDisabled = (t.requireReview ?? state.plan.requireReview) === false
     const agent = t.state === 'reviewing' ? t.reviewer : t.state === 'running' && reviewDisabled ? t.agent : null
     if (!agent) die(`${id} is not in review`)
-    if (!args.agent || args.agent !== agent) die('review-progress needs the current reviewing agent')
+    if (!args.agent || args.agent !== agent) die(tr('review-progress needs the current reviewing agent: expected {0}; received {1}', agent, args.agent ?? tr('not provided')))
     assertCurrentTaskScope(state, t)
     assertCurrentExecutionInputs(state, t)
     const denominator = reviewDenominator(t)
@@ -3939,7 +3972,9 @@ const commands = {
       attempt: t.attempts.length, ...(answer !== undefined ? { answer } : {}),
       ...(target === 'reviewing' && reviewDenom ? { current: 1, total: reviewDenom.total, basis: reviewDenom.basis } : {}),
       ...(dispatchConfirmation ? { manualDispatchConfirmation: dispatchConfirmation } : {}) })
-    log('[prumo] ' + id + ' unblocked to ' + target + '; attempt ' + t.attempts.length + ' preserved; no agent dispatched')
+    if (needsReplanning)
+      log('[prumo] ' + tr('external block resolved for {0}; replanning is still required before returning to {1}; use begin-discussion {0}, plan-task {0}, finish-planning {0}, then unblock {0}; attempt and history preserved', id, previous))
+    else log('[prumo] ' + id + ' unblocked to ' + target + '; attempt ' + t.attempts.length + ' preserved; no agent dispatched')
     const executedStep = t.attempts.at(-1)?.executionStep ?? 1
     if (target === 'reviewing' && t.taskPlan?.steps?.length > 1 && executedStep < t.taskPlan.steps.length)
       log(`[prumo] WARNING: executor progress stayed at ${executedStep}/${t.taskPlan.steps.length}; the position is not proof of completed work`)

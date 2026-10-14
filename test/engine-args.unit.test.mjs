@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseEngineArgs } from '../scripts/engine-args.mjs'
+import { parseEngineArgs, engineCommandHelp } from '../scripts/engine-args.mjs'
 
 // Lista do contrato público, independente da tabela usada pelo parser.
 const commands = ['init', 'migrate', 'sync-plan', 'status', 'ready', 'graph', 'runs', 'show-contract', 'show-check', 'authorize',
@@ -87,4 +87,19 @@ test('review-progress aceita ajuda com e sem tarefa sem consumir o identificador
   assert.deepEqual(parseEngineArgs('review-progress', ['--help']), { _: [], help: true })
   assert.deepEqual(parseEngineArgs('review-progress', ['T1', '--help']), { _: ['T1'], help: true })
   assert.throws(() => parseEngineArgs('review-progress', ['--help', '--help']), /Duplicate option/)
+})
+
+test('ajuda lista opções reais sem transformar consulta em ação', () => {
+  for (const command of commands) {
+    assert.deepEqual(parseEngineArgs(command, ['--help']), { _: [], help: true })
+    const help = engineCommandHelp(command)
+    assert.match(help.usage, new RegExp(`^${command} `))
+    assert.ok(help.flags.includes('--help'))
+    assert.ok(help.flags.includes('--run <name>'))
+  }
+  assert.ok(engineCommandHelp('validate').flags.includes('--failed'))
+  assert.ok(engineCommandHelp('validate').flags.includes('--scope-evidence <value>'))
+  assert.ok(engineCommandHelp('start').flags.includes('--model <value>'))
+  assert.throws(() => parseEngineArgs('show', []), /available commands:.*show-contract.*review-progress.*use <command> --help/)
+  assert.throws(() => parseEngineArgs('validate', ['T1', '--agent', 'wrong']), /uses the reviewer recorded by review.*manual inspection uses validationMode/)
 })

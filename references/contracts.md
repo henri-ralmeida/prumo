@@ -123,3 +123,7 @@ JSON Pointer origin locations, declared values, explicit sum/count rules and del
 result locations. Keep the relevant functional checks: numeric reconciliation does not
 prove every business rule. Missing/invalid/divergent provenance fails; changing sources
 invalidates stale receipts. A dependency receipt is not proof of a count.
+
+### Commands and manual inspection
+
+A functional validation `run` is a shell command that executes the approved behavior check; a description such as "inspect the generated previews" is not executable evidence. Use `validationMode: inspection` with the required reason and recorded criteria for genuinely manual work. The independent reviewer records observations with `validate --evidence`; its identity comes from the preceding `review --agent`, not a new `validate --agent`. Use `validate --help` to consult supported flags without recording a verdict.

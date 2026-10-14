@@ -143,7 +143,9 @@ executor prompt; the executor runs it with the current step index as each step b
 executor has no shell does the orchestrator record the executor's reported steps with the same command.
 The printed line uses the syntax of the shell that ran `start`: outside Windows it is always POSIX; on Windows
 it is POSIX when `MSYSTEM` or `SHELL` is set (Git Bash), PowerShell otherwise. The executor pastes it into a shell of the same kind; if its shell differs, it
-adapts only the quoting and call operator, never the paths or arguments.
+adapts only the quoting and call operator, never the paths or arguments. The printed command includes
+the selected `PRUMO_ROOT` and `PRUMO_HOME`, so a fresh shell reports progress to the same workspace
+even when its previous environment was lost. Never infer a workspace from a run name alone.
 `review` and a direct `unblock --reviewer` warn when the recorded position is before the last step.
 `start` records step 1; repeated progress is a no-op, and a new attempt starts over. An executor may report
 any valid current step, including a lower index when work is performed out of order. Each position change
@@ -170,3 +172,7 @@ including its start, pass, failure or cache reuse. A retry reruns functional che
   A label on two concurrent tasks records parallelism that did not happen.
 - **A FRESH reviewer per task.** One agent reviewing thirty accumulates exactly the context the
   graph exists to avoid, and stops reading with fresh eyes long before the end.
+
+When `sync-plan` adds unfinished dependencies to running work, the engine warns that the task still occupies its resources. Decide explicitly whether to pause it with `block` before dispatching dependencies that need those resources; synchronization never silently pauses work or releases ownership.
+
+Resolving an external block may leave a replanning pause when the approved scope changed. `status` identifies the remaining condition and the return state. Complete the indicated task discussion and planning, obtain the pertinent authorization, then use `unblock` to resume the same attempt; repeated `unblock` alone cannot satisfy missing planning.

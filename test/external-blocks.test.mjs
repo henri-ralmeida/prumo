@@ -353,7 +353,10 @@ test('unblock de bloqueio externo com escopo obsoleto vira replanejamento intern
     '--answer', 'Aplicar o escopo aprovado', '--reviewer', 'new-reviewer')
   assert.deepEqual(f.state().tasks.T1, externallyBlocked, 'revisão direta não contorna um escopo obsoleto')
 
-  f.ok('unblock', 'T1', '--answer', 'Aplicar o escopo aprovado')
+  const resumedDecision = f.ok('unblock', 'T1', '--answer', 'Aplicar o escopo aprovado')
+  assert.match(resumedDecision.output, /external block resolved for T1; replanning is still required.*begin-discussion T1.*then unblock T1/)
+  assert.doesNotMatch(resumedDecision.output, /unblocked to blocked/)
+  assert.match(f.ok('status').output, /replanning pause; return state reviewing.*begin-discussion T1/)
   let replanning = f.state().tasks.T1
   assert.equal(replanning.state, 'blocked')
   assert.equal(replanning.blockKind, 'replan')
@@ -386,6 +389,7 @@ test('unblock de bloqueio externo com escopo obsoleto vira replanejamento intern
   assert.equal(replanning.planningHistory.length, 2)
 
   f.ok('authorize', '--scope', 'tasks:T1', '--confirmed-by-user')
+  assert.match(f.ok('status').output, /replanning pause; current plan recorded.*next: unblock T1/)
   f.ok('unblock', 'T1')
   const resumed = f.state().tasks.T1
   assert.equal(resumed.state, 'reviewing')

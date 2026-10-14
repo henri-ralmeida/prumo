@@ -38,21 +38,33 @@ const definitions = {
   'activity-start': [1, 'scope role agent'], 'activity-stop': [1, 'scope role agent'],
 }
 
+const dispatchCommands = ['start', 'review', 'unblock', 'begin-discussion', 'begin-phase-discussion', 'plan-task', 'plan-phase', 'finish-phase-discussion', 'finish-phase-planning']
+
+// A ajuda deriva das opções aceitas, para orientar sem executar nem alterar o plano.
+export function engineCommandHelp(command) {
+  const [positionals, strings = '', booleans = ''] = definitions[command]
+  const flags = ['--help', '--run <name>', '--lang <en|pt-BR>', '--force',
+    ...strings.split(/\s+/).filter(Boolean).map(flag => `--${flag} <value>`),
+    ...booleans.split(/\s+/).filter(flag => flag && flag !== 'help').map(flag => `--${flag}`),
+    ...(dispatchCommands.includes(command) ? ['--model <value>', '--effort <value>'] : [])]
+  return { usage: `${command}${positionals ? ' [<task-or-phase>]' : ''} [options]`, flags }
+}
+
 // Argumentos inválidos são recusados antes de qualquer gravação, para que erros de
 // digitação não executem uma transição diferente da solicitada.
 export function parseEngineArgs(command, tokens) {
-  if (!Object.hasOwn(definitions, command)) throw new Error(`Unknown engine command: ${command ?? ''}`)
+  if (!Object.hasOwn(definitions, command)) throw new Error(`Unknown engine command: ${command ?? ''}; available commands: ${Object.keys(definitions).join(', ')}; use <command> --help`)
   const [positionals, strings = '', booleans = ''] = definitions[command]
   const stringFlags = new Set(('run lang ' + strings).trim().split(/\s+/))
-  const booleanFlags = new Set(('force ' + booleans).trim().split(/\s+/))
-  const dispatch = ['start', 'review', 'unblock', 'begin-discussion', 'begin-phase-discussion', 'plan-task', 'plan-phase', 'finish-phase-discussion', 'finish-phase-planning']
-  if (dispatch.includes(command)) { stringFlags.add('model'); stringFlags.add('effort') }
+  const booleanFlags = new Set(('force help ' + booleans).trim().split(/\s+/))
+  if (dispatchCommands.includes(command)) { stringFlags.add('model'); stringFlags.add('effort') }
   const args = { _: [] }
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i] === '-r' ? '--run' : tokens[i]
     if (!token.startsWith('--')) { args._.push(token); continue }
     const key = token.slice(2)
     if (command === 'start' && key === 'cwd') throw new Error('start does not support --cwd; use start <task> --agent <executor> --run <run> and wait for success before dispatching the agent. Set the project directory with init --cwd or sync-plan --cwd; validate also accepts --cwd.')
+    if (command === 'validate' && key === 'agent') throw new Error('validate does not accept --agent; it uses the reviewer recorded by review <task> --agent <reviewer>. Use validate <task> --ok|--failed --evidence <observations>; functional run fields must contain shell commands, while manual inspection uses validationMode: inspection.')
     if (!stringFlags.has(key) && !booleanFlags.has(key)) throw new Error(`Unknown option --${key} for ${command}`)
     const repeatedAgent = key === 'agent' && ['plan-phase', 'begin-phase-discussion'].includes(command)
     if (Object.hasOwn(args, key) && key !== 'option' && !repeatedAgent) throw new Error(`Duplicate option --${key}`)

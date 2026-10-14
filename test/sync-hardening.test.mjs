@@ -121,7 +121,7 @@ test('sanitização reduz identificadores e mantém opcionais controlados', () =
   assert.deepEqual(missingLists.newLeaves[0].dependents, [])
 
   const empty = sanitizeDiagnostics()
-  assert.deepEqual(empty, { blockReasonContradictions: [], newLeaves: [], preDiscussionFunctionalContracts: [], invalidatedWorkflows: [] })
+  assert.deepEqual(empty, { blockReasonContradictions: [], newLeaves: [], preDiscussionFunctionalContracts: [], activeDependencyChanges: [], invalidatedWorkflows: [] })
 })
 
 test('auditoria cobre validação inválida, folhas duplicadas e ciclo no grafo persistido', () => {
@@ -209,11 +209,23 @@ test('auditoria aceita entradas ausentes e normaliza dependências não listadas
     stateTasks: { T1: null },
     planTasks: [{ id: 'T2', deps: 'não é lista' }],
   })
-  assert.deepEqual(result, { blockReasonContradictions: [], newLeaves: [], preDiscussionFunctionalContracts: [] })
+  assert.deepEqual(result, { blockReasonContradictions: [], newLeaves: [], preDiscussionFunctionalContracts: [], activeDependencyChanges: [] })
   assert.deepEqual(auditSyncPlan().newLeaves, [])
   assert.deepEqual(auditSyncPlan({ stateTasks: null, planTasks: [] }).newLeaves, [])
   const unknownAdded = auditSyncPlan({ added: [{}] })
   assert.equal(unknownAdded.newLeaves[0].task, undefined)
+})
+
+test('dependências novas não concluídas de execução ativa são avisadas sem alterar o grafo', () => {
+  const stateTasks = { T1: { state: 'running', deps: ['T2'] }, T2: { state: 'pending' },
+    T3: { state: 'done' }, T4: { state: 'skipped' }, T5: { state: 'reviewing' }, T6: { state: 'pending', deps: [] } }
+  const planTasks = [{ id: 'T1', deps: ['T2', 'T3', 'T4', 'T5', 'T7'] }, { id: 'T6', deps: ['T7'] }]
+  const before = structuredClone({ stateTasks, planTasks })
+  const audit = auditSyncPlan({ stateTasks, planTasks })
+  assert.deepEqual(audit.activeDependencyChanges, [{ task: 'T1', dependencies: ['T5', 'T7'], severity: 'warning' }])
+  assert.deepEqual(sanitizeDiagnostics(audit).activeDependencyChanges, audit.activeDependencyChanges)
+  assert.deepEqual({ stateTasks, planTasks }, before)
+  assert.deepEqual(auditSyncPlan({ stateTasks: { T1: { state: 'running' } }, planTasks: [{ id: 'T1' }] }).activeDependencyChanges, [])
 })
 
 test('auditoria recusa lista nula e mantém busca finita em ciclos sem atingir a tarefa bloqueada', () => {
