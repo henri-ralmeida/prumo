@@ -1126,9 +1126,13 @@ test('sync conserva planos entregues quando uma rodada importada continua aberta
   writeFileSync(f.planPath, JSON.stringify(f.plan))
   f.ok('sync-plan', '--plan', f.planPath)
   assert.deepEqual(f.state().tasks.A.taskPlan, plan)
-  assert.deepEqual(f.state().phaseWorkflows.F1.contractConfirmationRequired.tasks, ['A'])
+  assert.equal(f.state().phaseWorkflows.F1.contractConfirmationRequired, undefined)
+  assert.deepEqual(f.state().tasks.A.executionAuthorization, state.tasks.A.executionAuthorization)
   assert.equal(f.state().phaseWorkflows.F1.planningAttempts.length, 2)
   assert.equal(f.state().phaseWorkflows.F1.planningAttempts[0].result, 'planned')
+  f.ok('start', 'A', '--agent', 'executor')
+  assert.equal(f.state().tasks.A.attempts.length, 1)
+  assert.deepEqual(f.state().tasks.A.taskPlan, plan)
 })
 
 test('despacho de fase respeita agente ocupado e capacidade sem tomar a execução legada', t => {

@@ -1,4 +1,4 @@
-import test from 'node:test'
+import test, { after } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -8,6 +8,16 @@ import { occupancy } from '../scripts/execution-readiness.mjs'
 
 const engine = resolve(dirname(fileURLToPath(import.meta.url)), '../scripts/engine.mjs')
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const originalHome = process.env.PRUMO_HOME
+const unitHome = mkdtempSync(join(repoRoot, '.test-agent-limit-unit-'))
+// O padrao de uma instalacao nova deve ser verificado sem ler as preferencias pessoais do computador.
+process.env.PRUMO_HOME = unitHome
+after(() => {
+  if (originalHome === undefined) delete process.env.PRUMO_HOME
+  else process.env.PRUMO_HOME = originalHome
+  assert.ok(resolve(unitHome).startsWith(join(repoRoot, '.test-agent-limit-unit-')))
+  rmSync(unitHome, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+})
 const validation = [{ kind: 'functional', run: 'node check.cjs', expect: 'o comportamento aprovado passa' }]
 
 function fixture(t, { tasks = ['T1', 'T2', 'T3', 'T4'], run = 'agent-limit', plan = {} } = {}) {

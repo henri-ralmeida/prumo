@@ -38,6 +38,18 @@ export function sameProject(task, other, defaultProject) {
   }
   return key(task.project ?? defaultProject) === key(other.project ?? defaultProject)
 }
+// As verificações podem usar outro projeto; a evidência de escopo continua presa ao contrato aprovado.
+export function validationProjectMismatch(task, defaultProject, validationCwd) {
+  const project = task.project ?? defaultProject
+  if (!project || !validationCwd || sameProject({ project }, { project: validationCwd })) return null
+  const root = cwd => {
+    const result = spawnSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', windowsHide: true })
+    return result.status === 0 ? result.stdout.trim() : null
+  }
+  const approved = root(project), actual = root(validationCwd)
+  if (!approved || !actual || sameProject({ project: approved }, { project: actual })) return null
+  return { project: resolve(approved), validationProject: resolve(actual), validationCwd: resolve(validationCwd) }
+}
 export function scopeConflicts(task, other, defaultProject) {
   const paths = sameProject(task, other, defaultProject) ? (task.touches ?? []).filter(path => (other.touches ?? []).some(candidate => insideTouches(path, [candidate]) || insideTouches(candidate, [path]))) : []
   const resources = (task.sharedResources ?? []).filter(resource => (other.sharedResources ?? []).some(candidate => candidate.id === resource.id && (resource.access === 'write' || candidate.access === 'write'))).map(resource => resource.id)
@@ -106,5 +118,14 @@ export function verifyTaskScope(task, baseline, independentEvidence, concurrentS
     throw new Error('Nested repositories require an independent reviewer --scope-evidence with inspected paths and method')
   return { method: 'git', paths, excludedPaths, ...(excludedPaths.length || externalPaths.length || current.nestedRepositories?.length || baseline.nestedRepositories?.length ? { independentEvidence } : {}),
     ...(externalPaths.length ? { externalPaths, externalLimitation: 'External paths are not captured by repository evidence; independent inspection is required.' } : {}),
-    fingerprint: createHash('sha256').update(JSON.stringify(current.files)).digest('hex'), limitation: current.limitation }
+    // O commit pode mudar a ordem do inventário sem mudar arquivos ou permissões.
+    fingerprint: createHash('sha256').update(JSON.stringify(Object.fromEntries(Object.keys(current.files).sort().map(path => [path, current.files[path]])))).digest('hex'),
+    legacyFingerprint: createHash('sha256').update(JSON.stringify(current.files)).digest('hex'),
+    // Recibos antigos podem usar a ordem da baseline seguida dos arquivos novos; todos os hashes e modos continuam na comparação.
+    baselineOrderFingerprint: createHash('sha256').update(JSON.stringify(Object.fromEntries(
+      [...new Set([...Object.keys(baseline.files), ...Object.keys(current.files)])].filter(path => Object.hasOwn(current.files, path)).map(path => [path, current.files[path]])))).digest('hex'),
+    newFilesFirstFingerprint: createHash('sha256').update(JSON.stringify(Object.fromEntries(
+      [...Object.keys(current.files).filter(path => !Object.hasOwn(baseline.files, path)), ...Object.keys(baseline.files)]
+        .filter(path => Object.hasOwn(current.files, path)).map(path => [path, current.files[path]])))).digest('hex'),
+    limitation: current.limitation }
 }

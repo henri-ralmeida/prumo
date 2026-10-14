@@ -271,6 +271,22 @@ generates or truncates a replacement label.
 `cwd`; this does not block the plan because a new file or folder can be intentional. An inaccessible cwd
 is reported as unchecked.
 
+Validation may intentionally run in another repository. When a step's `cwd` resolves to a different
+Git root from the approved task/run project, the engine records and displays that limitation during
+`validate` and repeats it during `done`. An empty scope check covers only the approved repository;
+it does not verify changes in the validation repository. Declare `task.project` before execution when
+the delivery belongs there, or record independent inspection of the external work. Scope checks never
+silently switch repositories based on `--cwd`.
+Older receipts without the explicit warning field use their recorded check directories to display the
+same limitation at completion; their historical evidence is not rewritten.
+
+`init` and `sync-plan` also warn about recognizable inspection prose in a functional `run` field, including in
+`--dry-run`. This is an advisory, not executable discovery: shell builtins, scripts, quoting and tools
+installed later remain valid. Use real shell commands for functional checks. A justified non-runtime
+inspection uses `validationMode: "inspection"`, `inspectionReason` and reviewer observations.
+An already approved inspection does not ask for a new mode selection. Completed and skipped task
+contracts remain historical records; this advisory does not revalidate them.
+
 Keep purpose and background in `description` or referenced approved documents. Keep current,
 consistent acceptance criteria in `validation[].expect` and the checks that establish them in
 `validation[].run`. Superseded criteria belong in history/backups, not an active `echo` step.
@@ -383,6 +399,17 @@ validation and independent review are still required; earlier receipts never app
 A changed execution scope, dependency context, global decision or acceptance criterion still requires
 current planning. Historical completed phase rounds identify affected tasks without reopening unchanged tasks.
 
+The same compatible command refresh preserves an explicit user-confirmed planning skip during an active
+attempt. The skip and attempt remain historical records; current validation is still required. A task
+with a phase plan from another execution attempt must have a valid corrective retry binding; missing
+bindings produce recovery guidance rather than an exception or an invented attempt.
+
+When review progress is reported, the output points to `validate <task> --ok --evidence <observations>`.
+That evidence records the reviewer's observations; no flag or counter proves inspection automatically.
+Committing already inspected files does not invalidate approval merely by reordering Git's tracked and
+untracked inventory. Content, paths and permissions must still match the validated scope, including
+when an older receipt's inventory order can be reconstructed exactly.
+
 Do not use fail/retry solely for contract migration, redo a delivered fix, or enlarge a data
 window because the skill changed. The reviewer can verify delivered work in the same attempt.
 `sync-plan` refreshes active contracts while preserving their lifecycle and keeps completed contracts as
@@ -394,13 +421,23 @@ also changed contract fields appears in `updated` too); metadata changes are app
 planning or execution authorization. Synchronization records the
 approved definition; it is not proof that active work meets it.
 
+To remove approved planning mistakes before execution, omit the tasks from the source and use
+`sync-plan --plan <approved-plan.json> --remove T14,T15 --reason "approved consolidation"`.
+Only pending tasks without execution attempts, notes, validation receipts, dependents or open
+discussion/planning work qualify. References from current plans and question deadlines also prevent
+removal, as do unanswered questions from the removed task that govern other work. The full record
+remains in `removedTasks` and each removal appends an event with its reason;
+removed IDs remain reserved. `--dry-run` checks eligibility without changes. Ordinary synchronization
+still refuses implicit removal, and `--propose` cannot remove tasks. This command does not modify
+external work items or reopen completed/skipped work.
+
 Synchronization also warns when it invalidates an open discussion/planning round or a current skip; it
 continues applying the approved plan. `begin-phase-discussion` closes a stale open phase round as
 `superseded`, records the cause and prints it, including the contract fields `sync-plan` changed. Edit the
 plan and run `sync-plan` before `begin-*-discussion`. `status` and `ready` compare the approved source with persisted task
 contracts and report the task IDs and changed fields, each followed by "run sync-plan". A task new in the
 approved plan is reported as not synchronized; a task missing from it is reported as missing, because
-`sync-plan` refuses task removal. Missing or unreadable sources produce a short warning
+`sync-plan` refuses implicit task removal. Missing or unreadable sources produce a short warning
 without blocking either command. An open planning round shows its age and accepted artifact count (`0/N`);
 a recorded batch shows `N/N`. A round that was still open when a later `sync-plan` demanded a contract
 confirmation no longer counts as work in progress: `status` and `ready` show it as

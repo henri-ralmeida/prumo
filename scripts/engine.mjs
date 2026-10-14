@@ -71,7 +71,7 @@ import {
 import { randomUUID, createHash } from 'node:crypto'
 import { homedir } from 'node:os'
 import { isReadyForReview } from './review-readiness.mjs'
-import { assertExplicitScope, scopeConflicts, sameProject, captureScopeBaseline, scopeEvidenceRequirement, verifyTaskScope, externalTouchPaths } from './task-scope.mjs'
+import { assertExplicitScope, scopeConflicts, sameProject, captureScopeBaseline, scopeEvidenceRequirement, verifyTaskScope, externalTouchPaths, validationProjectMismatch } from './task-scope.mjs'
 import { executionReadiness, planQuestionRef, openQuestionRecords, questionResolutionMap, targetHasStarted, overdueQuestions, questionIsOverdue, taskAuthorization, runHasAuthorizationScope, occupancy, isExternalBlock } from './execution-readiness.mjs'
 import { writeAtomicState } from './atomic-state.mjs'
 import { hydrateDiscoveries, compactDiscoveries } from './discovery-history.mjs'
@@ -112,7 +112,10 @@ if (args?.help && !(cmd === 'review-progress' && args._[0])) {
   log(tr('Usage: {0}', help.usage))
   log(tr('Options: {0}', help.flags.join(' ')))
   if (cmd === 'validate') log(tr('validate uses the reviewer recorded by review; --evidence records independent observations, not a progress counter'))
-  if (cmd === 'review-progress') log(tr('Read the numbered current criteria with show-contract <task>; progress is a reviewer report, not proof of inspection or approval'))
+  if (cmd === 'review-progress') {
+    log(tr('Read the numbered current criteria with show-contract <task>; progress is a reviewer report, not proof of inspection or approval'))
+    printReviewValidationGuidance('<task>')
+  }
   process.exit(0)
 }
 
@@ -152,6 +155,7 @@ if (cmd === 'review-progress' && args.help) {
   log(tr('Usage: review-progress [<task>] --help | review-progress <task> --step <1-based index> --agent <reviewer> [--run <name>]'))
   log(tr('Options: {0}', engineCommandHelp(cmd).flags.join(' ')))
   log(tr('Read the numbered current criteria with show-contract <task>; progress is a reviewer report, not proof of inspection or approval'))
+  printReviewValidationGuidance(args._[0])
   if (args._[0]) printReviewCriteria(getTask(loadState(runName()), args._[0]))
   process.exit(0)
 }
@@ -455,6 +459,10 @@ function printReviewCriteria(task) {
   for (const { step, criterion } of criteria) log('[prumo] ' + step + '. ' + JSON.stringify(criterion))
 }
 
+function printReviewValidationGuidance(id) {
+  log('[prumo] ' + tr('After inspecting the current delivery, use validate {0} --ok --evidence <observations> [--cwd <project>]. Evidence records what the reviewer inspected; no flag or progress counter proves inspection automatically, and validation still enforces the current contract', id))
+}
+
 function reviewProgressRecord(state, task, agent, denominator, deliveryFingerprint = checkDelivery(state, task, state.plan.cwd).fingerprint) {
   const attempt = task.attempts.at(-1)
   if (attempt.reviewProgress) {
@@ -620,6 +628,11 @@ function warnPlanTouchPaths(plan, cwd) {
   let unknownRootWarned = false
   for (const task of plan.tasks) {
     if (!Array.isArray(task.touches) || !task.touches.length) continue
+    for (const directory of new Set((Array.isArray(task.validation) ? task.validation : [])
+      .map(step => step.cwd).filter(value => typeof value === 'string' && value.trim()))) {
+      const mismatch = validationProjectMismatch(task, cwd, directory)
+      if (mismatch) printValidationProjectWarning(mismatch)
+    }
     const roots = validationRoots(task, cwd)
     if (!roots.length) {
       if (!unknownRootWarned) log('[prumo] ' + tr('touches check skipped: project directory is unknown; use sync-plan --cwd <project> or declare validation step.cwd'))
@@ -651,6 +664,15 @@ function warnPlanTouchPaths(plan, cwd) {
       if (inaccessible.length)
         log('[prumo] ' + tr('touches check not run in inaccessible validation repository/cwd: {0}', inaccessible.join(', ')))
     }
+  }
+}
+
+function warnValidationProse(plan, historical) {
+  for (const task of plan.tasks) {
+    if (historical.has(task.id) || task.validationMode === 'inspection') continue
+    for (const [index, step] of task.validation.entries())
+      if (/^\s*(?:inspecionar|conferir|revisar|verificar|inspect|review|verify|check)\s+(?:o|a|os|as|the|that|if)\s/iu.test(step.run))
+        log('[prumo] ' + tr('WARNING: task {0} validation step {1} looks like inspection prose. run executes a shell command; confirm an executable check before dispatch. For a justified manual inspection, approve validationMode: inspection and inspectionReason; no command was executed and no receipt was recorded', task.id, index + 1))
   }
 }
 
@@ -733,7 +755,7 @@ function printContractDriftWarnings(state) {
     if (item.fields.includes('notSynchronized'))
       log('[prumo] ' + tr('contract drift: task {0} is new in the approved plan and not synchronized — run sync-plan', task))
     else if (item.fields.includes('missingFromApprovedPlan'))
-      log('[prumo] ' + tr('contract drift: task {0} is missing from the approved plan; sync-plan refuses task removal — restore it in the approved plan', task))
+      log('[prumo] ' + tr('contract drift: task {0} is missing from the approved plan; sync-plan refuses task removal without explicit --remove and --reason for eligible unstarted tasks — restore it or inspect the removal with --dry-run', task))
     else log('[prumo] ' + tr('contract drift: task {0} fields: {1} — run sync-plan', task, item.fields.join(', ')))
   }
   if (preserved.length) log('[prumo] ' + tr('completed task contracts preserved: {0} — inspect with show-contract <task> --diff; create a follow-up task for approved changes', preserved.join(', ')))
@@ -978,15 +1000,54 @@ function readPlan(planPath, state) {
   const source = resolve(planPath)
   const plan = JSON.parse(readFileSync(source, 'utf8'))
   const validationPlan = state ? { ...plan, planningMode: state.plan.planningMode ?? 'task' } : plan
-  validatePlan(validationPlan, args['allow-overlap'] === true, historicalTasks(state), projectCwd(state?.plan.cwd))
+  const historical = historicalTasks(state)
+  validatePlan(validationPlan, args['allow-overlap'] === true, historical, projectCwd(state?.plan.cwd))
+  for (const task of plan.tasks) if (Object.hasOwn(state?.removedTasks ?? {}, task.id))
+    die(tr('Task {0} uses a removed task identifier; keep its history and choose a new identifier', task.id))
+  warnValidationProse(plan, historical)
   const identifierTasks = state ? plan.tasks.map(task => ['done', 'skipped'].includes(state.tasks[task.id]?.state)
     ? { ...task, deps: state.tasks[task.id].deps } : task) : plan.tasks
-  const identifierProblem = taskIdentifierProblem(identifierTasks, state ? Object.keys(state.tasks) : undefined, state?.tasks,
+  const identifierProblem = taskIdentifierProblem(identifierTasks, state ? [...Object.keys(state.tasks), ...Object.keys(state.removedTasks ?? {})] : undefined, state?.tasks,
     { phases: plan.phases ?? [], existingPhases: (state?.plan.phases ?? []).map(phase => phase.id) })
   if (identifierProblem) die(tr(identifierProblem.message, ...identifierProblem.values))
   const phaseProblem = phaseIdentifierProblem(plan.phases ?? [], (state?.plan.phases ?? []).map(phase => phase.id))
   if (phaseProblem) die(tr(phaseProblem.message, ...phaseProblem.values))
   return { plan, source }
+}
+
+function approvedTaskRemovals(state, plan) {
+  const missing = Object.keys(state.tasks).filter(id => !plan.tasks.some(task => task.id === id))
+  if (args.remove === undefined) {
+    if (args.reason !== undefined) die(tr('sync-plan --reason requires --remove <task,...>'))
+    if (missing.length) die(`sync-plan is additive: plan removed ${missing.join(', ')}`)
+    return []
+  }
+  const requested = args.remove.split(',').map(id => id.trim())
+  if (requested.some(id => !id) || new Set(requested).size !== requested.length ||
+      JSON.stringify([...requested].sort()) !== JSON.stringify([...missing].sort()))
+    die(tr('sync-plan --remove must list exactly the tasks omitted from the approved plan, without duplicates: {0}', missing.join(', ')))
+  if (!args.reason?.trim()) die(tr('sync-plan --remove requires --reason explaining the approved removal'))
+  if (args.propose) die(tr('sync-plan --remove cannot be combined with --propose; approve the removal before changing the active plan'))
+  for (const id of requested) {
+    const task = state.tasks[id]
+    if (task.state !== 'pending' || task.attempts.length || task.notes?.length || task.validations?.length)
+      die(tr('Cannot remove {0}: only pending tasks without execution attempts, notes or validation receipts can be removed; preserve executed history', id))
+    const dependent = Object.values(state.tasks).find(other => other.deps.includes(id) ||
+      other.taskPlan?.unresolvedInputs?.some(input => input.task === id) ||
+      other.taskPlan?.openQuestions?.some(question => question?.decideBy?.beforeTask === id))
+    if (dependent) die(tr('Cannot remove {0}: task {1} still references it; update and approve that contract first', id, dependent.id))
+    const resolutions = questionResolutionMap(state)
+    const question = openQuestionRecords(state).find(item => item.sourceTask === id &&
+      !item.question.answer && !resolutions.has(item.ref) &&
+      (item.decideBy?.beforeTask || item.decideBy?.beforePhase))
+    if (question) die(tr('Cannot remove {0}: unanswered question {1} still governs another task or phase; record its resolution before removing the task', id, question.ref))
+    const rounds = [...(task.discussionAttempts ?? []), ...(task.planningAttempts ?? []),
+      ...Object.values(state.phaseWorkflows ?? {}).flatMap(phase =>
+        [...(phase.discussionAttempts ?? []), ...(phase.planningAttempts ?? [])].filter(round => round.targets?.includes(id)))]
+    if (rounds.some(round => !round.endedAt))
+      die(tr('Cannot remove {0}: a discussion or planning round is still open; finish it before changing the plan', id))
+  }
+  return requested
 }
 
 function taskFromPlan(t) {
@@ -1341,6 +1402,30 @@ function assertNoOverdueQuestions(state, task) {
       task.id, questions.map(item => item.ref).join(', ')))
 }
 
+function assertPhaseQuestionResolutions(state, phaseId, decisions) {
+  const resolved = new Set(decisions.map(decision => decision.resolvesQuestion))
+  const questions = overdueQuestions(state, null, phaseId).filter(item =>
+    item.decideBy?.beforePhase === phaseId && !resolved.has(item.ref))
+  if (questions.length) die(tr('Phase {0} has unresolved questions due before this phase: {1}; answer them in decisions[].resolvesQuestion before closing the round; nothing was recorded',
+    phaseId, questions.map(item => item.ref).join(', ')))
+}
+
+function printValidationProjectWarning(mismatch) {
+  log('[prumo] ' + tr('WARNING: validation cwd {0} and approved scope project {1} belong to different Git repositories. Empty scope paths do not verify changes in {2}; inspect that repository independently or approve task.project before execution',
+    mismatch.validationCwd, mismatch.project, mismatch.validationProject))
+}
+
+function assertPhaseTargetsPaused(targets) {
+  const active = targets.find(task => ['running', 'reviewing'].includes(task.state))
+  if (active) die(tr('{0} is {1} and needs updated planning; use pause-replanning {0} --reason <reason>, then the task discussion and planning flow. The current attempt and plan were preserved', active.id, active.state))
+}
+
+function printPlanningRecoveryWarnings(state) {
+  for (const task of Object.values(state.tasks))
+    if (['running', 'reviewing'].includes(task.state) && usesCurrentPlanning(state, task) && !hasCurrentTaskScope(state, task))
+      log('[prumo] ' + tr('WARNING: {0} planning does not match its current execution; use pause-replanning {0} --reason <reason>, discuss and plan the task, then unblock explicitly. No attempt or historical plan was changed', task.id))
+}
+
 function printQuestionStatus(state) {
   const resolved = questionResolutionMap(state)
   for (const item of openQuestionRecords(state)) {
@@ -1483,6 +1568,7 @@ function actionForTask(state, task, slots) {
 }
 
 function printDispatchSuggestions(state, tasks = null) {
+  printPlanningRecoveryWarnings(state)
   if (state.runPause && !state.runPause.endedAt) return
   const d = derive(state)
   const candidates = tasks ?? Object.values(d).filter(task => ['ready_for_discussion', 'ready_to_plan', 'ready'].includes(task.effective))
@@ -1771,6 +1857,7 @@ function invalidatedSyncWorkflows(name, before, after) {
 
   for (const [id, oldTask] of Object.entries(before.tasks)) {
     const task = after.tasks[id]
+    if (!task) continue
     const discussion = oldTask.discussionAttempts?.at(-1)
     if (discussion && !discussion.endedAt && discussion.context !== planningContext(after, task))
       record('task', 'discussion', id, discussion, discussion.contextSnapshot,
@@ -2155,8 +2242,7 @@ const commands = {
     const { plan, source } = readPlan(planPath, state)
     const cwd = projectCwd(state.plan.cwd)
     warnPlanTouchPaths(plan, cwd)
-    const removed = Object.keys(state.tasks).filter((id) => !plan.tasks.some((t) => t.id === id))
-    if (removed.length) die(`sync-plan is additive: plan removed ${removed.join(', ')}`)
+    const removed = approvedTaskRemovals(state, plan)
     const missingSummaries = plan.tasks.filter(task => !Object.hasOwn(state.tasks, task.id) && task.summary === undefined)
     if (missingSummaries.length) die(tr(
       'new tasks require summary before sync-plan: {0}; fill the expected result and its purpose from the approved scope, then run sync-plan again',
@@ -2165,6 +2251,7 @@ const commands = {
     const contractFields = TASK_CONTRACT_FIELDS
     const beforeState = hydrateDiscoveries(structuredClone(state), runDir(name))
     const persistedTasks = hydrateDiscoveries({ tasks: structuredClone(state.tasks) }, runDir(name)).tasks
+    for (const id of removed) delete state.tasks[id]
     const added = []
     const updated = []
     const metadataUpdated = []
@@ -2238,6 +2325,7 @@ const commands = {
       nextPlan.planningRevision = (state.plan.planningRevision ?? 0) + (planningChanged ? 1 : 0)
     const planChanged = JSON.stringify(state.plan) !== JSON.stringify(nextPlan)
     const preview = { ...state, plan: nextPlan }
+    printPlanningRecoveryWarnings(preview)
     const invalidatedWorkflows = invalidatedSyncWorkflows(name, beforeState, preview)
     diagnostics.invalidatedWorkflows = invalidatedWorkflows
     const completed = completedDescriptionInvalidations(beforeState, preview, invalidatedWorkflows)
@@ -2249,6 +2337,7 @@ const commands = {
         (item.tasks ?? [item.id]).map(displayIdentifier).join(', ')))
     if (args['dry-run']) {
       printSyncPlanAudit(changes, diagnostics)
+      if (removed.length) log('[prumo] ' + tr('Removal preview: {0}; no tasks or history were changed', removed.join(', ')))
       log('[prumo] ' + tr('sync-plan dry-run: no changes written; added {0}, updated {1}, metadata {2}',
         added.length, updated.length, metadataUpdated.length))
       return
@@ -2265,7 +2354,7 @@ const commands = {
       migrateState(name, { quiet: true })
       return commands['sync-plan']()
     }
-    if (!added.length && !updated.length && !metadataUpdated.length && !planChanged) {
+    if (!added.length && !updated.length && !metadataUpdated.length && !removed.length && !planChanged) {
       const hasDiagnostics = diagnostics.blockReasonContradictions.length || diagnostics.newLeaves.length ||
         diagnostics.preDiscussionFunctionalContracts.length
       if (hasDiagnostics || changes.length) {
@@ -2295,6 +2384,12 @@ const commands = {
         legacyTasks.map(task => displayIdentifier(task.id)).join(', ')))
     }
     copyFileSync(join(runDir(name), 'state.json'), join(runDir(name), 'state.pre-sync.json'))
+    if (removed.length) {
+      state.removedTasks ??= Object.create(null)
+      for (const id of removed) state.removedTasks[id] = {
+        task: beforeState.tasks[id], reason: args.reason.trim(), removedAt: new Date().toISOString(), source,
+      }
+    }
     state.plan = nextPlan
     if (state.plan.planningMode === 'phase') {
       state.phaseWorkflows ??= {}
@@ -2345,9 +2440,14 @@ const commands = {
         if (!targets.length) targets = phaseMembers(state, phaseId).filter(task =>
           usesCurrentPlanning(state, task) && !['done', 'skipped'].includes(task.state))
         if (!targets.length) continue
+        const pendingConfirmation = beforeState.phaseWorkflows?.[phaseId]?.contractConfirmationRequired
+        const outstanding = new Set(pendingConfirmation ? (pendingConfirmation.tasks ?? targets.map(task => task.id)) : [])
+        const changedTargets = targets.filter(task => outstanding.has(task.id) || !beforeState.tasks[task.id] ||
+          phasePlanningContext(beforeState, beforeState.tasks[task.id]) !== phasePlanningContext(state, task))
+        if (!changedTargets.length) continue
         phase.contractConfirmationRequired = { at: historyAt, source,
           ...(args.propose ? { proposed: true } : {}),
-          tasks: targets.map(task => task.id),
+          tasks: changedTargets.map(task => task.id),
           invalidated: invalidatedWorkflows.filter(item => item.id === phaseId || item.task &&
             state.tasks[item.task].phase === phaseId) }
       }
@@ -2366,8 +2466,10 @@ const commands = {
     }
     const previouslyEligible = eligibleDiscussionPhases(beforeState)
     saveState(name, state)
+    for (const id of removed) emit(name, 'task_removed', id, { reason: args.reason.trim(), source })
     emit(name, 'plan_sync', null, {
       added: sanitizeTaskIds(added),
+      removed: sanitizeTaskIds(removed),
       updated: sanitizeTaskIds(updated),
       metadataUpdated: sanitizeTaskIds(metadataUpdated),
       preserved: sanitizeTaskIds(preserved),
@@ -2379,6 +2481,7 @@ const commands = {
         !state.tasks[id]?.executionAuthorization)),
     })
     printSyncPlanAudit(changes, diagnostics)
+    if (removed.length) log('[prumo] ' + tr('Removed tasks: {0}; complete records and identifiers remain preserved in removal history', removed.join(', ')))
     log(
       `[prumo] run "${name}" synced: +${added.length}, updated ${updated.length}, metadata ${metadataUpdated.length}, ` +
         `preserved ${preserved.length}, total ${Object.keys(state.tasks).length}`,
@@ -2588,6 +2691,7 @@ const commands = {
   async status() {
     const name = runName()
     const state = loadState(name)
+    printPlanningRecoveryWarnings(state)
     await printEngineIdentity()
     if (state.runPause && !state.runPause.endedAt) log('[prumo] RUN PAUSED: ' + JSON.stringify(state.runPause))
     log('[prumo] model preferences (requested; not verified): ' + JSON.stringify(state.plan.rolePreferences ?? {}))
@@ -2674,6 +2778,7 @@ const commands = {
 
   ready() {
     const state = loadState(runName())
+    printPlanningRecoveryWarnings(state)
     if (state.runPause && !state.runPause.endedAt) return log('[prumo] RUN PAUSED: ' + JSON.stringify(state.runPause) + '; resume-run explicitly')
     printContractDriftWarnings(state)
     printPendingContractConfirmations(state)
@@ -2787,6 +2892,7 @@ const commands = {
     if (targetsFallback) targets = phaseMembers(state, phaseId).filter(task =>
       usesCurrentPlanning(state, task) && !['done', 'skipped'].includes(task.state) && !isExternalBlock(task) && !task.individualPlanning)
     if (!targets.length) die(`${phaseId} has no nonterminal tasks to discuss`)
+    assertPhaseTargetsPaused(targets)
     if (occupancy(state).busy.length >= occupancy(state).cap) die(`${occupancy(state).busy.length} agents busy (cap ${occupancy(state).cap})`)
     const requiresContractConfirmation = Boolean(phase.contractConfirmationRequired)
     const round = { roundId: randomUUID(), nonce: randomUUID(), startedAt: new Date().toISOString(),
@@ -2796,7 +2902,8 @@ const commands = {
       assignments: phaseAssignments(targets, args.agent, 'orchestrator'), queuedTargets: targets.map(task => task.id), workers: {},
       ...(targetsFallback ? { targetsFallback: true } : {}),
       ...(requiresContractConfirmation ? { requiresContractConfirmation: true,
-        confirmsContract: phaseContractDigests(state, targets) } : {}) }
+        confirmsContract: phaseContractDigests(state, targets.filter(task =>
+          !phase.contractConfirmationRequired.tasks || phase.contractConfirmationRequired.tasks.includes(task.id))) } : {}) }
     activatePhaseWorkers(state, round, 'discussion')
     phase.discussionAttempts.push(round)
     phase.state = 'discussing'
@@ -2897,6 +3004,7 @@ const commands = {
       round.questionRefs = validateQuestionResolutions(state, discovery.decisions)
       digest = discoveryDigest(discovery)
     }
+    assertPhaseQuestionResolutions(state, phaseId, discovery.decisions)
     const fields = ['research', 'questions', 'coverage', 'decisions', 'deferred', 'executionBoundary', 'closure', 'roundId', 'nonce']
     phase.discovery = { ...Object.fromEntries(fields.map(field => [field, discovery[field]])),
       recordedAt: new Date().toISOString(), context: round.context, digest }
@@ -2929,6 +3037,7 @@ const commands = {
     if (!discussion) die(`${phaseId} needs a completed current phase discussion or an explicit user-confirmed discussion skip`)
     const targets = discussion.targets.map(id => getTask(state, id)).filter(task => !hasCurrentTaskPlan(state, task))
     if (!targets.length) die(`${phaseId} has no task requiring a phase plan`)
+    assertPhaseTargetsPaused(targets)
     const context = phaseContext(state, phaseId, discussion.targets.map(id => getTask(state, id)))
     const open = phase.planningAttempts.at(-1)
     if (phase.state === 'planning' && !open?.endedAt && open.context === context && open.discussionDigest === discussion.digest) {
@@ -2992,6 +3101,7 @@ const commands = {
     if (!discussion) die(`${phaseId} needs a completed current phase discussion or an explicit user-confirmed discussion skip`)
     const targets = discussion.targets.map(id => getTask(state, id)).filter(task => !hasCurrentTaskPlan(state, task))
     if (!targets.length) die(`${phaseId} has no task requiring a planning decision`)
+    assertPhaseTargetsPaused(targets)
     const decision = { ...explicitSkipDecision('skip-phase-planning'), phaseId,
       targets: targets.map(task => task.id), context: phaseContext(state, phaseId, targets),
       contextSnapshot: phaseContextSnapshot(state, targets),
@@ -3026,6 +3136,7 @@ const commands = {
         staleReason(name, round, phaseContextSnapshot(state, targets), currentContext)))
     }
     const tasks = (round.activeTargets ?? round.targets).map(id => getTask(state, id)).filter(task => !isExternalBlock(task))
+    assertPhaseTargetsPaused(tasks)
     const binding = { phaseId, discussionRoundId: round.discussionRoundId, plannerRound: round.n }
     let plans = []
     const errors = [], plannedQuestionRefs = new Set((round.stagedPlans ?? []).flatMap(item => item.questionRefs)), planDir = resolve(args['plan-dir'])
@@ -3054,6 +3165,9 @@ const commands = {
     }
     if (errors.length) die(tr('finish-phase-planning {0} rejected {1} task-plan artifact(s); nothing was recorded:\n{2}',
       phaseId, errors.length, errors.join('\n')))
+    if (!round.workers || !round.queuedTargets?.length) assertPhaseQuestionResolutions(state, phaseId, [
+      ...(round.stagedPlans ?? []).flatMap(item => item.plan.decisions), ...plans.flatMap(([, plan]) => plan.decisions),
+    ])
     for (const [task, plan] of plans) warnTaskPlan(task, plan, state)
     const completedAt = new Date().toISOString()
     if (round.workers) {
@@ -3070,6 +3184,7 @@ const commands = {
       }
       plans = round.stagedPlans.filter(item => !isExternalBlock(state.tasks[item.task])).map(item => [getTask(state, item.task), item.plan, item.questionRefs, item.sourcePath, item.reusedFrom])
     }
+    assertPhaseTargetsPaused(plans.map(([task]) => task))
     const allResolutions = []
     for (const [task, plan, questionRefs, sourcePath, reusedFrom] of plans) {
       const fields = ['summary', 'research', 'decisions', 'steps', 'verification', 'openQuestions', 'phaseBinding', 'unresolvedInputs', 'writes']
@@ -3561,6 +3676,7 @@ const commands = {
     if (!denominator) die(`${id} has no structured review progress denominator; legacy criteria keep progress unknown`)
     const step = positiveIndex(args.step, 'review-progress step')
     if (step > denominator.total) die(tr('review-progress step must be between 1 and {0}', denominator.total))
+    printReviewValidationGuidance(id)
     const attempt = t.attempts.at(-1)
     const deliveryFingerprint = checkDelivery(state, t, state.plan.cwd).fingerprint
     let progress = attempt.reviewProgress
@@ -3651,6 +3767,7 @@ const commands = {
           (by !== 'review' || !t.reviewer || t.reviewer === t.agent))
         die('passing validation requires an independent reviewer')
       const denominator = reviewDenominator(t)
+      let validationProjectMismatches = []
       if (requestedOk && denominator?.inspection) {
         const progress = t.attempts.at(-1)?.reviewProgress
         const reviewer = by === 'review' ? t.reviewer : t.agent
@@ -3673,7 +3790,11 @@ const commands = {
         }
         if (t.project && args.cwd && !sameProject(t, { project: args.cwd }))
           log('[prumo] ' + tr('WARNING: validation --cwd {0} differs from task project {1}; scope and delivery checks remain bound to the approved project', args.cwd, t.project))
-        try { assertValidationEnvironment(t); validationDirectories(t, args.cwd) } catch (error) { die(error.message) }
+        try {
+          assertValidationEnvironment(t)
+          validationProjectMismatches = [...new Set(validationDirectories(t, args.cwd))]
+            .map(cwd => validationProjectMismatch(t, state.plan.cwd, cwd)).filter(Boolean)
+        } catch (error) { die(error.message) }
       }
       // Invalide qualquer aprovação anterior antes de executar comandos, inclusive em caso de interrupção.
       t.validations.push({ ok: false, by, agent: by === 'review' ? t.reviewer : t.agent,
@@ -3682,10 +3803,11 @@ const commands = {
         ...(t.planningRequired ? { planningScope: currentPlanningScope(state, t) } : {}) })
       saveState(name, state)
       emit(name, 'task_validation_started', id, { token, attempt: t.attempts.length })
-      return { ...t, evidenceState: { run: state.run, plan: state.plan, tasks: state.tasks }, explicitScopeRequired: state.plan.scopePolicy === 'explicit' || externalTouchPaths(t).length > 0 }
+      return { ...t, evidenceState: { run: state.run, plan: state.plan, tasks: state.tasks }, validationProjectMismatches,
+        explicitScopeRequired: state.plan.scopePolicy === 'explicit' || externalTouchPaths(t).length > 0 }
     })
     // Testes não devem manter o bloqueio da execução: outras tarefas e o dashboard continuam utilizáveis.
-    let result = {}
+    let result = { validationProjectMismatches: snapshot.validationProjectMismatches }
     let error = null
     if (requestedOk) {
       try {
@@ -3746,6 +3868,7 @@ const commands = {
       if (last.scopeCheck) log('[prumo] ' + tr('Scope check: method {0}; paths: {1}; excluded paths: {2}',
         last.scopeCheck.method, (last.scopeCheck.paths ?? []).join(', ') || tr('none'),
         (last.scopeCheck.excludedPaths ?? []).join(', ') || tr('none')))
+      for (const mismatch of last.validationProjectMismatches) printValidationProjectWarning(mismatch)
 
     })
     if (error) die(error)
@@ -3778,7 +3901,10 @@ const commands = {
         const scope = verifyTaskScope(t, t.attempts.at(-1)?.scopeBaseline,
           last.scopeCheck?.method === 'independent-review' && last.scopeCheck.agent === t.reviewer ? last.scopeCheck :
             last.scopeCheck?.independentEvidence?.agent === t.reviewer ? last.scopeCheck.independentEvidence : undefined, t.attempts.at(-1)?.concurrentScopes)
-        if (scope.method === 'git' && scope.fingerprint !== last.scopeCheck?.fingerprint) die('Delivery changed after scope validation; validate again')
+        if (scope.method === 'git' && scope.fingerprint !== last.scopeCheck?.fingerprint &&
+            scope.legacyFingerprint !== last.scopeCheck?.fingerprint &&
+            scope.baselineOrderFingerprint !== last.scopeCheck?.fingerprint &&
+            scope.newFilesFirstFingerprint !== last.scopeCheck?.fingerprint) die('Delivery changed after scope validation; validate again')
       } catch (error) { die(error.message) }
     }
     try {
@@ -3788,6 +3914,9 @@ const commands = {
     } catch (error) { die(error.message) }
     const previouslyEligible = eligibleDiscussionPhases(state)
     const slotsBeforeDone = executionSlots(state)
+    const mismatches = last.validationProjectMismatches ?? [...new Set(last.checks.map(check => check.cwd))]
+      .map(cwd => validationProjectMismatch(t, state.plan.cwd, cwd)).filter(Boolean)
+    for (const mismatch of mismatches) printValidationProjectWarning(mismatch)
     t.state = 'done'
     t.attempts.at(-1).endedAt = new Date().toISOString()
     t.attempts.at(-1).result = 'done'

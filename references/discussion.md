@@ -14,6 +14,12 @@ fresh discussion with `confirmsContract`, following the contract-change section 
 
 When the user cancels a task, record `skip <task> --reason "<user decision>"`. The skipped task is removed from the phase's pending contract confirmations and open discussion targets. If no active targets remain, the round closes as superseded; its original targets, excluded task, confirmation requirement and any recorded discoveries remain in history. The engine records an audit event and closes activity for the cancelled target. If other targets remain, the same round continues with current contract digests; their acceptance, authorization and independent review requirements are not waived. Follow `status` or `ready` for the remaining work. Completed rounds are not rewritten, and cancelling a task does not approve it or unblock unrelated tasks.
 
+For an approved consolidation before any execution, a pending task can instead be removed explicitly
+with `sync-plan --remove <task,...> --reason <approved reason>` after omitting it from the source.
+Notes, validation receipts, dependents, current plan/question references and open discussion/planning
+prevent removal. Inspect `--dry-run` first. The complete task stays in removal history and its identifier
+remains reserved; executed and skipped tasks keep their existing lifecycle.
+
 ## Two planning levels
 
 Global Plan/Spec mode defines and approves the graph and remains mandatory. Discussion and planning are

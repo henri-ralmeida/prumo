@@ -371,7 +371,10 @@ export function usesCurrentPlanning(state, task) {
 export function currentPlanningSkip(state, task) {
   const decision = task.planningSkips?.at(-1)
   if (decision?.decision !== 'skipped' || decision.confirmedByUser !== true) return null
-  return decision.scope === phasePlanningContext(state, task) ? decision : null
+  const refresh = task.validationRefreshPlanning
+  return decision.scope === phasePlanningContext(state, task) ||
+    refresh?.planningSkipId === decision.decisionId && refresh.planScope === decision.scope &&
+    currentValidationRefresh(state, task, task.attempts.length) ? decision : null
 }
 
 export function hasCurrentTaskPlan(state, task) {
@@ -414,27 +417,46 @@ export function hasCurrentTaskPlan(state, task) {
 // Uma alteração compatível de verificação pode preservar a pesquisa da tentativa ativa,
 // sem alterar o plano histórico nem aproveitar evidências do contrato anterior.
 export function phaseValidationRefreshBinding(state, task, changes) {
-  if (!['running', 'reviewing'].includes(task.state) || !task.taskPlan?.phaseId || !hasCurrentTaskScope(state, task)) return null
+  const skipped = currentPlanningSkip(state, task)
+  if (!['running', 'reviewing'].includes(task.state) || !(task.taskPlan?.phaseId || skipped) || !hasCurrentTaskScope(state, task)) return null
   const candidate = { ...task, ...changes, contractRevision: (task.contractRevision ?? 0) + 1 }
-  try { assertTaskPlan(candidate, task.taskPlan, { checkSelfDeadline: false }) } catch { return null }
+  if (!skipped) try { assertTaskPlan(candidate, task.taskPlan, { checkSelfDeadline: false }) } catch { return null }
   const criteria = value => {
     const contract = validationContract(value)
     return [contract.mode, value.inspectionReason ?? '', contract.steps.map(step => [step.kind ?? 'static', step.expect])]
   }
   if (JSON.stringify(criteria(task)) !== JSON.stringify(criteria(candidate))) return null
-  return { attempt: task.attempts.length, planDigest: task.taskPlan.digest, planScope: task.taskPlan.scope,
+  return { attempt: task.attempts.length,
+    ...(skipped ? { planningSkipId: skipped.decisionId, planScope: skipped.scope } :
+      { planDigest: task.taskPlan.digest, planScope: task.taskPlan.scope }),
     contractRevision: candidate.contractRevision, phaseScope: phasePlanningContext(state, candidate),
     executionScope: planningContext(state, task, { scopeOnly: true, attempt: task.attempts.length }) }
 }
 
-function currentRefreshedPhaseScope(state, task, plan, attempt) {
+function currentValidationRefresh(state, task, attempt) {
   const binding = task.validationRefreshPlanning
   return Boolean(binding && ['running', 'reviewing', 'blocked'].includes(task.state) &&
     binding.attempt === attempt && attempt === task.attempts.length &&
-    binding.planDigest === plan.digest && binding.planScope === plan.scope &&
     binding.contractRevision === (task.contractRevision ?? 0) &&
     binding.phaseScope === phasePlanningContext(state, task) &&
     binding.executionScope === planningContext(state, task, { scopeOnly: true, attempt }))
+}
+
+function currentRefreshedPhaseScope(state, task, plan, attempt) {
+  return currentValidationRefresh(state, task, attempt) &&
+    task.validationRefreshPlanning.planDigest === plan.digest && task.validationRefreshPlanning.planScope === plan.scope
+}
+
+function currentRetryPlan(state, task, plan, attempt) {
+  const retry = task.retryPlan
+  const failed = task.attempts[attempt - 2]
+  return retry?.attempt === attempt && plan.attempt < attempt && retry.planSourceAttempt === plan.attempt &&
+    retry.failedAttempt === attempt - 1 && failed?.n === retry.failedAttempt && failed.result === 'failed' &&
+    failed.reason === retry.reason && nonempty(retry.reason) &&
+    (retry.context === planningContext(state, task, { attempt }) || currentRefreshedPhaseScope(state, task, plan, attempt)) &&
+    retry.discoveryDigest === task.discovery?.digest && retry.planContext === plan.context && retry.planScope === plan.scope &&
+    (plan.phaseId || plan.scope === planningContext(state, task, { scopeOnly: true, attempt: plan.attempt })) &&
+    retry.scope === planningContext(state, task, { scopeOnly: true, attempt })
 }
 
 // Atualizações somente de validação não invalidam a pesquisa por trás de uma tentativa de execução ativa.
@@ -448,6 +470,7 @@ export function hasCurrentTaskScope(state, task, attempt = task.attempts.length)
   try { assertTaskPlan(task, plan, { checkSelfDeadline: false }) } catch { return false }
   if (!(nonempty(plan?.planner) && nonempty(plan.completedAt))) return false
   if (plan.phaseId) {
+    if (plan.attempt !== attempt && !currentRetryPlan(state, task, plan, attempt)) return false
     const phase = state.phaseWorkflows?.[plan.phaseId]
     if (plan.phaseDecision === 'skipped') {
       const decision = phase?.discussionSkips?.find(item =>
@@ -473,14 +496,7 @@ export function hasCurrentTaskScope(state, task, attempt = task.attempts.length)
   if (plan.attempt === attempt)
     return plan.scope === planningContext(state, task, { scopeOnly: true, attempt }) &&
       (task.state !== 'failed' || plan.context === planningContext(state, task, { attempt }))
-  const retry = task.retryPlan
-  const failed = task.attempts[attempt - 2]
-  return retry?.attempt === attempt && retry.planSourceAttempt === plan.attempt &&
-    retry.failedAttempt === attempt - 1 && failed?.n === retry.failedAttempt && failed.result === 'failed' &&
-    failed.reason === retry.reason && nonempty(retry.reason) && retry.context === planningContext(state, task, { attempt }) &&
-    retry.discoveryDigest === task.discovery?.digest && retry.planContext === plan.context && retry.planScope === plan.scope &&
-    plan.scope === planningContext(state, task, { scopeOnly: true, attempt: plan.attempt }) &&
-    retry.scope === planningContext(state, task, { scopeOnly: true, attempt })
+  return currentRetryPlan(state, task, plan, attempt)
 }
 
 // Antes da primeira execução, o planejamento pertence à tentativa 1, ainda sem registro de execução.
@@ -488,7 +504,7 @@ export function currentPlanningScope(state, task, attempt = task.attempts.length
   if (!usesCurrentPlanning(state, task) || !hasCurrentTaskScope(state, task, attempt)) return undefined
   const skipped = currentPlanningSkip(state, task)
   if (skipped) return skipped.scope
-  return task.taskPlan.attempt === attempt ? task.taskPlan.scope : task.retryPlan.scope
+  return task.taskPlan.attempt === attempt ? task.taskPlan.scope : task.retryPlan?.scope
 }
 
 function execute(run, options, timeoutMs) {

@@ -290,7 +290,7 @@ test('task and phase planning reject duplicate question resolutions before persi
   ], tasks: [{ id: 'A', title: 'Source', phase: 'F1' }, { id: 'B', title: 'Target one', phase: 'F2' },
     { id: 'C', title: 'Target two', phase: 'F2' }] })
   phasePlan(phase, 'F1', { A: [{ question: 'Which policy applies to F2?', blocking: false,
-    decideBy: { beforePhase: 'F2' } }] })
+    decideBy: { beforeTask: 'B' } }] })
   const phaseQuestion = phase.state().tasks.A.taskPlan.openQuestions[0]
   phase.ok('begin-phase-discussion', 'F2')
   finishPhaseDiscussion(phase, 'F2')
@@ -356,6 +356,36 @@ test('future deadlines gate starts after normal or skipped discussion and planni
           else phasePlan(f, 'F1', { A: [openQuestion] })
           const questionRef = f.state().tasks.A.taskPlan.openQuestions[0].questionRef
 
+          // Uma pergunta da fase deve impedir seu fechamento, inclusive quando a discussao foi dispensada.
+          if (planningMode === 'phase' && deadlineKind === 'beforePhase' &&
+              !(gate === 'planning' && outcome === 'skipped')) {
+            let command, artifact
+            if (gate === 'discussion' && outcome === 'normal') {
+              f.ok('begin-phase-discussion', 'F2')
+              const round = f.state().phaseWorkflows.F2.discussionAttempts.at(-1)
+              artifact = join(f.root, 'F2-discovery.json')
+              writeFileSync(artifact, JSON.stringify(phaseDiscoveryValue('F2', round)))
+              command = ['finish-phase-discussion', 'F2', '--context', artifact]
+            } else {
+              f.ok('skip-phase-discussion', 'F2', '--reason', 'Decisao explicita do usuario', '--confirmed-by-user')
+              f.ok('plan-phase', 'F2', '--agent', 'planner-F2')
+              const round = f.state().phaseWorkflows.F2.planningAttempts.at(-1)
+              artifact = join(f.root, 'F2-plans'); mkdirSync(artifact)
+              writeFileSync(join(artifact, 'task-plan-B.json'), JSON.stringify(f.basePlan('B', {
+                phaseBinding: { phaseId: 'F2', discussionRoundId: round.discussionRoundId, plannerRound: round.n },
+                unresolvedInputs: [],
+              })))
+              command = ['finish-phase-planning', 'F2', '--plan-dir', artifact]
+            }
+            const before = f.state(), events = f.events()
+            f.rejects(new RegExp(questionRef), ...command)
+            assert.deepEqual(f.state(), before); assert.deepEqual(f.events(), events)
+            assert.match(f.ok('status').stdout, new RegExp(`open question ${questionRef} \\(overdue`))
+            f.rejects(/unresolved questions|planning/, 'start', 'B', '--agent', `executor-${run}`)
+            assert.equal(f.state().tasks.B.attempts.length, 0)
+            continue
+          }
+
           if (planningMode === 'task') {
             if (gate === 'discussion' && outcome === 'skipped')
               f.ok('skip-discussion', 'B', '--reason', 'The approved decision skips discussion', '--confirmed-by-user')
@@ -374,7 +404,7 @@ test('future deadlines gate starts after normal or skipped discussion and planni
               f.ok('skip-planning', 'B', '--reason', 'The approved decision skips planning', '--confirmed-by-user')
             }
           } else {
-            if (gate === 'discussion' && outcome === 'skipped')
+            if (outcome === 'skipped' && (gate === 'discussion' || deadlineKind === 'beforePhase'))
               f.ok('skip-phase-discussion', 'F2', '--reason', 'The approved decision skips phase discussion', '--confirmed-by-user')
             else {
               f.ok('begin-phase-discussion', 'F2')

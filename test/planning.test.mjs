@@ -1392,11 +1392,12 @@ test('contract drift names new and removed tasks in plain language, in English a
       assert.doesNotMatch(output, /notSynchronized|missingFromApprovedPlan/)
       if (lang === 'en') {
         assert.match(output, /contract drift: task T3 is new in the approved plan and not synchronized — run sync-plan/)
-        assert.match(output, /contract drift: task T2 is missing from the approved plan; sync-plan refuses task removal/)
+        assert.match(output, /contract drift: task T2 is missing from the approved plan; sync-plan refuses task removal without explicit --remove and --reason/)
       } else {
         assert.match(output, /divergência de contrato: a tarefa T3 é nova no plano aprovado e ainda não foi sincronizada — rode sync-plan/)
-        assert.match(output, /divergência de contrato: a tarefa T2 não está no plano aprovado; o sync-plan recusa remover tarefas/)
+        assert.match(output, /divergência de contrato: a tarefa T2 está ausente do plano aprovado; sync-plan recusa remoção sem --remove e --reason explícitos/)
       }
+      assert.match(output, /--dry-run/)
     }
   }
 })

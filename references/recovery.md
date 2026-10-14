@@ -54,7 +54,10 @@ current lifecycle, agents, attempts, notes and evidence. Active work whose scope
 through review or completion until current planning is restored; use `pause-replanning` for an active
 planning-required attempt, then replan and explicitly `unblock` it without inventing a failure. An ordinary
 external `block` must be unblocked before planning. Done/skipped contracts remain immutable history and need an explicit follow-up task. Task removal
-is refused. If a migrated run still names a missing graph-foreman source, `sync-plan` recovers the matching
+requires explicit `--remove <task,...> --reason <reason>` and is limited to pending, never-executed tasks
+without notes, validation receipts, dependents or open planning/discussion. The complete record stays
+in removal history and its ID cannot be reused. Use `--dry-run` first; an implicit omission still refuses
+synchronization. External work items are unchanged. If a migrated run still names a missing graph-foreman source, `sync-plan` recovers the matching
 plan from the central Prumo workspace. Its output lists bounded per-task field changes, summarizes validation
 contracts without printing their contents and warns when a waiting `blockReason` contradicts dependency
 direction; the event log keeps the same structured audit. A named task in the user's request is a hard scope boundary: its
@@ -63,6 +66,17 @@ siblings or dispatch more planners. Keep one discussion and one planner for that
 explicitly approves a broader graph change. Otherwise, adopt a migrated task-scoped run one eligible phase
 at a time with `begin-phase-discussion <phase> --adopt-legacy`. An approved validation change for active
 work needs `refresh-contract`, not fail/retry. Always check the persisted task before review.
+
+Phase discussion and planning refuse targets that are still running or under review and need a new
+plan. Pause only the affected task with `pause-replanning <task> --reason <reason>`, follow its task
+discussion/planning flow, then explicitly unblock it. Other tasks with current plans continue normally.
+Older records with a phase plan bound to a different execution attempt remain readable; `status` and
+`ready` show the same recovery without creating attempts or replacing historical plans.
+
+When an active task changes only its verification command, keeping the validation mode and acceptance
+criteria unchanged, `refresh-contract` preserves its current phase plan or explicit planning skip.
+It still revokes execution authorization and makes old validation receipts stale. The independent
+reviewer must validate the current contract; changing criteria, dependencies or scope requires planning.
 
 A description change that invalidates completed discussion or planning rounds lists the affected phases and tasks before any persistence and requires `--confirm-invalidation`. Inspect `sync-plan --plan <approved-plan.json> --dry-run` first: the preview writes no state, events, source files, backups or migration. An unchanged description or phases without completed rounds need no confirmation. Contract invalidation and touches warnings still apply.
 
@@ -75,7 +89,9 @@ contract reopens a phase or task that already had a discussion, planning round o
 discussion records the old open round as superseded with its cause and prints the current task digests. Run
 `show-contract <task> --diff` for every affected contract, present the complete business text and ask the user
 to accept the changed behavior. For phase planning, put the exact `{ "task": "...", "digest": "..." }` entries
-for all current targets in `questions[].confirmsContract` on one freshly answered question. For task planning,
+printed by `begin-phase-discussion` in `questions[].confirmsContract` on one freshly answered question.
+Only changed contracts, affected dependency contexts and still-pending acceptances are requested;
+unchanged siblings retain their acceptance and authorization. For task planning,
 use the single entry printed by `begin-discussion` in one freshly answered question. In both modes, the
 confirmation must be on the same question bound to the current `roundId`; an old-round answer, stale digest,
 discussion skip or planning skip cannot replace it. After the confirmation is recorded, the ordinary explicit
@@ -83,6 +99,20 @@ planning skip remains available.
 
 A contract change also revokes that task's execution authorization; get fresh acceptance before executing it
 ([dispatch.md](dispatch.md#authorization-scope-and-mode)).
+
+For an open phase planning round, unchanged artifact content can be reused with
+`finish-phase-planning --reuse-unchanged-plans --plan-dir <directory>`. The engine updates only the
+round binding after checking the original contract, dependencies and material discussion content.
+Changed decisions or affected contracts require a fresh artifact; an old artifact alone is not approval.
+Completed plans for unaffected tasks remain untouched.
+
+A question due before a phase must have a corresponding `decisions[].resolvesQuestion` answer before
+its discussion or planning can close. A refusal names the question and leaves the round open, so the
+answer can be recorded in the current artifact without reopening a completed round. Questions whose
+deadline belongs to another phase remain scheduled.
+When the agent limit splits planning into batches, intermediate artifacts can be staged to free
+capacity for the next agents. The phase remains open and its plans are not approved until the final
+batch supplies all due answers.
 
 ## Adapting a legacy run without redoing delivered work
 
