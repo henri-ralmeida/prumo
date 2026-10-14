@@ -77,6 +77,83 @@ function fixture(t, platform, extra = {}) {
 
 const preference = home => JSON.parse(readFileSync(join(home, '.local', 'share', 'prumo', 'dashboard.json'), 'utf8'))
 
+for (const action of [enableDashboard, restartDashboard]) for (const stage of ['login', 'launch', 'unresponsive', 'foreign']) {
+  test(`${action.name}: porta ocupada ${stage} aguarda identidade e protege seu ocupante`, async t => {
+    let occupied = stage !== 'launch', probes = 0, pid = 7100
+    const spawned = [], killed = []
+    const f = fixture(t, 'win32', {
+      lang: 'pt-BR', exec: () => ({ status: 1 }),
+      portAvailable: async () => !occupied,
+      fetch: async () => {
+        if (!occupied) throw new Error('parado')
+        if (stage === 'foreign') return { ok: true, json: async () => ({ product: 'outro' }) }
+        if (++probes <= 6 || stage === 'unresponsive') throw Object.assign(new Error('iniciando'), { name: 'TimeoutError' })
+        return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0', pid }) }
+      },
+      readProcessCommand: () => [f.node, f.script, '--global', '--port', '4949', '--lang', 'pt-BR'],
+      spawn(_node, args) { spawned.push(args); occupied = true; probes = 0; return { pid: ++pid } },
+      kill(value) { killed.push(value); occupied = false },
+    })
+    f.options.env.APPDATA = join(f.home, 'AppData')
+    const data = join(f.home, '.local/share/prumo')
+    mkdirSync(data, { recursive: true })
+    const before = { enabled: true, mechanism: 'windows-startup', node: f.node, script: f.script, pid, lang: 'pt-BR' }
+    writeFileSync(join(data, 'dashboard.json'), JSON.stringify(before))
+    const result = await action(f.options)
+    const ready = stage === 'login' || stage === 'launch'
+    assert.equal(result.ok, ready)
+    assert.equal(result.process, ready ? 'running' : 'conflict')
+    if (ready) {
+      assert.equal(result.error, undefined)
+      assert.equal(preference(f.home).pid, pid, 'o registro conserva o PID do servidor comprovado')
+      assert.equal(spawned.length, action === enableDashboard && stage === 'login' ? 0 : 1)
+      assert.deepEqual(killed, action === restartDashboard && stage === 'login' ? [7100] : [])
+    } else {
+      assert.equal(spawned.length, 0)
+      assert.deepEqual(killed, [])
+      assert.deepEqual(preference(f.home), before)
+    }
+  })
+}
+
+for (const occupant of ['prumo', 'other']) {
+  test(`enable confirma ${occupant} iniciado durante o registro antes de criar outro processo`, async t => {
+    let occupied = false
+    const f = fixture(t, 'win32', {
+      exec: () => { occupied = true; return { status: 1 } },
+      portAvailable: async () => !occupied,
+      fetch: async () => {
+        if (!occupied) throw new Error('parado')
+        return { ok: true, json: async () => ({ product: occupant, mode: 'global', readOnly: true, version: '1.3.0', pid: 7200 }) }
+      },
+      readProcessCommand: () => [f.node, f.script, '--global', '--port', '4949'],
+      spawn: () => assert.fail('nao deve disputar a porta ocupada'),
+      kill: () => assert.fail('nao deve encerrar o ocupante'),
+    })
+    f.options.env.APPDATA = join(f.home, 'AppData')
+    const result = await enableDashboard(f.options)
+    assert.equal(result.ok, occupant === 'prumo')
+    assert.equal(result.process, occupant === 'prumo' ? 'running' : 'conflict')
+    if (occupant === 'prumo') assert.equal(preference(f.home).pid, 7200)
+  })
+}
+
+test('consulta lenta em porta ocupada respeita o prazo total sem encerrar o ocupante', async t => {
+  let clock = 0, probes = 0
+  t.mock.method(Date, 'now', () => { clock += 1000; return clock })
+  const f = fixture(t, 'win32', {
+    readinessAttempts: 30, readinessInterval: 10,
+    fetch: async () => { probes++; throw new Error('sem resposta') },
+    portAvailable: async () => false,
+    spawn: () => assert.fail('nao deve criar outro processo'),
+    kill: () => assert.fail('nao deve encerrar o ocupante'),
+  })
+  const result = await enableDashboard(f.options)
+  assert.equal(result.ok, false)
+  assert.equal(result.process, 'conflict')
+  assert.equal(probes, 9, 'uma consulta inicial, uma rodada dentro do prazo e a leitura final do status')
+})
+
 for (const outcome of ['stopped', 'unverified', 'kill-failed', 'still-running']) {
   test(`update para somente o dashboard comprovado e preserva preferencias: ${outcome}`, async t => {
     let running = true
