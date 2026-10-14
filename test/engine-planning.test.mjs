@@ -918,8 +918,13 @@ test('gate de fase não pode ser dispensado enquanto sua discussão ou planejame
   const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }])
   f.ok('begin-phase-discussion', 'F1')
   let before = f.state(), events = f.events()
+  const round = before.phaseWorkflows.F1.discussionAttempts.at(-1)
+  const recovered = f.ok('begin-phase-discussion', 'F1').stdout
+  assert.ok(recovered.includes(round.roundId))
+  assert.ok(recovered.includes(round.nonce))
+  assert.deepEqual(f.state(), before)
+  assert.equal(f.events(), events)
   for (const args of [
-    ['begin-phase-discussion', 'F1'],
     ['skip-phase-discussion', 'F1', '--reason', 'Dispensa', '--confirmed-by-user'],
     ['skip-phase-planning', 'F1', '--reason', 'Dispensa', '--confirmed-by-user'],
   ]) {

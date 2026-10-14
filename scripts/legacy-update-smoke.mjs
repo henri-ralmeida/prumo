@@ -79,10 +79,10 @@ function saveFlow(label) {
   cpSync(join(oldRoot, '.specs/graph/legacy'), join(root, '.specs/graph/legacy'), { recursive: true })
   flows.set(label, { root, before: readFileSync(join(root, '.specs/graph/legacy/state.json'), 'utf8') })
 }
-function run(file, args, extra = {}, expected = 0) {
+function run(file, args, extra = {}, expected = 0, timeout = 120000) {
   const command = process.platform === 'win32' && file === 'npm'
     ? [process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', 'npm', ...args]] : [file, args]
-  const result = spawnSync(...command, { cwd: project, env: { ...env, ...extra }, encoding: 'utf8', windowsHide: true, timeout: 120000 })
+  const result = spawnSync(...command, { cwd: project, env: { ...env, ...extra }, encoding: 'utf8', windowsHide: true, timeout })
   evidence.push({ args, status: result.status, stdout: result.stdout, stderr: result.stderr,
     ...(result.error ? { error: { message: result.error.message, code: result.error.code }, signal: result.signal } : {}) })
   assert.ifError(result.error)
@@ -327,7 +327,8 @@ try {
   const address = await new Promise((resolve, reject) => { registry.once('message', resolve); registry.once('error', reject) })
   env.npm_config_registry = address.url
   // Na mesma versão, solicita reparo explícito para exercitar o pacote candidato.
-  const output = run(process.execPath, [cli, 'update', ...(fromVersion === pkg.version ? ['--lang', 'en'] : [])])
+  // A atualização de todos os harnesses sob cobertura precisa de prazo próprio, sem repetir efeitos parciais.
+  const output = run(process.execPath, [cli, 'update', ...(fromVersion === pkg.version ? ['--lang', 'en'] : [])], {}, 0, 300000)
   const compare = (a, b) => a.split('.').map(Number).reduce((result, value, index) => result || value - Number(b.split('.')[index]), 0)
   for (const released of JSON.parse(process.env.PRUMO_TEST_PUBLISHED_VERSIONS ?? '[]')) {
     if (compare(released, fromVersion) > 0 && compare(released, pkg.version) <= 0)

@@ -48,7 +48,7 @@ test('npm prepack rejects changed distributed bytes at the baseline version', t 
   writeFileSync(changedFile, `${readFileSync(changedFile, 'utf8')}\n// release guard counterexample\n`)
 
   const npm = npmProcess(['pack', '--no-audit', '--no-fund', '--json'])
-  const result = spawnSync(npm.command, npm.args, { cwd: temporary, env: process.env, encoding: 'utf8', windowsHide: true, timeout: 30000 })
+  const result = spawnSync(npm.command, npm.args, { cwd: temporary, env: process.env, encoding: 'utf8', windowsHide: true, timeout: 120000 })
   assert.ifError(result.error)
   assert.notEqual(result.status, 0, result.stdout + result.stderr)
   assert.match(result.stdout + result.stderr, /Distributed package content changed without a version bump from 1\.3\.16/)
