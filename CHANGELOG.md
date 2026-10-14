@@ -2,6 +2,15 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.9.9 — 2026-10-14
+
+- Aguarde a prontidão do dashboard durante o login e confirme a ocupação da porta antes de iniciar outro processo, preservando a verificação de posse e um prazo total limitado.
+- Grave erros e encerramentos do processo do dashboard em logs persistentes para permitir diagnóstico após uma queda.
+- Use bordas brancas nos menus do cabeçalho, feche-os ao clicar fora e mantenha somente um aberto por vez.
+- Informe os alvos ativos e os que aguardam vaga quando uma discussão é encerrada com um artefato incompatível, preservando as ondas e o histórico.
+- Numere os critérios de revisão, informe os passos pendentes e ofereça ajuda somente leitura, mantendo autorização e revisão independente.
+- Tolere falhas temporárias no download dos testes de atualização, sem omitir versões publicadas nem enfraquecer as verificações de integridade.
+
 ## 2.9.8 — 2026-10-13
 
 - Mostre fases concluídas sem animações de atividade, mesmo com rodadas históricas de discussão ou planejamento, preservando seus registros.

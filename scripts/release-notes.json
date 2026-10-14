@@ -1,4 +1,24 @@
 {
+  "2.9.9": {
+    "en": [
+      {
+        "title": "Fixed — Dashboard startup and diagnostics",
+        "items": [
+          "Wait for dashboard readiness during login and recheck the port before launching another process, preserving ownership checks and a bounded total deadline",
+          "Persist dashboard errors and process exits so crashes can be diagnosed later",
+          "Use white header menu borders, close menus on outside clicks and keep only one open at a time"
+        ]
+      },
+      {
+        "title": "Improved — Discussion and review guidance",
+        "items": [
+          "Explain active and queued discussion targets while preserving worker waves and history",
+          "Number review criteria, identify missing steps and provide read-only help without bypassing authorization or independent review",
+          "Retry transient download failures in historical update tests without omitting published versions or weakening integrity checks"
+        ]
+      }
+    ]
+  },
   "2.9.8": {
     "en": [
       {
