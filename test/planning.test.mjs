@@ -388,6 +388,63 @@ test('structured inspection criteria must be traversed in order before a passing
   f.ok('done', 'T1')
 })
 
+test('revisao vincula criterios a entrega e conserva relatos antigos sem invalidar commit identico', t => {
+  const f = fixture(t, [{ id: 'T1', title: 'Politica documentada', touches: ['delivery.cjs'],
+    validationMode: 'inspection', inspectionReason: 'Somente documentacao', validation: [{ ...check, kind: 'static' }] }])
+  const git = (...args) => {
+    const result = spawnSync('git', ['-C', f.project, ...args], { encoding: 'utf8', windowsHide: true })
+    assert.equal(result.status, 0, result.stderr)
+  }
+  git('init'); git('config', 'user.name', 'Teste'); git('config', 'user.email', 'teste@example.invalid')
+  git('add', '.'); git('commit', '-m', 'Estado inicial')
+  f.beginPlan('T1')
+  f.finish('T1', { ...f.artifact(), verification: [
+    { criterion: 'Politica expressa correta', check: 1 }, { criterion: 'Politica normal correta', check: 1 },
+  ] })
+  f.ok('start', 'T1', '--agent', 'executor'); f.ok('review', 'T1', '--agent', 'reviewer')
+  for (const step of ['1', '2']) f.ok('review-progress', 'T1', '--step', step, '--agent', 'reviewer')
+  const original = f.state().tasks.T1.attempts.at(-1).reviewProgress
+  assert.match(f.ok('status').output, /review criteria reported: 2\/2; not proof of inspection/)
+  git('commit', '--allow-empty', '-m', 'Mesmo conteudo')
+  f.ok('block', 'T1', '--reason', 'Pausa da revisao'); f.ok('unblock', 'T1')
+  assert.deepEqual(f.state().tasks.T1.attempts.at(-1).reviewProgress, original)
+  writeFileSync(join(f.project, 'delivery.cjs'), 'exports.days = express => express ? 1 : 3;\n// Politica preservada.\n')
+  assert.match(f.ok('status').output, /review criteria reported: 2\/2; stale/)
+  const before = f.state(), events = f.events()
+  f.rejected(/Current review progress is missing or stale/, 'validate', 'T1', '--ok', '--evidence', 'Conteudo antigo')
+  assert.deepEqual(f.state(), before); assert.equal(f.events(), events)
+  f.ok('review-progress', 'T1', '--step', '1', '--agent', 'reviewer')
+  const attempt = f.state().tasks.T1.attempts.at(-1)
+  assert.equal(attempt.reviewProgress.traversed, 1)
+  assert.notEqual(attempt.reviewProgress.deliveryFingerprint, original.deliveryFingerprint)
+  const { supersededAt, ...preserved } = attempt.reviewProgressHistory.at(-1)
+  assert.ok(supersededAt); assert.deepEqual(preserved, original)
+  f.ok('review-progress', 'T1', '--step', '2', '--agent', 'reviewer')
+  f.ok('validate', 'T1', '--ok', '--evidence', 'As duas politicas foram novamente inspecionadas', '--cwd', f.project)
+  f.ok('done', 'T1')
+})
+
+test('relato legado sem vinculo de entrega permanece historico e exige criterios atuais', t => {
+  const f = fixture(t, [{ id: 'T1', title: 'Politica documentada', validationMode: 'inspection',
+    inspectionReason: 'Somente documentacao', validation: [{ ...check, kind: 'static' }] }])
+  f.planTask(); f.ok('start', 'T1', '--agent', 'executor'); f.ok('review', 'T1', '--agent', 'reviewer')
+  f.ok('review-progress', 'T1', '--step', '1', '--agent', 'reviewer')
+  const legacy = f.state(); delete legacy.tasks.T1.attempts.at(-1).reviewProgress.deliveryFingerprint; f.save(legacy)
+  assert.match(f.ok('status').output, /review criteria reported: 1\/1; stale/)
+  f.rejected(/Current review progress is missing or stale/, 'validate', 'T1', '--ok', '--evidence', 'Relato legado')
+  f.ok('block', 'T1', '--reason', 'Retomar com entrega vigente'); f.ok('unblock', 'T1')
+  const attempt = f.state().tasks.T1.attempts.at(-1)
+  assert.equal(attempt.reviewProgress.traversed, 0)
+  assert.deepEqual(attempt.reviewProgressHistory.at(-1).traversed, 1)
+  f.ok('review-progress', 'T1', '--step', '1', '--agent', 'reviewer')
+  f.ok('block', 'T1', '--reason', 'Troca de revisor'); f.ok('unblock', 'T1', '--reviewer', 'reviewer-current')
+  assert.equal(f.state().tasks.T1.attempts.at(-1).reviewProgress.traversed, 0)
+  assert.equal(f.state().tasks.T1.attempts.at(-1).reviewProgressHistory.at(-1).agent, 'reviewer')
+  f.ok('review-progress', 'T1', '--step', '1', '--agent', 'reviewer-current')
+  f.ok('validate', 'T1', '--ok', '--evidence', 'Criterio novamente inspecionado', '--cwd', f.project)
+  f.ok('done', 'T1')
+})
+
 test('inspection denominator counts criteria even when they share one static check', t => {
   const f = fixture(t, [{ id: 'T1', title: 'Delivery policy docs', validationMode: 'inspection',
     inspectionReason: 'The task only updates documentation.',

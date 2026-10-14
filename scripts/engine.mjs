@@ -451,15 +451,19 @@ function printReviewCriteria(task) {
   for (const { step, criterion } of criteria) log('[prumo] ' + step + '. ' + JSON.stringify(criterion))
 }
 
-function reviewProgressRecord(task, agent, denominator) {
+function reviewProgressRecord(state, task, agent, denominator, deliveryFingerprint = checkDelivery(state, task, state.plan.cwd).fingerprint) {
   const attempt = task.attempts.at(-1)
+  if (attempt.reviewProgress) {
+    attempt.reviewProgressHistory ??= []
+    attempt.reviewProgressHistory.push({ ...attempt.reviewProgress, supersededAt: new Date().toISOString() })
+  }
   if (!denominator) {
     delete attempt.reviewProgress
     return null
   }
   const record = { current: 1, total: denominator.total, traversed: 0, basis: denominator.basis,
     agent, selfReported: false, contractRevision: task.contractRevision ?? 0,
-    scopeRevision: task.scopeRevision ?? 0 }
+    scopeRevision: task.scopeRevision ?? 0, deliveryFingerprint }
   attempt.reviewProgress = record
   return record
 }
@@ -2611,9 +2615,22 @@ const commands = {
       const plan = digest ? `  ${tr('Plan {0}', digest.slice(0, 4))}` : ''
       const auth = t.executionAuthorization ? `  [${tr('authorized')} ${t.executionAuthorization.mode}]` :
         `  [${tr(scoped ? 'authorization required' : 'no authorization scope recorded')}]`
+      const review = t.attempts.at(-1)?.reviewProgress
+      let reviewLabel = ''
+      if (t.state === 'reviewing') {
+        const denominator = reviewDenominator(t)
+        if (denominator) {
+          let stale = !review || review.agent !== t.reviewer || review.total !== denominator.total ||
+            review.basis !== denominator.basis || review.contractRevision !== (t.contractRevision ?? 0) ||
+            review.scopeRevision !== (t.scopeRevision ?? 0)
+          try { stale ||= review.deliveryFingerprint !== checkDelivery(state, t, state.plan.cwd).fingerprint } catch { stale = true }
+          reviewLabel = '  [' + tr('review criteria reported: {0}/{1}; {2}', review?.traversed ?? 0, denominator.total,
+            tr(stale ? 'stale; report the current delivery again' : 'not proof of inspection')) + ']'
+        } else reviewLabel = '  [' + tr('review criteria reported: unknown; no structured criteria') + ']'
+      }
       const action = actions.get(t.id) ?? ''
       const block = blockedTaskNotice(state, t)
-      console.log(`  ${t.id.padEnd(width)}  ${tr(t.effective).padEnd(8)}${agent}${attempts}${wait}${manual}${plan}${auth}${block ? `  [${block}]` : ''}${action ? `  → ${action}` : ''}`)
+      console.log(`  ${t.id.padEnd(width)}  ${tr(t.effective).padEnd(8)}${agent}${attempts}${wait}${manual}${plan}${auth}${reviewLabel}${block ? `  [${block}]` : ''}${action ? `  → ${action}` : ''}`)
     }
     for (const phase of state.plan.phases) {
       console.log(`\n${phase.id} — ${phase.title}`)
@@ -3499,7 +3516,7 @@ const commands = {
     t.attempts.at(-1).reviewer = reviewer
     t.attempts.at(-1).reviewStartedAt = new Date().toISOString()
     const denominator = reviewDenominator(t)
-    reviewProgressRecord(t, reviewer, denominator)
+    reviewProgressRecord(state, t, reviewer, denominator)
     recordManualConfirmation(t.attempts.at(-1), 'review', dispatchConfirmation)
     saveState(name, state)
     emit(name, 'task_review', id, { reviewer, attempt: t.attempts.length,
@@ -3530,11 +3547,12 @@ const commands = {
     const step = positiveIndex(args.step, 'review-progress step')
     if (step > denominator.total) die(tr('review-progress step must be between 1 and {0}', denominator.total))
     const attempt = t.attempts.at(-1)
+    const deliveryFingerprint = checkDelivery(state, t, state.plan.cwd).fingerprint
     let progress = attempt.reviewProgress
     if (!progress || progress.total !== denominator.total || progress.basis !== denominator.basis ||
         progress.agent !== agent || progress.contractRevision !== (t.contractRevision ?? 0) ||
-        progress.scopeRevision !== (t.scopeRevision ?? 0)) {
-      progress = reviewProgressRecord(t, agent, denominator)
+        progress.scopeRevision !== (t.scopeRevision ?? 0) || progress.deliveryFingerprint !== deliveryFingerprint) {
+      progress = reviewProgressRecord(state, t, agent, denominator, deliveryFingerprint)
     }
     if (step <= progress.traversed) {
       log(`[prumo] ${id} review progress already reports ${progress.traversed}/${progress.total} criteria traversed; no state change; reviewer report is not proof of inspection or approval`)
@@ -3623,7 +3641,8 @@ const commands = {
         const reviewer = by === 'review' ? t.reviewer : t.agent
         const stale = !progress || progress.total !== denominator.total || progress.basis !== denominator.basis ||
           progress.agent !== reviewer || progress.contractRevision !== (t.contractRevision ?? 0) ||
-          progress.scopeRevision !== (t.scopeRevision ?? 0) || progress.selfReported !== true
+          progress.scopeRevision !== (t.scopeRevision ?? 0) || progress.selfReported !== true ||
+          progress.deliveryFingerprint !== checkDelivery(state, t, state.plan.cwd).fingerprint
         if (stale || progress.traversed !== denominator.total) {
           if (stale) errorLog('[prumo] ' + tr('Current review progress is missing or stale; earlier reports cannot satisfy these criteria'))
           const traversed = stale ? 0 : progress.traversed
@@ -3963,8 +3982,9 @@ const commands = {
       const progress = attempt.reviewProgress
       if (!progress || progress.agent !== reviewer || progress.total !== reviewDenom?.total ||
           progress.basis !== reviewDenom?.basis || progress.contractRevision !== (t.contractRevision ?? 0) ||
-          progress.scopeRevision !== (t.scopeRevision ?? 0))
-        reviewProgressRecord(t, reviewer, reviewDenom)
+          progress.scopeRevision !== (t.scopeRevision ?? 0) ||
+          progress.deliveryFingerprint !== checkDelivery(state, t, state.plan.cwd).fingerprint)
+        reviewProgressRecord(state, t, reviewer, reviewDenom)
     }
     if (state.plan.scopePolicy === 'explicit' && (target === 'running' || target === 'reviewing')) t.attempts.at(-1).concurrentScopes = recordConcurrentScopes(state, t, true)
     t.state = target

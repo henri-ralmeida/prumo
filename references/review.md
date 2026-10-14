@@ -100,10 +100,13 @@ Use `show-contract <task>` to read `reviewCriteria`, which maps each 1-based ste
 criterion. The `review` command prints the same numbered list. `review-progress --help` explains
 the syntax; `review-progress <task> --help` also lists that task's criteria without writing progress,
 migrating the run or changing its history. A refused passing validation lists the missing step
-numbers and total. Progress bound to an old contract, scope or reviewer cannot satisfy the current
-criteria; all current criteria must be reported again. Legacy work without structured criteria
+numbers and total. Progress bound to an old contract, scope, reviewer or changed delivery cannot satisfy the current
+criteria; all current criteria must be reported again. Earlier progress is retained in the attempt history when a new report starts. A commit with unchanged captured file evidence does not invalidate inspection progress. External resources and nested repository metadata retain the existing evidence limits and require independent inspection. Legacy work without structured criteria
 keeps progress unknown rather than inventing a checklist.
 This progress is a traceable reviewer report, not proof that an inspection happened or that work passed.
+`status` shows criteria reported and whether the report is stale; an unknown denominator remains unknown.
+There is no flag that proves inspection: record independent observations with `validate --evidence`, and use
+`--scope-evidence` when scope attribution or external resources require it.
 Legacy inspection work without a recorded denominator stays unknown and does not gain invented criteria.
 `validate --ok` reruns the approved commands and prints up to 15 output lines from functional and failed
 checks; use `--tail 0` to suppress that preview. Summary labels only call out output text: judge the exit
