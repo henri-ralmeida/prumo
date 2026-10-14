@@ -153,6 +153,18 @@ test('histórico ignora versões de tipos inválidos sem modificar os registros 
   assert.deepEqual(invalid, before)
 })
 
+test('notas da 2.9.10 preservam a ordem do historico e explicam os controles nos dois idiomas', () => {
+  const messages = JSON.parse(readFileSync(new URL('../scripts/messages.json', import.meta.url), 'utf8'))
+  const history = releaseHistory(['2.9.9'], '2.9.10')
+  assert.deepEqual(history.map(release => release.version), ['2.9.10'])
+  for (const section of history[0].sections) {
+    assert.ok(messages[section.title]?.trim())
+    for (const item of section.items) assert.ok(messages[item]?.trim())
+  }
+  assert.ok(history[0].sections.flatMap(section => section.items).some(item => item.includes('distinct from inspection and approval')))
+  assert.deepEqual(releaseHistory(['2.9.10'], '2.9.10'), [])
+})
+
 test('current release has concise English update highlights with descriptive subtitles', () => {
   const notes = releaseNotes(version)
   assert.ok(notes.length > 0, 'a versão atual precisa ter notas de atualização')

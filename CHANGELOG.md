@@ -2,6 +2,15 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.9.10 — 2026-10-14
+
+- Preserve a tentativa ativa e o planejamento da fase em alterações compatíveis dos comandos de validação, mantendo o histórico do contrato e os controles de autorização
+- Identifique as tarefas afetadas por mudanças de contrato sem tratar rodadas históricas concluídas da fase como trabalho pendente
+- Vincule os critérios relatados na revisão à entrega atual e arquive relatos anteriores quando ela mudar; progresso continua distinto de inspeção e aprovação
+- Inclua o contexto de armazenamento do fluxo selecionado nos comandos de progresso para que funcionem em terminais separados
+- Avise quando tarefas em execução ganharem dependências não concluídas, sem pausar tarefas nem liberar seus recursos automaticamente
+- Explique os estados de retorno de bloqueios, decisões pendentes, sintaxe de validação e ajuda dos comandos, preservando a revisão independente e a compatibilidade com parsers antigos
+
 ## 2.9.9 — 2026-10-14
 
 - Aguarde a prontidão do dashboard durante o login e confirme a ocupação da porta antes de iniciar outro processo, preservando a verificação de posse e um prazo total limitado.

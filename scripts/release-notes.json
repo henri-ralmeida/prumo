@@ -1,4 +1,29 @@
 {
+  "2.9.10": {
+    "en": [
+      {
+        "title": "Fixed — Planning continuity",
+        "items": [
+          "Preserve the active attempt and phase planning for compatible validation command changes while retaining contract history and authorization checks",
+          "Identify tasks affected by contract changes without treating completed historical phase rounds as unfinished work"
+        ]
+      },
+      {
+        "title": "Fixed — Review evidence freshness",
+        "items": [
+          "Bind reported review criteria to the current delivery and archive earlier reports when delivery changes; progress remains distinct from inspection and approval"
+        ]
+      },
+      {
+        "title": "Improved — Dispatch and recovery guidance",
+        "items": [
+          "Include the selected run storage context in progress commands so they work in separate shells",
+          "Warn when running tasks gain unfinished dependencies without automatically pausing tasks or releasing their resources",
+          "Explain block return states, pending decisions, validation syntax and command help while preserving independent review and legacy parser compatibility"
+        ]
+      }
+    ]
+  },
   "2.9.9": {
     "en": [
       {

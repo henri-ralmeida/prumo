@@ -1845,5 +1845,14 @@
   "not proof of inspection": "não comprova inspeção",
   "review criteria reported: unknown; no structured criteria": "critérios relatados na revisão: desconhecidos; sem critérios estruturados",
   "installed parser does not support command help; update Prumo before using --help; no action was executed": "o parser instalado não suporta ajuda por comando; atualize o Prumo antes de usar --help; nenhuma ação foi executada",
-  "block return state unknown; inspect recorded history before resuming": "estado de retorno do bloqueio desconhecido; confira o histórico registrado antes de retomar"
+  "block return state unknown; inspect recorded history before resuming": "estado de retorno do bloqueio desconhecido; confira o histórico registrado antes de retomar",
+  "Fixed — Planning continuity": "Corrigido — Continuidade do planejamento",
+  "Preserve the active attempt and phase planning for compatible validation command changes while retaining contract history and authorization checks": "Preserve a tentativa ativa e o planejamento da fase em alterações compatíveis dos comandos de validação, mantendo o histórico do contrato e os controles de autorização",
+  "Identify tasks affected by contract changes without treating completed historical phase rounds as unfinished work": "Identifique as tarefas afetadas por mudanças de contrato sem tratar rodadas históricas concluídas da fase como trabalho pendente",
+  "Fixed — Review evidence freshness": "Corrigido — Atualidade das evidências de revisão",
+  "Bind reported review criteria to the current delivery and archive earlier reports when delivery changes; progress remains distinct from inspection and approval": "Vincule os critérios relatados na revisão à entrega atual e arquive relatos anteriores quando ela mudar; progresso continua distinto de inspeção e aprovação",
+  "Improved — Dispatch and recovery guidance": "Melhorado — Orientações de despacho e retomada",
+  "Include the selected run storage context in progress commands so they work in separate shells": "Inclua o contexto de armazenamento do fluxo selecionado nos comandos de progresso para que funcionem em terminais separados",
+  "Warn when running tasks gain unfinished dependencies without automatically pausing tasks or releasing their resources": "Avise quando tarefas em execução ganharem dependências não concluídas, sem pausar tarefas nem liberar seus recursos automaticamente",
+  "Explain block return states, pending decisions, validation syntax and command help while preserving independent review and legacy parser compatibility": "Explique os estados de retorno de bloqueios, decisões pendentes, sintaxe de validação e ajuda dos comandos, preservando a revisão independente e a compatibilidade com parsers antigos"
 }
