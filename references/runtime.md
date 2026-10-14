@@ -205,6 +205,11 @@ as files: different paths alone do not establish independence. An approved `--al
 can accept a conflicting graph, but runtime serializes conflicting files/resources; it does not grant
 parallel writes. `writes` in task plans stays within `touches` for `files` and is empty for `read-only`.
 
+During `sync-plan`, tasks already recorded as `done` or `skipped` do not participate in prospective
+parallel-write conflict checks because they will not execute again. Their contracts and history remain
+preserved. Conflicts between nonterminal tasks still require approved dependencies or the existing
+explicit override; a terminal state written only in the candidate plan does not exempt a task.
+
 Plans without the policy preserve legacy behavior. Adoption is an explicit contract change through
 `sync-plan`, with applicable renewed approval/planning; preserve history and existing explicit gate choices.
 Discussion → planning → execution → independent review remains the lifecycle, including existing user

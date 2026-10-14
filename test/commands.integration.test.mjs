@@ -104,6 +104,39 @@ for (const lang of ['en', 'pt-BR']) test(`ajuda e recusas orientam o revisor sem
   assert.deepEqual(f.snapshot(), unknownReturn)
 })
 
+for (const terminal of ['skipped', 'done']) for (const position of ['first', 'second'])
+test(`sobreposicao com tarefa ${terminal} na posicao ${position} preserva contratos e protecao ativa`, t => {
+  const f = fixture(t)
+  mkdirSync(join(f.root, 'src-a')); mkdirSync(join(f.root, 'src-b'))
+  f.plan.tasks[0].touches = ['src-a/']
+  const active = { id: 'T2', title: 'Entrega ativa', touches: ['src-b/'], validation: f.plan.tasks[0].validation }
+  if (position === 'first') f.plan.tasks.push(active)
+  else f.plan.tasks.unshift(active)
+  writeFileSync(f.planPath, JSON.stringify(f.plan)); f.init()
+  if (terminal === 'skipped') f.ok('skip', 'T1', '--reason', 'Entrega cancelada pelo usuário')
+  else {
+    f.prepare(); f.ok('start', 'T1', '--agent', 'executor'); f.ok('review', 'T1', '--agent', 'reviewer')
+    f.ok('review-progress', 'T1', '--step', '1', '--agent', 'reviewer')
+    f.ok('validate', 'T1', '--ok', '--evidence', 'Comportamento conferido', '--cwd', f.root); f.ok('done', 'T1')
+  }
+  const terminalTask = f.state().tasks.T1
+  active.touches = ['src-a/']
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  const before = f.snapshot()
+  f.ok('sync-plan', '--plan', f.planPath, '--dry-run')
+  assert.deepEqual(f.snapshot(), before)
+  f.ok('sync-plan', '--plan', f.planPath)
+  assert.deepEqual(f.state().tasks.T1, terminalTask)
+  assert.deepEqual(f.state().tasks.T2.touches, ['src-a/'])
+  f.plan.tasks.push({ id: 'T2a', title: 'Outra entrega ativa', summary: 'Escopo aprovado', touches: ['src-a/'], validation: active.validation })
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  const preserved = f.snapshot()
+  const clash = f.command('sync-plan', '--plan', f.planPath)
+  assert.equal(clash.status, 1)
+  assert.match(clash.output, /T2 and T2a can run in parallel/)
+  assert.deepEqual(f.snapshot(), preserved)
+})
+
 test('sincronizar novas dependências avisa sem pausar automaticamente a execução', t => {
   const f = fixture(t); f.init(); f.prepare()
   f.ok('start', 'T1', '--agent', 'executor')

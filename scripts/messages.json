@@ -1855,5 +1855,6 @@
   "Include the selected run storage context in progress commands so they work in separate shells": "Inclua o contexto de armazenamento do fluxo selecionado nos comandos de progresso para que funcionem em terminais separados",
   "Warn when running tasks gain unfinished dependencies without automatically pausing tasks or releasing their resources": "Avise quando tarefas em execução ganharem dependências não concluídas, sem pausar tarefas nem liberar seus recursos automaticamente",
   "Explain block return states, pending decisions, validation syntax and command help while preserving independent review and legacy parser compatibility": "Explique os estados de retorno de bloqueios, decisões pendentes, sintaxe de validação e ajuda dos comandos, preservando a revisão independente e a compatibilidade com parsers antigos",
-  "Validation failed; no approval was recorded. The following summary and evidence belong to the failed validation.": "A validação falhou; nenhuma aprovação foi registrada. O resumo e a evidência a seguir pertencem à validação reprovada."
+  "Validation failed; no approval was recorded. The following summary and evidence belong to the failed validation.": "A validação falhou; nenhuma aprovação foi registrada. O resumo e a evidência a seguir pertencem à validação reprovada.",
+  "{0} already has an open discussion round; showing its recorded context without changes": "{0} já possui uma rodada de discussão aberta; exibindo seu contexto registrado sem alterações"
 }

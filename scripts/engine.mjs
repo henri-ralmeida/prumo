@@ -898,6 +898,7 @@ function validatePlan(plan, allowOverlap = false, historical = new Set(), defaul
     for (let j = i + 1; j < plan.tasks.length; j++) {
       const a = plan.tasks[i]
       const b = plan.tasks[j]
+      if (historical.has(a.id) || historical.has(b.id)) continue
       const shared = scopeConflicts(a, b).resources
       if (shared.length && !allowOverlap && !reaches(byId, a.id, b.id) && !reaches(byId, b.id, a.id))
         die(`${a.id} and ${b.id} share write resources: ${shared.join(', ')} — add a dep between them (or --allow-overlap)`)
@@ -2755,8 +2756,13 @@ const commands = {
       (discussionTargets.length !== discussion.targets.length ||
         JSON.stringify(discussionTargetIds) !== JSON.stringify(currentDiscussionTargetIds) ||
         discussion.context !== phaseContext(state, phaseId, discussionTargets))
-    if (phase.state === 'discussing' && discussion && !discussion.endedAt && !staleDiscussion)
-      die(`${phaseId} already has an open discussion round`)
+    if (phase.state === 'discussing' && discussion && !discussion.endedAt && !staleDiscussion) {
+      log('[prumo] ' + tr('{0} already has an open discussion round; showing its recorded context without changes', phaseId))
+      log(JSON.stringify({ phaseId, roundId: discussion.roundId, nonce: discussion.nonce,
+        confirmsContract: discussion.confirmsContract ?? [] }, null, 2))
+      logPhaseWorkers(phaseId, discussion)
+      return
+    }
     const superseded = []
     if (staleDiscussion) {
       const cause = staleReason(name, discussion, phaseContextSnapshot(state, currentDiscussionTargets),

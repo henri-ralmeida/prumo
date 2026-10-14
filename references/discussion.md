@@ -33,6 +33,12 @@ node $ENGINE skip-phase-discussion F2 --reason "..." --confirmed-by-user
 node $ENGINE skip-phase-planning F2 --reason "..." --confirmed-by-user
 ```
 
+If the current phase discussion is already open, repeat `begin-phase-discussion <phase>` to read its
+recorded `roundId`, `nonce`, required `confirmsContract` digests and worker assignments. This does not
+open another round, replace workers or change its history. Stale rounds still follow the existing
+supersession rules. `show-contract <task> --full` also shows the current contract digest; acceptance must
+remain bound to the exact current round and contracts.
+
 A phase can begin discussion
 or planning only when every external dependency of every unfinished member is `done` or `skipped`.
 An externally blocked member is excluded from the current phase targets and recorded in

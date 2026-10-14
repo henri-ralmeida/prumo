@@ -391,6 +391,36 @@ test('material discovery, task scope and dependency changes invalidate a retry b
   }
 })
 
+for (const lang of ['en', 'pt-BR']) for (const confirmation of [false, true])
+test(`rodada aberta recupera os mesmos identificadores sem alterar historico em ${lang}, aceite ${confirmation}`, t => {
+  const f = phaseFixture(t, [{ id: 'T1', phase: 'F1', title: 'Entrega aprovada' }], { lang })
+  if (confirmation) {
+    f.ok('begin-phase-discussion', 'F1')
+    f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+    f.ok('plan-phase', 'F1', '--agent', 'planner', '--plan-dir', f.plans)
+    f.writeArtifacts('F1'); f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+    f.plan.tasks[0].title = 'Entrega com contrato atualizado'
+    writeFileSync(f.planPath, JSON.stringify(f.plan))
+    f.ok('sync-plan', '--plan', f.planPath, '--confirm-invalidation')
+  }
+  f.ok('begin-phase-discussion', 'F1')
+  const before = f.state(), events = f.events(), round = before.phaseWorkflows.F1.discussionAttempts.at(-1)
+  const recovered = f.ok('begin-phase-discussion', 'F1', '--agent', 'T1=outro-agente').stdout
+  assert.match(recovered, new RegExp(round.roundId))
+  assert.match(recovered, new RegExp(round.nonce))
+  for (const item of round.confirmsContract ?? []) assert.ok(recovered.includes(item.digest))
+  assert.equal(Boolean(round.requiresContractConfirmation), confirmation)
+  assert.deepEqual(f.state(), before)
+  assert.equal(f.events(), events)
+  const path = f.discovery('F1'), discovery = JSON.parse(readFileSync(path, 'utf8'))
+  writeFileSync(path, JSON.stringify({ ...discovery, nonce: 'nonce-de-outra-rodada' }))
+  f.rejects(/roundId and nonce|roundId e nonce/, 'finish-phase-discussion', 'F1', '--context', path)
+  assert.deepEqual(f.state(), before)
+  assert.equal(f.events(), events)
+  writeFileSync(path, JSON.stringify(discovery))
+  f.ok('finish-phase-discussion', 'F1', '--context', path)
+})
+
 function phaseFixture(t, tasks, { planningMode = 'phase', maxAgents, lang = 'en' } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'prumo-phase-negative-'))
   t.after(() => rmSync(home, { recursive: true, force: true }))
