@@ -1843,5 +1843,7 @@
   "review criteria reported: {0}/{1}; {2}": "critérios relatados na revisão: {0}/{1}; {2}",
   "stale; report the current delivery again": "obsoleto; relate novamente a entrega atual",
   "not proof of inspection": "não comprova inspeção",
-  "review criteria reported: unknown; no structured criteria": "critérios relatados na revisão: desconhecidos; sem critérios estruturados"
+  "review criteria reported: unknown; no structured criteria": "critérios relatados na revisão: desconhecidos; sem critérios estruturados",
+  "installed parser does not support command help; update Prumo before using --help; no action was executed": "o parser instalado não suporta ajuda por comando; atualize o Prumo antes de usar --help; nenhuma ação foi executada",
+  "block return state unknown; inspect recorded history before resuming": "estado de retorno do bloqueio desconhecido; confira o histórico registrado antes de retomar"
 }

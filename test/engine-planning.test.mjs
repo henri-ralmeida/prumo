@@ -2713,18 +2713,69 @@ test('skip libera vaga de discussão para o próximo alvo sem dispensar seus gat
   assert.equal(f.state().tasks.T2.attempts.length, 0)
 })
 
-function reviewedPhaseRefreshFixture(t) {
+function reviewedPhaseRefreshFixture(t, { skipped = false, staticCheck = false, lang = 'en' } = {}) {
   const f = phaseFixture(t, [{ id: 'T1', phase: 'F1', title: 'Vizinha' },
-    { id: 'T2', phase: 'F1', title: 'Entrega revisada' }, { id: 'T3', phase: 'F2', title: 'Entrada futura' }])
-  f.ok('begin-phase-discussion', 'F1')
-  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+    { id: 'T2', phase: 'F1', title: 'Entrega revisada', ...(staticCheck ? { validation: [
+      { run: 'node check.cjs --static', expect: 'Source structure is valid' }, validation[0],
+    ] } : {}) }, { id: 'T3', phase: 'F2', title: 'Entrada futura' }], { lang })
+  if (skipped) f.ok('skip-phase-discussion', 'F1', '--reason', 'Contrato aceito explicitamente', '--confirmed-by-user')
+  else {
+    f.ok('begin-phase-discussion', 'F1')
+    f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  }
   f.ok('plan-phase', 'F1', '--agent', 'planner', '--plan-dir', f.plans)
   f.writeArtifacts('F1')
+  if (staticCheck) {
+    const path = join(f.plans, 'task-plan-T2.json'), artifact = JSON.parse(readFileSync(path, 'utf8'))
+    artifact.verification.push({ criterion: 'Functional delivery behavior passes', check: 2 })
+    writeFileSync(path, JSON.stringify(artifact))
+  }
   f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
   f.ok('start', 'T2', '--agent', 'executor-T2')
   f.ok('review', 'T2', '--agent', 'reviewer-T2')
   return f
 }
+
+test('refresh de verificação estática preserva critérios funcionais e recusa vínculo antigo após novo critério', t => {
+  const f = reviewedPhaseRefreshFixture(t, { staticCheck: true })
+  const original = f.state().tasks.T2.taskPlan
+  f.plan.tasks[1].validation[0].run = 'node check.cjs --static-updated'
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.ok('refresh-contract', 'T2', '--plan', f.planPath)
+  const binding = f.state().tasks.T2.validationRefreshPlanning
+  assert.ok(binding)
+  assert.deepEqual(f.state().tasks.T2.taskPlan, original)
+  f.ok('validate', 'T2', '--ok', '--evidence', 'Verificações estática e funcional atuais', '--cwd', f.project)
+  f.plan.tasks[1].validation[1].expect = 'A new acceptance criterion is required'
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.ok('refresh-contract', 'T2', '--plan', f.planPath)
+  const before = f.state(), events = f.events()
+  assert.deepEqual(before.tasks.T2.validationRefreshPlanning, binding)
+  f.rejects(/execution scope needs current planning/, 'validate', 'T2', '--ok', '--evidence', 'Nao reutilizar criterio anterior', '--cwd', f.project)
+  assert.deepEqual(f.state(), before)
+  assert.equal(f.events(), events)
+})
+
+for (const lang of ['en', 'pt-BR']) test(`refresh repetido preserva plano com dispensa explicita de discussao em ${lang}`, t => {
+  const f = reviewedPhaseRefreshFixture(t, { skipped: true, lang })
+  const original = f.state().tasks.T2
+  for (const suffix of ['--updated', '--updated-again']) {
+    f.plan.tasks[1].validation = [{ ...validation[0], run: 'node check.cjs ' + suffix }]
+    writeFileSync(f.planPath, JSON.stringify(f.plan))
+    f.ok('refresh-contract', 'T2', '--plan', f.planPath)
+    assert.deepEqual(f.state().tasks.T2.taskPlan, original.taskPlan)
+    assert.deepEqual(f.state().tasks.T2.attempts, original.attempts)
+  }
+  const status = f.ok('status').stdout
+  assert.match(status, lang === 'en' ? /completed for earlier contracts; affected tasks: T2/ : /concluída para contratos anteriores; tarefas afetadas: T2/)
+  const before = f.state(), events = f.events()
+  f.ok('refresh-contract', 'T2', '--plan', f.planPath)
+  assert.deepEqual(f.state(), before)
+  assert.equal(f.events(), events)
+  f.ok('validate', 'T2', '--ok', '--evidence', 'Revisao independente do comando vigente', '--cwd', f.project)
+  f.ok('done', 'T2')
+  assert.equal(f.state().tasks.T2.attempts.length, 1)
+})
 
 test('refresh de comando na revisao preserva plano de fase e exige validacao atual sem reabrir vizinha', t => {
   const f = reviewedPhaseRefreshFixture(t)
@@ -2773,7 +2824,7 @@ for (const change of ['criterion', 'mode', 'check-count']) test('refresh incompa
   assert.equal(f.events(), events)
 })
 
-for (const change of ['scope', 'dependencies', 'global']) test('vinculo de refresh nao dispensa contexto alterado: ' + change, t => {
+for (const change of ['scope', 'dependencies', 'global', 'missing-revision']) test('vinculo de refresh nao dispensa contexto alterado: ' + change, t => {
   const f = reviewedPhaseRefreshFixture(t)
   f.plan.tasks[1].validation = [{ ...validation[0], run: 'node check.cjs --updated' }]
   writeFileSync(f.planPath, JSON.stringify(f.plan))
@@ -2782,8 +2833,15 @@ for (const change of ['scope', 'dependencies', 'global']) test('vinculo de refre
   if (change === 'scope') f.plan.tasks[1].touches = ['new-delivery.cjs']
   if (change === 'dependencies') f.plan.tasks[1].deps = ['T1']
   if (change === 'global') f.plan.description = 'Changed approved execution outcome'
-  writeFileSync(f.planPath, JSON.stringify(f.plan))
-  f.ok('sync-plan', '--plan', f.planPath, ...(change === 'global' ? ['--confirm-invalidation'] : []))
+  if (change === 'missing-revision') {
+    // Um registro legado ou incompleto não pode reutilizar o vínculo de um contrato cuja revisão foi perdida.
+    const incomplete = f.state()
+    delete incomplete.tasks.T2.contractRevision
+    f.save(incomplete)
+  } else {
+    writeFileSync(f.planPath, JSON.stringify(f.plan))
+    f.ok('sync-plan', '--plan', f.planPath, ...(change === 'global' ? ['--confirm-invalidation'] : []))
+  }
   const before = f.state(), events = f.events()
   f.rejects(/execution scope needs current planning/, 'validate', 'T2', '--ok', '--evidence', 'Nao contornar escopo novo', '--cwd', f.project)
   assert.deepEqual(f.state(), before)

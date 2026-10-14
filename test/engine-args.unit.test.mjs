@@ -96,6 +96,7 @@ test('ajuda lista opções reais sem transformar consulta em ação', () => {
     assert.match(help.usage, new RegExp(`^${command} `))
     assert.ok(help.flags.includes('--help'))
     assert.ok(help.flags.includes('--run <name>'))
+    assert.equal(help.flags.length, new Set(help.flags).size)
   }
   assert.ok(engineCommandHelp('validate').flags.includes('--failed'))
   assert.ok(engineCommandHelp('validate').flags.includes('--scope-evidence <value>'))

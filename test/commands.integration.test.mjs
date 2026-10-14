@@ -69,6 +69,10 @@ for (const lang of ['en', 'pt-BR']) test(`ajuda e recusas orientam o revisor sem
     assert.match(result.output, command === 'validate' ? /--failed.*--ok|--ok.*--failed/ : /--help/)
   }
   assert.equal(readFileSync(metricsPath, 'utf8'), metrics, 'ajuda não grava métricas de execução')
+  const malformedHelp = f.command('validate', '--help', '--typo', '--lang', lang)
+  assert.equal(malformedHelp.status, 1)
+  assert.match(malformedHelp.output, /--typo/)
+  assert.equal(readFileSync(metricsPath, 'utf8'), metrics)
   const unknown = f.command('show', 'T1', '--lang', lang)
   assert.equal(unknown.status, 1)
   assert.match(unknown.output, /show-contract.*review-progress.*--help/)
@@ -86,6 +90,18 @@ for (const lang of ['en', 'pt-BR']) test(`ajuda e recusas orientam o revisor sem
   const help = spawnSync(process.execPath, [engine, 'validate', '--help'], { env: outside, cwd: f.root, encoding: 'utf8', windowsHide: true })
   assert.equal(help.status, 0, help.stderr)
   assert.match(help.stdout, /--evidence/)
+  f.ok('block', 'T1', '--reason', 'Decisão externa pendente')
+  const blocked = f.snapshot()
+  assert.match(f.command('status', '--lang', lang).output, /unblock T1/)
+  assert.deepEqual(f.snapshot(), blocked)
+  const legacy = f.state()
+  delete legacy.tasks.T1.stateBeforeBlock
+  writeFileSync(f.statePath, JSON.stringify(legacy))
+  const unknownReturn = f.snapshot()
+  const status = f.command('status', '--lang', lang)
+  assert.equal(status.status, 0, status.output)
+  assert.match(status.output, lang === 'en' ? /block return state unknown; inspect recorded history/ : /estado de retorno do bloqueio desconhecido; confira o histórico/)
+  assert.deepEqual(f.snapshot(), unknownReturn)
 })
 
 test('sincronizar novas dependências avisa sem pausar automaticamente a execução', t => {

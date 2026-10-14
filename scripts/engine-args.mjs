@@ -45,7 +45,7 @@ export function engineCommandHelp(command) {
   const [positionals, strings = '', booleans = ''] = definitions[command]
   const flags = ['--help', '--run <name>', '--lang <en|pt-BR>', '--force',
     ...strings.split(/\s+/).filter(Boolean).map(flag => `--${flag} <value>`),
-    ...booleans.split(/\s+/).filter(flag => flag && flag !== 'help').map(flag => `--${flag}`),
+    ...booleans.split(/\s+/).filter(flag => flag && flag !== 'help' && flag !== 'force').map(flag => `--${flag}`),
     ...(dispatchCommands.includes(command) ? ['--model <value>', '--effort <value>'] : [])]
   return { usage: `${command}${positionals ? ' [<task-or-phase>]' : ''} [options]`, flags }
 }

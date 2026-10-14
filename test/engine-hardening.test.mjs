@@ -129,7 +129,7 @@ test('comandos incompatíveis com tarefa pendente preservam contrato e históric
   }
 })
 
-test('tentativa histórica sem posição começa no primeiro passo e não permite retrocesso', t => {
+test('tentativa histórica sem posição preserva progresso fora de ordem sem inventar conclusão', t => {
   const f = fixture(t)
   assert.equal(f.init().status, 0)
   makeLegacy(f)
@@ -143,11 +143,12 @@ test('tentativa histórica sem posição começa no primeiro passo e não permit
   const advanced = f.cli('progress', 'T1', '--step', '2', '--agent', 'executor')
   assert.equal(advanced.status, 0, f.output(advanced))
   assert.equal(f.state().tasks.T1.attempts.at(-1).executionStep, 2)
-  const before = f.snapshot()
+  const before = f.state().tasks.T1.attempts.at(-1)
   const backwards = f.cli('progress', 'T1', '--step', '1', '--agent', 'executor')
-  assert.equal(backwards.status, 1, f.output(backwards))
-  assert.match(f.output(backwards), /cannot move backwards/)
-  assert.deepEqual(f.snapshot(), before)
+  assert.equal(backwards.status, 0, f.output(backwards))
+  assert.match(f.output(backwards), /execution position recorded at 1\/2.*not completion evidence/)
+  assert.deepEqual(f.state().tasks.T1.attempts.at(-1), { ...before, executionStep: 1 })
+  assert.equal(f.state().tasks.T1.state, 'running')
 })
 
 test('retry respeita o limite de tentativas e o plano aprovado antes de alterar histórico', t => {
@@ -408,6 +409,20 @@ test('parser de instalação antiga com opção escalar mantém a pergunta de bl
   assert.deepEqual(task.blockOptions, ['Preservar contrato'])
   assert.deepEqual(task.attempts, original.attempts)
   assert.deepEqual(task.validation, original.validation)
+  const beforeHelp = f.snapshot()
+  const help = spawnSync(process.execPath, [join(install, 'scripts', 'engine.mjs'), 'block', '--help'], {
+    cwd: f.project, env: f.env, encoding: 'utf8', windowsHide: true, timeout: 30000,
+  })
+  assert.equal(help.status, 1, f.output(help))
+  assert.match(f.output(help), /installed parser does not support command help.*no action was executed/)
+  assert.deepEqual(f.snapshot(), beforeHelp)
+  writeFileSync(join(install, 'scripts', 'engine-args.mjs'), 'export function parseEngineArgs() { return { _: [], help: true } }\n')
+  const missingHelpExport = spawnSync(process.execPath, [join(install, 'scripts', 'engine.mjs'), 'block', '--help'], {
+    cwd: f.project, env: f.env, encoding: 'utf8', windowsHide: true, timeout: 30000,
+  })
+  assert.equal(missingHelpExport.status, 1, f.output(missingHelpExport))
+  assert.match(f.output(missingHelpExport), /installed parser does not support command help/)
+  assert.deepEqual(f.snapshot(), beforeHelp)
 })
 
 test('sincronização interpreta descrição histórica ausente como descrição vazia sem invalidar trabalho', t => {

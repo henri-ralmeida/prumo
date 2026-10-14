@@ -445,6 +445,24 @@ test('relato legado sem vinculo de entrega permanece historico e exige criterios
   f.ok('done', 'T1')
 })
 
+test('revisao com entrega inacessivel mostra relato obsoleto sem gravar progresso', t => {
+  const f = fixture(t, [{ id: 'T1', title: 'Politica documentada', touches: ['delivery.cjs'],
+    validationMode: 'inspection', inspectionReason: 'Somente documentacao', validation: [{ ...check, kind: 'static' }] }])
+  const git = (...args) => {
+    const result = spawnSync('git', args, { cwd: f.project, encoding: 'utf8', windowsHide: true })
+    assert.equal(result.status, 0, result.stderr)
+  }
+  git('init'); git('add', '.'); git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', 'commit', '-m', 'Base')
+  f.planTask(); f.ok('start', 'T1', '--agent', 'executor'); f.ok('review', 'T1', '--agent', 'reviewer')
+  f.ok('review-progress', 'T1', '--step', '1', '--agent', 'reviewer')
+  const before = f.state(), events = f.events(), delivery = join(f.project, 'delivery.cjs')
+  rmSync(delivery); mkdirSync(delivery)
+  assert.match(f.ok('status').output, /review criteria reported: 1\/1; stale/)
+  f.rejected(/directory|nested|Git/, 'review-progress', 'T1', '--step', '1', '--agent', 'reviewer')
+  assert.deepEqual(f.state(), before)
+  assert.equal(f.events(), events)
+})
+
 test('inspection denominator counts criteria even when they share one static check', t => {
   const f = fixture(t, [{ id: 'T1', title: 'Delivery policy docs', validationMode: 'inspection',
     inspectionReason: 'The task only updates documentation.',

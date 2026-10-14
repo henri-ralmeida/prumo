@@ -91,7 +91,8 @@ import {
   sanitizeChanges, sanitizeDiagnostics, sanitizeTaskIds,
 } from './sync-plan-audit.mjs'
 import { businessContract, contractDrift, GLOBAL_PLAN_FIELDS, TASK_CONTRACT_FIELDS } from './contract-drift.mjs'
-import { parseEngineArgs, engineCommandHelp } from './engine-args.mjs'
+import * as engineArgs from './engine-args.mjs'
+const { parseEngineArgs, engineCommandHelp } = engineArgs
 import { replanningRecovery } from './replanning-recovery.mjs'
 import { taskIdentifierProblem, phaseIdentifierProblem } from './task-identifiers.mjs'
 import { captureDelivery, checkDelivery, verifyNumericProvenance, assertEvidenceContract } from './delivery-evidence.mjs'
@@ -103,6 +104,8 @@ const [, , cmd, ...rest] = process.argv
 let args
 if (rest.includes('--help')) {
   try { args = parseEngineArgs(cmd, rest) } catch (error) { die(error.message) }
+  if (args.help !== true || !engineCommandHelp)
+    die(tr('installed parser does not support command help; update Prumo before using --help; no action was executed'))
 }
 if (args?.help && !(cmd === 'review-progress' && args._[0])) {
   const help = engineCommandHelp(cmd)
@@ -147,6 +150,7 @@ if (recognizedCommand) {
 try { args = parseEngineArgs(cmd, rest) } catch (error) { die(error.message) }
 if (cmd === 'review-progress' && args.help) {
   log(tr('Usage: review-progress [<task>] --help | review-progress <task> --step <1-based index> --agent <reviewer> [--run <name>]'))
+  log(tr('Options: {0}', engineCommandHelp(cmd).flags.join(' ')))
   log(tr('Read the numbered current criteria with show-contract <task>; progress is a reviewer report, not proof of inspection or approval'))
   if (args._[0]) printReviewCriteria(getTask(loadState(runName()), args._[0]))
   process.exit(0)
@@ -1494,6 +1498,8 @@ function printDispatchSuggestions(state, tasks = null) {
 // Resolver a decisão externa e retomar uma tentativa são ações distintas; a mensagem mantém os gates visíveis.
 function blockedTaskNotice(state, task) {
   if (task.state !== 'blocked') return ''
+  if (!task.stateBeforeBlock && task.attempts.length)
+    return tr('block return state unknown; inspect recorded history before resuming')
   const current = hasCurrentTaskScope(state, task)
   if (isExternalBlock(task)) return tr('external block; return state {0}; next: unblock {1}{2}{3}',
     task.stateBeforeBlock ?? 'pending', task.id, task.blockQuestion ? ' --answer <answer>' : '',
