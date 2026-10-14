@@ -411,6 +411,32 @@ export function hasCurrentTaskPlan(state, task) {
   return discoveryCurrent && hasCurrentTaskScope(state, task, task.attempts.length + 1)
 }
 
+// Uma alteração compatível de verificação pode preservar a pesquisa da tentativa ativa,
+// sem alterar o plano histórico nem aproveitar evidências do contrato anterior.
+export function phaseValidationRefreshBinding(state, task, changes) {
+  if (!['running', 'reviewing'].includes(task.state) || !task.taskPlan?.phaseId || !hasCurrentTaskScope(state, task)) return null
+  const candidate = { ...task, ...changes, contractRevision: (task.contractRevision ?? 0) + 1 }
+  try { assertTaskPlan(candidate, task.taskPlan, { checkSelfDeadline: false }) } catch { return null }
+  const criteria = value => {
+    const contract = validationContract(value)
+    return [contract.mode, value.inspectionReason ?? '', contract.steps.map(step => [step.kind ?? 'static', step.expect])]
+  }
+  if (JSON.stringify(criteria(task)) !== JSON.stringify(criteria(candidate))) return null
+  return { attempt: task.attempts.length, planDigest: task.taskPlan.digest, planScope: task.taskPlan.scope,
+    contractRevision: candidate.contractRevision, phaseScope: phasePlanningContext(state, candidate),
+    executionScope: planningContext(state, task, { scopeOnly: true, attempt: task.attempts.length }) }
+}
+
+function currentRefreshedPhaseScope(state, task, plan, attempt) {
+  const binding = task.validationRefreshPlanning
+  return Boolean(binding && ['running', 'reviewing', 'blocked'].includes(task.state) &&
+    binding.attempt === attempt && attempt === task.attempts.length &&
+    binding.planDigest === plan.digest && binding.planScope === plan.scope &&
+    binding.contractRevision === (task.contractRevision ?? 0) &&
+    binding.phaseScope === phasePlanningContext(state, task) &&
+    binding.executionScope === planningContext(state, task, { scopeOnly: true, attempt }))
+}
+
 // Atualizações somente de validação não invalidam a pesquisa por trás de uma tentativa de execução ativa.
 export function hasCurrentTaskScope(state, task, attempt = task.attempts.length) {
   if (state.legacyPhaseAdoption && !state.phaseWorkflows?.[task.phase]?.adoptedLegacy) return false
@@ -427,7 +453,7 @@ export function hasCurrentTaskScope(state, task, attempt = task.attempts.length)
       const decision = phase?.discussionSkips?.find(item =>
         item.decisionId === plan.phaseBinding?.discussionRoundId)
       return !task.phasePlanDefect && decision?.confirmedByUser === true && decision.digest === plan.phaseDecisionDigest &&
-        plan.scope === phasePlanningContext(state, task)
+        (plan.scope === phasePlanningContext(state, task) || currentRefreshedPhaseScope(state, task, plan, attempt))
     }
     const discussion = phase?.discussionAttempts?.find(round => round.roundId === plan.phaseBinding?.discussionRoundId)
     const discovery = discussion?.discovery ??
@@ -435,7 +461,7 @@ export function hasCurrentTaskScope(state, task, attempt = task.attempts.length)
     const latestTargets = phase?.discussionAttempts?.find(round => round.roundId === phase.discovery?.roundId)?.targets ?? []
     return !task.phasePlanDefect && (!latestTargets.includes(task.id) || phase.discovery.roundId === discussion?.roundId) &&
       discovery?.digest === plan.phaseDiscoveryDigest &&
-      discovery.digest === discoveryDigest(discovery) && plan.scope === phasePlanningContext(state, task)
+      discovery.digest === discoveryDigest(discovery) && (plan.scope === phasePlanningContext(state, task) || currentRefreshedPhaseScope(state, task, plan, attempt))
   }
   const skippedDiscussion = plan?.discussionDecision === 'skipped' ? task.discussionSkips?.find(decision =>
     decision.decisionId === plan.discussionDecisionId && decision.confirmedByUser === true &&

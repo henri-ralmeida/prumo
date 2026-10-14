@@ -113,6 +113,14 @@ or unblock a paused task. Done/skipped history is immutable. Never use fail/retr
 refresh a contract; reserve that path for an actual rejected implementation. Contract-writing
 rules for the adapted validation are in [contracts.md](contracts.md).
 
+For an active phase-planned attempt, changing only validation commands or their execution parameters
+can preserve the original task plan when the validation mode, inspection reason, check count, kinds and
+expected outcomes remain unchanged. The recorded phase binding and plan are not rewritten. Current
+validation and independent review are still required; earlier receipts never approve the changed contract.
+A changed execution scope, dependency context, global decision or acceptance criterion still requires
+current planning. Historical completed phase rounds identify affected tasks without reopening unchanged tasks.
+
+
 ## Blocking and user decisions
 
 Needs the dev → `block T4 --reason "..."`. `block` is always an external pause and records

@@ -370,6 +370,14 @@ including if a later refresh restores the old text. The task's execution authori
 preserved in authorization history whenever this contract changes; accept a fresh authorization before
 starting or resuming execution. A fresh validation is required before done.
 Done/skipped tasks cannot be refreshed. The command neither dispatches work nor unblocks tasks.
+
+For an active phase-planned attempt, changing only validation commands or their execution parameters
+can preserve the original task plan when the validation mode, inspection reason, check count, kinds and
+expected outcomes remain unchanged. The recorded phase binding and plan are not rewritten. Current
+validation and independent review are still required; earlier receipts never approve the changed contract.
+A changed execution scope, dependency context, global decision or acceptance criterion still requires
+current planning. Historical completed phase rounds identify affected tasks without reopening unchanged tasks.
+
 Do not use fail/retry solely for contract migration, redo a delivered fix, or enlarge a data
 window because the skill changed. The reviewer can verify delivered work in the same attempt.
 `sync-plan` refreshes active contracts while preserving their lifecycle and keeps completed contracts as

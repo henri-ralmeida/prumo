@@ -2712,3 +2712,80 @@ test('skip libera vaga de discussão para o próximo alvo sem dispensar seus gat
   f.rejects(/discussion|planning|plan|ready/, 'start', 'T2', '--agent', 'executor')
   assert.equal(f.state().tasks.T2.attempts.length, 0)
 })
+
+function reviewedPhaseRefreshFixture(t) {
+  const f = phaseFixture(t, [{ id: 'T1', phase: 'F1', title: 'Vizinha' },
+    { id: 'T2', phase: 'F1', title: 'Entrega revisada' }, { id: 'T3', phase: 'F2', title: 'Entrada futura' }])
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('plan-phase', 'F1', '--agent', 'planner', '--plan-dir', f.plans)
+  f.writeArtifacts('F1')
+  f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  f.ok('start', 'T2', '--agent', 'executor-T2')
+  f.ok('review', 'T2', '--agent', 'reviewer-T2')
+  return f
+}
+
+test('refresh de comando na revisao preserva plano de fase e exige validacao atual sem reabrir vizinha', t => {
+  const f = reviewedPhaseRefreshFixture(t)
+  f.ok('validate', 'T2', '--ok', '--evidence', 'Contrato anterior verificado', '--cwd', f.project)
+  const before = f.state(), oldPlan = before.tasks.T2.taskPlan
+  f.plan.tasks[1].validation = [{ ...validation[0], run: 'node check.cjs --updated' }]
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.ok('refresh-contract', 'T2', '--plan', f.planPath)
+  const refreshed = f.state()
+  assert.deepEqual(refreshed.tasks.T2.taskPlan, oldPlan)
+  assert.deepEqual(refreshed.tasks.T2.attempts, before.tasks.T2.attempts)
+  assert.deepEqual(refreshed.tasks.T2.planningHistory, before.tasks.T2.planningHistory)
+  assert.deepEqual(refreshed.phaseWorkflows, before.phaseWorkflows)
+  assert.deepEqual(refreshed.tasks.T1, before.tasks.T1)
+  assert.equal(refreshed.tasks.T2.executionAuthorization, undefined)
+  assert.equal(refreshed.tasks.T2.authorizationHistory.at(-1).authorizationId, before.tasks.T2.executionAuthorization.authorizationId)
+  const status = f.ok('status').stdout
+  assert.match(status, /completed for earlier contracts; affected tasks: T2; check each task readiness/)
+  assert.doesNotMatch(status, /phase F1 .*: stale/)
+  f.rejects(/current.*validation|validation.*stale|validation.*contract|validate/, 'done', 'T2')
+  f.ok('start', 'T1', '--agent', 'executor-T1')
+  assert.deepEqual(f.state().tasks.T1.taskPlan, before.tasks.T1.taskPlan)
+  assert.deepEqual(f.state().tasks.T1.executionAuthorization, before.tasks.T1.executionAuthorization)
+  f.ok('validate', 'T2', '--ok', '--evidence', 'Comando atual inspecionado pelo revisor', '--cwd', f.project)
+  f.ok('done', 'T2')
+  assert.equal(f.state().tasks.T2.attempts.length, 1)
+  assert.equal(f.state().tasks.T2.validations.length, before.tasks.T2.validations.length + 1)
+  assert.deepEqual(f.state().tasks.T2.taskPlan, oldPlan)
+})
+
+for (const change of ['criterion', 'mode', 'check-count']) test('refresh incompativel exige novo planejamento: ' + change, t => {
+  const f = reviewedPhaseRefreshFixture(t)
+  if (change === 'criterion') f.plan.tasks[1].validation = [{ ...validation[0], expect: 'new acceptance behavior' }]
+  if (change === 'mode') {
+    f.plan.tasks[1].validationMode = 'inspection'
+    f.plan.tasks[1].inspectionReason = 'Current evidence requires independent manual inspection'
+    f.plan.tasks[1].validation = 'Inspect the delivered behavior'
+  }
+  if (change === 'check-count') f.plan.tasks[1].validation = [validation[0], { ...validation[0], expect: 'another required behavior' }]
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.ok('refresh-contract', 'T2', '--plan', f.planPath)
+  const before = f.state(), events = f.events()
+  assert.equal(before.tasks.T2.validationRefreshPlanning, undefined)
+  f.rejects(/execution scope needs current planning/, 'validate', 'T2', '--ok', '--evidence', 'Nao contornar criterios novos', '--cwd', f.project)
+  assert.deepEqual(f.state(), before)
+  assert.equal(f.events(), events)
+})
+
+for (const change of ['scope', 'dependencies', 'global']) test('vinculo de refresh nao dispensa contexto alterado: ' + change, t => {
+  const f = reviewedPhaseRefreshFixture(t)
+  f.plan.tasks[1].validation = [{ ...validation[0], run: 'node check.cjs --updated' }]
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.ok('refresh-contract', 'T2', '--plan', f.planPath)
+  assert.ok(f.state().tasks.T2.validationRefreshPlanning)
+  if (change === 'scope') f.plan.tasks[1].touches = ['new-delivery.cjs']
+  if (change === 'dependencies') f.plan.tasks[1].deps = ['T1']
+  if (change === 'global') f.plan.description = 'Changed approved execution outcome'
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.ok('sync-plan', '--plan', f.planPath, ...(change === 'global' ? ['--confirm-invalidation'] : []))
+  const before = f.state(), events = f.events()
+  f.rejects(/execution scope needs current planning/, 'validate', 'T2', '--ok', '--evidence', 'Nao contornar escopo novo', '--cwd', f.project)
+  assert.deepEqual(f.state(), before)
+  assert.equal(f.events(), events)
+})

@@ -79,7 +79,7 @@ import { runValidation, assertValidation, assertValidationEnvironment, validatio
   assertUnavailableResources,
   planTaskFromState, planningContext, hasCurrentTaskPlan, hasCurrentTaskScope, currentPlanningScope, usesCurrentPlanning,
   phasePlanningContext, phaseRequiredInputs, assertPhaseTaskPlan, executionInputReceipt, currentPlanningSkip,
-  taskPlanDigest } from './validation.mjs'
+  taskPlanDigest, phaseValidationRefreshBinding } from './validation.mjs'
 
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -1533,6 +1533,18 @@ function assertPhasePlanningOrder(state, phaseId) {
   if (blockers.length) die(`${phaseId} waits for external dependencies: ${blockers.join(', ')}. Keep the approved phases; complete their dependency tasks first.`)
 }
 
+function phaseRoundStatus(state, round, targets, current) {
+  if (current) return tr('current')
+  const snapshot = round?.contextSnapshot
+  if (round?.endedAt && ['discussed', 'planned'].includes(round.result) && snapshot?.plan &&
+      JSON.stringify(snapshot.plan) === JSON.stringify(contextPlanSnapshot(state)) && Array.isArray(snapshot.tasks)) {
+    const saved = new Map(snapshot.tasks.map(task => [task.task, task.contextDigest]))
+    const affected = targets.filter(task => saved.has(task.id) && saved.get(task.id) !== phasePlanningContext(state, task))
+    if (affected.length) return tr('completed for earlier contracts; affected tasks: {0}; check each task readiness', affected.map(task => displayIdentifier(task.id)).join(', '))
+  }
+  return tr('stale')
+}
+
 function phaseContext(state, phaseId, targets = phaseTargets(state, phaseId)) {
   return JSON.stringify([state.plan.name, state.plan.description, state.plan.planningRevision ?? 0, phaseId,
     targets.map(task => [task.id, phasePlanningContext(state, task)]).sort()])
@@ -2614,12 +2626,15 @@ const commands = {
         const targets = (discussion.contextTargets ?? discussion.targets ?? []).map(id => state.tasks[id]).filter(Boolean)
         const current = !workflow.contractConfirmationRequired && discussion.context === phaseContext(state, phase.id, targets) &&
           (!discussion.endedAt || decision?.id === discussion.roundId)
-        log('[prumo] ' + tr('phase {0} discussion {1}: {2}', phase.id, discussion.roundId, tr(current ? 'current' : 'stale')))
+        log('[prumo] ' + tr('phase {0} discussion {1}: {2}', phase.id, discussion.roundId, phaseRoundStatus(state, discussion, targets, current)))
       }
-      if (planning) log('[prumo] ' + tr('phase {0} planning round {1}: {2}', phase.id, planning.n,
-        tr((currentPhasePlanning(state, workflow, planning) || (decision && planning.result === 'planned' &&
-          decision?.id === planning.discussionRoundId && decision.digest === (planning.discussionDigest ?? planning.discoveryDigest) &&
-          planning.context === phaseContext(state, phase.id, decision.targets.map(id => state.tasks[id])))) ? 'current' : 'stale')))
+      if (planning) {
+        const targets = (planning.contextTargets ?? planning.targets ?? []).map(id => state.tasks[id]).filter(Boolean)
+        const current = Boolean(currentPhasePlanning(state, workflow, planning) || (decision && planning.result === 'planned' &&
+          decision.id === planning.discussionRoundId && decision.digest === (planning.discussionDigest ?? planning.discoveryDigest) &&
+          planning.context === phaseContext(state, phase.id, decision.targets.map(id => state.tasks[id]))))
+        log('[prumo] ' + tr('phase {0} planning round {1}: {2}', phase.id, planning.n, phaseRoundStatus(state, planning, targets, current)))
+      }
       Object.values(d).filter((t) => t.phase === phase.id).forEach(row)
     }
     /* phases é OPCIONAL em um plano — tarefas sem fase (ou com uma entrada que não nomeia fase)
@@ -3557,6 +3572,7 @@ const commands = {
       log('[prumo] ' + id + ' validation contract already matches; state and attempt unchanged')
       return
     }
+    const refreshBinding = phaseValidationRefreshBinding(state, task, changes)
     const authorization = task.executionAuthorization
     if (authorization) {
       task.authorizationHistory ??= []
@@ -3566,9 +3582,11 @@ const commands = {
     }
     Object.assign(task, changes)
     task.contractRevision = (task.contractRevision ?? 0) + 1
+    if (refreshBinding) task.validationRefreshPlanning = refreshBinding
     saveState(name, state)
     emit(name, 'task_contract_refreshed', id, { revision: task.contractRevision, attempt: task.attempts.length, state: task.state,
-      source: resolve(source), authorizationRevoked: Boolean(authorization) })
+      source: resolve(source), authorizationRevoked: Boolean(authorization),
+      ...(refreshBinding ? { preservedPlanning: refreshBinding } : {}) })
     log('[prumo] ' + tr('{0} contract refreshed; state {1}, attempt {2} preserved; previous validation receipts are stale',
       id, task.state, task.attempts.length))
     if (authorization)
