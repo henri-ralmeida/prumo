@@ -3196,7 +3196,10 @@ const commands = {
     if (blockedBy.length) die(id + ' still waiting on: ' + blockedBy.join(', '))
     if (task.contractConfirmationRequired)
       die(tr('{0} requires a fresh answered contract confirmation; begin-discussion and ask the user before skipping discussion', id))
-    if (!['pending', 'failed'].includes(task.state)) die(`${id} must be pending or failed to skip discussion`)
+    const pausedExecution = task.planningRequired && task.state === 'blocked' &&
+      ['running', 'reviewing'].includes(task.stateBeforeBlock) && !task.blockQuestion
+    if (!['pending', 'failed'].includes(task.state) && !pausedExecution)
+      die(`${id} must be pending, failed, or internally paused for replanning without an external question to skip discussion`)
     if (!usesCurrentPlanning(state, task)) die(`${id} is a legacy task without current planning gates`)
     const decision = { ...explicitSkipDecision('skip-discussion'), scope: phasePlanningContext(state, task),
       context: planningContext(state, task), contextSnapshot: taskContextSnapshot(state, task) }

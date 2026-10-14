@@ -153,6 +153,11 @@ For an active planning-required attempt whose approved contract must be refreshe
 the same attempt may run task planning while blocked, `finish-planning` leaves it blocked, and explicit
 `unblock` resumes it.
 
+If the user explicitly chooses to skip discussion for the unchanged contract during this internal pause,
+record `skip-discussion <task> --reason "..." --confirmed-by-user` before `plan-task`. The skip records
+the decision without unblocking the task, replacing the attempt or waiving independent review. An external
+block, unanswered external question or required fresh contract acceptance cannot be bypassed by this skip.
+
 Resolve or wait for the recorded blocker; never route around it. Use `note <task> --text "..."` for what a
 later reader needs and the states cannot say.
 

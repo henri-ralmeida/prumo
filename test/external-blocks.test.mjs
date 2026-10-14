@@ -67,7 +67,7 @@ function fixture(t, { planningMode = 'phase', scopePolicy, tasks = [{ id: 'T1', 
   t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }))
   const root = join(home, 'workspace'), project = join(home, 'project'), plans = join(root, 'plans')
   mkdirSync(root); mkdirSync(project); mkdirSync(plans)
-  writeFileSync(join(project, 'check.cjs'), "process.stdout.write('behavior passes\\n')\\n")
+  writeFileSync(join(project, 'check.cjs'), "process.stdout.write('behavior passes\\n')\n")
   const plan = {
     name: 'Bloqueios externos', planningMode, ...(scopePolicy ? { scopePolicy } : {}), phases,
     tasks: tasks.map(task => ({ summary: 'Entregar o comportamento aprovado da tarefa.', validation, ...task })),
@@ -302,6 +302,78 @@ test('após unblock, uma tarefa excluída usa discussão e planejamento individu
   assert.equal(current.tasks.T1.taskPlan.phaseId, undefined)
   assert.equal(current.phaseWorkflows.F1.discussionAttempts.length, 0)
   assert.equal(current.phaseWorkflows.F1.planningAttempts.length, 0)
+})
+
+for (const planningMode of ['task', 'phase']) for (const returnState of ['running', 'reviewing'])
+test(`dispensa de discussao em pausa interna retoma ${returnState} no modo ${planningMode}`, t => {
+  const f = fixture(t, { planningMode })
+  if (planningMode === 'phase') {
+    f.ok('skip-phase-discussion', 'F1', '--reason', 'Contrato confirmado', '--confirmed-by-user')
+    f.ok('plan-phase', 'F1', '--agent', 'planner'); f.finishPhasePlanning('F1')
+  } else {
+    f.ok('skip-discussion', 'T1', '--reason', 'Contrato confirmado', '--confirmed-by-user')
+    f.ok('plan-task', 'T1', '--agent', 'planner'); f.finishTaskPlanning('T1')
+  }
+  f.ok('start', 'T1', '--agent', 'executor')
+  if (returnState === 'reviewing') f.ok('review', 'T1', '--agent', 'reviewer')
+  f.ok('pause-replanning', 'T1', '--reason', 'Pesquisar uma abordagem melhor dentro do contrato')
+  const paused = f.state().tasks.T1
+  f.ok('skip-discussion', 'T1', '--reason', 'Usuário dispensou nova discussão do mesmo contrato', '--confirmed-by-user')
+  const skipped = f.state().tasks.T1
+  assert.deepEqual(skipped, { ...paused, discussionSkips: skipped.discussionSkips })
+  assert.deepEqual(skipped.discussionSkips.slice(0, -1), paused.discussionSkips ?? [])
+  assert.equal(skipped.discussionSkips.at(-1).confirmedByUser, true)
+  const unchanged = f.state(), events = f.events()
+  f.rejected(/needs --confirmed-by-user/, 'skip-discussion', 'T1', '--reason', 'Sem confirmação')
+  f.rejected(/needs --reason/, 'skip-discussion', 'T1', '--confirmed-by-user')
+  assert.deepEqual(f.state(), unchanged); assert.equal(f.events(), events)
+  f.ok('plan-task', 'T1', '--agent', 'replanner'); f.finishTaskPlanning('T1')
+  const replanned = f.state().tasks.T1
+  assert.equal(replanned.state, 'blocked')
+  assert.equal(replanned.taskPlan.discussionDecisionId, skipped.discussionSkips.at(-1).decisionId)
+  assert.deepEqual(replanned.attempts, paused.attempts)
+  assert.deepEqual(replanned.validations, paused.validations)
+  f.ok('unblock', 'T1')
+  const resumed = f.state().tasks.T1
+  assert.equal(resumed.state, returnState)
+  assert.deepEqual(resumed.attempts, paused.attempts)
+  assert.equal(resumed.agent, paused.agent); assert.equal(resumed.reviewer, paused.reviewer)
+  f.rejected(/no passing validation/, 'done', 'T1')
+  if (returnState === 'running') {
+    f.rejected(/independent reviewer/, 'validate', 'T1', '--ok', '--evidence', 'Executor não aprova')
+    f.ok('review', 'T1', '--agent', 'reviewer')
+  }
+  f.ok('validate', 'T1', '--ok', '--evidence', 'Revisor independente conferiu o contrato', '--cwd', f.project)
+  f.ok('done', 'T1')
+  assert.equal(f.state().tasks.T1.attempts.length, 1)
+})
+
+test('dispensa de discussao nao contorna pergunta externa, bloqueio externo nem aceite de contrato novo', t => {
+  const f = fixture(t, { planningMode: 'task' })
+  f.ok('skip-discussion', 'T1', '--reason', 'Contrato confirmado', '--confirmed-by-user')
+  f.ok('plan-task', 'T1', '--agent', 'planner'); f.finishTaskPlanning('T1')
+  f.ok('start', 'T1', '--agent', 'executor')
+  f.ok('pause-replanning', 'T1', '--reason', 'Decisão pendente')
+  // Um registro legado com pergunta pendente não pode dispensar essa decisão.
+  const legacy = f.state()
+  legacy.tasks.T1.blockQuestion = 'Qual alternativa aprovar?'
+  f.save(legacy)
+  let before = f.state(), events = f.events()
+  f.rejected(/internally paused/, 'skip-discussion', 'T1', '--reason', 'Não dispensar a pergunta', '--confirmed-by-user')
+  f.rejected(/pausa interna[\s\S]*sem pergunta externa/, 'skip-discussion', 'T1', '--reason', 'Não dispensar a pergunta', '--confirmed-by-user', '--lang', 'pt-BR')
+  assert.deepEqual(f.state(), before); assert.equal(f.events(), events)
+  f.ok('block', 'T1', '--reason', 'Aguardando resposta externa')
+  before = f.state(); events = f.events()
+  f.rejected(/T1 is blocked:[\s\S]*unblock/, 'skip-discussion', 'T1', '--reason', 'Não contornar bloqueio', '--confirmed-by-user')
+  assert.deepEqual(f.state(), before); assert.equal(f.events(), events)
+  f.ok('unblock', 'T1', '--answer', 'Preservar o comportamento aprovado')
+  f.ok('pause-replanning', 'T1', '--reason', 'Contrato será atualizado')
+  f.plan.tasks[0].title = 'Novo comportamento aprovado precisa de aceite específico'
+  f.writePlan(); f.ok('sync-plan', '--plan', f.planPath, '--confirm-invalidation')
+  before = f.state(); events = f.events()
+  assert.ok(before.tasks.T1.contractConfirmationRequired)
+  f.rejected(/fresh answered contract confirmation/, 'skip-discussion', 'T1', '--reason', 'Dispensa não é aceite do contrato', '--confirmed-by-user')
+  assert.deepEqual(f.state(), before); assert.equal(f.events(), events)
 })
 
 test('pause-replanning marca pausa interna, conserva tentativa e revisão e retoma após novo plano', t => {
