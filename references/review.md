@@ -132,6 +132,11 @@ permissions; the approved plan is not permission for unrelated or destructive si
 
 A rejection is recorded the same way with `validate <task> --failed --summary "..." --evidence "..."`.
 
+A failed check records a failed validation, not approval. The output states that no approval was recorded
+before echoing the summary and evidence retained for diagnosis. These observations do not override the
+failed check or permit `done`; earlier receipts remain in history, but only the current passing receipt
+can authorize completion.
+
 ## Failures that are not rejections
 
 - `validate --ok` **executes the contract commands**, including database and network operations. It is not a manual approval flag. Read each check's output and failed index before deciding whether failure is implementation, environment, or contract related.

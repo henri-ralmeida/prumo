@@ -3729,6 +3729,7 @@ const commands = {
       emit(name, 'task_validate', id, { ok: last.ok, by: last.by, evidence: last.evidence,
         ...(last.summary === undefined ? {} : { summary: last.summary }), error })
       log('[prumo] ' + id + ' validation recorded by ' + last.by + ': ' + (last.ok ? 'OK' : 'FAILED'))
+      if (!last.ok) log('[prumo] ' + tr('Validation failed; no approval was recorded. The following summary and evidence belong to the failed validation.'))
       if (last.summary !== undefined) log('[prumo] ' + tr('Recorded summary: {0}', last.summary))
       const preview = last.evidence.split(/\r?\n/).slice(0, 5).join('\n').slice(0, 1000)
       log('[prumo] ' + tr('Recorded evidence (first 5 lines, up to 1000 characters; {0} characters total):', last.evidence.length))

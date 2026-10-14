@@ -218,6 +218,36 @@ test('consultas e migração de schema atual preservam os dados', t => {
     f.ok(...args); assert.deepEqual(f.snapshot(), before)
   }
 })
+for (const lang of ['en', 'pt-BR']) test(`validacao reprovada distingue evidencia gravada de aprovacao em ${lang}`, t => {
+  const f = fixture(t); f.init(); f.prepare()
+  f.ok('start', 'T1', '--agent', 'executor')
+  f.ok('review', 'T1', '--agent', 'reviewer')
+  f.ok('review-progress', 'T1', '--step', '1', '--agent', 'reviewer')
+  f.ok('validate', 'T1', '--ok', '--summary', 'Verificação anterior', '--evidence', 'Resultado anterior aprovado', '--cwd', f.root)
+  const before = f.state().tasks.T1
+  writeFileSync(join(f.root, 'behavior.cjs'), 'process.exit(1)\n')
+  const failed = f.command('validate', 'T1', '--ok', '--summary', 'Observação da falha', '--evidence', 'A regra não passou', '--cwd', f.root, '--lang', lang)
+  assert.equal(failed.status, 1, failed.output)
+  const notice = lang === 'en' ? 'Validation failed; no approval was recorded' : 'A validação falhou; nenhuma aprovação foi registrada'
+  const echo = lang === 'en' ? 'Recorded summary:' : 'Resumo gravado:'
+  assert.ok(failed.stdout.indexOf(notice) >= 0, failed.output)
+  assert.ok(failed.stdout.indexOf(notice) < failed.stdout.indexOf(echo), failed.output)
+  assert.match(failed.stdout, /FAILED/)
+  assert.match(failed.stderr, /exit 1/)
+  const current = f.state().tasks.T1
+  assert.deepEqual(current.validations.slice(0, -1), before.validations)
+  assert.equal(current.validations.at(-1).ok, false)
+  assert.equal(current.validations.at(-1).summary, 'Observação da falha')
+  assert.equal(current.validations.at(-1).evidence, 'A regra não passou')
+  for (const field of ['taskPlan', 'attempts', 'agent', 'reviewer', 'executionAuthorization', 'deps'])
+    assert.deepEqual(current[field], before[field])
+  const preserved = f.snapshot()
+  const done = f.command('done', 'T1')
+  assert.equal(done.status, 1)
+  assert.match(done.stderr, /no passing validation/)
+  assert.deepEqual(f.snapshot(), preserved)
+})
+
 test('fluxo completo registra progresso, verificação independente, evidência e conclusão', t => {
   const f = fixture(t); f.init(); f.prepare()
   f.ok('start', 'T1', '--agent', 'executor')
