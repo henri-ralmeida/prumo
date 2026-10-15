@@ -2,6 +2,18 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.10.0 — 2026-10-15
+
+- Remova tarefas pendentes elegíveis com sync-plan --remove e --reason, confira as alterações com --dry-run e preserve os registros completos e os identificadores reservados no histórico de remoções.
+- Recuse a remoção de tarefas com evidências de execução, contratos dependentes, rodadas ativas ou perguntas determinantes sem resposta.
+- Reconfirme somente as tarefas afetadas por mudanças de contrato e preserve planos de tarefas não alteradas, aceites exatos e registros históricos.
+- Preserve a dispensa explícita de planejamento em mudanças compatíveis dos comandos de validação e exija respostas às perguntas devidas da fase antes de encerrar o planejamento.
+- Recupere o mesmo contexto da discussão aberta e permita sua dispensa explícita durante pausas internas de replanejamento, sem substituir a tentativa ativa.
+- Impeça que o planejamento da fase substitua planos vinculados a tentativas ativas de execução ou revisão, preservando novas tentativas corretivas legítimas.
+- Mantenha estáveis as impressões digitais do escopo revisado ao fazer commit de arquivos inalterados, preserve a compatibilidade com impressões antigas e exclua tarefas encerradas dos conflitos ativos de escrita.
+- Diferencie evidências de validação com falha de aprovação e repita avisos quando a validação ocorrer em um repositório diferente do escopo aprovado.
+- Avise sobre textos de inspeção usados como comandos de shell e explique como revisores registram observações sem tratar progresso como aprovação independente.
+
 ## 2.9.10 — 2026-10-14
 
 - Preserve a tentativa ativa e o planejamento da fase em alterações compatíveis dos comandos de validação, mantendo o histórico do contrato e os controles de autorização

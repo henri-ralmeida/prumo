@@ -1,4 +1,32 @@
 {
+  "2.10.0": {
+    "en": [
+      {
+        "title": "Added — Explicit removal of unstarted tasks",
+        "items": [
+          "Remove eligible pending tasks with sync-plan --remove and --reason, preview changes with --dry-run, and preserve complete records and reserved identifiers in removal history",
+          "Refuse removal of tasks with execution evidence, dependent contracts, active rounds or unresolved governing questions"
+        ]
+      },
+      {
+        "title": "Fixed — Contract and planning continuity",
+        "items": [
+          "Reconfirm only tasks affected by contract changes and preserve unchanged sibling plans, exact acceptances and historical records",
+          "Preserve explicit planning skips for compatible validation command changes and require answers to due phase questions before closing planning",
+          "Recover the same open discussion context and allow explicit discussion skips during internal replanning pauses without replacing the active attempt",
+          "Prevent phase planning from replacing plans tied to active execution or review attempts while preserving legitimate corrective retries"
+        ]
+      },
+      {
+        "title": "Fixed — Scope and validation evidence",
+        "items": [
+          "Keep reviewed scope fingerprints stable when unchanged files are committed, retain legacy fingerprint compatibility and exclude terminal tasks from active write conflicts",
+          "Distinguish failed validation evidence from approval and repeat warnings when validation runs in a different repository than the approved scope",
+          "Warn about inspection prose used as a shell command and explain how reviewers record observations without treating progress as independent approval"
+        ]
+      }
+    ]
+  },
   "2.9.10": {
     "en": [
       {
