@@ -50,16 +50,16 @@ const coverageOptions = process.env.NODE_V8_COVERAGE && process.env.PRUMO_TEST_C
 env.NODE_OPTIONS = `${coverageOptions} --import="${pathToFileURL(join(repo, 'test/fixtures/dashboard-port.mjs')).href}"`.trim()
 const dashboardPreference = join(home, '.local/share/prumo/dashboard.json')
 env.PRUMO_TEST_DASHBOARD_DIAGNOSTICS = join(home, 'dashboard-process.ndjson')
-async function dashboardHealth() {
+async function dashboardHealth(port = dashboardPort) {
   try {
-    const body = await (await fetch(`http://127.0.0.1:${dashboardPort}/api/health`, { signal: AbortSignal.timeout(2000) })).json()
+    const body = await (await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(2000) })).json()
     return body
   } catch { return null }
 }
-async function waitForDashboard(accept, preparation = '') {
+async function waitForDashboard(accept, preparation = '', port = dashboardPort) {
   const deadline = Date.now() + 30000
   for (;;) {
-    const body = await dashboardHealth()
+    const body = await dashboardHealth(port)
     if (body && accept(body)) return body
     if (Date.now() > deadline) {
       let events = ''
@@ -202,6 +202,10 @@ try {
     // Selecionar a porta imediatamente antes de iniciar evita reutilizar a porta escolhida antes da instalação.
     dashboardPort = await freePort()
     env.PRUMO_TEST_DASHBOARD_PORT = String(dashboardPort)
+    // A versão publicada escuta na porta legada 4949; a versão atual deve migrá-la para a porta padrão atual.
+    let legacyPort = await freePort()
+    while (legacyPort === dashboardPort) legacyPort = await freePort()
+    env.PRUMO_TEST_LEGACY_DASHBOARD_PORT = String(legacyPort)
     put(dashboardPreference, { enabled: false, mechanism: process.platform === 'win32' ? 'windows-startup' : 'xdg' })
     // O cenário de atualização começa com o dashboard antigo em execução, inclusive quando seu lançador histórico falha.
     previousDashboard = spawn(process.execPath, [join(installed, 'scripts/serve.mjs'), '--global', '--port', '4949'],
@@ -212,13 +216,13 @@ try {
     previousDashboard.stdout.on('data', value => { previousOutput += value })
     previousDashboard.stderr.on('data', value => { previousOutput += value })
     await waitForDashboard(body => body.product === 'prumo' && body.version === fromVersion,
-      () => `dashboard (${fromVersion}): exit=${previousDashboard.exitCode}\n${previousOutput}`)
+      () => `dashboard (${fromVersion}): exit=${previousDashboard.exitCode}\n${previousOutput}`, legacyPort)
     const enable = spawnSync(process.execPath, [cli, 'dashboard', 'enable'], { cwd: project, env, encoding: 'utf8', windowsHide: true, timeout: 60000 })
     // A versão antiga pode não confirmar o PID iniciado, como observado no Windows; o dashboard ainda precisa responder.
     evidence.push({ args: ['dashboard', 'enable'], status: enable.status, stdout: enable.stdout, stderr: enable.stderr })
     if (enable.error?.code !== 'ETIMEDOUT') assert.ifError(enable.error)
     const health = await waitForDashboard(body => body.product === 'prumo' && body.version === fromVersion,
-      `dashboard enable (${fromVersion}): status=${enable.status}\n${enable.stdout}\n${enable.stderr}\n${previousOutput}`)
+      `dashboard enable (${fromVersion}): status=${enable.status}\n${enable.stdout}\n${enable.stderr}\n${previousOutput}`, legacyPort)
     let preference = JSON.parse(readFileSync(dashboardPreference, 'utf8'))
     if (enable.error?.code === 'ETIMEDOUT' && preference.enabled !== true) {
       preference = { ...preference, enabled: true, node: process.execPath,

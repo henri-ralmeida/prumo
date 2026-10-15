@@ -10,7 +10,10 @@ import { createServer } from 'node:net'
 import { HARNESSES, planInstall, applyInstall, restoreInstall, installationStatus, detectHarnesses, discoverInstallations, reconcileDashboardInstall, dashboardPackageRoot, contentId, packageIdentity, inspectInstallation, installationFilesCurrent } from '../lib/install.mjs'
 import { installationBundle, retiredInstructionFiles } from '../scripts/installation-bundle.mjs'
 import { ensureGlobalCliContent, globalCliContentCurrent, globalCliState, updateGlobalCliFromPackage, npmProcess } from '../lib/update.mjs'
-import { enableDashboard } from '../lib/autostart.mjs'
+import * as autostart from '../lib/autostart.mjs'
+import { legacyAbsentApi } from './fixtures/legacy-absent.mjs'
+
+const { enableDashboard } = legacyAbsentApi(autostart)
 import { readDashboardEvents } from '../scripts/dashboard-diagnostics.mjs'
 import { runPostinstall } from '../scripts/postinstall.mjs'
 import { inside, findRoot, storageHome, graphRoots, globalGraphRoots } from '../scripts/storage.mjs'
@@ -670,8 +673,8 @@ test('automatic CLI reports no detection and continues independent harnesses aft
 
 test('dashboard reconciliation is partial-safe, resumable, dry-run inert and respects opt-out', async () => {
   const calls = []
-  const enable = async options => { calls.push(['enable', options]); return { ok: true, url: 'http://localhost:4949' } }
-  const restart = async options => { calls.push(['restart', options]); return { ok: true, url: 'http://localhost:4949' } }
+  const enable = async options => { calls.push(['enable', options]); return { ok: true, url: 'http://localhost:4950' } }
+  const restart = async options => { calls.push(['restart', options]); return { ok: true, url: 'http://localhost:4950' } }
   const none = await reconcileDashboardInstall(0, { status: async () => { throw new Error('must not inspect') }, enable, restart })
   assert.deepEqual(none, { ok: false, action: 'none' })
   const disabled = await reconcileDashboardInstall(2, { status: async () => ({ disabled: true }), enable, restart })
@@ -764,7 +767,7 @@ test('same-version CLI refresh persists new dashboard content across source remo
   const globalWrapper = join(globalRoot, 'scripts', wrapperName)
   const dashboardOptions = {
     platform: 'linux', home, packageRoot: globalRoot, script: globalWrapper, lang: 'en', env,
-    exec: () => ({ status: 1, stdout: '' }), fetch: (target, init) => fetch(String(target).replace('127.0.0.1:4949', `127.0.0.1:${port}`), init),
+    exec: () => ({ status: 1, stdout: '' }), fetch: (target, init) => String(target).includes('127.0.0.1:4949/') ? Promise.reject(new Error('dashboard legado isolado ausente')) : fetch(String(target).replace('127.0.0.1:4950', `127.0.0.1:${port}`), init),
     portAvailable: async () => true, delay: milliseconds => setTimeout(milliseconds), readinessAttempts: 100, readinessInterval: 40,
     spawn(node, args, settings) {
       const child = spawn(node, args, settings)

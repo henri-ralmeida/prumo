@@ -254,7 +254,7 @@ Full task contract (every field, defaults, per-task `requireReview`/`maxAttempts
 
 ```bash
 node $ENGINE init --plan "$PRUMO_ROOT/.specs/graph/plans/<name>.plan.json" --run <name>-01
-prumo dashboard enable  # http://localhost:4949 — per-user background service
+prumo dashboard enable  # http://localhost:4950 — per-user background service
 prumo dashboard logs    # recent bounded lifecycle and crash diagnostics
 ```
 
@@ -283,7 +283,7 @@ resumes an active attempt. Details, auto-mode slot refilling and revocation by c
 
 **Two runs at once** work only when neither leans on the defaults: pass `--run <name>` to every
 command for the non-current run, and give the second dashboard its own port AND pin —
-`node $SERVE --port 4950 --run <name>`. State never collides (each run owns its directory and
+`node $SERVE --port 4951 --run <name>`. State never collides (each run owns its directory and
 its lock); `CURRENT` is the only thing they share. Prefer one run at a time anyway: two runs
 also share the real ceiling — the machine and the API limits — without knowing about each other.
 

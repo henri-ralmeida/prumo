@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { parseServeArgs } from '../scripts/serve-args.mjs'
 
 test('dashboard usa porta padrão e permite porta dinâmica para ambientes isolados', () => {
-  assert.deepEqual(parseServeArgs([]), { port: 4949, run: null, syncPlan: false, global: false })
+  assert.deepEqual(parseServeArgs([]), { port: 4950, run: null, syncPlan: false, global: false })
   assert.equal(parseServeArgs(['--port', '0']).port, 0)
   assert.equal(parseServeArgs(['--port', '65535']).port, 65535)
 })
@@ -15,7 +15,7 @@ for (const port of ['', ' ', '-1', '65536', '1.5', 'Infinity', 'NaN', 'abc', '0x
 for (const flag of ['port', 'run', 'lang']) {
   test(`dashboard exige valor de --${flag}`, () => assert.throws(() => parseServeArgs([`--${flag}`]), /requires a value/))
   test(`dashboard não consome outra opção como valor de --${flag}`, () => assert.throws(() => parseServeArgs([`--${flag}`, '--global']), /requires a value/))
-  const value = flag === 'port' ? '4949' : flag === 'lang' ? 'en' : 'demo'
+  const value = flag === 'port' ? '4950' : flag === 'lang' ? 'en' : 'demo'
   test(`dashboard rejeita repetição de --${flag}`, () => assert.throws(() => parseServeArgs([`--${flag}`, value, `--${flag}`, value]), /Duplicate/))
 }
 for (const flag of ['global', 'sync-plan']) {

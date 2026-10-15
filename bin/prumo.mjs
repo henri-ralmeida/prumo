@@ -8,8 +8,9 @@ import { resolve, join, dirname } from 'node:path'
 import { HARNESSES, planInstall, applyInstall, restoreInstall, installationStatus, discoverInstallations, detectHarnesses, reconcileDashboardInstall, readInstallationMarker, installedPoFirstLanguage, inspectInstallation } from '../lib/install.mjs'
 import { assertUpdateVersion, ensureGlobalCliContent, globalCliContentCurrent, globalCliState, launchUpdate, reconcileDashboardUpdate, updateGlobalCliFromPackage, updateRequest } from '../lib/update.mjs'
 import { releaseHistory } from '../lib/release-notes.mjs'
-import { dashboardNeedsRepair, dashboardStatus, disableDashboard, enableDashboard, readDashboardEvents, runDashboardForeground, stopDashboardForUpdate } from '../lib/autostart.mjs'
+import { DASHBOARD_ALIAS_URL, DASHBOARD_URL, dashboardNeedsRepair, dashboardStatus, disableDashboard, enableDashboard, readDashboardEvents, runDashboardForeground, stopDashboardForUpdate } from '../lib/autostart.mjs'
 import { openDashboardBrowser, BOARD_URL } from '../lib/browser.mjs'
+import { LEGACY_DASHBOARD_PORT } from '../scripts/serve-args.mjs'
 import { readDashboardErrors } from '../scripts/dashboard-diagnostics.mjs'
 import { selectHarnesses } from '../lib/prompt.mjs'
 import { diagnoseShellFilter } from '../lib/shell-diagnostics.mjs'
@@ -19,6 +20,8 @@ import { language, createTranslator, messages } from '../scripts/i18n.mjs'
 
 let t = createTranslator(messages, language())
 const print = (...parts) => console.log(...parts.map(part => t(part)))
+// Uma linha basta: o navegador continua abrindo localhost, pois outras instalações não têm a entrada no arquivo hosts.
+const printAliasHint = () => print(t('Also available at {0} when prumo points to 127.0.0.1 in the hosts file', DASHBOARD_ALIAS_URL))
 const color = (code, value, stream = process.stdout) => stream.isTTY && !('NO_COLOR' in process.env) ? `\x1b[${code}m${value}\x1b[0m` : value
 const harnessLabels = {
   claude: 'Claude Code', kiro: 'Kiro', codex: 'Codex', dsh: 'DeepSeek Harness',
@@ -186,6 +189,8 @@ try {
       const result = action === 'enable' ? await enableDashboard() : action === 'disable' ? await disableDashboard() : await dashboardStatus()
       print(t('Dashboard: {0}; {1}; {2}', t(result.process), t(result.registered ? 'registered' : 'not registered'), t(result.enabled ? 'enabled' : result.disabled ? 'disabled' : 'not configured')))
       print(t('version: {0}; content: {1}; port: {2}; URL: {3}', result.version ?? version, result.contentId ?? t('unknown'), result.port, result.url))
+      if (action !== 'disable') printAliasHint()
+      if (result.legacy) print(t('Previous dashboard still running on port {0}; run prumo update or prumo dashboard enable to move it to port {1}', LEGACY_DASHBOARD_PORT, result.port))
       if (result.origin || result.path) print(t('origin: {0}; path: {1}', result.origin ?? t('unknown'), result.path ?? t('unknown')))
       if (action === 'enable' && result.registered && result.process === 'running') {
         const { reports } = registeredReports({ projects: values.project ?? [] })
@@ -207,7 +212,10 @@ try {
       const request = { dryRun: values['dry-run'] ?? false, lang: values.lang, projects: (values.project ?? []).map(path => resolve(path)), cwd: process.cwd(), updateCli: true, sourceVersion: version, globalVersion: globalCliState(packageRoot).version, pendingUpdate }
       const code = await launchUpdate(request, {
         onCurrent: current => print(t('Prumo is already up to date'), `v${current}`),
-        onDashboardRepair: dryRun => print(dryRun ? 'Would restart the enabled Prumo dashboard' : 'Dashboard restarted: http://localhost:4949'),
+        onDashboardRepair: dryRun => {
+          print(dryRun ? 'Would restart the enabled Prumo dashboard' : `Dashboard restarted: ${DASHBOARD_URL}`)
+          if (!dryRun) printAliasHint()
+        },
       }).catch(error => {
         if (error.dashboardFailure === undefined) throw error
         throw new Error(t('Dashboard restart failed: {0}', t(error.dashboardFailure)))
@@ -227,7 +235,7 @@ try {
         process.exitCode = 2
       } })
       const checkpoint = join(homedir(), '.local/share/prumo/update-pending.json')
-      const stopped = request.dryRun || dashboardBefore.process === 'stopped'
+      const stopped = request.dryRun || dashboardBefore.process === 'stopped' && !dashboardBefore.legacy
         ? { ok: true, stopped: false } : await stopDashboardForUpdate({ packageRoot: previousGlobal.packageRoot ?? packageRoot })
       if (!stopped.ok) throw new Error(t('Dashboard restart failed: {0}', t(stopped.error)))
       let dashboardRestored = false
@@ -428,6 +436,7 @@ try {
       if (dashboard.action === 'enable') print(dryRun ? 'Would enable and start the Prumo dashboard' : `Dashboard enabled: ${dashboard.status.url}`)
       else if (dashboard.action === 'restart') print(dryRun ? 'Would restart the enabled Prumo dashboard' : `Dashboard restarted: ${dashboard.status.url}`)
       else if (dashboard.action === 'disabled') print('Dashboard remains disabled by user preference')
+      if (!dryRun && ['enable', 'restart'].includes(dashboard.action)) printAliasHint()
       if (dashboard.browserFailed) print(t('Could not open the default browser; open {0}', BOARD_URL))
       if (!dashboard.ok) {
         const detail = dashboard.status?.error ?? (dashboard.status?.conflict ? `port ${dashboard.status.port} is used by another process` : undefined)

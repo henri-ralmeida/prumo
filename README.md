@@ -48,7 +48,7 @@ Install the CLI, Prumo skill, PO First and the per-user dashboard service in one
 npm install -g @henri-ralmeida/prumo
 ```
 
-The global npm `postinstall` configures every detected supported harness and enables the dashboard at [http://localhost:4949](http://localhost:4949). A project-local npm install is inert: it does not change global harness configuration or register startup. If npm scripts were disabled, or a new harness was installed later, repair the setup with `prumo install --all`.
+The global npm `postinstall` configures every detected supported harness and enables the dashboard at [http://localhost:4950](http://localhost:4950). A project-local npm install is inert: it does not change global harness configuration or register startup. If npm scripts were disabled, or a new harness was installed later, repair the setup with `prumo install --all`.
 
 At least one successfully configured harness is kept and the dashboard is enabled even if another harness fails, but the command exits nonzero and reports the incomplete configuration. If none can be configured, installation exits nonzero and does not enable the dashboard. Repeating the command resumes safely without duplicating files, managed instruction blocks or startup records.
 
@@ -149,7 +149,7 @@ prumo dashboard
 
 The service saves Node stderr in `~/.local/share/prumo/dashboard-stderr.log`, including a stack when available; `prumo dashboard logs` shows lifecycle events and the end of that file. The launcher also records the process result. On the next launch, files over 256 KiB are preserved as `.previous`; the command reads bounded tails. If the launcher is also forcibly terminated or the computer shuts down, an error or exit code may be unavailable: `status` detects the missing process when queried without assigning an unknown cause.
 
-For startup or port trouble, begin with `prumo dashboard status`. If another Prumo owns port 4949, setup reuses or restarts the managed service. If an unrelated process owns it, Prumo reports the conflict and never terminates that process; resolve the owner yourself, then run `prumo dashboard enable`.
+For startup or port trouble, begin with `prumo dashboard status`. If another Prumo owns port 4950, setup reuses or restarts the managed service. If an unrelated process owns it, Prumo reports the conflict and never terminates that process; resolve the owner yourself, then run `prumo dashboard enable`.
 
 ## Update installed environments
 
@@ -304,6 +304,6 @@ Hermes Agent and OpenClaw also support Prumo installation. Use `prumo install --
 or `prumo install --openclaw --project <workspace>` and check paths, permissions and planning in the
 [harness guide](references/harnesses.md).
 
-The server listens only on `127.0.0.1:4949` and is read-only. It discovers known central workspaces and projects recorded in `installations.json`, selects the most recently modified current run, notices new runs without restart and shows an empty state when none exist. It does not execute tasks, edit graph state, synchronize plans or scan the disk.
+The server listens only on `127.0.0.1:4950` and is read-only. If `prumo` points to `127.0.0.1` in your hosts file, `http://prumo:4950` works too; no other host name is accepted. It discovers known central workspaces and projects recorded in `installations.json`, selects the most recently modified current run, notices new runs without restart and shows an empty state when none exist. It does not execute tasks, edit graph state, synchronize plans or scan the disk.
 
 The dashboard keeps every card in place while filters dim unrelated work. Filters cover all, completed, incomplete, waiting dependencies, ready for discussion, discussing, ready to plan, planning, ready to execute, executing, reviewing, blocked, failed and skipped; `done` and `skipped` are terminal. Turn dependency context on to reveal direct predecessors, successors and their connecting curves. Density is detailed through 24 tasks, compact through 100 and dense above that; phases also wrap to the viewport width, and the side panel can collapse without losing selection or navigation.

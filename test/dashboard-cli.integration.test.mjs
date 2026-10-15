@@ -26,6 +26,8 @@ function result(action) {
   if (process.env.PRUMO_TEST_DASHBOARD_THROW) throw new Error('Falha de serviço simulada')
   return JSON.parse(process.env.PRUMO_TEST_DASHBOARD_RESULT)
 }
+export const DASHBOARD_URL = 'http://localhost:4950'
+export const DASHBOARD_ALIAS_URL = 'http://prumo:4950'
 export const dashboardNeedsRepair = () => false
 export const dashboardStatus = async () => result('status')
 export const enableDashboard = async () => result('enable')
@@ -36,11 +38,11 @@ export const runDashboardForeground = () => result('foreground').code
 export const readDashboardEvents = () => result('logs').events
 `)
   const base = { ok: true, process: 'running', registered: true, enabled: true,
-    version: '2.1.1', port: 4949, url: 'http://localhost:4949', contentId: 'isolado', code: 0, events: [] }
-  const run = (args, result = base, throws = false) => {
+    version: '2.1.1', port: 4950, url: 'http://localhost:4950', contentId: 'isolado', code: 0, events: [] }
+  const run = (args, result = base, throws = false, lang = 'en') => {
     rmSync(log, { force: true })
     const r = spawnSync(process.execPath, [join(copy, 'bin/prumo.mjs'), 'dashboard', ...args], {
-      cwd: home, env: { ...process.env, HOME: home, USERPROFILE: home, PRUMO_HOME: home, PRUMO_LANG: 'en',
+      cwd: home, env: { ...process.env, HOME: home, USERPROFILE: home, PRUMO_HOME: home, PRUMO_LANG: lang,
         PRUMO_TEST_ACTION_LOG: log, PRUMO_TEST_DASHBOARD_RESULT: JSON.stringify(result), PRUMO_TEST_DASHBOARD_THROW: throws ? '1' : '' },
       encoding: 'utf8', timeout: 20000, windowsHide: true,
     })
@@ -59,6 +61,21 @@ export const readDashboardEvents = () => result('logs').events
       else assert.match(r.stdout, /Dashboard:/)
     })
   }
+  for (const [lang, hint, legacyLine] of [
+    ['en', /Also available at http:\/\/prumo:4950 when prumo points to 127\.0\.0\.1 in the hosts file/, /Previous dashboard still running on port 4949; run prumo update or prumo dashboard enable to move it to port 4950/],
+    ['pt-BR', /Também disponível em http:\/\/prumo:4950 quando prumo aponta para 127\.0\.0\.1 no arquivo hosts/, /O dashboard anterior ainda está em execução na porta 4949; execute prumo update ou prumo dashboard enable para movê-lo para a porta 4950/],
+  ]) await t.test(`dica do nome prumo e dashboard anterior na 4949 em ${lang}`, () => {
+    for (const action of ['enable', 'status']) {
+      const r = run([action], { ...base, legacy: action === 'status' }, false, lang)
+      assert.equal(r.status, 0, r.output)
+      assert.match(r.stdout, hint)
+      assert.match(r.stdout, /http:\/\/localhost:4950/, 'a URL principal continua localhost')
+      if (action === 'status') assert.match(r.stdout, legacyLine)
+      else assert.doesNotMatch(r.stdout, legacyLine)
+    }
+    const disabled = run(['disable'], base, false, lang)
+    assert.doesNotMatch(disabled.stdout, hint, 'disable não repete a dica')
+  })
   for (const code of [0, 7]) await t.test(`execução em primeiro plano preserva saída ${code}`, () => {
     const r = run([], { ...base, code })
     assert.equal(r.status, code, r.output); assert.deepEqual(r.actions, ['foreground'])

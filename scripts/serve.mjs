@@ -5,8 +5,8 @@ import { hydrateDiscoveries } from './discovery-history.mjs'
  * --sync-plan delega a reconciliação do plano aprovado a engine.mjs, o único gravador de estado.
  * Encerrá-lo não afeta a execução.
  *
- * Uso: node <skill>/scripts/serve.mjs [--port 4949] [--run <name>] [--sync-plan]
- * Depois, abra http://localhost:4949
+ * Uso: node <skill>/scripts/serve.mjs [--port 4950] [--run <name>] [--sync-plan]
+ * Depois, abra http://localhost:4950
  */
 import { createServer } from 'node:http'
 import { randomUUID } from 'node:crypto'
@@ -141,7 +141,7 @@ import { language, localizeDashboard, log, errorLog, tr } from './i18n.mjs'
 import { discoveryDigest, hasCurrentTaskPlan, phasePlanningContext, planningContext, usesCurrentPlanning, currentPlanningSkip } from './validation.mjs'
 import { dashboardDiagnostics } from './dashboard-diagnostics.mjs'
 import { contentId } from './installation-bundle.mjs'
-import { parseServeArgs } from './serve-args.mjs'
+import { DASHBOARD_ALIAS_HOST, parseServeArgs } from './serve-args.mjs'
 
 let options
 try { options = parseServeArgs(process.argv.slice(2)) } catch (error) {
@@ -515,7 +515,9 @@ const server = createServer((req, res) => {
     let source, host
     try { source = new URL(origin); host = new URL(`http://${req.headers.host}`) }
     catch { return json(res, 403, { error: 'same-origin user control required' }) }
-    if (!['localhost', '127.0.0.1', '[::1]'].includes(host.hostname) || Number(host.port) !== server.address().port ||
+    // 'prumo' é um nome local que o usuário mapeia para 127.0.0.1 no arquivo hosts; a correspondência é exata e a checagem de
+    // porta continua valendo, de modo que a proteção contra DNS rebinding permanece para qualquer outro nome.
+    if (!['localhost', '127.0.0.1', '[::1]', DASHBOARD_ALIAS_HOST].includes(host.hostname) || Number(host.port) !== server.address().port ||
         source.origin !== host.origin || req.headers['x-prumo-control'] !== AGENT_CONTROL_TOKEN)
       return json(res, 403, { error: 'same-origin user control required' })
     if (!run) return json(res, 404, { error: 'no run' })

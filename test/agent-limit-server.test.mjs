@@ -318,3 +318,46 @@ test('checkbox global altera todas as execuções e salva padrão local; desmarc
   assert.equal(JSON.parse(readFileSync(join(secondDir, 'state.json'), 'utf8')).plan.maxAgents, 6)
   assert.equal(JSON.parse(readFileSync(preferences, 'utf8')).maxAgents, 6)
 })
+
+function postWithHost(port, host, origin, token, body = { maxAgents: 2 }) {
+  const payload = JSON.stringify(body)
+  return new Promise((resolve, reject) => {
+    const req = httpRequest({ host: '127.0.0.1', port, path: '/api/agent-limit', method: 'POST', headers: {
+      Host: host, Origin: origin, 'X-Prumo-Control': token, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload),
+    } }, response => {
+      let text = ''
+      response.on('data', chunk => { text += chunk })
+      response.on('end', () => resolve({ status: response.statusCode, text }))
+    })
+    req.on('error', reject)
+    req.end(payload)
+  })
+}
+
+test('controle aceita o nome local prumo por correspondência exata e mantém a checagem de porta', { timeout: 60000 }, async t => {
+  const f = fixture(t)
+  const { request } = await startDashboard(t, f)
+  const { agentControlToken: token } = await (await request('/api/state')).json()
+  const port = Number(request.port)
+  const stateBefore = readFileSync(f.statePath, 'utf8')
+
+  // Nomes parecidos, subdomínios, porta errada e hosts externos continuam recusados, mesmo com Origin idêntico ao Host.
+  for (const host of [`prumo.evil.com:${port}`, `xprumo:${port}`, `prumo.:${port}`, `prumo:${port + 1}`, `prumo:9999`, `evil.com:${port}`, `prumo`]) {
+    const result = await postWithHost(port, host, `http://${host}`, token)
+    assert.equal(result.status, 403, `${host}: ${result.text}`)
+  }
+  // O Host aceito não basta quando a Origin aponta para outro nome ou porta.
+  assert.equal((await postWithHost(port, `prumo:${port}`, `http://localhost:${port}`, token)).status, 403)
+  assert.equal((await postWithHost(port, `prumo:${port}`, `http://evil.com:${port}`, token)).status, 403)
+  assert.equal(readFileSync(f.statePath, 'utf8'), stateBefore, 'recusas não gravam')
+
+  const lower = await postWithHost(port, `prumo:${port}`, `http://prumo:${port}`, token, { maxAgents: 2 })
+  assert.equal(lower.status, 200, lower.text)
+  assert.equal(JSON.parse(readFileSync(f.statePath, 'utf8')).plan.maxAgents, 2)
+  const upper = await postWithHost(port, `PRUMO:${port}`, `http://PRUMO:${port}`, token, { maxAgents: 1 })
+  assert.equal(upper.status, 200, upper.text)
+  assert.equal(JSON.parse(readFileSync(f.statePath, 'utf8')).plan.maxAgents, 1)
+  // O endereço loopback original continua aceito.
+  const loopback = await postWithHost(port, `localhost:${port}`, `http://localhost:${port}`, token, { maxAgents: 3 })
+  assert.equal(loopback.status, 200, loopback.text)
+})

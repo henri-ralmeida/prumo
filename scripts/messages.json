@@ -430,6 +430,8 @@
   "Dashboard: {0}; {1}; {2}": "Dashboard: {0}; {1}; {2}",
   "version: {0}; content: {1}; port: {2}; URL: {3}": "versão: {0}; conteúdo: {1}; porta: {2}; URL: {3}",
   "origin: {0}; path: {1}": "origem: {0}; caminho: {1}",
+  "Also available at {0} when prumo points to 127.0.0.1 in the hosts file": "Também disponível em {0} quando prumo aponta para 127.0.0.1 no arquivo hosts",
+  "Previous dashboard still running on port {0}; run prumo update or prumo dashboard enable to move it to port {1}": "O dashboard anterior ainda está em execução na porta {0}; execute prumo update ou prumo dashboard enable para movê-lo para a porta {1}",
   "running": "em execução",
   "stopped": "parado",
   "registered": "registrado",

@@ -9,7 +9,10 @@ import { fileURLToPath } from 'node:url'
 import { createRequire, syncBuiltinESMExports } from 'node:module'
 import { ensureGlobalCliContent, globalCliContentCurrent, globalCliState, launchUpdate, npmLatestVersion, updateGlobalCli, updateGlobalCliFromPackage } from '../lib/update.mjs'
 import { packageDistributionFiles } from '../scripts/package-content.mjs'
-import { stopDashboardForUpdate } from '../lib/autostart.mjs'
+import * as autostart from '../lib/autostart.mjs'
+import { legacyAbsentApi } from './fixtures/legacy-absent.mjs'
+
+const { stopDashboardForUpdate } = legacyAbsentApi(autostart)
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const packageVersion = JSON.parse(readFileSync(join(repository, 'package.json'), 'utf8')).version
@@ -520,7 +523,7 @@ test('parada para atualização aceita pacote histórico sem exigir arquivos da 
   const killed = []
   const options = { packageRoot, home: f.home, platform: 'linux', env: {},
     listProcessIds: () => [76543],
-    readProcessCommand: () => [process.execPath, script, '--global', '--port', '4949'],
+    readProcessCommand: () => [process.execPath, script, '--global', '--port', '4950'],
     kill: pid => { killed.push(pid); running = false },
     fetch: async url => {
       if (!running) throw new Error('encerrado')
@@ -533,7 +536,7 @@ test('parada para atualização aceita pacote histórico sem exigir arquivos da 
   }
   assert.equal(existsSync(join(packageRoot, 'scripts', 'contract-drift.mjs')), false)
   const foreign = await stopDashboardForUpdate({ ...options,
-    readProcessCommand: () => [process.execPath, join(f.external, 'serve.mjs'), '--global', '--port', '4949'],
+    readProcessCommand: () => [process.execPath, join(f.external, 'serve.mjs'), '--global', '--port', '4950'],
   })
   assert.equal(foreign.ok, false)
   assert.match(foreign.error, /ownership verification failed/)

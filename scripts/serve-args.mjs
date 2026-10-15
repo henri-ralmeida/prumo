@@ -1,3 +1,9 @@
+// Porta padrão do dashboard; instalações anteriores registravam a porta legada, que só a migração reconhece.
+export const DEFAULT_DASHBOARD_PORT = 4950
+export const LEGACY_DASHBOARD_PORT = 4949
+// Nome local que o usuário pode mapear para 127.0.0.1 no arquivo hosts; nenhum outro nome além de loopback é aceito.
+export const DASHBOARD_ALIAS_HOST = 'prumo'
+
 // Opções inválidas falham antes de abrir o dashboard ou sincronizar um plano.
 export function parseServeArgs(tokens) {
   const values = {}
@@ -12,7 +18,7 @@ export function parseServeArgs(tokens) {
     if (value === undefined || value.startsWith('--')) throw new Error(`Option --${key} requires a value`)
     values[key] = value
   }
-  const port = values.port === undefined ? 4949 : Number(values.port)
+  const port = values.port === undefined ? DEFAULT_DASHBOARD_PORT : Number(values.port)
   if (values.port !== undefined && !/^\d+$/.test(values.port) || !Number.isSafeInteger(port) || port < 0 || port > 65535)
     throw new Error('--port must be an integer from 0 to 65535')
   if (values.run !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(values.run)) throw new Error('--run must be a safe run name')

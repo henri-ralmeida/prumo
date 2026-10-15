@@ -6,7 +6,11 @@ import { EventEmitter } from 'node:events'
 import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { dashboardHealth, dashboardStatus, disableDashboard, enableDashboard, restartDashboard, runDashboardForeground, stopDashboardForUpdate } from '../lib/autostart.mjs'
+import * as autostart from '../lib/autostart.mjs'
+import { legacyAbsentApi } from './fixtures/legacy-absent.mjs'
+
+const { runDashboardForeground } = autostart
+const { dashboardHealth, dashboardStatus, disableDashboard, enableDashboard, restartDashboard, stopDashboardForUpdate } = legacyAbsentApi(autostart)
 
 function fixture(t, platform = 'win32') {
   const home = fs.mkdtempSync(join(tmpdir(), 'prumo-autostart-hardening-'))
@@ -21,7 +25,7 @@ function fixture(t, platform = 'win32') {
   fs.writeFileSync(join(home, '.local/share/prumo/dashboard.json'), JSON.stringify({ enabled: true, mechanism: platform === 'win32' ? 'windows-startup' : 'xdg', node, script }))
   let running = true
   const killed = []
-  const command = `"${node}" "${script}" --global --port 4949`
+  const command = `"${node}" "${script}" --global --port 4950`
   const options = { platform, home, node, script, contentId: 'fixture', version: '2.3.2', env: {},
     delay: async () => {}, readinessAttempts: 2, portAvailable: async () => true,
     kill: pid => { killed.push(pid); running = false },
@@ -42,7 +46,7 @@ test('inicializacao fria Windows aguarda prontidao tardia e mantem um prazo limi
     f.options.delay = async ms => { assert.equal(ms, 100); delays += 1 }
     f.options.spawn = () => { launched = true; return { pid: 555 } }
     f.options.exec = () => ({ status: 0 })
-    f.options.readProcessCommand = () => [f.node, f.script, '--global', '--port', '4949']
+    f.options.readProcessCommand = () => [f.node, f.script, '--global', '--port', '4950']
     f.options.fetch = async url => {
       if (String(url).endsWith('/api/health')) probes += 1
       if (!launched || !starts || probes < 170) throw new Error('ainda inicializando')
@@ -128,7 +132,7 @@ test('inspecao Linux usa argv do processo e preserva argumentos fora do contrato
   const read = fs.readFileSync
   let extra = true
   t.mock.method(fs, 'readFileSync', (path, ...args) => String(path) === '/proc/555/cmdline'
-    ? [f.node, f.script, '--global', '--port', '4949', ...(extra ? ['--sync-plan'] : [])].join('\0') + '\0'
+    ? [f.node, f.script, '--global', '--port', '4950', ...(extra ? ['--sync-plan'] : [])].join('\0') + '\0'
     : read(path, ...args))
   syncBuiltinESMExports()
   f.options.fetch = async () => ({ ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, pid: 555 }) })
@@ -152,7 +156,7 @@ for (const changed of ['executable', 'script', 'port', 'extra', 'truncated']) {
     const executable = changed === 'executable' ? join(f.home, 'other.exe') : f.node
     let command = f.command
     if (changed === 'script') command = command.replace(f.script, join(f.home, 'other.mjs'))
-    if (changed === 'port') command = command.replace('4949', '9999')
+    if (changed === 'port') command = command.replace('4950', '9999')
     if (changed === 'extra') command += ' --sync-plan'
     if (changed === 'truncated') command += ' "'
     t.mock.method(childProcess, 'execFileSync', (file, args) => file === 'cscript.exe'
@@ -167,7 +171,7 @@ for (const changed of ['executable', 'script', 'port', 'extra', 'truncated']) {
 for (const scenario of ['registration', 'kill', 'still-running', 'launch']) {
   test(`reinício informa falha de ${scenario} e conserva preferência de ativação`, async t => {
     const f = fixture(t)
-    f.options.readProcessCommand = () => [f.node, f.script, '--global', '--port', '4949']
+    f.options.readProcessCommand = () => [f.node, f.script, '--global', '--port', '4950']
     f.options.listProcessIds = () => [555]
     f.options.exec = () => ({ status: 0 })
     if (scenario === 'registration') {
@@ -205,7 +209,7 @@ for (const scenario of ['unverified', 'kill-failed', 'still-running', 'end-faile
     const f = fixture(t)
     fs.writeFileSync(join(f.home, '.local/share/prumo/dashboard.json'), JSON.stringify({ enabled: true, mechanism: 'schtasks', node: f.node, script: f.script }))
     f.options.listProcessIds = () => []
-    f.options.readProcessCommand = () => scenario === 'unverified' ? ['other'] : [f.node, f.script, '--global', '--port', '4949']
+    f.options.readProcessCommand = () => scenario === 'unverified' ? ['other'] : [f.node, f.script, '--global', '--port', '4950']
     f.options.fetch = async () => {
       if (scenario === 'delete-failed') throw new Error('parado')
       return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, pid: 555 }) }
@@ -328,7 +332,7 @@ test('reinício denuncia processo criado que não oferece a identidade esperada'
   assert.match((await restartDashboard(f.options)).error, /managed process not found/)
   f.options.spawn = () => ({ pid: 555 })
   f.options.listProcessIds = () => [555]
-  f.options.readProcessCommand = () => [f.node, f.script, '--global', '--port', '4949']
+  f.options.readProcessCommand = () => [f.node, f.script, '--global', '--port', '4950']
   f.options.exec = () => ({ status: 1 })
   const result = await restartDashboard(f.options)
   assert.equal(result.ok, false)

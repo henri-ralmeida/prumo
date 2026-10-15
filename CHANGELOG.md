@@ -7,6 +7,9 @@ Historical tag and commit corrections are documented in [Release history recover
 - Indique na recusa do validate, em execuções com planejamento por fase, a sequência que de fato funciona após alterar um critério: pause-replanning, discussão e planejamento da tarefa, aceite do contrato alterado e unblock, preservando a tentativa e a revisão independente.
 - Avise em init e sync-plan quando uma validação roda em outro repositório Git, mesmo sem touches, e sugira declarar project sem recusar o plano.
 - Avise em init e sync-plan quando a primeira palavra de um comando de validação não é executável no PATH, comando interno do shell nem caminho existente, sem recusar o plano nem alterar contratos concluídos.
+- Passe a usar a porta padrão 4950 no dashboard, mantendo --port, e aceite o nome de host prumo, por correspondência exata e com a checagem de porta, no controle do limite de agentes.
+- Migre instalações com o dashboard registrado na porta 4949 em update, dashboard enable e no reparo do reinício, regravando o registro e parando o dashboard anterior somente quando o comando comprova que é o processo gerenciado do Prumo, sem encerrar processos alheios.
+- Informe em status, enable e restart que http://prumo:4950 também funciona quando prumo aponta para 127.0.0.1 no arquivo hosts, e que um dashboard anterior ainda ativo na porta 4949 será migrado; o navegador continua abrindo localhost.
 
 ## 2.10.0 — 2026-10-15
 

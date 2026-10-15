@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { dirname, isAbsolute, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { localizeDashboard } from './i18n.mjs'
+import { DEFAULT_DASHBOARD_PORT } from './serve-args.mjs'
 
 const PACKAGE = dirname(dirname(fileURLToPath(import.meta.url)))
 // Workflow instructions share one source; PO First retains its localized installation template.
@@ -69,10 +70,10 @@ export async function registeredDashboardIdentity({ home, fetch = globalThis.fet
   catch { return null }
   if (preference.enabled !== true || typeof preference.script !== 'string' || !isAbsolute(preference.script)) return null
   try {
-    const response = await fetch('http://127.0.0.1:4949/api/health', { signal: AbortSignal.timeout(1200) })
+    const response = await fetch(`http://127.0.0.1:${DEFAULT_DASHBOARD_PORT}/api/health`, { signal: AbortSignal.timeout(1200) })
     const health = response.ok ? await response.json() : null
     if (health?.product !== 'prumo' || health.mode !== 'global' || health.readOnly !== true) return null
-    const details = await fetch('http://127.0.0.1:4949/api/about', { signal: AbortSignal.timeout(1200) })
+    const details = await fetch(`http://127.0.0.1:${DEFAULT_DASHBOARD_PORT}/api/about`, { signal: AbortSignal.timeout(1200) })
     const about = details.ok ? await details.json() : null
     return about?.product === 'prumo' && typeof about.contentId === 'string' ? about.contentId : null
   } catch {
