@@ -4,6 +4,7 @@ Historical tag and commit corrections are documented in [Release history recover
 
 ## Unreleased
 
+- Aceite em sync-plan tarefas novas em fase declarada sem nenhuma tarefa (fase placeholder) com a próxima numeração global (T12, T13...), como numa fase acrescentada no fim, inclusive quando a fase vazia vem antes de outra já preenchida; fases com tarefas continuam exigindo sufixo vinculado ao pai, e identificadores removidos não são reutilizados.
 - Indique na recusa do validate, em execuções com planejamento por fase, a sequência que de fato funciona após alterar um critério: pause-replanning, discussão e planejamento da tarefa, aceite do contrato alterado e unblock, preservando a tentativa e a revisão independente.
 - Avise em init e sync-plan quando uma validação roda em outro repositório Git, mesmo sem touches, e sugira declarar project sem recusar o plano.
 - Avise em init e sync-plan quando a primeira palavra de um comando de validação não é executável no PATH, comando interno do shell nem caminho existente, sem recusar o plano nem alterar contratos concluídos.

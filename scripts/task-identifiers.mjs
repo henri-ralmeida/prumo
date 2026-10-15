@@ -38,9 +38,11 @@ export function taskIdentifierProblem(tasks, existingIds, existingTasks, { phase
       return problem('Extension {0} must remain in the same phase as its existing parent {1} ({2}); do not create a new phase for a task extension', task.id, parent, phase ?? '—')
   }
   const added = (roots.size ? tasks : numbered).filter(task => !existing.has(task.id))
-  const priorPhases = new Set([...existingPhases, ...Object.values(existingTasks ?? {}).map(task => task.phase).filter(Boolean)])
+  // Fase declarada sem nenhuma tarefa no estado aceita números novos como uma fase acrescentada.
+  const priorPhases = new Set(Object.values(existingTasks ?? {}).map(task => task.phase).filter(Boolean))
   const lastPriorIndex = Math.max(-1, ...phases.map((phase, index) => priorPhases.has(phase.id) ? index : -1))
-  const appendedPhases = new Set(phases.filter((phase, index) => index > lastPriorIndex && !priorPhases.has(phase.id)).map(phase => phase.id))
+  const emptyPhases = new Set(existingPhases)
+  const appendedPhases = new Set(phases.filter((phase, index) => !priorPhases.has(phase.id) && (index > lastPriorIndex || emptyPhases.has(phase.id))).map(phase => phase.id))
   const newNumbers = added.filter(task => /^T[1-9]\d*$/.test(task.id) && appendedPhases.has(task.phase))
     .sort((a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1)))
   let nextNumber = Math.max(0, ...existingIds.filter(id => /^T\d+[a-z]?$/i.test(id)).map(id => Number(taskId.exec(id)[1]))) + 1
