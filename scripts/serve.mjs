@@ -515,8 +515,9 @@ const server = createServer((req, res) => {
     let source, host
     try { source = new URL(origin); host = new URL(`http://${req.headers.host}`) }
     catch { return json(res, 403, { error: 'same-origin user control required' }) }
-    // 'prumo' é um nome local que o usuário mapeia para 127.0.0.1 no arquivo hosts; a correspondência é exata e a checagem de
-    // porta continua valendo, de modo que a proteção contra DNS rebinding permanece para qualquer outro nome.
+    // Os navegadores resolvem *.localhost para loopback sem arquivo hosts; somente 'prumo.localhost' é aceito, por correspondência
+    // exata (nem outros subdomínios nem sufixos), e a checagem de porta, Origin e token continua valendo, de modo que a proteção
+    // contra DNS rebinding permanece para qualquer outro nome.
     if (!['localhost', '127.0.0.1', '[::1]', DASHBOARD_ALIAS_HOST].includes(host.hostname) || Number(host.port) !== server.address().port ||
         source.origin !== host.origin || req.headers['x-prumo-control'] !== AGENT_CONTROL_TOKEN)
       return json(res, 403, { error: 'same-origin user control required' })

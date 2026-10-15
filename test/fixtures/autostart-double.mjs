@@ -7,7 +7,7 @@ module.registerHooks({ load(url, context, nextLoad) {
 const status = JSON.parse(process.env.PRUMO_TEST_DASHBOARD_STATUS);
 const result = JSON.parse(process.env.PRUMO_TEST_DASHBOARD_RESULT ?? process.env.PRUMO_TEST_DASHBOARD_STATUS);
 export const DASHBOARD_URL = 'http://localhost:4950';
-export const DASHBOARD_ALIAS_URL = 'http://prumo:4950';
+export const DASHBOARD_ALIAS_URL = 'http://prumo.localhost:4950';
 export const dashboardStatus = async () => status;
 export const dashboardNeedsRepair = () => process.env.PRUMO_TEST_DASHBOARD_REPAIR === '1';
 export const enableDashboard = async () => result;

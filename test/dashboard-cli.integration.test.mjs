@@ -27,7 +27,7 @@ function result(action) {
   return JSON.parse(process.env.PRUMO_TEST_DASHBOARD_RESULT)
 }
 export const DASHBOARD_URL = 'http://localhost:4950'
-export const DASHBOARD_ALIAS_URL = 'http://prumo:4950'
+export const DASHBOARD_ALIAS_URL = 'http://prumo.localhost:4950'
 export const dashboardNeedsRepair = () => false
 export const dashboardStatus = async () => result('status')
 export const enableDashboard = async () => result('enable')
@@ -62,9 +62,9 @@ export const readDashboardEvents = () => result('logs').events
     })
   }
   for (const [lang, hint, legacyLine] of [
-    ['en', /Also available at http:\/\/prumo:4950 when prumo points to 127\.0\.0\.1 in the hosts file/, /Previous dashboard still running on port 4949; run prumo update or prumo dashboard enable to move it to port 4950/],
-    ['pt-BR', /Também disponível em http:\/\/prumo:4950 quando prumo aponta para 127\.0\.0\.1 no arquivo hosts/, /O dashboard anterior ainda está em execução na porta 4949; execute prumo update ou prumo dashboard enable para movê-lo para a porta 4950/],
-  ]) await t.test(`dica do nome prumo e dashboard anterior na 4949 em ${lang}`, () => {
+    ['en', /Also available at http:\/\/prumo\.localhost:4950 \(no hosts file needed in Chrome, Edge or Firefox\)/, /Previous dashboard still running on port 4949; run prumo update or prumo dashboard enable to move it to port 4950/],
+    ['pt-BR', /Também disponível em http:\/\/prumo\.localhost:4950 \(sem arquivo hosts no Chrome, Edge ou Firefox\)/, /O dashboard anterior ainda está em execução na porta 4949; execute prumo update ou prumo dashboard enable para movê-lo para a porta 4950/],
+  ]) await t.test(`dica do nome prumo.localhost e dashboard anterior na 4949 em ${lang}`, () => {
     for (const action of ['enable', 'status']) {
       const r = run([action], { ...base, legacy: action === 'status' }, false, lang)
       assert.equal(r.status, 0, r.output)

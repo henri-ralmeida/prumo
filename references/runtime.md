@@ -1013,8 +1013,8 @@ becomes a second source of truth or a second orchestrator.
 
 The managed service is `prumo dashboard enable` (`prumo dashboard status` reports it; plain
 `prumo dashboard` runs it in the foreground). Its default address, `http://localhost:4950`, is restricted
-to the local machine (the server also accepts the exact host name `prumo`, for users who map it to `127.0.0.1` in the hosts
-file; the browser opened automatically always uses `localhost`); a taken port never terminates another process. The language follows the
+to the local machine (the server also accepts the exact host name `prumo.localhost`, which Chrome, Edge and Firefox resolve to loopback
+without a hosts file; the browser opened automatically always uses `localhost`); a taken port never terminates another process. The language follows the
 installation preference or an explicit run choice; there is no browser selector. User text is escaped and
 never translated. The derived numbers do not prove test coverage, defect causes or business rules.
 Stopping the dashboard never cancels work.

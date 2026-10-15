@@ -416,7 +416,7 @@ test('instalação concluída informa ativação, reinício e falha do dashboard
     if (failed) assert.match(response.stderr, /Dashboard setup failed/)
     else {
       assert.match(response.stdout, scenario === 'enable' ? /Dashboard enabled:/ : /Dashboard restarted:/)
-      assert.match(response.stdout, /Also available at http:\/\/prumo:4950 when prumo points to 127\.0\.0\.1 in the hosts file/)
+      assert.match(response.stdout, /Also available at http:\/\/prumo\.localhost:4950 \(no hosts file needed in Chrome, Edge or Firefox\)/)
     }
   }
 })
@@ -440,7 +440,7 @@ test('update informa ausência e reparo enquanto worker preserva checkpoint em f
     const response = runCli(f.home, ['update'], updateDouble({ PRUMO_TEST_LAUNCH_MODE: mode }), f.project)
     assert.equal(response.status, 0, response.output)
     assert.match(response.stdout, mode === 'absent' ? /No Prumo installations found/ : /Dashboard restarted: http:\/\/localhost:4950/)
-    if (mode === 'repair') assert.match(response.stdout, /Also available at http:\/\/prumo:4950/)
+    if (mode === 'repair') assert.match(response.stdout, /Also available at http:\/\/prumo\.localhost:4950/)
   }
   for (const mode of ['error', 'repair-error']) {
     const failed = runCli(f.home, ['update'], updateDouble({ PRUMO_TEST_LAUNCH_MODE: mode }), f.project)

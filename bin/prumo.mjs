@@ -20,8 +20,8 @@ import { language, createTranslator, messages } from '../scripts/i18n.mjs'
 
 let t = createTranslator(messages, language())
 const print = (...parts) => console.log(...parts.map(part => t(part)))
-// Uma linha basta: o navegador continua abrindo localhost, pois outras instalações não têm a entrada no arquivo hosts.
-const printAliasHint = () => print(t('Also available at {0} when prumo points to 127.0.0.1 in the hosts file', DASHBOARD_ALIAS_URL))
+// Uma linha basta: o navegador continua abrindo localhost.
+const printAliasHint = () => print(t('Also available at {0} (no hosts file needed in Chrome, Edge or Firefox)', DASHBOARD_ALIAS_URL))
 const color = (code, value, stream = process.stdout) => stream.isTTY && !('NO_COLOR' in process.env) ? `\x1b[${code}m${value}\x1b[0m` : value
 const harnessLabels = {
   claude: 'Claude Code', kiro: 'Kiro', codex: 'Codex', dsh: 'DeepSeek Harness',

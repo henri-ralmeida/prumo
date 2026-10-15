@@ -334,7 +334,7 @@ function postWithHost(port, host, origin, token, body = { maxAgents: 2 }) {
   })
 }
 
-test('controle aceita o nome local prumo por correspondência exata e mantém a checagem de porta', { timeout: 60000 }, async t => {
+test('controle aceita o nome local prumo.localhost por correspondência exata e mantém a checagem de porta', { timeout: 60000 }, async t => {
   const f = fixture(t)
   const { request } = await startDashboard(t, f)
   const { agentControlToken: token } = await (await request('/api/state')).json()
@@ -342,19 +342,20 @@ test('controle aceita o nome local prumo por correspondência exata e mantém a 
   const stateBefore = readFileSync(f.statePath, 'utf8')
 
   // Nomes parecidos, subdomínios, porta errada e hosts externos continuam recusados, mesmo com Origin idêntico ao Host.
-  for (const host of [`prumo.evil.com:${port}`, `xprumo:${port}`, `prumo.:${port}`, `prumo:${port + 1}`, `prumo:9999`, `evil.com:${port}`, `prumo`]) {
+  for (const host of [`prumo.localhost.evil.com:${port}`, `xprumo.localhost:${port}`, `evil.prumo.localhost:${port}`, `a.localhost:${port}`, `prumo:${port}`,
+    `prumo.localhost.:${port}`, `prumo.localhost:${port + 1}`, `prumo.localhost:9999`, `evil.com:${port}`, `prumo.localhost`]) {
     const result = await postWithHost(port, host, `http://${host}`, token)
     assert.equal(result.status, 403, `${host}: ${result.text}`)
   }
   // O Host aceito não basta quando a Origin aponta para outro nome ou porta.
-  assert.equal((await postWithHost(port, `prumo:${port}`, `http://localhost:${port}`, token)).status, 403)
-  assert.equal((await postWithHost(port, `prumo:${port}`, `http://evil.com:${port}`, token)).status, 403)
+  assert.equal((await postWithHost(port, `prumo.localhost:${port}`, `http://localhost:${port}`, token)).status, 403)
+  assert.equal((await postWithHost(port, `prumo.localhost:${port}`, `http://evil.com:${port}`, token)).status, 403)
   assert.equal(readFileSync(f.statePath, 'utf8'), stateBefore, 'recusas não gravam')
 
-  const lower = await postWithHost(port, `prumo:${port}`, `http://prumo:${port}`, token, { maxAgents: 2 })
+  const lower = await postWithHost(port, `prumo.localhost:${port}`, `http://prumo.localhost:${port}`, token, { maxAgents: 2 })
   assert.equal(lower.status, 200, lower.text)
   assert.equal(JSON.parse(readFileSync(f.statePath, 'utf8')).plan.maxAgents, 2)
-  const upper = await postWithHost(port, `PRUMO:${port}`, `http://PRUMO:${port}`, token, { maxAgents: 1 })
+  const upper = await postWithHost(port, `PRUMO.LOCALHOST:${port}`, `http://PRUMO.LOCALHOST:${port}`, token, { maxAgents: 1 })
   assert.equal(upper.status, 200, upper.text)
   assert.equal(JSON.parse(readFileSync(f.statePath, 'utf8')).plan.maxAgents, 1)
   // O endereço loopback original continua aceito.
