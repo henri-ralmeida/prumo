@@ -79,7 +79,7 @@ import { runValidation, assertValidation, assertValidationEnvironment, validatio
   assertUnavailableResources,
   planTaskFromState, planningContext, hasCurrentTaskPlan, hasCurrentTaskScope, currentPlanningScope, usesCurrentPlanning,
   phasePlanningContext, phaseRequiredInputs, assertPhaseTaskPlan, executionInputReceipt, currentPlanningSkip,
-  taskPlanDigest, phaseValidationRefreshBinding } from './validation.mjs'
+  taskPlanDigest, phaseValidationRefreshBinding, unresolvedValidationCommand } from './validation.mjs'
 
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -627,12 +627,12 @@ function closestTouchPath(root, parts) {
 function warnPlanTouchPaths(plan, cwd) {
   let unknownRootWarned = false
   for (const task of plan.tasks) {
-    if (!Array.isArray(task.touches) || !task.touches.length) continue
     for (const directory of new Set((Array.isArray(task.validation) ? task.validation : [])
-      .map(step => step.cwd).filter(value => typeof value === 'string' && value.trim()))) {
+      .map(step => step?.cwd).filter(value => typeof value === 'string' && value.trim()))) {
       const mismatch = validationProjectMismatch(task, cwd, directory)
       if (mismatch) printValidationProjectWarning(mismatch)
     }
+    if (!Array.isArray(task.touches) || !task.touches.length) continue
     const roots = validationRoots(task, cwd)
     if (!roots.length) {
       if (!unknownRootWarned) log('[prumo] ' + tr('touches check skipped: project directory is unknown; use sync-plan --cwd <project> or declare validation step.cwd'))
@@ -667,12 +667,18 @@ function warnPlanTouchPaths(plan, cwd) {
   }
 }
 
-function warnValidationProse(plan, historical) {
+function warnValidationProse(plan, historical, cwd) {
   for (const task of plan.tasks) {
     if (historical.has(task.id) || task.validationMode === 'inspection') continue
-    for (const [index, step] of task.validation.entries())
-      if (/^\s*(?:inspecionar|conferir|revisar|verificar|inspect|review|verify|check)\s+(?:o|a|os|as|the|that|if)\s/iu.test(step.run))
+    for (const [index, step] of task.validation.entries()) {
+      const prose = /^\s*(?:inspecionar|conferir|revisar|verificar|inspect|review|verify|check)\s+(?:o|a|os|as|the|that|if)\s/iu.test(step.run)
+      // Só avisa: o comando pode existir apenas no ambiente de execução, então nunca recusa.
+      const unresolved = prose ? null : unresolvedValidationCommand(step.run, resolve(cwd ?? process.cwd(), step.cwd ?? '.'))
+      if (prose)
         log('[prumo] ' + tr('WARNING: task {0} validation step {1} looks like inspection prose. run executes a shell command; confirm an executable check before dispatch. For a justified manual inspection, approve validationMode: inspection and inspectionReason; no command was executed and no receipt was recorded', task.id, index + 1))
+      else if (unresolved)
+        log('[prumo] ' + tr('WARNING: task {0} validation step {1} starts with "{2}", which is not an executable on PATH, a shell builtin or an existing path. run executes a shell command; confirm an executable check before dispatch. For a justified manual inspection, approve validationMode: inspection and inspectionReason; no command was executed and no receipt was recorded', task.id, index + 1, unresolved))
+    }
   }
 }
 
@@ -1004,7 +1010,7 @@ function readPlan(planPath, state) {
   validatePlan(validationPlan, args['allow-overlap'] === true, historical, projectCwd(state?.plan.cwd))
   for (const task of plan.tasks) if (Object.hasOwn(state?.removedTasks ?? {}, task.id))
     die(tr('Task {0} uses a removed task identifier; keep its history and choose a new identifier', task.id))
-  warnValidationProse(plan, historical)
+  warnValidationProse(plan, historical, projectCwd(state?.plan.cwd))
   const identifierTasks = state ? plan.tasks.map(task => ['done', 'skipped'].includes(state.tasks[task.id]?.state)
     ? { ...task, deps: state.tasks[task.id].deps } : task) : plan.tasks
   const identifierProblem = taskIdentifierProblem(identifierTasks, state ? [...Object.keys(state.tasks), ...Object.keys(state.removedTasks ?? {})] : undefined, state?.tasks,
@@ -2047,8 +2053,11 @@ function currentPhasePlanning(state, phase, round = phase?.planningAttempts?.at(
 }
 
 function assertCurrentTaskScope(state, task) {
-  if (!hasCurrentTaskScope(state, task))
-    die(task.id + ' execution scope needs current planning — keep work blocked, run plan-task and finish-planning, then unblock explicitly')
+  if (hasCurrentTaskScope(state, task)) return
+  // Em fase, plan-task só vale depois que pause-replanning habilita o planejamento individual da tarefa.
+  if (state.plan.planningMode === 'phase' && !task.individualPlanning)
+    die(tr('{0} execution scope needs current planning — this run uses phase planning: run pause-replanning {0} --reason <reason>, then begin-discussion, finish-discussion, plan-task and finish-planning for {0}; ask the user to accept the changed contract (authorize --scope tasks:{0} --confirmed-by-user) and unblock {0} explicitly', task.id))
+  die(task.id + ' execution scope needs current planning — keep work blocked, run plan-task and finish-planning, then unblock explicitly')
 }
 
 function assertCurrentExecutionInputs(state, task) {

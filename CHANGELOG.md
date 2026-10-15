@@ -2,6 +2,12 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## Unreleased
+
+- Indique na recusa do validate, em execuções com planejamento por fase, a sequência que de fato funciona após alterar um critério: pause-replanning, discussão e planejamento da tarefa, aceite do contrato alterado e unblock, preservando a tentativa e a revisão independente.
+- Avise em init e sync-plan quando uma validação roda em outro repositório Git, mesmo sem touches, e sugira declarar project sem recusar o plano.
+- Avise em init e sync-plan quando a primeira palavra de um comando de validação não é executável no PATH, comando interno do shell nem caminho existente, sem recusar o plano nem alterar contratos concluídos.
+
 ## 2.10.0 — 2026-10-15
 
 - Remova tarefas pendentes elegíveis com sync-plan --remove e --reason, confira as alterações com --dry-run e preserve os registros completos e os identificadores reservados no histórico de remoções.

@@ -271,7 +271,9 @@ generates or truncates a replacement label.
 `cwd`; this does not block the plan because a new file or folder can be intentional. An inaccessible cwd
 is reported as unchecked.
 
-Validation may intentionally run in another repository. When a step's `cwd` resolves to a different
+Validation may intentionally run in another repository. `init` and `sync-plan` warn when a step's `cwd` is in a
+different Git root from the task/run project, with or without `touches`, and suggest declaring `task.project`; the
+warning never blocks the plan. When a step's `cwd` resolves to a different
 Git root from the approved task/run project, the engine records and displays that limitation during
 `validate` and repeats it during `done`. An empty scope check covers only the approved repository;
 it does not verify changes in the validation repository. Declare `task.project` before execution when
@@ -281,8 +283,10 @@ Older receipts without the explicit warning field use their recorded check direc
 same limitation at completion; their historical evidence is not rewritten.
 
 `init` and `sync-plan` also warn about recognizable inspection prose in a functional `run` field, including in
-`--dry-run`. This is an advisory, not executable discovery: shell builtins, scripts, quoting and tools
-installed later remain valid. Use real shell commands for functional checks. A justified non-runtime
+`--dry-run`, and when the first word of `run` is not an executable on `PATH`, a builtin of the platform shell
+(`cmd.exe` on Windows, `sh` elsewhere) or an existing path relative to the step's cwd. Leading `NAME=value`
+assignments (POSIX) and quotes are ignored, and words with expansions or operators are not analyzed. This is an
+advisory, not executable discovery: shell builtins, scripts, quoting and tools installed later remain valid. Use real shell commands for functional checks. A justified non-runtime
 inspection uses `validationMode: "inspection"`, `inspectionReason` and reviewer observations.
 An already approved inspection does not ask for a new mode selection. Completed and skipped task
 contracts remain historical records; this advisory does not revalidate them.
@@ -758,6 +762,10 @@ dispatch `plan-task` on that internally paused task. `finish-planning` returns i
 the original phase, reason and open execution attempt; only explicit `unblock` resumes it. An ordinary
 external `block` must be unblocked before any planning command. Do not invent fail/retry to refresh planning.
 Validation-only `refresh-contract` remains possible within the same attempt and requires fresh validation.
+In a phase-planning run, when `refresh-contract` changes a criterion and `validate` refuses for missing current
+planning, the refusal lists the working sequence: `pause-replanning`, `begin-discussion`, `finish-discussion`,
+`plan-task`, `finish-planning`, user acceptance of the changed contract with `authorize --scope tasks:<task>
+--confirmed-by-user`, then `unblock`; the original attempt and independent reviewer are preserved.
 Receipts from the old planning scope cannot approve the new scope.
 
 Persisted task-scoped runs continue to use `begin-discussion`, `finish-discussion`, `plan-task` and

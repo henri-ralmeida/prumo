@@ -1,7 +1,7 @@
 import { log, tr } from './i18n.mjs'
 import { spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { isAbsolute, resolve } from 'node:path'
+import { delimiter, isAbsolute, join, resolve } from 'node:path'
 import { existsSync, statSync } from 'node:fs'
 
 const nonempty = (value) => typeof value === 'string' && value.trim().length > 0
@@ -657,4 +657,42 @@ export function assertValidation(task, receipt) {
       check.expect === step.expect && passed(step, check),
     failureMessage(step, check, index, contract.steps.length))
   }
+}
+
+const POSIX_BUILTINS = new Set(['.', ':', '!', '[', '[[', 'alias', 'bg', 'break', 'case', 'cd', 'command', 'continue', 'do', 'done', 'echo', 'elif', 'else', 'esac', 'eval', 'exec', 'exit', 'export',
+  'false', 'fg', 'fi', 'for', 'getopts', 'hash', 'if', 'kill', 'local', 'printf', 'pwd', 'read', 'readonly', 'return', 'set', 'shift', 'test', 'then', 'times', 'trap', 'true', 'type',
+  'ulimit', 'umask', 'unalias', 'unset', 'until', 'wait', 'while'])
+const CMD_BUILTINS = new Set(['assoc', 'break', 'call', 'cd', 'chcp', 'chdir', 'cls', 'color', 'copy', 'date', 'del', 'dir', 'echo', 'endlocal', 'erase', 'exit', 'for', 'ftype', 'goto', 'if',
+  'md', 'mkdir', 'mklink', 'move', 'path', 'pause', 'popd', 'prompt', 'pushd', 'rd', 'rem', 'ren', 'rename', 'rmdir', 'set', 'setlocal', 'shift', 'start', 'time', 'title', 'type', 'ver', 'verify', 'vol'])
+
+// Lê a primeira palavra do comando respeitando aspas; prefixos NOME=valor do POSIX não são o executável.
+function leadingWord(run, posix) {
+  let rest = run.trimStart()
+  for (;;) {
+    let word = '', quote = '', index = 0
+    for (; index < rest.length; index++) {
+      const char = rest[index]
+      if (quote) { if (char === quote) quote = ''; else word += char; continue }
+      if (char === '"' || char === "'") { quote = char; continue }
+      if (/\s/.test(char)) break
+      word += char
+    }
+    rest = rest.slice(index).trimStart()
+    if (posix && /^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) { if (rest) continue; return '' }
+    return word
+  }
+}
+
+// Retorna a primeira palavra quando ela não pode ser executada; palavras com expansão ou operadores não são analisadas.
+export function unresolvedValidationCommand(run, cwd, { platform = process.platform, env = process.env } = {}) {
+  const windows = platform === 'win32'
+  const word = windows ? leadingWord(run, false).replace(/^@/, '') : leadingWord(run, true)
+  if (!word || /[$%`(){}<>|&;*?~^]/.test(word)) return null
+  if ((windows ? CMD_BUILTINS : POSIX_BUILTINS).has(windows ? word.toLowerCase() : word)) return null
+  const isFile = path => { try { return statSync(path).isFile() } catch { return false } }
+  if (existsSync(resolve(cwd, word))) return null
+  const extensions = windows ? ['', ...(env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean)] : ['']
+  const directories = (env.PATH ?? '').split(delimiter).filter(Boolean)
+  if (!/[\/]/.test(word) && directories.some(directory => extensions.some(extension => isFile(join(directory, word + extension))))) return null
+  return word
 }
