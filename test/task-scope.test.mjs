@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import fs from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
+import { messages, createTranslator } from '../scripts/i18n.mjs'
 import { assertExplicitScope, scopePath, insideTouches, scopeConflicts, sameProject, captureScopeBaseline, scopeEvidenceRequirement, verifyTaskScope } from '../scripts/task-scope.mjs'
 
 function engineFixture(t, tasks, extra = {}, lang = 'en') {
@@ -264,6 +265,21 @@ test('nomes especiais de arquivos continuam visíveis na conferência do escopo'
   writeFileSync(join(cwd, '__proto__'), 'delivery')
   assert.equal(Object.hasOwn(captureScopeBaseline(cwd).files, '__proto__'), true)
   assert.throws(() => verifyTaskScope({ writeScope: 'files', touches: ['src'] }, baseline), /outside approved touches: __proto__/)
+})
+
+test('recusa de escopo explica outra tarefa, nova tentativa e que --force nao se aplica em en e pt-BR', t => {
+  const cwd = mkdtempSync(join(tmpdir(), 'prumo-scope-message-'))
+  t.after(() => rmSync(cwd, { recursive: true, force: true }))
+  assert.equal(spawnSync('git', ['-C', cwd, 'init']).status, 0)
+  const baseline = captureScopeBaseline(cwd)
+  writeFileSync(join(cwd, 'outside.txt'), 'delivery')
+  let message
+  try { verifyTaskScope({ writeScope: 'files', touches: ['src'] }, baseline) } catch (caught) { message = caught.message }
+  assert.equal(message, 'Delivery changes are outside approved touches: outside.txt. These changes may belong to another task or be absorbed by a new attempt; --force does not apply to scope')
+  const pt = createTranslator(messages, 'pt-BR')
+  const expected = 'As alterações da entrega estão fora dos touches aprovados: outside.txt. Elas podem pertencer a outra tarefa ou ser absorvidas em uma nova tentativa; --force não se aplica ao escopo'
+  assert.equal(pt(message), expected)
+  assert.equal(pt('[prumo] ERROR: ' + message), '[prumo] ERRO: ' + expected)
 })
 
 test('recursos aceitam leituras concorrentes e serializam qualquer escrita', () => {

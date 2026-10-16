@@ -11,7 +11,8 @@
       {
         "title": "Improved — Recovery and validation guidance",
         "items": [
-          "Name the next commands after a rejected validation (fail and then retry, with --confirmed-by-user under manual authorization) without changing the task state or consuming an attempt"
+          "Name the next commands after a rejected validation (fail and then retry, with --confirmed-by-user under manual authorization) without changing the task state or consuming an attempt",
+          "Explain in the scope refusal that the change may belong to another task or be absorbed by a new attempt, and that --force does not apply to scope"
         ]
       }
     ]

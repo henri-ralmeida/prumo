@@ -112,7 +112,7 @@ export function verifyTaskScope(task, baseline, independentEvidence, concurrentS
   const excludedPaths = paths.filter(path => !fileScope || !insideTouches(path, touches)).filter(path =>
     independentEvidence?.evidence?.trim() && independentEvidence.agent && independentEvidence.agent !== task.agent && concurrentScopes.some(scope => insideTouches(path, scope)))
   const outside = paths.filter(path => (!fileScope || !insideTouches(path, touches)) && !excludedPaths.includes(path))
-  if (outside.length) throw new Error('Delivery changes are outside approved touches: ' + outside.join(', '))
+  if (outside.length) throw new Error('Delivery changes are outside approved touches: ' + outside.join(', ') + '. These changes may belong to another task or be absorbed by a new attempt; --force does not apply to scope')
   if ((baseline.nestedRepositories?.length || current.nestedRepositories?.length) &&
       (!independentEvidence?.evidence?.trim() || !independentEvidence.agent || independentEvidence.agent === task.agent))
     throw new Error('Nested repositories require an independent reviewer --scope-evidence with inspected paths and method')

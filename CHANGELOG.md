@@ -7,6 +7,7 @@ Historical tag and commit corrections are documented in [Release history recover
 - Restaure a porta padrão 4949 no dashboard, mantendo --port e o nome de host prumo.localhost, por correspondência exata e com as checagens de porta, origem e token.
 - Migre de volta para a 4949 as instalações com o dashboard registrado na porta 4950 (versão 2.11.0) em update, dashboard enable e no reparo do reinício, parando o dashboard da 4950 somente quando o comando comprova que é o processo gerenciado do Prumo, sem encerrar processos alheios.
 - Indique, após um validate reprovado, os próximos comandos (fail e depois retry; com --confirmed-by-user na autorização manual), sem alterar o estado da tarefa nem consumir tentativa.
+- Explique, na recusa de validate por escopo, que a alteração pode pertencer a outra tarefa ou ser absorvida em uma nova tentativa e que --force não se aplica ao escopo; a regra de escopo não mudou.
 
 ## 2.11.0 — 2026-10-15
 
