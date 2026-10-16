@@ -726,7 +726,8 @@ index `taskPlan.steps`. Use `"inspection"` only for an approved prose
 inspection contract. `decisions` is an array of resolved `question`/`answer` pairs; it may be
 empty. `openQuestions` entries contain `question`, boolean `blocking`, optional `answer`, and
 optional `decideBy`: `"executor"` (the default), `"user-now"`, `{ "beforeTask": "T2" }`, or
-`{ "beforePhase": "F2" }`. A blocking question still requires an answer before planning can
+`{ "beforePhase": "F2" }`. These are the only accepted values; an object must carry exactly one of `beforeTask` or
+`beforePhase` with a nonempty id, and any other value is refused with a message that lists them. A blocking question still requires an answer before planning can
 finish and is treated as due now. An unanswered nonblocking question with a future deadline does
 not hold its source task; it appears when the named task or phase begins and becomes an execution
 gate only at that point. `status` reports scheduled and overdue questions. Use the displayed

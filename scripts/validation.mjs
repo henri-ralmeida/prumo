@@ -211,7 +211,7 @@ export function assertTaskPlan(task, plan, { checkSelfDeadline = true } = {}) {
   insist(Array.isArray(plan.openQuestions) && plan.openQuestions.every(item => item &&
     nonempty(item.question) && typeof item.blocking === 'boolean' &&
     (item.answer === undefined || nonempty(item.answer)) && validQuestionDeadline(item.decideBy)),
-  'task plan openQuestions must contain question, blocking boolean, optional nonempty answer, and a valid optional decideBy')
+  'task plan openQuestions must contain question, blocking boolean, optional nonempty answer, and a valid optional decideBy (accepted values: "executor", "user-now", {"beforeTask":"<task id>"} or {"beforePhase":"<phase id>"})')
   for (const [index, question] of plan.openQuestions.entries()) {
     // A pergunta sobre a própria tarefa precisa estar respondida quando seu plano for entregue.
     if (checkSelfDeadline && !question.answer && question.decideBy?.beforeTask && question.decideBy.beforeTask === task.id)

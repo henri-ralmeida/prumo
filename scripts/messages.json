@@ -856,7 +856,7 @@
   "Loading run": "Carregando execução…",
   "not measured": "não aferido",
   "⋯ idle": "⋯ parado",
-  "task plan openQuestions must contain question, blocking boolean, optional nonempty answer, and a valid optional decideBy": "openQuestions do plano da tarefa deve conter question, blocking booleano, answer preenchido opcional e decideBy opcional válido",
+  "task plan openQuestions must contain question, blocking boolean, optional nonempty answer, and a valid optional decideBy (accepted values: \"executor\", \"user-now\", {\"beforeTask\":\"<task id>\"} or {\"beforePhase\":\"<phase id>\"})": "openQuestions do plano da tarefa deve conter question, blocking booleano, answer preenchido opcional e decideBy opcional válido (valores aceitos: \"executor\", \"user-now\", {\"beforeTask\":\"<id da tarefa>\"} ou {\"beforePhase\":\"<id da fase>\"})",
   "task plan open question {0} has an expired deadline and must be answered before it can be added": "a pergunta aberta {0} do plano da tarefa já passou do prazo e precisa ser respondida antes de ser adicionada",
   "task plan decisions resolvesQuestion must reference a question ID when present": "resolvesQuestion das decisões do plano deve referenciar um ID de pergunta quando informado",
   "decision references unknown open question {0}": "a decisão referencia a pergunta aberta desconhecida {0}",
@@ -1906,5 +1906,6 @@
   "Next: {0} stays {1} and no attempt was consumed; to redo the work, run fail {0} --reason \"<reason>\" and then retry {0}": "Próximo passo: {0} continua em {1} e nenhuma tentativa foi consumida; para refazer o trabalho, execute fail {0} --reason \"<motivo>\" e depois retry {0}",
   "Name the next commands after a rejected validation (fail and then retry, with --confirmed-by-user under manual authorization) without changing the task state or consuming an attempt": "Indique os próximos comandos após uma validação reprovada (fail e depois retry, com --confirmed-by-user na autorização manual) sem alterar o estado da tarefa nem consumir tentativa",
   "Delivery changes are outside approved touches: {0}. These changes may belong to another task or be absorbed by a new attempt; --force does not apply to scope": "As alterações da entrega estão fora dos touches aprovados: {0}. Elas podem pertencer a outra tarefa ou ser absorvidas em uma nova tentativa; --force não se aplica ao escopo",
-  "Explain in the scope refusal that the change may belong to another task or be absorbed by a new attempt, and that --force does not apply to scope": "Explique na recusa de escopo que a alteração pode pertencer a outra tarefa ou ser absorvida em uma nova tentativa e que --force não se aplica ao escopo"
+  "Explain in the scope refusal that the change may belong to another task or be absorbed by a new attempt, and that --force does not apply to scope": "Explique na recusa de escopo que a alteração pode pertencer a outra tarefa ou ser absorvida em uma nova tentativa e que --force não se aplica ao escopo",
+  "List the accepted decideBy values in the refusal of an invalid open-question deadline and document that they are the only valid ones": "Liste os valores aceitos de decideBy na recusa de um prazo inválido em perguntas abertas e documente que são os únicos válidos"
 }

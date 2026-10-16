@@ -173,7 +173,7 @@ applies is not a user question. A question due before a later task or phase is n
 bundled with the execution authorization; it reappears in that target's discussion or planning.
 
 `openQuestions[].decideBy` may be `executor`, `user-now`, `{ "beforeTask": "T2" }` or
-`{ "beforePhase": "F2" }`; blocking questions still need answers before planning closes and mean
+`{ "beforePhase": "F2" }` (the only accepted values; any other is refused with a message that lists them); blocking questions still need answers before planning closes and mean
 `user-now`. A future deadline does not hold its source task. At the named task or phase, the reference
 appears in discussion/planning and `status` reports it when overdue. Resolve it in a later `decisions`
 entry with `resolvesQuestion` set to the displayed reference; start remains gated only after that
