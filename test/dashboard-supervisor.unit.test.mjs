@@ -95,6 +95,15 @@ test('pedido de parada durante a espera cancela a recriação', async () => {
   }
 })
 
+test('um pedido de parada dispensa ler a preferência persistida, que update e disable estão regravando', async () => {
+  const h = harness([crash], { stopRequested: () => true, disabled: () => { throw new Error('não deve ler dashboard.json') } })
+  assert.deepEqual(await h.supervise(), crash)
+  let reads = 0
+  const afterSleep = harness([crash], { stopRequested: () => reads > 0, disabled: () => { reads++; return false } })
+  assert.deepEqual(await afterSleep.supervise(), crash)
+  assert.equal(reads, 1, 'depois da espera o pedido de parada vale antes da leitura')
+})
+
 test('outro dashboard já servindo a porta impede um segundo processo', async () => {
   const h = harness([crash], { portServed: async port => port === 4949 })
   assert.deepEqual(await h.supervise(), crash)

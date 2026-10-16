@@ -49,7 +49,8 @@ export async function superviseDashboard({ launch, record, disabled, stopRequest
     const result = await launch()
     const unexpected = !result.error && (result.signal ? !STOP_SIGNALS.has(result.signal) : result.code !== 0)
     if (!unexpected || limit < 1) return result
-    if (disabled() || stopRequested(startedAt)) return result
+    // Consultar primeiro o pedido de parada evita ler dashboard.json enquanto update ou disable o regravam (EPERM no rename, no Windows).
+    if (stopRequested(startedAt) || disabled()) return result
     const current = now()
     while (restarts.length && current - restarts[0] >= RESTART_WINDOW_MS) restarts.shift()
     if (restarts.length >= limit) {
@@ -61,7 +62,7 @@ export async function superviseDashboard({ launch, record, disabled, stopRequest
     record('restart-scheduled', { attempt: restarts.length + 1, delayMs: delay, code: result.code, signal: result.signal,
       message: `Restart ${restarts.length + 1} of ${limit} in ${delay} ms` })
     await sleep(delay)
-    if (disabled() || stopRequested(startedAt)) return result
+    if (stopRequested(startedAt) || disabled()) return result
     if (port !== null && await portServed(port)) {
       record('restart-skipped', { message: `Port ${port} is already served by another dashboard` })
       return result
