@@ -87,6 +87,29 @@ export const readDashboardEvents = () => result('logs').events
       assert.match(r.stdout, events.length ? /listening.*pid=4321/ : /No dashboard events recorded/)
     })
   }
+  for (const [lang, crashed, signalled] of [
+    ['en', (time, code) => `Dashboard crashed at ${time} with code ${code}`, (time, signal) => `Dashboard crashed at ${time} with signal ${signal}`],
+    ['pt-BR', (time, code) => `O dashboard caiu às ${time} com código ${code}`, (time, signal) => `O dashboard caiu às ${time} com sinal ${signal}`],
+  ]) await t.test(`status mostra a queda quando o último ciclo do processo terminou em ${lang}`, () => {
+    const at = '2026-10-16T12:34:56.000Z', when = new Date(at)
+    const time = `${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}`
+    const started = { at: '2026-10-16T12:00:00.000Z', event: 'process-started', pid: 11 }
+    const exited = { at, event: 'process-exit', pid: 11, code: 3221226505 }
+    const stopped = { ...base, process: 'stopped' }
+    let r = run(['status'], { ...stopped, events: [started, exited, { at, event: 'restart-limit', message: 'Giving up' }] }, false, lang)
+    assert.equal(r.status, 0, r.output)
+    assert.match(r.stdout, new RegExp(crashed(time, 3221226505)))
+    assert.deepEqual(r.actions, ['status', 'logs'])
+    r = run(['status'], { ...stopped, events: [started, { ...exited, code: null, signal: 'SIGSEGV' }] }, false, lang)
+    assert.match(r.stdout, new RegExp(signalled(time, 'SIGSEGV')))
+    for (const [result, label] of [[{ ...stopped, events: [exited, started] }, 'reiniciado depois da queda'],
+      [{ ...stopped, events: [started] }, 'sem saída registrada'], [{ ...stopped, events: [] }, 'sem eventos'],
+      [{ ...base, events: [started, exited] }, 'em execução'], [{ ...stopped, enabled: false, disabled: true, events: [started, exited] }, 'desabilitado']]) {
+      r = run(['status'], result, false, lang)
+      assert.equal(r.status, 0, r.output)
+      assert.doesNotMatch(r.stdout, /crashed|caiu/, label)
+    }
+  })
   for (const args of [['unknown'], ['enable', 'extra'], ['enable', '--dry-run']]) {
     await t.test(`entrada inválida ${args.join(' ')} não aciona serviço`, () => {
       const r = run(args); assert.equal(r.status, 1, r.output); assert.deepEqual(r.actions, [])

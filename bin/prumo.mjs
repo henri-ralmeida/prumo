@@ -11,7 +11,7 @@ import { releaseHistory } from '../lib/release-notes.mjs'
 import { DASHBOARD_ALIAS_URL, DASHBOARD_URL, dashboardNeedsRepair, dashboardStatus, disableDashboard, enableDashboard, readDashboardEvents, runDashboardForeground, stopDashboardForUpdate } from '../lib/autostart.mjs'
 import { openDashboardBrowser, BOARD_URL } from '../lib/browser.mjs'
 import { LEGACY_DASHBOARD_PORT } from '../scripts/serve-args.mjs'
-import { readDashboardErrors } from '../scripts/dashboard-diagnostics.mjs'
+import { lastDashboardExit, readDashboardErrors } from '../scripts/dashboard-diagnostics.mjs'
 import { selectHarnesses } from '../lib/prompt.mjs'
 import { diagnoseShellFilter } from '../lib/shell-diagnostics.mjs'
 import { assertCliOptions } from '../lib/cli-args.mjs'
@@ -190,6 +190,14 @@ try {
       print(t('Dashboard: {0}; {1}; {2}', t(result.process), t(result.registered ? 'registered' : 'not registered'), t(result.enabled ? 'enabled' : result.disabled ? 'disabled' : 'not configured')))
       print(t('version: {0}; content: {1}; port: {2}; URL: {3}', result.version ?? version, result.contentId ?? t('unknown'), result.port, result.url))
       if (action !== 'disable') printAliasHint()
+      if (action === 'status' && !result.disabled && result.process !== 'running') {
+        const exit = lastDashboardExit(readDashboardEvents({ limit: 200 }))
+        if (exit) {
+          const when = new Date(exit.at)
+          const time = `${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}`
+          print(exit.signal ? t('Dashboard crashed at {0} with signal {1}', time, exit.signal) : t('Dashboard crashed at {0} with code {1}', time, exit.code))
+        }
+      }
       if (result.legacy) print(t('Previous dashboard still running on port {0}; run prumo update or prumo dashboard enable to move it to port {1}', LEGACY_DASHBOARD_PORT, result.port))
       if (result.origin || result.path) print(t('origin: {0}; path: {1}', result.origin ?? t('unknown'), result.path ?? t('unknown')))
       if (action === 'enable' && result.registered && result.process === 'running') {

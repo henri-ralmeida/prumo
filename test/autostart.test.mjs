@@ -215,6 +215,8 @@ for (const [platform, mechanism] of [['linux', 'systemd'], ['darwin', 'launchd']
     assert.deepEqual(preference(f.home), before)
     assert.equal(f.calls.length, 1)
     assert.ok(f.calls[0][1].includes(platform === 'linux' ? 'stop' : 'bootout'))
+    // O lançador do dashboard não recria o processo que a atualização encerra de propósito.
+    assert.ok(readDashboardEvents({ home: f.home }).some(event => event.event === 'stop-requested' && event.mechanism === mechanism))
   })
 }
 

@@ -10,7 +10,7 @@ const launcher=fileURLToPath(new URL('../scripts/dashboard-service.mjs',import.m
 function fixture(t) {
   const home=mkdtempSync(join(tmpdir(),'prumo-service-log-'))
   t.after(()=>rmSync(home,{recursive:true,force:true,maxRetries:5,retryDelay:100}))
-  const env={...process.env,HOME:home,USERPROFILE:home}
+  const env={...process.env,HOME:home,USERPROFILE:home,PRUMO_DASHBOARD_RESTART_LIMIT:'0'}
   return {home,env}
 }
 function run(env,args) {
@@ -69,4 +69,34 @@ test('falha do sistema ao iniciar filho fica no historico de diagnostico', async
   const {result}=run({...f.env,NODE_OPTIONS:(f.env.NODE_OPTIONS??'')+' --import='+JSON.stringify(pathToFileURL(preload).href)},['-e','process.exit(0)'])
   assert.equal((await result).code,1)
   assert.ok(readDashboardEvents({home:f.home}).some(e=>e.event==='launch-error'&&e.code==='ENOENT'))
+})
+test('lancador recria o processo depois de uma queda inesperada e registra o reinicio', async t=>{
+  const f=fixture(t), marker=join(f.home,'primeira-queda')
+  const env={...f.env};delete env.PRUMO_DASHBOARD_RESTART_LIMIT
+  const {result}=run(env,['-e',"const fs=require('node:fs');if(!fs.existsSync(process.argv[1])){fs.writeFileSync(process.argv[1],'x');process.exit(3)}",marker])
+  assert.equal((await result).code,0)
+  const events=readDashboardEvents({home:f.home}).map(e=>e.event)
+  assert.deepEqual(events.filter(e=>e==='process-started'),['process-started','process-started'])
+  assert.deepEqual(readDashboardEvents({home:f.home}).filter(e=>e.event==='process-exit').map(e=>e.code),[3,0])
+  assert.ok(events.includes('restart-scheduled'));assert.ok(events.includes('process-restart'))
+})
+test('lancador nao recria o processo depois de disable ou de um pedido de reinicio', async t=>{
+  const disabled=fixture(t), directory=join(disabled.home,'.local/share/prumo');mkdirSync(directory,{recursive:true})
+  writeFileSync(join(directory,'dashboard.json'),JSON.stringify({enabled:false}))
+  const env={...disabled.env};delete env.PRUMO_DASHBOARD_RESTART_LIMIT
+  assert.equal((await run(env,['-e','process.exit(3)']).result).code,3)
+  const first=readDashboardEvents({home:disabled.home}).map(e=>e.event)
+  assert.deepEqual(first.filter(e=>e==='process-started'),['process-started'])
+  assert.ok(!first.some(e=>e.startsWith('restart-')||e==='process-restart'))
+  const requested=fixture(t), requestedEnv={...requested.env};delete requestedEnv.PRUMO_DASHBOARD_RESTART_LIMIT
+  const script="const fs=require('node:fs'),path=require('node:path'),os=require('node:os');const dir=path.join(os.homedir(),'.local','share','prumo');fs.mkdirSync(dir,{recursive:true});fs.appendFileSync(path.join(dir,'dashboard-events.ndjson'),JSON.stringify({at:new Date().toISOString(),event:'restart-requested'})+String.fromCharCode(10));process.exit(3)"
+  assert.equal((await run(requestedEnv,['-e',script]).result).code,3)
+  const second=readDashboardEvents({home:requested.home}).map(e=>e.event)
+  assert.deepEqual(second.filter(e=>e==='process-started'),['process-started'])
+  assert.ok(!second.some(e=>e.startsWith('restart-scheduled')||e==='process-restart'))
+})
+test('PRUMO_DASHBOARD_RESTART_LIMIT=0 mantem a saida sem recriar o processo', async t=>{
+  const f=fixture(t)
+  assert.equal((await run(f.env,['-e','process.exit(3)']).result).code,3)
+  assert.ok(!readDashboardEvents({home:f.home}).some(e=>e.event==='restart-scheduled'))
 })

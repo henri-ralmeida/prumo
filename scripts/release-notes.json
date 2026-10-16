@@ -21,6 +21,13 @@
         "items": [
           "Show a discreet notice and end the loading state when the selected run is not found, instead of staying silent"
         ]
+      },
+      {
+        "title": "Fixed — Dashboard availability",
+        "items": [
+          "Recreate the dashboard after an unexpected exit with a progressive wait and a limit of restarts per time window, recording each restart, and never after disable, an intentional stop or a restart request",
+          "Show in dashboard status when and with which code or signal the dashboard crashed if the last process event was an unexpected exit"
+        ]
       }
     ]
   },

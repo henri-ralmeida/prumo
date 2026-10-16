@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { setTimeout } from 'node:timers/promises'
 import { enableDashboard, restartDashboard, disableDashboard, stopDashboardForUpdate } from '../lib/autostart.mjs'
-import { readDashboardEvents } from '../scripts/dashboard-diagnostics.mjs'
+import { readDashboardEvents, recordDashboardEvent } from '../scripts/dashboard-diagnostics.mjs'
 import { createTranslator, messages } from '../scripts/i18n.mjs'
 
 // A porta legada nunca é consultada de verdade: o dashboard real do usuário pode estar nela.
@@ -95,6 +95,7 @@ test('Windows Startup launches and restarts a real isolated dashboard process', 
   assert.equal((await (await fetch(`http://127.0.0.1:${port}/api/runs`)).json()).runs.length, 1)
   // Invoque a entrada exata de login por usuário sem reiniciar nem tocar na pasta Startup real.
   const stoppedPid = preference().pid
+  recordDashboardEvent('stop-requested', {}, { home })
   process.kill(stoppedPid)
   let stopped = false
   for (let attempt = 0; attempt < 100 && !stopped; attempt++) {
@@ -154,6 +155,8 @@ async function waitFor(check, attempts = 200) {
   return null
 }
 async function stopIsolatedLaunchers(home, pids) {
+  // Como disable, restart e update, a limpeza registra o pedido para o lançador não recriar o dashboard encerrado.
+  recordDashboardEvent('stop-requested', {}, { home })
   const launchers = new Set(readDashboardEvents({ home })
     .filter(event => event.event === 'process-started' && pids.has(event.pid))
     .map(event => event.launcherPid))

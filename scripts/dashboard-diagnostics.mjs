@@ -59,6 +59,12 @@ export function readDashboardEvents({ home = homedir(), limit = 30 } = {}) {
   return events.slice(-Math.max(1, Math.min(Number(limit) || 30, 200)))
 }
 
+// A queda é a última saída do processo registrada depois do último início; eventos de reinício não a escondem.
+export function lastDashboardExit(events) {
+  const last = events.filter(event => event.event === 'process-started' || event.event === 'process-exit').at(-1)
+  return last?.event === 'process-exit' ? last : null
+}
+
 export function dashboardDiagnostics({ home = homedir(), processRef = process, version, port } = {}) {
   const record = (event, fields = {}) => recordDashboardEvent(event, fields, { home, pid: processRef.pid, version, port })
   processRef.on('uncaughtExceptionMonitor', (error, origin) => record('fatal', {

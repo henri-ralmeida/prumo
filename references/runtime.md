@@ -785,6 +785,14 @@ are moved back by `prumo update`, `prumo dashboard enable` or the dashboard repa
 and the dashboard on 4950 is stopped only when it answers as Prumo and its command line proves it is the managed
 process; an unrelated listener on 4950 is left alone.
 
+The startup launcher recreates the dashboard after an unexpected exit (a nonzero code or a signal other than
+SIGTERM, SIGINT, SIGHUP or SIGBREAK). The wait doubles from 1 s up to 30 s, at most 5 restarts are made within 10 minutes,
+and each restart is recorded in `prumo dashboard logs` (`restart-scheduled`, `process-restart`, `restart-limit`). It does
+not restart after a clean exit, after `prumo dashboard disable`, after a `disable`, `restart` or update stop request recorded since the
+process started, when another dashboard already serves the port, or once the limit is reached.
+`PRUMO_DASHBOARD_RESTART_LIMIT=0` turns the restart off for diagnosis. `prumo dashboard status` prints
+`Dashboard crashed at HH:MM with code X` when the last process event is an exit and the dashboard is not running.
+
 The dashboard exposes `agentUsage.used`, shared `agentUsage.maxAgents` and a per-process
 `agentControlToken` through `GET /api/state`. Its local same-origin control form sends
 `POST /api/agent-limit` with `Content-Type: application/json` and JSON `{ "maxAgents": N }`; it must use

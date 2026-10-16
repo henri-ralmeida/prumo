@@ -10,6 +10,7 @@ Historical tag and commit corrections are documented in [Release history recover
 - Explique, na recusa de validate por escopo, que a alteração pode pertencer a outra tarefa ou ser absorvida em uma nova tentativa e que --force não se aplica ao escopo; a regra de escopo não mudou.
 - Liste, na recusa de decideBy inválido em openQuestions do plano da tarefa, os valores aceitos (executor, user-now, beforeTask e beforePhase), e documente que são os únicos válidos.
 - Mostre no dashboard um aviso discreto e encerre o carregamento quando a execução selecionada não é encontrada (404 em /api/state), em vez de ficar em silêncio.
+- Recrie o dashboard pelo lançador de inicialização após uma saída inesperada, com espera progressiva (1 s a 30 s) e no máximo 5 reinícios em 10 minutos, registrando cada reinício e o limite em dashboard logs; não recrie após saída limpa, dashboard disable, pedido de disable, restart ou parada para atualização, porta já atendida ou limite atingido. dashboard status mostra "caiu às HH:MM com código X" quando a última saída do processo foi uma queda.
 
 ## 2.11.0 — 2026-10-15
 

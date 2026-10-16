@@ -738,7 +738,9 @@ test('same-version CLI refresh persists new dashboard content across source remo
   const env = { ...process.env, HOME: home, USERPROFILE: home, PRUMO_HOME: join(home, 'data'), PRUMO_LANG: 'en',
     XDG_CONFIG_HOME: join(home, 'xdg'), npm_config_prefix: prefix, npm_config_cache: join(home, 'npm-cache'),
     npm_config_userconfig: join(home, '.npmrc'), CLAUDE_CONFIG_DIR: join(home, '.claude'), CODEX_HOME: join(home, '.codex'), DSH_HOME: join(home, '.dsh'),
-    GROK_HOME: join(home, '.grok'), OPENCODE_CONFIG_DIR: join(home, '.opencode') }
+    GROK_HOME: join(home, '.grok'), OPENCODE_CONFIG_DIR: join(home, '.opencode'),
+    // O teste encerra o dashboard isolado diretamente; o lançador não deve recriá-lo.
+    PRUMO_DASHBOARD_RESTART_LIMIT: '0' }
   for (const key of ['PRUMO_ROOT', 'GRAPH_ROOT', 'GRAPH_FOREMAN_HOME']) delete env[key]
 
   const newContentId = packageIdentity('en', { packageRoot: checkout }).contentId
