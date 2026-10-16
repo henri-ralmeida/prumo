@@ -267,6 +267,12 @@ for (const lang of ['en', 'pt-BR']) test(`validacao reprovada distingue evidenci
   assert.ok(failed.stdout.indexOf(notice) < failed.stdout.indexOf(echo), failed.output)
   assert.match(failed.stdout, /FAILED/)
   assert.match(failed.stderr, /exit 1/)
+  const next = lang === 'en' ? /Next: T1 stays reviewing and no attempt was consumed; to redo the work, run fail T1 --reason "<reason>" and then retry T1$/m
+    : /Próximo passo: T1 continua em reviewing e nenhuma tentativa foi consumida; para refazer o trabalho, execute fail T1 --reason "<motivo>" e depois retry T1$/m
+  assert.match(failed.stdout, next, failed.output)
+  assert.doesNotMatch(failed.stdout, /--confirmed-by-user/)
+  assert.equal(f.state().tasks.T1.state, 'reviewing')
+  assert.equal(f.state().tasks.T1.attempts.length, before.attempts.length)
   const current = f.state().tasks.T1
   assert.deepEqual(current.validations.slice(0, -1), before.validations)
   assert.equal(current.validations.at(-1).ok, false)
@@ -279,6 +285,27 @@ for (const lang of ['en', 'pt-BR']) test(`validacao reprovada distingue evidenci
   assert.equal(done.status, 1)
   assert.match(done.stderr, /no passing validation/)
   assert.deepEqual(f.snapshot(), preserved)
+})
+
+for (const lang of ['en', 'pt-BR']) test(`validacao reprovada em execucao manual indica o retry com confirmacao do usuario em ${lang}`, t => {
+  const f = fixture(t); f.init()
+  f.ok('authorize', '--scope', 'run', '--mode', 'manual', '--confirmed-by-user')
+  f.ok('skip-discussion', 'T1', '--reason', 'Contrato já confirmado', '--confirmed-by-user')
+  f.ok('plan-task', 'T1', '--agent', 'planner')
+  const artifact = join(f.root, 'task-plan.json')
+  writeFileSync(artifact, JSON.stringify({ research: [{ source: f.planPath, findings: 'Regra aprovada inspecionada' }], decisions: [],
+    steps: ['Verificar a regra', 'Entregar o resultado'], verification: [{ criterion: 'Resultado aprovado', check: 1 }], openQuestions: [] }))
+  f.ok('finish-planning', 'T1', '--plan', artifact)
+  f.ok('start', 'T1', '--agent', 'executor', '--confirmed-by-user')
+  f.ok('review', 'T1', '--agent', 'reviewer', '--confirmed-by-user')
+  f.ok('review-progress', 'T1', '--step', '1', '--agent', 'reviewer')
+  writeFileSync(join(f.root, 'behavior.cjs'), 'process.exit(1)\n')
+  const failed = f.command('validate', 'T1', '--ok', '--summary', 'Falha', '--evidence', 'A regra não passou', '--cwd', f.root, '--lang', lang)
+  assert.equal(failed.status, 1, failed.output)
+  const next = lang === 'en' ? /run fail T1 --reason "<reason>" and then retry T1 --confirmed-by-user$/m
+    : /execute fail T1 --reason "<motivo>" e depois retry T1 --confirmed-by-user$/m
+  assert.match(failed.stdout, next, failed.output)
+  assert.equal(f.state().tasks.T1.state, 'reviewing')
 })
 
 test('fluxo completo registra progresso, verificação independente, evidência e conclusão', t => {

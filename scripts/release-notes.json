@@ -7,6 +7,12 @@
           "Restore port 4949 as the default dashboard port, keeping --port and the prumo.localhost host name with the same port, origin and token checks",
           "Move installations registered on port 4950 (version 2.11.0) back to 4949 during update, dashboard enable and restart repair, stopping the dashboard on 4950 only when it is proven to be the managed Prumo process"
         ]
+      },
+      {
+        "title": "Improved — Recovery and validation guidance",
+        "items": [
+          "Name the next commands after a rejected validation (fail and then retry, with --confirmed-by-user under manual authorization) without changing the task state or consuming an attempt"
+        ]
       }
     ]
   },

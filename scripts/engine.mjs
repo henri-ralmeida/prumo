@@ -3878,7 +3878,9 @@ const commands = {
         last.scopeCheck.method, (last.scopeCheck.paths ?? []).join(', ') || tr('none'),
         (last.scopeCheck.excludedPaths ?? []).join(', ') || tr('none')))
       for (const mismatch of last.validationProjectMismatches) printValidationProjectWarning(mismatch)
-
+      if (!last.ok) log('[prumo] ' + tr(taskAuthorization(t)?.mode === 'manual' ?
+        'Next: {0} stays {1} and no attempt was consumed; to redo the work, run fail {0} --reason "<reason>" and then retry {0} --confirmed-by-user' :
+        'Next: {0} stays {1} and no attempt was consumed; to redo the work, run fail {0} --reason "<reason>" and then retry {0}', id, t.state))
     })
     if (error) die(error)
   },
