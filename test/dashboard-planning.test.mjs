@@ -496,6 +496,36 @@ test('aviso de atualização é traduzido, abre instruções manuais e não exec
   assert.match(html, /prefers-reduced-motion: reduce\) \{ #updateNotice \{ animation: none;/)
 })
 
+test('trocar de plano muda a URL sem consultar atualização e preserva o aviso existente', async () => {
+  for (const initiallyAvailable of [false, true]) {
+    const navigation = { state: null, urls: [] }
+    const ui = dashboard('pt-BR', 1000, new Map(), navigation)
+    const requests = []
+    let available = initiallyAvailable
+    const fetch = async (url) => {
+      requests.push(String(url))
+      if (String(url) === '/api/update') return { ok: true, json: async () => ({ available, current: '2.8.0', latest: '2.9.0' }) }
+      return { ok: false }
+    }
+    await ui.run('checkDashboardUpdate()', { fetch })
+    assert.equal(ui.nodes.get('#updateNotice').hidden, !initiallyAvailable)
+    available = true
+    ui.run("selectRun('root-b/run-b')")
+    await new Promise(resolve => setImmediate(resolve))
+    const changedUrl = new URL(navigation.urls.at(-1))
+    assert.equal(changedUrl.searchParams.get('root'), 'root-b')
+    assert.equal(changedUrl.searchParams.get('run'), 'run-b')
+    assert.ok(requests.includes('/api/runs'))
+    assert.ok(requests.some(url => new URL(url, changedUrl).pathname === '/api/state'))
+    assert.equal(requests.filter(url => url === '/api/update').length, 1)
+    assert.equal(ui.nodes.get('#updateNotice').hidden, !initiallyAvailable,
+      'o aviso permanece como estava, mesmo se uma versão surgir depois da abertura')
+    await ui.run('checkDashboardUpdate()')
+    assert.equal(requests.filter(url => url === '/api/update').length, 2)
+    assert.equal(ui.nodes.get('#updateNotice').hidden, false)
+  }
+})
+
 test('copiar atualização copia somente o comando, anuncia sucesso e permite tentar novamente após falha', async () => {
   for (const lang of ['en', 'pt-BR']) {
     const ui = dashboard(lang)
