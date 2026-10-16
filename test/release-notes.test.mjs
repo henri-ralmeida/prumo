@@ -14,7 +14,7 @@ test('atualizacao para 2.11.1 devolve o dashboard a porta 4949 e migra quem usou
     assert.ok(messages[section.title]?.trim())
     for (const item of section.items) assert.ok(messages[item]?.trim())
   }
-  for (const rule of ['port 4949', 'prumo.localhost', 'port 4950', 'rejected validation', 'does not apply to scope', 'decideBy']) assert.ok(items.some(item => item.includes(rule)), rule)
+  for (const rule of ['port 4949', 'prumo.localhost', 'port 4950', 'rejected validation', 'does not apply to scope', 'decideBy', 'run is not found']) assert.ok(items.some(item => item.includes(rule)), rule)
   assert.deepEqual(releaseHistory(['2.11.1'], '2.11.1'), [])
   assert.deepEqual(releaseHistory(['2.11.1'], '2.11.0'), [])
 })

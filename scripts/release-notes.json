@@ -15,6 +15,12 @@
           "Explain in the scope refusal that the change may belong to another task or be absorbed by a new attempt, and that --force does not apply to scope",
           "List the accepted decideBy values in the refusal of an invalid open-question deadline and document that they are the only valid ones"
         ]
+      },
+      {
+        "title": "Fixed — Dashboard feedback",
+        "items": [
+          "Show a discreet notice and end the loading state when the selected run is not found, instead of staying silent"
+        ]
       }
     ]
   },

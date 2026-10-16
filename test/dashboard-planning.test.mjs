@@ -914,6 +914,47 @@ test('ao vivo conserva o último quadro quando o histórico falha e retoma sem z
   assert.equal(ui.nodes.get('#orch').innerHTML, lastPaint, 'a indisponibilidade do servidor conserva o tempo exibido')
 })
 
+for (const [lang, expected] of [['en', 'Run "ausente" was not found. Choose another run in the menu.'],
+  ['pt-BR', 'A execução "ausente" não foi encontrada. Escolha outra execução no menu.']]) test(`execução inexistente mostra aviso discreto, libera o carregamento e some quando volta em ${lang}`, async () => {
+  const ui = dashboard(lang)
+  const respond = status => async input => {
+    const path = new URL(String(input), 'http://localhost').pathname
+    if (path === '/api/runs') return { ok: true, json: async () => ({ currentRoot: 'root', current: 'atual', runs: [{ root: 'root', run: 'atual', plan: 'atual' }] }) }
+    if (path === '/api/state') return { ok: status === 200, status, json: async () => ({ run: 'atual', plan: {}, tasks: {} }) }
+    return { ok: true, json: async () => ({ events: [], revision: 'atual', next: 0, total: 0, complete: true }) }
+  }
+  ui.run('SELECTED_ROOT = "root"; SELECTED_RUN = "ausente"; fetch = inputFetch', { inputFetch: respond(404) })
+  ui.run('showRunLoading("ausente")')
+  assert.equal(ui.nodes.get('#main').inert, true)
+  assert.equal(ui.nodes.get('#runLoading').hidden, false)
+  await ui.run('tick()')
+  const notice = ui.nodes.get('#runNotFound')
+  assert.equal(notice.textContent, expected)
+  assert.equal(notice.hidden, false)
+  assert.equal(ui.nodes.get('#runLoading').hidden, true)
+  assert.equal(ui.nodes.get('#runLoadingStatus').hidden, true)
+  assert.equal(ui.nodes.get('#main').inert, false)
+  assert.equal(ui.nodes.get('#headerMenu').inert, false)
+  assert.equal(ui.run('STATE'), null, 'o carregamento não inventa um estado')
+  // Sem execução escolhida, o aviso usa a execução atual; sem nenhuma, o nome fica vazio.
+  ui.run('SELECTED_RUN = null; CURRENT_RUN = "atual"; fetch = inputFetch', { inputFetch: async input => String(input).includes('/api/runs') ? { ok: false } : { ok: false, status: 404 } })
+  await ui.run('tick()')
+  assert.match(notice.textContent, /atual/)
+  ui.run('CURRENT_RUN = null')
+  await ui.run('tick()')
+  assert.match(notice.textContent, /""/)
+  // Outras falhas não criam o aviso e conservam o estado anterior da tela.
+  notice.hidden = true
+  ui.run('fetch = inputFetch', { inputFetch: respond(500) })
+  await ui.run('tick()')
+  assert.equal(notice.hidden, true)
+  // Quando a leitura volta, o aviso desaparece.
+  notice.hidden = false
+  ui.run('SELECTED_RUN = "atual"; fetch = inputFetch', { inputFetch: respond(200) })
+  await ui.run('tick()')
+  assert.equal(notice.hidden, true)
+})
+
 test('períodos do ao vivo respeitam pausas e recusam horários ausentes ou inválidos', () => {
   const ui = dashboard()
   const ranges = (round, role = 'planning', active = true, pauses = []) =>

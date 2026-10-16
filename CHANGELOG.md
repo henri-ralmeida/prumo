@@ -9,6 +9,7 @@ Historical tag and commit corrections are documented in [Release history recover
 - Indique, após um validate reprovado, os próximos comandos (fail e depois retry; com --confirmed-by-user na autorização manual), sem alterar o estado da tarefa nem consumir tentativa.
 - Explique, na recusa de validate por escopo, que a alteração pode pertencer a outra tarefa ou ser absorvida em uma nova tentativa e que --force não se aplica ao escopo; a regra de escopo não mudou.
 - Liste, na recusa de decideBy inválido em openQuestions do plano da tarefa, os valores aceitos (executor, user-now, beforeTask e beforePhase), e documente que são os únicos válidos.
+- Mostre no dashboard um aviso discreto e encerre o carregamento quando a execução selecionada não é encontrada (404 em /api/state), em vez de ficar em silêncio.
 
 ## 2.11.0 — 2026-10-15
 
