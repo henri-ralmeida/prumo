@@ -4,10 +4,10 @@ import { parseWindowsCommandLine } from '../lib/windows-argv.mjs'
 
 test('Windows interpreta aspas parciais, espacos e argumentos vazios de forma equivalente', () => {
   for (const line of [
-    '"C:\\Program Files\\node.exe" "C:\\prumo\\serve.mjs" --global --port 4949',
-    '"C:\\Program Files\\node.exe" C:\\prumo\\serve.mjs "--global" "--port" "4949"',
-    '\t"C:\\Program Files\\node.exe" C:\\prumo\\serve.mjs --g"lob"al\t--port 4949\t',
-  ]) assert.deepEqual(parseWindowsCommandLine(line), ['C:\\Program Files\\node.exe', 'C:\\prumo\\serve.mjs', '--global', '--port', '4949'])
+    '"C:\\Program Files\\node.exe" "C:\\prumo\\serve.mjs" --global --port 4950',
+    '"C:\\Program Files\\node.exe" C:\\prumo\\serve.mjs "--global" "--port" "4950"',
+    '\t"C:\\Program Files\\node.exe" C:\\prumo\\serve.mjs --g"lob"al\t--port 4950\t',
+  ]) assert.deepEqual(parseWindowsCommandLine(line), ['C:\\Program Files\\node.exe', 'C:\\prumo\\serve.mjs', '--global', '--port', '4950'])
   assert.deepEqual(parseWindowsCommandLine('node "" "a b"'), ['node', '', 'a b'])
   assert.deepEqual(parseWindowsCommandLine(''), [])
   assert.deepEqual(parseWindowsCommandLine(' \t'), [])

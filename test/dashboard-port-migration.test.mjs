@@ -113,7 +113,7 @@ function world(t, platform, mechanism, extra = {}) {
     spawn: () => { state.spawned += 1; state.newRunning = true; return { pid: NEW_PID } },
     kill: pid => { state.killed.push(pid); if (pid === LEGACY_PID) stopLegacy() },
     readProcessCommand: pid => {
-      if (pid === LEGACY_PID) return describe(state.legacy === 'unprovable' ? [node, join(home, 'other', 'serve.mjs'), '--global', '--port', '4949'] : legacyArgs)
+      if (pid === LEGACY_PID) return describe(state.legacy === 'unprovable' ? [node, join(home, 'other', 'serve.mjs'), '--global', '--port', '4950'] : legacyArgs)
       if (pid === NEW_PID) return describe(newArgs)
       throw new Error('process not found')
     },
@@ -133,7 +133,7 @@ function registrationContent(w, mechanism) {
 }
 
 function stageLegacyRegistration(w, mechanism) {
-  // O registro antigo carrega `--port 4949`; a migração precisa regravá-lo com a porta atual.
+  // O registro antigo carrega `--port 4950`; a migração precisa regravá-lo com a porta atual.
   const files = {
     launchd: join(w.home, 'Library', 'LaunchAgents', 'dev.prumo.dashboard.plist'),
     systemd: join(w.home, '.config', 'systemd', 'user', 'prumo-dashboard.service'),
@@ -150,32 +150,32 @@ const SCENARIOS = [
   ['win32', 'schtasks'], ['win32', 'windows-startup'], ['darwin', 'launchd'], ['linux', 'systemd'], ['linux', 'xdg'],
 ]
 
-test('a porta padrão é 4950 em todos os pontos e --port continua valendo', () => {
-  assert.equal(DEFAULT_DASHBOARD_PORT, 4950)
-  assert.equal(LEGACY_DASHBOARD_PORT, 4949)
-  assert.equal(DASHBOARD_PORT, 4950)
-  assert.equal(DASHBOARD_URL, 'http://localhost:4950')
-  assert.equal(BOARD_URL, 'http://localhost:4950', 'o navegador continua abrindo localhost')
+test('a porta padrão é 4949 em todos os pontos e --port continua valendo', () => {
+  assert.equal(DEFAULT_DASHBOARD_PORT, 4949)
+  assert.equal(LEGACY_DASHBOARD_PORT, 4950)
+  assert.equal(DASHBOARD_PORT, 4949)
+  assert.equal(DASHBOARD_URL, 'http://localhost:4949')
+  assert.equal(BOARD_URL, 'http://localhost:4949', 'o navegador continua abrindo localhost')
   assert.equal(DASHBOARD_ALIAS_HOST, 'prumo.localhost')
-  assert.equal(DASHBOARD_ALIAS_URL, 'http://prumo.localhost:4950')
-  assert.equal(parseServeArgs([]).port, 4950)
-  assert.equal(parseServeArgs(['--port', '4949']).port, 4949)
+  assert.equal(DASHBOARD_ALIAS_URL, 'http://prumo.localhost:4949')
+  assert.equal(parseServeArgs([]).port, 4949)
+  assert.equal(parseServeArgs(['--port', '4950']).port, 4950)
   assert.equal(parseServeArgs(['--port', '4951']).port, 4951)
 })
 
 for (const action of [enableDashboard, restartDashboard]) for (const [platform, mechanism] of SCENARIOS) {
-  test(`${action.name} em ${platform}/${mechanism} migra o registro 4949 para 4950 e para somente o Prumo comprovado`, async t => {
+  test(`${action.name} em ${platform}/${mechanism} migra o registro 4950 para 4949 e para somente o Prumo comprovado`, async t => {
     const w = world(t, platform, mechanism)
     stageLegacyRegistration(w, mechanism)
     const result = await action(w.options)
     assert.equal(result.ok, true, result.error)
-    assert.equal(w.state.legacyRunning, false, 'o dashboard antigo na 4949 foi parado')
-    assert.equal(w.state.newRunning, true, 'o dashboard novo responde na 4950')
-    assert.equal(result.port, 4950)
+    assert.equal(w.state.legacyRunning, false, 'o dashboard antigo na 4950 foi parado')
+    assert.equal(w.state.newRunning, true, 'o dashboard novo responde na 4949')
+    assert.equal(result.port, 4949)
     assert.equal(result.legacy, false)
     const content = registrationContent(w, mechanism)
-    assert.match(content, /4950/)
-    assert.doesNotMatch(content, /4949/, 'o registro não mantém a porta legada')
+    assert.match(content, /4949/)
+    assert.doesNotMatch(content, /4950/, 'o registro não mantém a porta legada')
     if (['windows-startup', 'xdg'].includes(mechanism)) assert.deepEqual(w.state.killed, [LEGACY_PID], 'apenas o processo comprovado foi encerrado')
     else assert.deepEqual(w.state.killed, [], 'o gerenciador do sistema parou o processo, sem kill direto')
   })
@@ -200,7 +200,7 @@ for (const action of [enableDashboard, restartDashboard]) for (const [platform, 
     const before = registrationContent(w, effective)
     const result = await action(w.options)
     assert.equal(result.ok, false)
-    assert.match(result.error, /Startup ownership verification failed: managed process not found; the dashboard on port 4949 \(pid 4242\) is not the Prumo process managed by this installation, so it was not stopped/)
+    assert.match(result.error, /Startup ownership verification failed: managed process not found; the dashboard on port 4950 \(pid 4242\) is not the Prumo process managed by this installation, so it was not stopped/)
     assert.deepEqual(w.state.killed, [])
     assert.equal(w.state.newRunning, false, 'nenhum segundo dashboard é iniciado')
     assert.equal(registrationContent(w, effective), before)
@@ -208,12 +208,12 @@ for (const action of [enableDashboard, restartDashboard]) for (const [platform, 
 }
 
 for (const action of [enableDashboard, restartDashboard]) {
-  test(`${action.name} com a 4950 ocupada por processo alheio informa o conflito e não encerra o dashboard antigo`, async t => {
+  test(`${action.name} com a 4949 ocupada por processo alheio informa o conflito e não encerra o dashboard antigo`, async t => {
     const w = world(t, 'linux', 'xdg', { newAlien: true })
     const result = await action(w.options)
     assert.equal(result.ok, false)
     assert.equal(result.conflict, true)
-    assert.match(result.error, /^Port 4950 is used by another program that is not the Prumo dashboard, so it was not stopped/)
+    assert.match(result.error, /^Port 4949 is used by another program that is not the Prumo dashboard, so it was not stopped/)
     assert.deepEqual(w.state.killed, [])
     assert.equal(w.state.legacyRunning, true)
   })
@@ -235,7 +235,7 @@ test('falhas ao parar o dashboard antigo são informadas sem regravar o registro
     const w = world(t, platform, mechanism, { ...extra, stubborn: true })
     const result = await enableDashboard(w.options)
     assert.equal(result.ok, false)
-    assert.match(result.error, /the dashboard on port 4949 \(pid 4242\) is not the Prumo process managed by this installation/)
+    assert.match(result.error, /the dashboard on port 4950 \(pid 4242\) is not the Prumo process managed by this installation/)
     assert.equal(w.state.newRunning, false)
   }
 })
@@ -246,11 +246,11 @@ test('schtasks sem tarefa registrada recorre ao processo comprovado na porta leg
   assert.equal(result.ok, true, result.error)
   assert.deepEqual(w.state.killed, [LEGACY_PID])
   assert.equal(w.state.calls.some(call => call[1] === '/End'), false)
-  assert.match(w.state.created.at(-1), /4950/)
-  assert.doesNotMatch(w.state.created.at(-1), /4949/)
+  assert.match(w.state.created.at(-1), /4949/)
+  assert.doesNotMatch(w.state.created.at(-1), /4950/)
 })
 
-test('stopDashboardForUpdate reconhece e para o dashboard antigo na 4949, sem tocar em ocupante alheio', async t => {
+test('stopDashboardForUpdate reconhece e para o dashboard antigo na 4950, sem tocar em ocupante alheio', async t => {
   const legacy = world(t, 'linux', 'xdg')
   assert.deepEqual(await stopDashboardForUpdate(legacy.options), { ok: true, stopped: true })
   assert.deepEqual(legacy.state.killed, [LEGACY_PID])
@@ -266,16 +266,16 @@ test('stopDashboardForUpdate reconhece e para o dashboard antigo na 4949, sem to
   const unprovable = world(t, 'linux', 'xdg', { legacy: 'unprovable' })
   const refused = await stopDashboardForUpdate(unprovable.options)
   assert.equal(refused.ok, false)
-  assert.match(refused.error, /port 4949/)
+  assert.match(refused.error, /port 4950/)
   assert.deepEqual(unprovable.state.killed, [])
 })
 
-test('status reconhece o dashboard antigo na 4949 como pendente de migração', async t => {
+test('status reconhece o dashboard antigo na 4950 como pendente de migração', async t => {
   const legacy = world(t, 'linux', 'xdg')
   const pending = await dashboardStatus(legacy.options)
   assert.equal(pending.process, 'stopped')
   assert.equal(pending.legacy, true)
-  assert.equal(pending.port, 4950)
+  assert.equal(pending.port, 4949)
   assert.equal(dashboardNeedsRepair(pending), true)
 
   for (const kind of ['alien', 'none']) {

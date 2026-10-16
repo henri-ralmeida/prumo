@@ -202,12 +202,12 @@ try {
     // Selecionar a porta imediatamente antes de iniciar evita reutilizar a porta escolhida antes da instalação.
     dashboardPort = await freePort()
     env.PRUMO_TEST_DASHBOARD_PORT = String(dashboardPort)
-    // Cada versão publicada começa na própria porta padrão; só as versões antigas precisam migrar da 4949.
+    // Cada versão publicada começa na própria porta padrão; só as versões antigas precisam migrar da 4950.
     const { DASHBOARD_PORT: publishedPort } = await import(pathToFileURL(join(installed, 'lib/autostart.mjs')).href)
     let legacyPort = await freePort()
     while (legacyPort === dashboardPort) legacyPort = await freePort()
     env.PRUMO_TEST_LEGACY_DASHBOARD_PORT = String(legacyPort)
-    const publishedTarget = publishedPort === 4949 ? legacyPort : dashboardPort
+    const publishedTarget = publishedPort === 4950 ? legacyPort : dashboardPort
     put(dashboardPreference, { enabled: false, mechanism: process.platform === 'win32' ? 'windows-startup' : 'xdg' })
     // O cenário de atualização começa com o dashboard antigo em execução, inclusive quando seu lançador histórico falha.
     previousDashboard = spawn(process.execPath, [join(installed, 'scripts/serve.mjs'), '--global', '--port', String(publishedPort)],

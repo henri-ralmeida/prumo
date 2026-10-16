@@ -18,7 +18,7 @@ test('readiness never reserves the startup port and protects occupied or uncerta
     await t.test(expected + ' ' + (code ?? event), async t => {
       t.mock.method(net.Server.prototype, 'listen', () => { throw new Error('a readiness probe must not bind the dashboard port') })
       t.mock.method(net, 'createConnection', options => {
-        assert.deepEqual(options, { port: 4950, host: '127.0.0.1' })
+        assert.deepEqual(options, { port: 4949, host: '127.0.0.1' })
         const socket = new EventEmitter()
         socket.destroy = () => {}
         socket.unref = () => {}
@@ -94,7 +94,7 @@ for (const action of [enableDashboard, restartDashboard]) for (const stage of ['
         if (++probes <= 6 || stage === 'unresponsive') throw Object.assign(new Error('iniciando'), { name: 'TimeoutError' })
         return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0', pid }) }
       },
-      readProcessCommand: () => [f.node, f.script, '--global', '--port', '4950', '--lang', 'pt-BR'],
+      readProcessCommand: () => [f.node, f.script, '--global', '--port', '4949', '--lang', 'pt-BR'],
       spawn(_node, args) { spawned.push(args); occupied = true; probes = 0; return { pid: ++pid } },
       kill(value) { killed.push(value); occupied = false },
     })
@@ -130,7 +130,7 @@ for (const occupant of ['prumo', 'other']) {
         if (!occupied) throw new Error('parado')
         return { ok: true, json: async () => ({ product: occupant, mode: 'global', readOnly: true, version: '1.3.0', pid: 7200 }) }
       },
-      readProcessCommand: () => [f.node, f.script, '--global', '--port', '4950'],
+      readProcessCommand: () => [f.node, f.script, '--global', '--port', '4949'],
       spawn: () => assert.fail('nao deve disputar a porta ocupada'),
       kill: () => assert.fail('nao deve encerrar o ocupante'),
     })
@@ -167,7 +167,7 @@ for (const outcome of ['stopped', 'unverified', 'kill-failed', 'still-running'])
         if (!running) throw new Error('stopped')
         return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, pid: 777 }) }
       },
-      readProcessCommand: () => outcome === 'unverified' ? ['other'] : [f.node, f.script, '--global', '--port', '4950'],
+      readProcessCommand: () => outcome === 'unverified' ? ['other'] : [f.node, f.script, '--global', '--port', '4949'],
       kill: pid => {
         killed.push(pid)
         if (outcome === 'kill-failed') throw new Error('denied')
@@ -270,7 +270,7 @@ test('reinício recupera consulta indisponível e encerra somente o processo com
       if (probes <= 2 || !running) throw new Error('Consulta indisponível')
       return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0', pid: activePid }) }
     },
-    readProcessCommand: () => [f.node, f.script, '--global', '--port', '4950', '--lang', 'en'],
+    readProcessCommand: () => [f.node, f.script, '--global', '--port', '4949', '--lang', 'en'],
     kill(pid) { killed.push(pid); running = false },
     spawn(node, args) { spawned.push([node, args]); running = true; activePid = 5201; return { pid: activePid } },
   })
@@ -296,7 +296,7 @@ for (const startupDelay of [80, Infinity]) {
         return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0', pid }) }
       },
       spawn(node, args) { launched = true; pid = 5301; launches.push(args); return { pid } },
-      readProcessCommand: () => [f.node, f.script, '--global', '--port', '4950', '--lang', 'en'],
+      readProcessCommand: () => [f.node, f.script, '--global', '--port', '4949', '--lang', 'en'],
       kill(value) { killed.push(value); running = false },
     })
     const data = join(f.home, '.local/share/prumo')
@@ -321,7 +321,7 @@ for (const platform of ['linux', 'win32']) for (const previousLang of ['en', 'pt
         if (!running) throw new Error('stopped')
         return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0', pid: 4311 }) }
       },
-      readProcessCommand: () => [f.node, f.script, '--global', '--port', '4950', '--lang', previousLang],
+      readProcessCommand: () => [f.node, f.script, '--global', '--port', '4949', '--lang', previousLang],
       kill(pid) {
         killed.push(pid)
         if (killed.length === 1) throw Object.assign(new Error('Acesso recusado'), { code: 'EPERM' })
@@ -353,7 +353,7 @@ for (const platform of ['linux', 'win32']) for (const previousLang of ['en', 'pt
         if (!running) throw new Error('stopped')
         return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0', pid: 4301 }) }
       },
-      readProcessCommand: () => [f.node, f.script, '--global', '--port', '4950', '--lang', previousLang],
+      readProcessCommand: () => [f.node, f.script, '--global', '--port', '4949', '--lang', previousLang],
       kill(pid) { killed.push(pid); running = false },
     })
     f.options.env.APPDATA = join(f.home, 'AppData')
@@ -395,7 +395,7 @@ for (const platform of ['linux', 'win32']) for (const previousLang of ['en', 'pt
         return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0', pid: 4301 }) }
       },
       readProcessCommand: () => {
-        const args = [f.node, f.script, '--global', '--port', '4950', '--lang', liveLang]
+        const args = [f.node, f.script, '--global', '--port', '4949', '--lang', liveLang]
         return platform === 'win32' ? { executable: f.node, commandLine: args.map(arg => `"${arg}"`).join(' ') } : args
       },
       kill(pid) { killed.push(pid); running = false },
@@ -495,7 +495,7 @@ test('Windows creates one ONLOGON task with absolute quoted paths and persists o
   assert.equal(enabled.ok, true)
   const create = f.calls.find(([file, args]) => file === 'schtasks' && args[0] === '/Create')[1]
   assert.deepEqual(create.slice(0, 6), ['/Create', '/F', '/SC', 'ONLOGON', '/TN', 'Prumo Dashboard'])
-  assert.match(create.at(-1), /^".*node\.exe" ".*dashboard-service\.mjs" ".*serve\.mjs" "--global" "--port" "4950"$/)
+  assert.match(create.at(-1), /^".*node\.exe" ".*dashboard-service\.mjs" ".*serve\.mjs" "--global" "--port" "4949"$/)
   assert.ok(f.calls.some(([file, args]) => file === 'schtasks' && args[0] === '/Run'))
   assert.equal((await dashboardStatus(f.options)).registered, true)
   await enableDashboard(f.options)
@@ -521,7 +521,7 @@ test('O idioma escolhido para o dashboard continua após reiniciar, mantendo a i
   delete options.lang
   let invocation
   runDashboardForeground({ ...options, spawnSync(file, args) { invocation = args; return { status: 0 } } })
-  assert.deepEqual(invocation, [service, f.script, '--global', '--port', '4950', '--lang', 'pt-BR'])
+  assert.deepEqual(invocation, [service, f.script, '--global', '--port', '4949', '--lang', 'pt-BR'])
 })
 
 test('Windows falls back to one hidden per-user Startup entry when task creation is unavailable', async t => {
@@ -544,7 +544,7 @@ test('Windows falls back to one hidden per-user Startup entry when task creation
       return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0' }) }
     },
     listProcessIds: () => currentPid ? [currentPid] : [],
-    readProcessCommand: () => [f.node, f.script, '--global', '--port', '4950'],
+    readProcessCommand: () => [f.node, f.script, '--global', '--port', '4949'],
     kill(pid) { killed.push(pid); running = false },
   })
   t.after(() => rmSync(appData, { recursive: true, force: true }))
@@ -556,11 +556,11 @@ test('Windows falls back to one hidden per-user Startup entry when task creation
   assert.equal(preference(f.home).mechanism, 'windows-startup')
   assert.equal(f.calls.filter(([file, args]) => file === 'schtasks' && args[0] === '/Create').length, 1)
   assert.equal(existsSync(join(f.home, '.local', 'share', 'prumo')), true)
-  assert.deepEqual(f.calls.find(([file]) => file === f.node), [f.node, [service, f.script, '--global', '--port', '4950'], {
+  assert.deepEqual(f.calls.find(([file]) => file === f.node), [f.node, [service, f.script, '--global', '--port', '4949'], {
     cwd: join(f.home, '.local/share/prumo'), env: f.options.env, detached: true, stdio: 'ignore', windowsHide: true,
   }])
   assert.equal(f.calls.some(([file]) => file === 'wscript.exe'), false)
-  assert.match(readFileSync(startup, 'utf8'), /^CreateObject\("WScript\.Shell"\)\.Run """.*node\.exe"" "".*dashboard-service\.mjs"" "".*serve\.mjs"" ""--global"" ""--port"" ""4950""", 0, False\r?\n$/)
+  assert.match(readFileSync(startup, 'utf8'), /^CreateObject\("WScript\.Shell"\)\.Run """.*node\.exe"" "".*dashboard-service\.mjs"" "".*serve\.mjs"" ""--global"" ""--port"" ""4949""", 0, False\r?\n$/)
 
   assert.equal((await dashboardStatus(f.options)).registered, true)
   assert.equal((await enableDashboard(f.options)).ok, true)
@@ -601,8 +601,8 @@ test('Windows Startup discovers a later login process and refuses similar foreig
     readProcessCommand(pid) {
       if (pid === 7700) throw new Error('previous session ended')
       return exact
-        ? { executable: f.node.toUpperCase(), commandLine: `"${f.node}"  "${f.script.replaceAll('\\', '/')}"\t"--global" "--port" "4950"` }
-        : { executable: f.node, commandLine: `"${f.node}" "${f.script}" "--global" "--port" "4950" "--sync-plan"` }
+        ? { executable: f.node.toUpperCase(), commandLine: `"${f.node}"  "${f.script.replaceAll('\\', '/')}"\t"--global" "--port" "4949"` }
+        : { executable: f.node, commandLine: `"${f.node}" "${f.script}" "--global" "--port" "4949" "--sync-plan"` }
     },
     kill(pid) { killed.push(pid); running = false },
   })
@@ -639,7 +639,7 @@ test('Windows restart recovers a stale saved script and waits for the old proces
       searches.push(script)
       return script === f.script && ++desiredSearches > 1 ? [8800] : []
     },
-    readProcessCommand: pid => ({ executable: f.node, commandLine: `"${f.node}" "${f.script}" "--global" "--port" "4950"` }),
+    readProcessCommand: pid => ({ executable: f.node, commandLine: `"${f.node}" "${f.script}" "--global" "--port" "4949"` }),
     kill(pid) { killed.push(pid); pendingStop = true },
     delay: async () => { if (pendingStop) { running = false; pendingStop = false } },
   })
@@ -798,7 +798,7 @@ test('Windows restart replaces a missing scheduler entry without duplicating the
       if (args[0] === '/Run') { running = true; liveVersion = '1.3.0' }
       return { status: 0, stdout: '' }
     },
-    readProcessCommand: () => ({ executable: f.node, commandLine: `"${f.node}" "${f.script}" "--global" "--port" "4950"` }),
+    readProcessCommand: () => ({ executable: f.node, commandLine: `"${f.node}" "${f.script}" "--global" "--port" "4949"` }),
     kill(pid) { killed.push(pid); running = false },
   })
 
@@ -858,7 +858,7 @@ test('Windows restart switches to Startup when replacing its scheduler task beco
       if (!running) throw new Error('stopped')
       return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0' }) }
     },
-    readProcessCommand: () => [f.node, f.script, '--global', '--port', '4950'],
+    readProcessCommand: () => [f.node, f.script, '--global', '--port', '4949'],
     listProcessIds: () => running ? [5500] : [],
   })
   t.after(() => rmSync(appData, { recursive: true, force: true }))
@@ -894,7 +894,7 @@ test('Windows restart reports scheduler denial plus unproven Startup ownership',
       return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0' }) }
     },
     listProcessIds: () => [6400],
-    readProcessCommand: () => [f.node, f.script, '--global', '--port', '4950', '--foreign'],
+    readProcessCommand: () => [f.node, f.script, '--global', '--port', '4949', '--foreign'],
   })
 
   await enableDashboard(f.options)
@@ -927,7 +927,7 @@ test('Windows restart reports scheduler denial plus a failed managed Startup sto
       return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0' }) }
     },
     listProcessIds: () => [6500],
-    readProcessCommand: () => [f.node, f.script, '--global', '--port', '4950'],
+    readProcessCommand: () => [f.node, f.script, '--global', '--port', '4949'],
     kill: () => { throw new Error('operation refused') },
   })
 
@@ -961,7 +961,7 @@ test('Linux uses a systemd user unit when the user manager is available', async 
   const unit = join(f.home, '.config', 'systemd', 'user', 'prumo-dashboard.service')
   const content = readFileSync(unit, 'utf8')
   assert.match(content, /Restart=on-failure/)
-  assert.ok(content.includes(`"${f.node.replaceAll('\\', '\\\\')}" "${service.replaceAll('\\', '\\\\')}" "${f.script.replaceAll('\\', '\\\\')}" "--global" "--port" "4950"`))
+  assert.ok(content.includes(`"${f.node.replaceAll('\\', '\\\\')}" "${service.replaceAll('\\', '\\\\')}" "${f.script.replaceAll('\\', '\\\\')}" "--global" "--port" "4949"`))
   assert.ok(f.calls.some(([file, args]) => file === 'systemctl' && args.join(' ') === '--user enable --now prumo-dashboard.service'))
   await disableDashboard(f.options)
   assert.equal(existsSync(unit), false)
@@ -980,14 +980,14 @@ test('Linux falls back to XDG, starts detached, and only stops a proven PID', as
       if (!running) throw new Error('stopped')
       return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0' }) }
     },
-    readProcessCommand: () => [f?.node, f?.script, '--global', '--port', '4950'],
+    readProcessCommand: () => [f?.node, f?.script, '--global', '--port', '4949'],
     kill(pid) { killed.push(pid); running = false },
   })
   options = f.options
   await enableDashboard(options)
   const desktop = join(f.home, '.config', 'autostart', 'prumo-dashboard.desktop')
-  assert.ok(readFileSync(desktop, 'utf8').includes(`Exec="${f.node.replaceAll('\\', '\\\\')}" "${service.replaceAll('\\', '\\\\')}" "${f.script.replaceAll('\\', '\\\\')}" "--global" "--port" "4950"`))
-  assert.deepEqual(spawned, [[f.node, [service, f.script, '--global', '--port', '4950'], {
+  assert.ok(readFileSync(desktop, 'utf8').includes(`Exec="${f.node.replaceAll('\\', '\\\\')}" "${service.replaceAll('\\', '\\\\')}" "${f.script.replaceAll('\\', '\\\\')}" "--global" "--port" "4949"`))
+  assert.deepEqual(spawned, [[f.node, [service, f.script, '--global', '--port', '4949'], {
     cwd: join(f.home, '.local', 'share', 'prumo'), env: f.options.env, detached: true, stdio: 'ignore', windowsHide: true,
   }]])
   assert.equal(preference(f.home).pid, 4321)
@@ -1022,7 +1022,7 @@ test('health identity reuses Prumo, rejects another product, and foreground stay
   let invocation
   const code = runDashboardForeground({ ...managed.options, spawnSync(file, args, settings) { invocation = [file, args, settings]; return { status: 7 } } })
   assert.equal(code, 7)
-  assert.deepEqual(invocation[1], [service, managed.script, '--global', '--port', '4950'])
+  assert.deepEqual(invocation[1], [service, managed.script, '--global', '--port', '4949'])
   assert.equal(invocation[1].includes('--sync-plan'), false)
 })
 
@@ -1113,7 +1113,7 @@ test('XDG recovers and persists a login-started process with the exact command',
     fetch: async () => ({ ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0' }) }),
     listProcessIds: () => [111, 7654],
     readProcessCommand(pid) {
-      return pid === 7654 ? [f.node, f.script, '--global', '--port', '4950'] : ['/usr/bin/node', '/tmp/other.mjs']
+      return pid === 7654 ? [f.node, f.script, '--global', '--port', '4949'] : ['/usr/bin/node', '/tmp/other.mjs']
     },
   })
   const result = await enableDashboard(f.options)
@@ -1133,7 +1133,7 @@ test('XDG refuses a PID whose command has the managed argv plus extra arguments'
       return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0' }) }
     },
     readProcessCommand: () => [
-      f.node, f.script, '--global', '--port', '4950',
+      f.node, f.script, '--global', '--port', '4949',
       ...(exact ? [] : ['--sync-plan']),
     ],
     kill(pid) { killed.push(pid); running = false },
@@ -1184,7 +1184,7 @@ test('Linux keeps the persisted systemd or XDG mechanism when detection changes'
       if (!xdgRunning) throw new Error('stopped')
       return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0' }) }
     },
-    readProcessCommand: () => [xdg.node, xdg.script, '--global', '--port', '4950'],
+    readProcessCommand: () => [xdg.node, xdg.script, '--global', '--port', '4949'],
     kill(pid) { killed.push(pid); xdgRunning = false },
   })
 

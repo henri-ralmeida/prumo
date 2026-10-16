@@ -1,6 +1,6 @@
 // Porta padrão do dashboard; instalações anteriores registravam a porta legada, que só a migração reconhece.
-export const DEFAULT_DASHBOARD_PORT = 4950
-export const LEGACY_DASHBOARD_PORT = 4949
+export const DEFAULT_DASHBOARD_PORT = 4949
+export const LEGACY_DASHBOARD_PORT = 4950
 // Chrome, Edge e Firefox resolvem *.localhost para loopback sem arquivo hosts; somente este nome exato é aceito além de loopback.
 export const DASHBOARD_ALIAS_HOST = 'prumo.localhost'
 

@@ -5,8 +5,8 @@ import { hydrateDiscoveries } from './discovery-history.mjs'
  * --sync-plan delega a reconciliação do plano aprovado a engine.mjs, o único gravador de estado.
  * Encerrá-lo não afeta a execução.
  *
- * Uso: node <skill>/scripts/serve.mjs [--port 4950] [--run <name>] [--sync-plan]
- * Depois, abra http://localhost:4950
+ * Uso: node <skill>/scripts/serve.mjs [--port 4949] [--run <name>] [--sync-plan]
+ * Depois, abra http://localhost:4949
  */
 import { createServer } from 'node:http'
 import { randomUUID } from 'node:crypto'

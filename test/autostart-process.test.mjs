@@ -13,8 +13,8 @@ import { createTranslator, messages } from '../scripts/i18n.mjs'
 
 // A porta legada nunca é consultada de verdade: o dashboard real do usuário pode estar nela.
 function isolatedTarget(url, port) {
-  if (String(url).includes(':4949/')) throw new Error('porta legada isolada')
-  return String(url).replace(':4950/', `:${port}/`)
+  if (String(url).includes(':4950/')) throw new Error('porta legada isolada')
+  return String(url).replace(':4949/', `:${port}/`)
 }
 
 function dashboardRequestInit(init) {
@@ -166,7 +166,7 @@ async function isolatedDashboard(t) {
   const port = await freePort()
   const target = join(home, 'target.txt')
   const script = join(home, 'dashboard.mjs')
-  // A linha de comando gerenciada permanece `<node> <script> --global --port 4950`; o wrapper serve em outro local.
+  // A linha de comando gerenciada permanece `<node> <script> --global --port 4949`; o wrapper serve em outro local.
   writeFileSync(script, [
     "import { readFileSync } from 'node:fs'",
     "import { pathToFileURL } from 'node:url'",
@@ -194,12 +194,12 @@ async function isolatedDashboard(t) {
     rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
   })
   const health = async () => {
-    try { return await (await redirect('http://127.0.0.1:4950/api/health', { signal: AbortSignal.timeout(1000) })).json() }
+    try { return await (await redirect('http://127.0.0.1:4949/api/health', { signal: AbortSignal.timeout(1000) })).json() }
     catch { return null }
   }
   // `managed` inicia o dashboard com a linha de comando gerenciada; caso contrário, `args` são executados como fornecidos.
   const start = (args, managed = false) => {
-    const child = spawn(process.execPath, managed ? [script, '--global', '--port', '4950'] : args,
+    const child = spawn(process.execPath, managed ? [script, '--global', '--port', '4949'] : args,
       { env, detached: managed, stdio: 'ignore', windowsHide: true })
     children.push(child)
     return child
@@ -306,8 +306,8 @@ test('update restart never stops a port occupant that is not the managed Prumo d
   const conflict = await restartDashboard(f.options)
   assert.equal(conflict.ok, false)
   assert.equal(conflict.conflict, true)
-  assert.equal(conflict.error, 'Port 4950 is used by another program that is not the Prumo dashboard, so it was not stopped. Close that program or free the port, then run prumo dashboard enable')
-  assert.match(pt(conflict.error), /^A porta 4950 está ocupada por outro programa que não é o dashboard do Prumo, por isso ele não foi encerrado\. Feche esse programa/)
+  assert.equal(conflict.error, 'Port 4949 is used by another program that is not the Prumo dashboard, so it was not stopped. Close that program or free the port, then run prumo dashboard enable')
+  assert.match(pt(conflict.error), /^A porta 4949 está ocupada por outro programa que não é o dashboard do Prumo, por isso ele não foi encerrado\. Feche esse programa/)
   assert.deepEqual(f.killed, [])
   assert.equal(alive(foreign.pid), true)
   foreign.kill()
@@ -317,8 +317,8 @@ test('update restart never stops a port occupant that is not the managed Prumo d
   assert.ok(await waitFor(async () => (await f.health())?.pid === impostor.pid))
   const refused = await restartDashboard(f.options)
   assert.equal(refused.ok, false)
-  assert.equal(refused.error, `Startup ownership verification failed: managed process not found; the dashboard on port 4950 (pid ${impostor.pid}) is not the Prumo process managed by this installation, so it was not stopped. Stop process ${impostor.pid}, then run prumo dashboard enable`)
-  assert.equal(pt('Dashboard restart failed: {0}', pt(refused.error)), `Falha ao reiniciar o dashboard: Não foi possível confirmar a posse do dashboard: o processo gerenciado não foi encontrado; o dashboard na porta 4950 (pid ${impostor.pid}) não é o processo do Prumo gerenciado por esta instalação, por isso não foi encerrado. Encerre o processo ${impostor.pid} e depois execute prumo dashboard enable`)
+  assert.equal(refused.error, `Startup ownership verification failed: managed process not found; the dashboard on port 4949 (pid ${impostor.pid}) is not the Prumo process managed by this installation, so it was not stopped. Stop process ${impostor.pid}, then run prumo dashboard enable`)
+  assert.equal(pt('Dashboard restart failed: {0}', pt(refused.error)), `Falha ao reiniciar o dashboard: Não foi possível confirmar a posse do dashboard: o processo gerenciado não foi encontrado; o dashboard na porta 4949 (pid ${impostor.pid}) não é o processo do Prumo gerenciado por esta instalação, por isso não foi encerrado. Encerre o processo ${impostor.pid} e depois execute prumo dashboard enable`)
   assert.deepEqual(f.killed, [])
   assert.equal(alive(impostor.pid), true)
   assert.deepEqual(f.preference(), recordedPreference, 'a refused restart keeps the recorded pid and command')

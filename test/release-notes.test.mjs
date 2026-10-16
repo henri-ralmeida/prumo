@@ -5,6 +5,20 @@ import { releaseHistory, releaseNotes } from '../lib/release-notes.mjs'
 
 const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 
+test('atualizacao para 2.11.1 devolve o dashboard a porta 4949 e migra quem usou a 4950 sem repetir notas instaladas', () => {
+  const messages = JSON.parse(readFileSync(new URL('../scripts/messages.json', import.meta.url), 'utf8'))
+  const history = releaseHistory(['2.11.0'], '2.11.1')
+  assert.deepEqual(history.map(release => release.version), ['2.11.1'])
+  const items = history[0].sections.flatMap(section => section.items)
+  for (const section of history[0].sections) {
+    assert.ok(messages[section.title]?.trim())
+    for (const item of section.items) assert.ok(messages[item]?.trim())
+  }
+  for (const rule of ['port 4949', 'prumo.localhost', 'port 4950']) assert.ok(items.some(item => item.includes(rule)), rule)
+  assert.deepEqual(releaseHistory(['2.11.1'], '2.11.1'), [])
+  assert.deepEqual(releaseHistory(['2.11.1'], '2.11.0'), [])
+})
+
 test('atualizacao para 2.11.0 explica o novo endereco do dashboard e as fases vazias sem repetir notas instaladas', () => {
   const messages = JSON.parse(readFileSync(new URL('../scripts/messages.json', import.meta.url), 'utf8'))
   const history = releaseHistory(['2.10.0'], '2.11.0')

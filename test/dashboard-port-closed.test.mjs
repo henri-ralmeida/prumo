@@ -15,11 +15,11 @@ function connection(event, code) {
 }
 
 test('a parada exige porta recusada; reset transitorio nao encerra nem aprova a verificacao', async () => {
-  assert.equal(await dashboardPortClosed(4949, connection('error', 'ECONNRESET')), false)
-  assert.equal(await dashboardPortClosed(4949, connection('error', 'ECONNREFUSED')), true)
-  assert.equal(await dashboardPortClosed(4949, connection('connect')), false)
-  await assert.rejects(dashboardPortClosed(4949, connection('error', 'EACCES')), { code: 'EACCES' })
-  await assert.rejects(dashboardPortClosed(4949, connection('timeout')), /did not respond/)
+  assert.equal(await dashboardPortClosed(4950, connection('error', 'ECONNRESET')), false)
+  assert.equal(await dashboardPortClosed(4950, connection('error', 'ECONNREFUSED')), true)
+  assert.equal(await dashboardPortClosed(4950, connection('connect')), false)
+  await assert.rejects(dashboardPortClosed(4950, connection('error', 'EACCES')), { code: 'EACCES' })
+  await assert.rejects(dashboardPortClosed(4950, connection('timeout')), /did not respond/)
 })
 
 test('uma porta real so fica liberada depois do servidor encerrar', async () => {

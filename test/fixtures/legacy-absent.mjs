@@ -1,6 +1,6 @@
-// A porta legada (4949) nunca deve ser consultada de verdade, porque o dashboard real do usuário pode estar nela.
+// A porta legada (4950) nunca deve ser consultada de verdade, porque o dashboard real do usuário pode estar nela.
 // Estes testes simulam apenas a porta atual; as migrações têm testes próprios que controlam a porta legada.
-const LEGACY_PORT = 4949
+const LEGACY_PORT = 4950
 const WRAPPED = ['dashboardHealth', 'dashboardStatus', 'disableDashboard', 'enableDashboard', 'restartDashboard', 'stopDashboardForUpdate']
 
 export function legacyAbsent(options = {}) {

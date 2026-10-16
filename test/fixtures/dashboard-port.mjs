@@ -1,6 +1,6 @@
 // Pré-carregado com NODE_OPTIONS=--import pelo teste de atualização: cada processo Prumo do cenário
 // (CLI antiga, atualizador npm exec e o dashboard que ele inicia) usa uma porta isolada em vez da
-// portas fixas do dashboard, para que o dashboard real do usuário (4950, ou 4949 em instalações anteriores) nunca seja contatado.
+// portas fixas do dashboard, para que o dashboard real do usuário (4949, ou 4950 em instalações anteriores) nunca seja contatado.
 // PRUMO_TEST_DASHBOARD_PORT isola a porta atual; PRUMO_TEST_LEGACY_DASHBOARD_PORT isola a porta legada das versões publicadas
 // antigas e, quando ausente, a porta legada usa o mesmo destino da porta atual.
 import net from 'node:net'
@@ -27,8 +27,8 @@ if (diagnostics && process.argv[1]?.replaceAll('\\', '/').endsWith('/scripts/ser
   recordDashboard = record
 }
 
-const DASHBOARD_PORT = 4950
-const LEGACY_PORT = 4949
+const DASHBOARD_PORT = 4949
+const LEGACY_PORT = 4950
 const port = Number(process.env.PRUMO_TEST_DASHBOARD_PORT)
 const legacyTarget = Number(process.env.PRUMO_TEST_LEGACY_DASHBOARD_PORT)
 const legacyPort = Number.isInteger(legacyTarget) && legacyTarget > 0 ? legacyTarget : port
@@ -68,5 +68,5 @@ if (Number.isInteger(port) && port > 0 && port !== DASHBOARD_PORT && port !== LE
   }
   const fetch = globalThis.fetch
   globalThis.fetch = (input, init) => fetch(typeof input === 'string' || input instanceof URL
-    ? String(input).replace(/^(http:\/\/(?:127\.0\.0\.1|localhost)):(4949|4950)(?=[/?#]|$)/, (_, host, original) => `${host}:${isolated(original)}`) : input, init)
+    ? String(input).replace(/^(http:\/\/(?:127\.0\.0\.1|localhost)):(4950|4949)(?=[/?#]|$)/, (_, host, original) => `${host}:${isolated(original)}`) : input, init)
 }

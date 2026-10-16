@@ -382,12 +382,12 @@ function dashboardDouble(status, result = status) {
 test('install mantém sucesso e informa acesso manual quando o navegador padrão falha', t => {
   const f = detectedClaude(t, 'prumo-cli-browser-')
   const result = runCli(f.home, ['install', '--all'], {
-    ...dashboardDouble({ enabled: false }, { ok: true, url: 'http://localhost:4950' }),
+    ...dashboardDouble({ enabled: false }, { ok: true, url: 'http://localhost:4949' }),
     PRUMO_POSTINSTALL_LIFECYCLE: '1', npm_lifecycle_event: 'postinstall',
     npm_package_json: join(repository, 'package.json'),
   }, f.project)
   assert.equal(result.status, 0, result.output)
-  assert.match(result.stdout, /Could not open the default browser; open http:\/\/localhost:4950/)
+  assert.match(result.stdout, /Could not open the default browser; open http:\/\/localhost:4949/)
   assert.match(result.stdout, /Prumo installed successfully/)
 })
 
@@ -407,7 +407,7 @@ test('instalação concluída informa ativação, reinício e falha do dashboard
     const failed = !['enable', 'restart'].includes(scenario)
     const status = { enabled: scenario === 'restart', process: 'stopped', registered: scenario === 'restart' }
     const result = { ok: !failed, process: 'stopped', url: 'http://localhost/isolado',
-      ...(scenario === 'error' ? { error: 'serviço negado' } : scenario === 'conflict' ? { conflict: true, port: 4950 } : {}) }
+      ...(scenario === 'error' ? { error: 'serviço negado' } : scenario === 'conflict' ? { conflict: true, port: 4949 } : {}) }
     const update = updateDouble(), dashboard = dashboardDouble(status, result)
     const response = runCli(f.home, ['install', '--claude'], { ...update, ...dashboard, NODE_OPTIONS: `${update.NODE_OPTIONS} ${dashboard.NODE_OPTIONS}` }, f.project)
     assert.equal(response.status, failed ? 2 : 0, response.output)
@@ -416,7 +416,7 @@ test('instalação concluída informa ativação, reinício e falha do dashboard
     if (failed) assert.match(response.stderr, /Dashboard setup failed/)
     else {
       assert.match(response.stdout, scenario === 'enable' ? /Dashboard enabled:/ : /Dashboard restarted:/)
-      assert.match(response.stdout, /Also available at http:\/\/prumo\.localhost:4950 \(no hosts file needed in Chrome, Edge or Firefox\)/)
+      assert.match(response.stdout, /Also available at http:\/\/prumo\.localhost:4949 \(no hosts file needed in Chrome, Edge or Firefox\)/)
     }
   }
 })
@@ -439,8 +439,8 @@ test('update informa ausência e reparo enquanto worker preserva checkpoint em f
   for (const mode of ['absent', 'repair']) {
     const response = runCli(f.home, ['update'], updateDouble({ PRUMO_TEST_LAUNCH_MODE: mode }), f.project)
     assert.equal(response.status, 0, response.output)
-    assert.match(response.stdout, mode === 'absent' ? /No Prumo installations found/ : /Dashboard restarted: http:\/\/localhost:4950/)
-    if (mode === 'repair') assert.match(response.stdout, /Also available at http:\/\/prumo\.localhost:4950/)
+    assert.match(response.stdout, mode === 'absent' ? /No Prumo installations found/ : /Dashboard restarted: http:\/\/localhost:4949/)
+    if (mode === 'repair') assert.match(response.stdout, /Also available at http:\/\/prumo\.localhost:4949/)
   }
   for (const mode of ['error', 'repair-error']) {
     const failed = runCli(f.home, ['update'], updateDouble({ PRUMO_TEST_LAUNCH_MODE: mode }), f.project)
@@ -606,7 +606,7 @@ test('CLI dashboard distingue configuração, conflito e falha sem alterar servi
     ['status', { process: 'stopped', registered: false, enabled: false }, 0],
     ['enable', { ok: false, process: 'stopped', registered: true, enabled: true, error: 'serviço negado', origin: 'global' }, 2],
     ['disable', { ok: true, process: 'stopped', registered: false, disabled: true, path: '/pacote' }, 0],
-    ['status', { process: 'conflict', conflict: true, port: 4950, enabled: true }, 2],
+    ['status', { process: 'conflict', conflict: true, port: 4949, enabled: true }, 2],
   ]) {
     const response = runCli(home, ['dashboard', action], dashboardDouble(result))
     assert.equal(response.status, code, response.output)
@@ -625,7 +625,7 @@ test('worker informa prévia de ativação ou reinício e preserva checkpoint qu
     assert.equal(response.status, 0, response.output)
     assert.match(response.stdout, enabled ? /Would restart/ : /Would enable/)
   }
-  for (const status of [{ error: 'identidade antiga' }, { conflict: true, port: 4950 }, {}]) {
+  for (const status of [{ error: 'identidade antiga' }, { conflict: true, port: 4949 }, {}]) {
     const response = runCli(home, ['_update'], { ...dashboardDouble({ enabled: true, process: 'stopped' }, { ok: false, ...status }),
       PRUMO_UPDATE_REQUEST: JSON.stringify({ ...request, dryRun: false }) })
     assert.equal(response.status, 2, response.output)
@@ -695,7 +695,7 @@ test('worker _update preserva o fluxo local quando updateCli está desabilitado'
   assert.match(preview.output, /Dashboard remains disabled by user preference/)
 })
 
-test('worker _update para o dashboard antigo na 4949 antes de atualizar, e só nesse caso quando o atual está parado', t => {
+test('worker _update para o dashboard antigo na 4950 antes de atualizar, e só nesse caso quando o atual está parado', t => {
   const f = detectedClaude(t, 'prumo-cli-worker-legacy-dashboard-')
   installHarness(f, 'claude')
   const request = { dryRun: false, cwd: f.project, projects: [], updateCli: false, sourceVersion: packageVersion, globalVersion: null }
@@ -880,7 +880,7 @@ test('dashboard enable avisa quando bytes do motor instalado diferem e respeita 
   const f = detectedClaude(t, 'prumo-cli-dashboard-engine-content-')
   installHarness(f, 'claude')
   for (const lang of ['en', 'pt-BR']) {
-    const result = { ok: true, registered: true, process: 'running', contentId: contentId(lang), port: 4950, url: 'http://localhost:4950' }
+    const result = { ok: true, registered: true, process: 'running', contentId: contentId(lang), port: 4949, url: 'http://localhost:4949' }
     const clean = runCli(f.home, ['dashboard', 'enable'], { ...dashboardDouble(result), PRUMO_LANG: lang }, f.project)
     assert.equal(clean.status, 0, clean.output)
     assert.doesNotMatch(clean.output, /differs from dashboard|difere.*dashboard|undefined/)

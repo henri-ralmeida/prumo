@@ -13,7 +13,7 @@ test('diagnóstico limita histórico e não captura a exceção fatal do servido
   const bus = new EventEmitter()
   bus.pid = 42
   bus.exit = code => { bus.exitCode = code }
-  const record = dashboardDiagnostics({ home, processRef: bus, version: 'test', port: 4949 })
+  const record = dashboardDiagnostics({ home, processRef: bus, version: 'test', port: 4950 })
   const file = join(home, '.local/share/prumo/dashboard-events.ndjson')
   record('listening')
   assert.equal(bus.listenerCount('uncaughtException'), 0)
@@ -23,7 +23,7 @@ test('diagnóstico limita histórico e não captura a exceção fatal do servido
   assert.equal(JSON.parse(readFileSync(file, 'utf8')).pid, 42)
   const module = new URL('../scripts/dashboard-diagnostics.mjs', import.meta.url).href
   const child = spawnSync(process.execPath, ['--input-type=module', '-e',
-    `import { dashboardDiagnostics } from ${JSON.stringify(module)}; dashboardDiagnostics({home: ${JSON.stringify(home)}, version:'test', port:4949}); setImmediate(() => { throw new Error('falha isolada'); });`],
+    `import { dashboardDiagnostics } from ${JSON.stringify(module)}; dashboardDiagnostics({home: ${JSON.stringify(home)}, version:'test', port:4950}); setImmediate(() => { throw new Error('falha isolada'); });`],
     { encoding: 'utf8', windowsHide: true, timeout: 10000 })
   assert.ifError(child.error)
   assert.equal(child.status, 1, 'Não continuar após exceção fatal')
@@ -38,10 +38,10 @@ test('diagnóstico registra sinal, limita leitura e tolera entrada antiga corrom
   const bus = new EventEmitter()
   bus.pid = 84
   bus.exit = code => { bus.exitCode = code }
-  dashboardDiagnostics({ home, processRef: bus, version: 'test', port: 4949 })
+  dashboardDiagnostics({ home, processRef: bus, version: 'test', port: 4950 })
   bus.emit('SIGTERM')
   assert.equal(bus.exitCode, 143)
-  recordDashboardEvent('listening', {}, { home, pid: 85, version: 'test', port: 4949 })
+  recordDashboardEvent('listening', {}, { home, pid: 85, version: 'test', port: 4950 })
   const file = join(home, '.local/share/prumo/dashboard-events.ndjson')
   writeFileSync(file, `${readFileSync(file, 'utf8')}linha-invalida\n`)
   const events = readDashboardEvents({ home, limit: 2 })

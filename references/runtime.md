@@ -73,7 +73,7 @@ Official references: [Antigravity skills](https://antigravity.google/docs/skills
   refuses the task's own author. Evidence is recorded per verdict.
 - **Collision-proof plans** — `init` rejects dependency cycles (naming the loop) and two
   parallel tasks that declare overlapping `touches` paths, before any agent starts.
-- **Live dashboard** — a dashboard server on `:4950` renders the read-only state view as phase swimlanes with
+- **Live dashboard** — a dashboard server on `:4949` renders the read-only state view as phase swimlanes with
   animated dep edges, per-task state, retries and an event log. Killing it never affects a run.
 - **Zero runtime dependencies** — Node.js 22+. State is plain JSON +
   append-only NDJSON in a central Prumo workspace outside project repositories.
@@ -779,10 +779,10 @@ cannot create that task, it automatically writes one hidden Prumo-owned launcher
 Startup folder; no administrator access is requested. The selected mechanism is persisted across status,
 restart, update and reinstall. `prumo dashboard status` reports it, and `prumo dashboard disable` removes
 only that registration and stops only a process whose complete absolute Node and server command is proven.
-An unrelated listener on port 4950 is never terminated. Installations created before the default moved from port 4949 to 4950
-are migrated by `prumo update`, `prumo dashboard enable` or the dashboard repair: the registration is rewritten with the new port
-and the previous dashboard on 4949 is stopped only when it answers as Prumo and its command line proves it is the managed
-process; an unrelated listener on 4949 is left alone.
+An unrelated listener on port 4949 is never terminated. Version 2.11.0 briefly used port 4950 as the default; installations registered on 4950
+are moved back by `prumo update`, `prumo dashboard enable` or the dashboard repair: the registration is rewritten with port 4949
+and the dashboard on 4950 is stopped only when it answers as Prumo and its command line proves it is the managed
+process; an unrelated listener on 4950 is left alone.
 
 The dashboard exposes `agentUsage.used`, shared `agentUsage.maxAgents` and a per-process
 `agentControlToken` through `GET /api/state`. Its local same-origin control form sends
@@ -1004,7 +1004,7 @@ Rules the engine enforces (everything else is the orchestrator's judgment):
 ## Watching
 
 ```bash
-node .claude/skills/prumo/scripts/serve.mjs      # http://localhost:4950 — polls state every 1.5s
+node .claude/skills/prumo/scripts/serve.mjs      # http://localhost:4949 — polls state every 1.5s
 ```
 
 The dashboard is observability plus an explicit user-confirmed agent-limit control. Its state view reads the
@@ -1012,7 +1012,7 @@ same `state.json` the engine writes; the limit control delegates `set-agent-limi
 becomes a second source of truth or a second orchestrator.
 
 The managed service is `prumo dashboard enable` (`prumo dashboard status` reports it; plain
-`prumo dashboard` runs it in the foreground). Its default address, `http://localhost:4950`, is restricted
+`prumo dashboard` runs it in the foreground). Its default address, `http://localhost:4949`, is restricted
 to the local machine (the server also accepts the exact host name `prumo.localhost`, which Chrome, Edge and Firefox resolve to loopback
 without a hosts file; the browser opened automatically always uses `localhost`); a taken port never terminates another process. The language follows the
 installation preference or an explicit run choice; there is no browser selector. User text is escaped and

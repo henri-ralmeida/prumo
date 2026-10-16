@@ -101,7 +101,7 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
     if (name.endsWith('powershell.exe') && args.at(-1).includes("Name = 'node.exe'")) return '49490'
     if (name.endsWith('powershell.exe') && args.at(-1).includes('ProcessId = 49490')) {
       const script = join(dirname(process.argv[1]), '..', 'scripts', 'serve.mjs')
-      return JSON.stringify({ executable: process.execPath, commandLine: [process.execPath, script, '--global', '--port', '4950'].map(value => '"' + value + '"').join(' ') })
+      return JSON.stringify({ executable: process.execPath, commandLine: [process.execPath, script, '--global', '--port', '4949'].map(value => '"' + value + '"').join(' ') })
     }
     if (!['schtasks', 'launchctl', 'systemctl'].includes(name)) return original(file, args, options)
     appendFileSync(${JSON.stringify(autoEvents)}, JSON.stringify([name, args]) + '\\n')
@@ -122,7 +122,7 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
   }
   const originalConnect = net.createConnection
   net.createConnection = (options, ...args) => {
-    if (options?.host !== '127.0.0.1' || options?.port !== 4950) return originalConnect(options, ...args)
+    if (options?.host !== '127.0.0.1' || options?.port !== 4949) return originalConnect(options, ...args)
     // A disponibilidade simulada acompanha o processo simulado, sem consultar o dashboard do usuário.
     const socket = new EventEmitter()
     socket.unref = socket.destroy = socket.setTimeout = () => socket
@@ -164,13 +164,13 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
   const startupCalls = readFileSync(autoEvents, 'utf8')
   const browserCalls = startupCalls.trim().split('\n').map(line => JSON.parse(line)).filter(call => call[0] === 'browser')
   assert.equal(browserCalls.length, 1, 'A instalação global abre o board uma única vez no navegador padrão.')
-  assert.equal(browserCalls[0][2].at(-1), 'http://localhost:4950')
+  assert.equal(browserCalls[0][2].at(-1), 'http://localhost:4949')
   assert.ok(process.platform === 'win32' ? startupCalls.includes('"spawn"') :
     process.platform === 'darwin' ? startupCalls.includes('kickstart') : startupCalls.includes('enable","--now'))
   if (process.platform === 'win32') {
     const launcher = startupCalls.trim().split('\n').map(line => JSON.parse(line)).find(call => call[0] === 'spawn')
     assert.equal(launcher?.[3], join(autoHome, '.local', 'share', 'prumo'), 'dashboard launcher uses stable user data cwd')
-    assert.deepEqual(launcher?.[2], [join(autoPackage, 'scripts', 'dashboard-service.mjs'), join(autoPackage, 'scripts', 'serve.mjs'), '--global', '--port', '4950', '--lang', 'en'], 'O processo usa o runtime instalado, o dashboard global e o idioma da instalação.')
+    assert.deepEqual(launcher?.[2], [join(autoPackage, 'scripts', 'dashboard-service.mjs'), join(autoPackage, 'scripts', 'serve.mjs'), '--global', '--port', '4949', '--lang', 'en'], 'O processo usa o runtime instalado, o dashboard global e o idioma da instalação.')
   }
   assert.equal(JSON.parse(readFileSync(join(autoPackage, 'package.json'), 'utf8')).version, version)
   mkdirSync(join(home, '.local', 'share', 'prumo'), { recursive: true })

@@ -254,7 +254,7 @@ Full task contract (every field, defaults, per-task `requireReview`/`maxAttempts
 
 ```bash
 node $ENGINE init --plan "$PRUMO_ROOT/.specs/graph/plans/<name>.plan.json" --run <name>-01
-prumo dashboard enable  # http://localhost:4950 — per-user background service
+prumo dashboard enable  # http://localhost:4949 — per-user background service
 prumo dashboard logs    # recent bounded lifecycle and crash diagnostics
 ```
 

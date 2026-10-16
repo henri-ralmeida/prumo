@@ -2,6 +2,11 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.11.1 — 2026-10-16
+
+- Restaure a porta padrão 4949 no dashboard, mantendo --port e o nome de host prumo.localhost, por correspondência exata e com as checagens de porta, origem e token.
+- Migre de volta para a 4949 as instalações com o dashboard registrado na porta 4950 (versão 2.11.0) em update, dashboard enable e no reparo do reinício, parando o dashboard da 4950 somente quando o comando comprova que é o processo gerenciado do Prumo, sem encerrar processos alheios.
+
 ## 2.11.0 — 2026-10-15
 
 - Aceite em sync-plan tarefas novas em fase declarada sem nenhuma tarefa (fase placeholder) com a próxima numeração global (T12, T13...), como numa fase acrescentada no fim, inclusive quando a fase vazia vem antes de outra já preenchida; fases com tarefas continuam exigindo sufixo vinculado ao pai, e identificadores removidos não são reutilizados.

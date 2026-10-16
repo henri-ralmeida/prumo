@@ -523,7 +523,7 @@ test('parada para atualização aceita pacote histórico sem exigir arquivos da 
   const killed = []
   const options = { packageRoot, home: f.home, platform: 'linux', env: {},
     listProcessIds: () => [76543],
-    readProcessCommand: () => [process.execPath, script, '--global', '--port', '4950'],
+    readProcessCommand: () => [process.execPath, script, '--global', '--port', '4949'],
     kill: pid => { killed.push(pid); running = false },
     fetch: async url => {
       if (!running) throw new Error('encerrado')
@@ -536,7 +536,7 @@ test('parada para atualização aceita pacote histórico sem exigir arquivos da 
   }
   assert.equal(existsSync(join(packageRoot, 'scripts', 'contract-drift.mjs')), false)
   const foreign = await stopDashboardForUpdate({ ...options,
-    readProcessCommand: () => [process.execPath, join(f.external, 'serve.mjs'), '--global', '--port', '4950'],
+    readProcessCommand: () => [process.execPath, join(f.external, 'serve.mjs'), '--global', '--port', '4949'],
   })
   assert.equal(foreign.ok, false)
   assert.match(foreign.error, /ownership verification failed/)
