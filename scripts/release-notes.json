@@ -1,4 +1,28 @@
 {
+  "2.11.0": {
+    "en": [
+      {
+        "title": "Changed — Dashboard address",
+        "items": [
+          "Serve the dashboard on port 4950 by default, keeping --port, and accept the prumo.localhost host name without editing the hosts file in Chrome, Edge or Firefox, keeping port, origin and token checks",
+          "Move installations registered on port 4949 to 4950 during update, dashboard enable and restart repair, stopping the previous dashboard only when it is proven to be the managed Prumo process"
+        ]
+      },
+      {
+        "title": "Fixed — Planning with empty phases",
+        "items": [
+          "Accept new tasks in declared phases that have no tasks yet using the next global task number, while phases with tasks still require linked suffixes and removed identifiers stay reserved"
+        ]
+      },
+      {
+        "title": "Improved — Recovery and validation guidance",
+        "items": [
+          "Name the commands that work after a changed criterion in phase-planning runs instead of pointing to plan-task",
+          "Warn when a validation runs in another Git repository even without touches, and when the first word of a validation command is not an executable, a shell builtin or an existing path"
+        ]
+      }
+    ]
+  },
   "2.10.0": {
     "en": [
       {

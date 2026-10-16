@@ -5,6 +5,22 @@ import { releaseHistory, releaseNotes } from '../lib/release-notes.mjs'
 
 const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 
+test('atualizacao para 2.11.0 explica o novo endereco do dashboard e as fases vazias sem repetir notas instaladas', () => {
+  const messages = JSON.parse(readFileSync(new URL('../scripts/messages.json', import.meta.url), 'utf8'))
+  const history = releaseHistory(['2.10.0'], '2.11.0')
+  assert.deepEqual(history.map(release => release.version), ['2.11.0'])
+  const items = history[0].sections.flatMap(section => section.items)
+  for (const section of history[0].sections) {
+    assert.ok(messages[section.title]?.trim())
+    for (const item of section.items) assert.ok(messages[item]?.trim())
+  }
+  for (const rule of ['port 4950', 'prumo.localhost', 'port 4949', 'no tasks yet', 'plan-task', 'another Git repository']) {
+    assert.ok(items.some(item => item.includes(rule)), rule)
+  }
+  assert.deepEqual(releaseHistory(['2.11.0'], '2.11.0'), [])
+  assert.deepEqual(releaseHistory(['2.11.0'], '2.10.0'), [])
+})
+
 test('atualizacao para 2.10.0 explica remocao protegida e continuidade sem repetir notas instaladas', () => {
   const messages = JSON.parse(readFileSync(new URL('../scripts/messages.json', import.meta.url), 'utf8'))
   const history = releaseHistory(['2.9.10'], '2.10.0')

@@ -2,7 +2,7 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
-## Unreleased
+## 2.11.0 — 2026-10-15
 
 - Aceite em sync-plan tarefas novas em fase declarada sem nenhuma tarefa (fase placeholder) com a próxima numeração global (T12, T13...), como numa fase acrescentada no fim, inclusive quando a fase vazia vem antes de outra já preenchida; fases com tarefas continuam exigindo sufixo vinculado ao pai, e identificadores removidos não são reutilizados.
 - Indique na recusa do validate, em execuções com planejamento por fase, a sequência que de fato funciona após alterar um critério: pause-replanning, discussão e planejamento da tarefa, aceite do contrato alterado e unblock, preservando a tentativa e a revisão independente.
