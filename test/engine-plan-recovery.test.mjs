@@ -4,6 +4,32 @@ import { writeFileSync, chmodSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { fixture, check } from './fixtures/approved-graph.mjs'
+import { verifyTaskScope } from '../scripts/task-scope.mjs'
+
+test('commit de varios arquivos preserva fingerprint ordenado e done sem aceitar conteudo ou modo alterado', t => {
+  const f = fixture(t, { git: true, tasks: [{ id: 'T1', writeScope: 'files', touches: ['a.txt', 'z.txt'] }] })
+  f.plan.scopePolicy = 'explicit'; f.writePlan(); f.ok('sync-plan', '--plan', f.source)
+  f.skipTaskPlan(); f.ok('authorize', '--scope', 'run', '--confirmed-by-user')
+  f.ok('start', 'T1', '--agent', 'executor')
+  for (const name of ['a.txt', 'z.txt']) writeFileSync(join(f.project, name), 'Conteudo aprovado\n')
+  f.ok('review', 'T1', '--agent', 'reviewer')
+  f.ok('validate', 'T1', '--ok', '--evidence', 'Arquivos e permissoes conferidos', '--cwd', f.project)
+  const approved = f.state().tasks.T1, receipt = approved.validations.at(-1).scopeCheck
+  f.gitCommand('add', '.'); f.gitCommand('commit', '-m', 'Entrega')
+  const afterCommit = verifyTaskScope(approved, approved.attempts.at(-1).scopeBaseline)
+  assert.equal(afterCommit.fingerprint, receipt.fingerprint)
+  const path = join(f.project, 'a.txt'), mode = statSync(path).mode
+  try {
+    chmodSync(path, mode & ~0o222)
+    f.rejects(/Delivery changed after scope validation; validate again/, 'done', 'T1')
+  } finally { chmodSync(path, mode) }
+  writeFileSync(path, 'Conteudo diferente\n')
+  f.rejects(/Delivery changed after scope validation; validate again/, 'done', 'T1')
+  writeFileSync(path, 'Conteudo aprovado\n')
+  f.ok('done', 'T1')
+  assert.equal(f.state().tasks.T1.state, 'done')
+  assert.deepEqual(f.state().tasks.T1.validations, approved.validations)
+})
 
 for (const legacy of [false, true]) test(`commit do conteudo ja revisado preserva aprovacao e permissoes, recibo legado ${legacy}`, t => {
   const f = fixture(t, { git: true, tasks: [{ id: 'T1', writeScope: 'files', touches: ['z.txt'] }] })

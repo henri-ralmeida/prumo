@@ -410,6 +410,7 @@ test('revisao vincula criterios a entrega e conserva relatos antigos sem invalid
   assert.deepEqual(f.state().tasks.T1.attempts.at(-1).reviewProgress, original)
   writeFileSync(join(f.project, 'delivery.cjs'), 'exports.days = express => express ? 1 : 3;\n// Politica preservada.\n')
   assert.match(f.ok('status').output, /review criteria reported: 2\/2; stale/)
+  assert.match(f.ok('status', '--lang', 'pt-BR').output, /obsoleto; relate novamente a entrega atual/)
   const before = f.state(), events = f.events()
   f.rejected(/Current review progress is missing or stale/, 'validate', 'T1', '--ok', '--evidence', 'Conteudo antigo')
   assert.deepEqual(f.state(), before); assert.equal(f.events(), events)
@@ -1658,13 +1659,18 @@ for (const lang of ['en', 'pt-BR']) test('revisao numerada orienta seis criterio
   const review = f.ok('review', 'T1', '--agent', 'reviewer')
   assert.match(review.output, /6\. .*Regra 6/)
   assert.match(review.output, lang === 'en' ? /Review criteria for T1: 6/ : /Critérios de revisão de T1: 6/)
+  const numberedOrder = lang === 'en' ? /use review-progress in this numbered order/ : /use review-progress nesta ordem numerada/
+  assert.match(review.output, numberedOrder)
   const before = f.state(), events = f.events()
   const metricsPath = join(f.root, '.specs/graph/planning/.command-metrics.ndjson')
   const metrics = readFileSync(metricsPath, 'utf8')
   for (const args of [['--help'], ['T1', '--help']]) {
     const help = f.ok('review-progress', ...args)
     assert.match(help.output, /show-contract|review-progress/)
-    if (args[0] === 'T1') assert.match(help.output, /6\. .*Regra 6/)
+    if (args[0] === 'T1') {
+      assert.match(help.output, /6\. .*Regra 6/)
+      assert.match(help.output, numberedOrder)
+    }
     assert.deepEqual(f.state(), before)
     assert.equal(f.events(), events)
     assert.equal(readFileSync(metricsPath, 'utf8'), metrics)

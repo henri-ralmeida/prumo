@@ -5,6 +5,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { fixture } from '../test/fixtures/approved-graph.mjs'
 import {
   auditSyncPlan,
   citedWaitingTasks,
@@ -15,6 +16,14 @@ import {
 
 const engine = resolve(dirname(fileURLToPath(import.meta.url)), 'engine.mjs')
 const check = { kind: 'functional', run: 'node -e "process.exit(0)"', expect: 'behavior verified' }
+
+test('sync-plan anuncia tarefa folha sem citacao sem bloquear a sincronizacao', t => {
+  const f = fixture(t)
+  f.plan.tasks.push({ ...f.plan.tasks[0], id: 'T1a', deps: ['T1'] })
+  f.writePlan()
+  assert.match(f.ok('sync-plan', '--plan', f.source), /sync-plan info: new leaf task T1a has no dependents/)
+  assert.equal(f.state().tasks.T1a.state, 'pending')
+})
 
 test('sync audit preserves dependency arrays and summarizes validation contracts', () => {
   const before = {

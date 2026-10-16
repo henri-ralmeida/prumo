@@ -57,6 +57,7 @@ test('projetos diferentes isolam caminhos, mas recursos compartilhados permanece
     assert.throws(() => assertExplicitScope({ project }), /absolute Git repository root/)
   assert.doesNotThrow(() => assertExplicitScope({ project: a.project }))
   assert.throws(() => assertExplicitScope({ writeScope: 'files', touches: ['../neighbor'] }, 'explicit'), /task.project.*absolute Git root/)
+  assert.throws(() => assertExplicitScope({ writeScope: 'files', touches: ['../neighbor'] }, 'explicit'), /paths are relative to the task project, or the run project directory; for another repository declare task.project with its absolute Git root; touches must not contain \.\. or absolute paths/)
 })
 
 test('sincronização fora do projeto usa a raiz persistida ao comparar escopos implícitos e explícitos', t => {

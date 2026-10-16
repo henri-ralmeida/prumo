@@ -7,6 +7,21 @@ import { join } from 'node:path'
 import { fixture, check } from './fixtures/approved-graph.mjs'
 import { validationProjectMismatch } from '../scripts/task-scope.mjs'
 
+test('plan-phase imprime JSON copiavel com vinculo da rodada e entradas pendentes por tarefa', t => {
+  const f = fixture(t, { phase: true, tasks: [{ id: 'T1' }, { id: 'T2', deps: ['T1'] }] })
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  const output = f.ok('plan-phase', 'F1', '--agent', 'planner', '--plan-dir', f.plans)
+  const round = f.state().phaseWorkflows.F1.planningAttempts.at(-1)
+  assert.ok(round.requiredInputs.T2.length > 0)
+  const blocks = [...output.matchAll(/Copy these fields into task-plan-(T\d+)\.json:\s*```json\s*([\s\S]*?)\s*```/g)]
+  assert.deepEqual(blocks.map(match => match[1]), ['T1', 'T2'])
+  for (const [, id, json] of blocks) assert.deepEqual(JSON.parse(json), {
+    phaseBinding: { phaseId: 'F1', discussionRoundId: round.discussionRoundId, plannerRound: round.n },
+    unresolvedInputs: round.requiredInputs[id],
+  })
+})
+
 test('alterar uma dependencia preserva planos e aceites das tarefas inalteradas da fase', t => {
   const f = fixture(t, { phase: true, tasks: [{ id: 'T1' }, { id: 'T2' }, { id: 'T3' }] })
   f.ok('skip', 'T3', '--reason', 'Dependencia dispensada explicitamente')
@@ -14,6 +29,9 @@ test('alterar uma dependencia preserva planos e aceites das tarefas inalteradas 
   const before = f.state()
   f.plan.tasks[1].deps = ['T3']; f.writePlan(); f.ok('sync-plan', '--plan', f.source)
   assert.deepEqual(f.state().tasks.T1, before.tasks.T1)
+  assert.ok(before.tasks.T1.taskPlan)
+  assert.deepEqual(f.state().tasks.T1.taskPlan, before.tasks.T1.taskPlan)
+  assert.ok(!f.state().phaseWorkflows.F1.contractConfirmationRequired.tasks.includes('T1'))
   assert.deepEqual(f.state().phaseWorkflows.F1.contractConfirmationRequired.tasks, ['T2'])
   f.ok('begin-phase-discussion', 'F1')
   assert.deepEqual(f.state().phaseWorkflows.F1.discussionAttempts.at(-1).confirmsContract.map(item => item.task), ['T2'])
@@ -65,7 +83,7 @@ for (const legacy of [false, true]) test(`sincronizacao preserva confirmacoes pe
   assert.deepEqual(f.state().phaseWorkflows.F1.discussionAttempts.at(-1).confirmsContract.map(item => item.task), expected)
 })
 
-for (const [lang, explicitProject] of [['en', true], ['pt-BR', false]]) test(`validacao em outro repositorio explicita a limitacao do escopo vazio em ${lang}, projeto explicito ${explicitProject}`, t => {
+for (const [lang, explicitProject] of [['en', true], ['pt-BR', false]]) test(`validate e done avisam projeto divergente sem recusar em ${lang}, projeto explicito ${explicitProject}`, t => {
   const f = fixture(t, { git: true, lang, tasks: [{ id: 'T1', writeScope: 'files', touches: ['out.txt'] }] })
   if (explicitProject) f.plan.tasks[0].project = f.project
   f.plan.scopePolicy = 'explicit'; f.writePlan(); f.ok('sync-plan', '--plan', f.source)
@@ -96,6 +114,7 @@ for (const [lang, explicitProject] of [['en', true], ['pt-BR', false]]) test(`va
   delete historical.tasks.T1.validations.at(-1).validationProjectMismatches
   f.importState(historical)
   assert.match(f.ok('done', 'T1'), lang === 'en' ? /different Git repositor/ : /repositórios Git diferentes/)
+  assert.equal(f.state().tasks.T1.state, 'done')
 })
 
 test('avisos de sintaxe e inspecao sao bilingues sem executar comandos durante sincronizacao', t => {

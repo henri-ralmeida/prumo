@@ -216,7 +216,7 @@ test('a future question survives while its source task awaits replanning', t => 
   const questionRef = f.state().tasks.A.taskPlan.openQuestions[0].questionRef
   f.plan.description = 'Global description changed before A started.'
   f.savePlan(f.plan)
-  f.rejects(/--confirm-invalidation/, 'sync-plan', '--plan', f.planPath)
+  f.rejects(/--confirm-invalidation.*inspect --dry-run first/, 'sync-plan', '--plan', f.planPath)
   f.ok('sync-plan', '--plan', f.planPath, '--confirm-invalidation')
   assert.equal(f.state().tasks.A.state, 'pending')
   assert.match(f.ok('status').stdout, new RegExp(`open question ${questionRef}`))
@@ -793,7 +793,7 @@ test('done announces a newly eligible phase once without starting its discussion
   phasePlan(f, 'F1')
   f.ok('start', 'A', '--agent', 'executor-A')
   f.ok('validate', 'A', '--ok', '--evidence', 'Behavior passes', '--cwd', f.project)
-  f.ok('done', 'A')
+  assert.match(f.ok('done', 'A').stdout, /phase F2 is eligible for discussion; tasks: B/)
   const eligible = f.events().filter(event => event.type === 'phase_eligible')
   assert.deepEqual(eligible.map(({ phase, tasks, cause }) => ({ phase, tasks, cause })), [
     { phase: 'F2', tasks: ['B'], cause: 'done' },
@@ -807,7 +807,7 @@ test('done announces a newly eligible phase once without starting its discussion
 test('skip announces a newly eligible phase', t => {
   const f = fixture(t, { run: 'phase-skip', phases: [{ id: 'F1', title: 'First' }, { id: 'F2', title: 'Second' }],
     tasks: [{ id: 'A', title: 'First task', phase: 'F1' }, { id: 'B', title: 'Second task', phase: 'F2', deps: ['A'] }] })
-  f.ok('skip', 'A', '--reason', 'The approved plan waives this task')
+  assert.match(f.ok('skip', 'A', '--reason', 'The approved plan waives this task').stdout, /phase F2 is eligible for discussion; tasks: B/)
   const eligible = f.events().filter(event => event.type === 'phase_eligible')
   assert.deepEqual(eligible.map(({ phase, tasks, cause }) => ({ phase, tasks, cause })), [
     { phase: 'F2', tasks: ['B'], cause: 'skip' },
@@ -821,7 +821,7 @@ test('sync-plan announces a newly eligible phase once', t => {
   const changed = structuredClone(f.plan)
   changed.tasks.find(task => task.id === 'B').deps = []
   f.savePlan(changed)
-  f.ok('sync-plan', '--plan', f.planPath)
+  assert.match(f.ok('sync-plan', '--plan', f.planPath).stdout, /phase F2 is eligible for discussion; tasks: B/)
   f.ok('sync-plan', '--plan', f.planPath)
   const eligible = f.events().filter(event => event.type === 'phase_eligible')
   assert.deepEqual(eligible.map(({ phase, tasks, cause }) => ({ phase, tasks, cause })), [

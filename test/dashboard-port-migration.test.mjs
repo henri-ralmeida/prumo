@@ -3,6 +3,10 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { spawn } from 'node:child_process'
+import { request as httpRequest } from 'node:http'
+import { fileURLToPath } from 'node:url'
+import { fixture } from './fixtures/approved-graph.mjs'
 import {
   DASHBOARD_ALIAS_URL, DASHBOARD_PORT, DASHBOARD_URL, dashboardNeedsRepair, dashboardStatus, enableDashboard, restartDashboard, stopDashboardForUpdate,
 } from '../lib/autostart.mjs'
@@ -11,6 +15,47 @@ import { DASHBOARD_ALIAS_HOST, DEFAULT_DASHBOARD_PORT, LEGACY_DASHBOARD_PORT, pa
 
 const LEGACY_PID = 4242
 const NEW_PID = 5151
+
+test('dashboard aceita controle por Host prumo.localhost e recusa nomes semelhantes', { timeout: 30000 }, async t => {
+  let server, closed
+  t.after(async () => { if (server?.exitCode === null) server.kill(); await closed })
+  const f = fixture(t)
+  server = spawn(process.execPath, [fileURLToPath(new URL('../scripts/serve.mjs', import.meta.url)), '--port', '0'], {
+    cwd: f.project, windowsHide: true, env: { ...process.env, PRUMO_HOME: f.home, PRUMO_ROOT: f.root },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  closed = new Promise(resolve => server.once('close', resolve))
+  let output = ''
+  const port = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(output)), 15000)
+    const collect = chunk => {
+      output += chunk
+      const match = output.match(/localhost:(\d+)/)
+      if (match && match[1] !== '0') { clearTimeout(timer); resolve(Number(match[1])) }
+    }
+    server.stdout.on('data', collect); server.stderr.on('data', collect)
+    server.once('error', error => { clearTimeout(timer); reject(error) })
+    server.once('exit', () => { clearTimeout(timer); reject(new Error(output)) })
+  })
+  const stateResponse = await fetch(`http://127.0.0.1:${port}/api/state`)
+  assert.equal(stateResponse.status, 200)
+  const { agentControlToken: token } = await stateResponse.json()
+  assert.ok(token)
+  const post = host => new Promise((resolve, reject) => {
+    const body = JSON.stringify({ maxAgents: 2 })
+    const req = httpRequest({ host: '127.0.0.1', port, path: '/api/agent-limit', method: 'POST', headers: {
+      Host: host, Origin: `http://${host}`, 'X-Prumo-Control': token,
+      'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body),
+    } }, response => { response.resume(); response.on('end', () => resolve(response.statusCode)) })
+    req.on('error', reject); req.end(body)
+  })
+  const before = f.state(), events = f.events()
+  for (const host of [`prumo.localhost.evil.invalid:${port}`, `evil.prumo.localhost:${port}`])
+    assert.equal(await post(host), 403, host)
+  assert.deepEqual(f.state(), before); assert.equal(f.events(), events)
+  assert.equal(await post(`prumo.localhost:${port}`), 200)
+  assert.equal(f.state().plan.maxAgents, 2)
+})
 
 // Mundo simulado: um dashboard Prumo antigo na porta legada e, opcionalmente, ocupantes alheios nas duas portas.
 // Nada consulta a rede real, nem o dashboard do usuário.
