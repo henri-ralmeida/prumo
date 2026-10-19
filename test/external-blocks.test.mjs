@@ -431,7 +431,7 @@ test('unblock de bloqueio externo com escopo obsoleto vira replanejamento intern
   const original = f.state().tasks.T1
   f.plan.tasks[0].touches = ['delivery-next.cjs']
   f.writePlan()
-  f.ok('sync-plan', '--plan', f.planPath)
+  f.ok('sync-plan', '--plan', f.planPath, '--confirm-invalidation')
   f.ok('block', 'T1', '--reason', 'Aguardando decisão sobre o novo escopo',
     '--question', 'Qual escopo deve valer?', '--option', 'Aplicar o escopo aprovado')
   const externallyBlocked = f.state().tasks.T1

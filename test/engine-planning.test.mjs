@@ -1400,7 +1400,7 @@ test('phase plan dependencies completed after dispatch remain bound to the round
 
   f.plan.tasks.push({ id: 'B', phase: 'F1', title: 'New consumer', summary: 'Check the delivered producer behavior before consuming it.', deps: ['A'], validation })
   writeFileSync(f.planPath, JSON.stringify(f.plan))
-  f.ok('sync-plan', '--plan', f.planPath)
+  f.ok('sync-plan', '--plan', f.planPath, '--confirm-invalidation')
   f.ok('begin-phase-discussion', 'F1')
   f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
   f.ok('plan-phase', 'F1', '--agent', 'second-planner')
@@ -1790,7 +1790,7 @@ test('reaproveitamento explícito conserva artefato inalterado após novo aceite
   const originalB = readFileSync(pathB, 'utf8')
   f.plan.tasks[0].title = 'Contrato alterado'
   writeFileSync(f.planPath, JSON.stringify(f.plan))
-  f.ok('sync-plan', '--plan', f.planPath)
+  f.ok('sync-plan', '--plan', f.planPath, '--confirm-invalidation')
   f.ok('begin-phase-discussion', 'F1')
   f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
   f.ok('plan-phase', 'F1', '--agent', 'planner', '--plan-dir', f.plans)
@@ -1850,7 +1850,7 @@ test('material sync invalidates a completed phase discussion before planner disp
   f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
   f.plan.tasks[0].title = 'Materially changed'
   writeFileSync(f.planPath, JSON.stringify(f.plan))
-  f.ok('sync-plan', '--plan', f.planPath)
+  f.ok('sync-plan', '--plan', f.planPath, '--confirm-invalidation')
   const before = readFileSync(join(f.root, '.specs/graph/phase-negative/state.json'), 'utf8'), events = f.events()
   f.rejects(/completed current phase discussion/, 'plan-phase', 'F1', '--agent', 'stale-planner')
   assert.equal(readFileSync(join(f.root, '.specs/graph/phase-negative/state.json'), 'utf8'), before)
@@ -1890,7 +1890,7 @@ test('stale phase planning is superseded before a fresh discussion without parti
 
   f.plan.tasks[0].title = 'Materially changed contract'
   writeFileSync(f.planPath, JSON.stringify(f.plan))
-  f.ok('sync-plan', '--plan', f.planPath)
+  f.ok('sync-plan', '--plan', f.planPath, '--confirm-invalidation')
   const staleState = readFileSync(join(f.root, '.specs/graph/phase-negative/state.json'), 'utf8')
   const staleEvents = f.events()
   f.rejects(/planning is stale/, 'finish-phase-planning', 'F1', '--plan-dir', f.plans)
@@ -1930,7 +1930,7 @@ test('sync-plan adding a phase member makes the previous discussion stale withou
 
   f.plan.tasks.push({ id: 'B', phase: 'F1', title: 'Added later', summary: 'Verify the newly approved delivery without reopening completed work.', validation })
   writeFileSync(f.planPath, JSON.stringify(f.plan))
-  f.ok('sync-plan', '--plan', f.planPath)
+  f.ok('sync-plan', '--plan', f.planPath, '--confirm-invalidation')
 
   let derived = JSON.parse(f.ok('graph').stdout).derived
   assert.equal(derived.A.effective, 'ready')
@@ -1978,7 +1978,7 @@ test('sync-plan adding a phase member rejects an open plan batch atomically and 
 
   f.plan.tasks.push({ id: 'B', phase: 'F1', title: 'Added while planning', summary: 'Verify the approved additional delivery in the revised phase plan.', validation })
   writeFileSync(f.planPath, JSON.stringify(f.plan))
-  f.ok('sync-plan', '--plan', f.planPath)
+  f.ok('sync-plan', '--plan', f.planPath, '--confirm-invalidation')
   const statePath = join(f.root, '.specs/graph/phase-negative/state.json')
   const before = readFileSync(statePath, 'utf8'), events = f.events()
   f.rejects(/planning is stale/, 'finish-phase-planning', 'F1', '--plan-dir', f.plans)
@@ -2111,7 +2111,7 @@ test('selective plan-defect replanning keeps sibling phase plans current', t => 
   const changedPlan = JSON.parse(readFileSync(f.planPath, 'utf8'))
   changedPlan.tasks.find(task => task.id === 'C').title = 'Contrato atualizado'
   writeFileSync(f.planPath, JSON.stringify(changedPlan))
-  f.ok('sync-plan', '--plan', f.planPath)
+  f.ok('sync-plan', '--plan', f.planPath, '--confirm-invalidation')
   assert.ok(f.state().phaseWorkflows.F1.contractConfirmationRequired,
     'a cópia anterior preserva planos irmãos históricos para detectar a discussão invalidada')
 })
@@ -2275,7 +2275,7 @@ test('contract changes warn, supersede planning with a cause, and require curren
   f.plan.tasks[0].title = 'First revised task'
   f.plan.tasks[1].validation[0].expect = 'The second task must satisfy its revised complete behavior.'
   writeFileSync(f.planPath, JSON.stringify(f.plan))
-  const synced = f.ok('sync-plan', '--plan', f.planPath).stdout
+  const synced = f.ok('sync-plan', '--plan', f.planPath, '--confirm-invalidation').stdout
   assert.match(synced, /sync-plan warning: F1 planning was invalidated/)
   assert.equal(f.state().phaseWorkflows.F1.contractConfirmationRequired !== null, true)
 

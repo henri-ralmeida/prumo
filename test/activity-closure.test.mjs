@@ -109,3 +109,37 @@ test('rodada concluída sem atividade e agente inválido continuam recusados', t
   assert.equal(JSON.stringify(f.state()), before)
   assert.equal(f.events(), events)
 })
+
+test('planejamento legado sem workers preserva intervalos medidos e ausencia de medicao', t => {
+  for (const measured of [false, true]) {
+    const f = phaseFixture(t, [{ id: 'T1', phase: 'F1', title: 'Entrega' }])
+    f.ok('skip-phase-discussion', 'F1', '--reason', 'Escopo aceito', '--confirmed-by-user')
+    f.ok('plan-phase', 'F1', '--agent', 'planner')
+    f.writeArtifacts('F1')
+    const legacy = f.state(), phase = legacy.phaseWorkflows.F1, round = phase.planningAttempts.at(-1)
+    delete round.workers
+    delete round.assignments
+    delete round.activityIntervals
+    f.save(legacy)
+    if (measured) {
+      f.ok('activity-start', 'F1', '--scope', 'phase', '--role', 'planning', '--agent', 'planner')
+      f.ok('activity-stop', 'F1', '--scope', 'phase', '--role', 'planning', '--agent', 'planner')
+      f.ok('activity-start', 'F1', '--scope', 'phase', '--role', 'planning', '--agent', 'planner')
+    }
+    const finished = f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+    const after = f.state(), events = f.events()
+    if (measured) {
+      const intervals = after.phaseWorkflows.F1.planningAttempts.at(-1).activityIntervals
+      assert.equal(intervals.length, 2)
+      assert.ok(intervals.every(interval => interval.endedAt))
+      assert.ok(finished.stdout.includes(intervals[1].endedAt))
+      assert.match(finished.stdout, /F1 planning activity by planner ended at/)
+      assert.match(f.ok('activity-stop', 'F1', '--scope', 'phase', '--role', 'planning', '--agent', 'planner').stdout, /already ended at/)
+    } else {
+      assert.doesNotMatch(finished.stdout, /planning activity by/)
+      f.rejects(/no active/, 'activity-stop', 'F1', '--scope', 'phase', '--role', 'planning', '--agent', 'planner')
+    }
+    assert.deepEqual(f.state(), after)
+    assert.equal(f.events(), events)
+  }
+})

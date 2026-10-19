@@ -114,7 +114,7 @@ test('alterar tarefa em execucao orienta pausa sem substituir seu plano pela ten
   f.planPhase(); f.ok('start', 'T1', '--agent', 'executor')
   const before = f.state().tasks.T1
   f.plan.tasks[0].title = 'Entrega com novo criterio de escopo'; f.writePlan()
-  assert.match(f.ok('sync-plan', '--plan', f.source), /pause-replanning T1/)
+  assert.match(f.ok('sync-plan', '--plan', f.source, '--confirm-invalidation'), /pause-replanning T1/)
   const after = f.state(), events = f.events()
   f.rejects(/pause-replanning T1/, 'begin-phase-discussion', 'F1')
   assert.deepEqual(f.state(), after); assert.equal(f.events(), events)

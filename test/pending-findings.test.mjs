@@ -27,7 +27,7 @@ test('alterar uma dependencia preserva planos e aceites das tarefas inalteradas 
   f.ok('skip', 'T3', '--reason', 'Dependencia dispensada explicitamente')
   f.planPhase()
   const before = f.state()
-  f.plan.tasks[1].deps = ['T3']; f.writePlan(); f.ok('sync-plan', '--plan', f.source)
+  f.plan.tasks[1].deps = ['T3']; f.writePlan(); f.ok('sync-plan', '--plan', f.source, '--confirm-invalidation')
   assert.deepEqual(f.state().tasks.T1, before.tasks.T1)
   assert.ok(before.tasks.T1.taskPlan)
   assert.deepEqual(f.state().tasks.T1.taskPlan, before.tasks.T1.taskPlan)
@@ -49,7 +49,7 @@ test('planejamento aberto reaproveita artefato inalterado e reconfirma somente o
   f.ok('plan-phase', 'F1', '--agent', 'planner', '--plan-dir', f.plans); f.artifacts('F1')
   const unchangedPath = join(f.plans, 'task-plan-T1.json'), original = readFileSync(unchangedPath, 'utf8')
   const before = f.state()
-  f.plan.tasks[1].deps = ['T3']; f.writePlan(); f.ok('sync-plan', '--plan', f.source)
+  f.plan.tasks[1].deps = ['T3']; f.writePlan(); f.ok('sync-plan', '--plan', f.source, '--confirm-invalidation')
   f.ok('begin-phase-discussion', 'F1')
   const round = f.state().phaseWorkflows.F1.discussionAttempts.at(-1)
   assert.deepEqual(round.confirmsContract.map(item => item.task), ['T2'])
@@ -69,7 +69,7 @@ for (const legacy of [false, true]) test(`sincronizacao preserva confirmacoes pe
   f.ok('skip', 'T4', '--reason', 'Dependencia dispensada pelo usuario')
   f.planPhase()
   f.plan.tasks[0].deps = ['T3']
-  f.plan.tasks[1].deps = ['T3']; f.writePlan(); f.ok('sync-plan', '--plan', f.source)
+  f.plan.tasks[1].deps = ['T3']; f.writePlan(); f.ok('sync-plan', '--plan', f.source, '--confirm-invalidation')
   const unchanged = f.state().tasks.T1
   if (legacy) {
     const imported = f.state(); delete imported.phaseWorkflows.F1.contractConfirmationRequired.tasks; f.importState(imported)
