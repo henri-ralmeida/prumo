@@ -1,4 +1,6 @@
 {
+  "{0} {1} activity by {2} already ended at {3}": "Atividade {1} de {0} por {2} já encerrada em {3}",
+  "{0} planning activity by {1} ended at {2}": "Atividade de planejamento de {0} por {1} encerrada em {2}",
   "Latest plan source: {0}": "Fonte mais recente do plano: {0}",
   "WARNING: plan source is outside .specs/graph/plans/: {0}": "AVISO: a fonte do plano está fora de .specs/graph/plans/: {0}",
   "{0} moved from {1} to {2} at {3}; phase {1} round {4} refers to them": "{0} saíram de {1} para {2} em {3}; a rodada {4} da fase {1} se refere a elas",

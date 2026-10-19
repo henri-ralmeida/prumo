@@ -2033,16 +2033,21 @@ function finishPhaseWorkers(round, at) {
   round.activeTargets = []
 }
 
-function phaseActivityWorker(state, id, scope, role, agent) {
+function phaseActivityWorker(state, id, scope, role, agent, allowEnded = false) {
   if (!['discussion', 'planning'].includes(role)) return null
   if (scope === 'task' && state.tasks[id]?.individualPlanning) return null
   const phase = scope === 'phase' ? state.phaseWorkflows?.[id] : state.phaseWorkflows?.[state.tasks[id]?.phase]
   const round = phase?.[`${role}Attempts`]?.at(-1)
   if (!round?.workers) return null
-  const worker = scope === 'phase' ? Object.values(round.workers).find(value => value.agent === agent && !value.endedAt) : Object.hasOwn(round.workers, id) ? round.workers[id] : null
-  if (!worker || worker.endedAt || phase.state !== (role === 'discussion' ? 'discussing' : 'planning'))
+  const worker = scope === 'phase' ? Object.values(round.workers).find(value => value.agent === agent && (allowEnded || !value.endedAt)) : Object.hasOwn(round.workers, id) ? round.workers[id] : null
+  if (!worker || (!(allowEnded && worker.endedAt) && (worker.endedAt || phase.state !== (role === 'discussion' ? 'discussing' : 'planning'))))
     die('activity requires a currently assigned phase worker')
   return worker
+}
+
+function logClosedPlanningActivities(activities) {
+  for (const [id, interval] of activities)
+    log('[prumo] ' + tr('{0} planning activity by {1} ended at {2}', id, interval.agent, interval.endedAt))
 }
 
 function logPhaseWorkers(phaseId, round) {
@@ -3243,6 +3248,8 @@ const commands = {
       ...(round.stagedPlans ?? []).flatMap(item => item.plan.decisions), ...plans.flatMap(([, plan]) => plan.decisions),
     ])
     for (const [task, plan] of plans) warnTaskPlan(task, plan, state)
+    const activities = (round.workers ? Object.entries(round.workers) : [[phaseId, round]])
+      .flatMap(([id, owner]) => (owner.activityIntervals ?? []).filter(interval => !interval.endedAt).map(interval => [id, interval]))
     const completedAt = new Date().toISOString()
     if (round.workers) {
       round.stagedPlans ??= []
@@ -3251,6 +3258,7 @@ const commands = {
       if (round.queuedTargets.length) {
         activatePhaseWorkers(state, round, 'planning')
         saveState(name, state)
+        logClosedPlanningActivities(activities)
         emit(name, 'phase_planning_batch', null, { phase: phaseId, completed: tasks.map(task => task.id), active: round.activeTargets, queued: round.queuedTargets })
         logPhaseWorkers(phaseId, round)
         logPhasePlanningInputs(phaseId, round)
@@ -3284,6 +3292,7 @@ const commands = {
     for (const item of allResolutions)
       recordQuestionResolutions(state, [item.questionRef], item.decisions, { task: item.task, phase: phaseId })
     saveState(name, state)
+    logClosedPlanningActivities(activities)
     emit(name, 'phase_planned', null, { phase: phaseId, planner: phase.planner, round: round.n, members: round.targets })
     log(`[prumo] ${phaseId} planned atomically (${round.targets.length} task artifact(s))`)
     const reused = plans.filter(item => item[4]).map(item => item[0].id)
@@ -4330,8 +4339,13 @@ const commands = {
     if (scope === 'phase' && !['discussion', 'planning'].includes(role)) die(tr('phase activity supports discussion or planning only'))
     const state = loadState(name)
     const target = scope === 'phase' ? getPhase(state, id) : getTask(state, id)
-    const owner = phaseActivityWorker(state, id, scope, role, agent) ?? (role === 'discussion' ? target.discussionAttempts?.at(-1) : role === 'planning' ?
+    const owner = phaseActivityWorker(state, id, scope, role, agent, true) ?? (role === 'discussion' ? target.discussionAttempts?.at(-1) : role === 'planning' ?
       target.planningAttempts?.at(-1) : target.attempts?.at(-1))
+    const closed = owner?.endedAt && owner.activityIntervals?.findLast(interval => interval.endedAt && interval.role === role && interval.agent === agent)
+    if (closed) {
+      log('[prumo] ' + tr('{0} {1} activity by {2} already ended at {3}', id, role, agent, closed.endedAt))
+      return
+    }
     const open = owner?.activityIntervals?.findLast(interval => !interval.endedAt)
     if (!open || open.role !== role || open.agent !== agent) die(tr('{0} has no active {1} work by {2}', id, role, agent))
     open.endedAt = new Date().toISOString()
