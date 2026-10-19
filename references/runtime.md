@@ -957,6 +957,7 @@ Resolve `scripts/engine.mjs` from the installed skill. Add `--run <name>` to sel
 | `plan-task <task> --agent <name> [--context <file>] [--accept-premature-work]` | Records the planner after the discussion closed |
 | `skip-planning <task> --reason <text> --confirmed-by-user` | Records the explicit choice to skip task planning |
 | `finish-planning <task> --plan <artifact.json>` | Checks and records the task plan; releases execution unless a preserved pause remains |
+| `answer-question <ref> --answer "..." --confirmed-by-user` | Records the user's answer to a recorded `user-now` question without reopening discussion; refuses missing or previously answered questions and preserves task execution authorization |
 | `set-agent-limit --max <N> --actor <name> --confirmed-by-user` | Records a user-approved shared per-run agent limit and its actor/time in `agentLimitHistory` |
 | `start <task> --agent <name>` | Records the executor and opens an attempt (`--executor` is an alias) |
 | `activity-start <id> --scope task\|phase --role discussion\|planning\|execution\|review --agent <name>` | Starts a real work interval for the active round; phase workers must use the exact task ID and assigned worker name (or the exact phase ID and worker name) |

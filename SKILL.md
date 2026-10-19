@@ -318,6 +318,7 @@ node $ENGINE finish-phase-discussion F2 --context <discovery.json>
 node $ENGINE plan-phase F2 --agent T4=plan-scenes --agent T5=plan-review  # one recorded worker per target
 node $ENGINE skip-phase-planning F2 --reason "..." --confirmed-by-user
 node $ENGINE finish-phase-planning F2 --plan-dir <artifact-directory>
+node $ENGINE answer-question <ref> --answer "..." --confirmed-by-user
 node $ENGINE start T4 --agent ag-scenes         # dispatch up to the cap, in the SAME message
 node $ENGINE review T4 --agent rev-scenes       # executor finished → hand to a fresh reviewer
 node $ENGINE validate T4 --ok --evidence "..." --cwd <absolute-project>  # the REVIEWER's verdict

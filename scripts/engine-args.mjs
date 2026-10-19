@@ -10,6 +10,7 @@ const definitions = {
   status: [0, '', 'verify-install'], ready: [0], graph: [0], runs: [0],
   'show-contract': [1, '', 'diff full'], 'show-check': [1, 'check attempt'],
   authorize: [0, 'scope mode channel', 'confirmed-by-user'],
+  'answer-question': [1, 'answer', 'confirmed-by-user'],
   'begin-phase-discussion': [1, 'agent', 'adopt-legacy'],
   'skip-phase-discussion': [1, 'reason', 'confirmed-by-user'],
   'finish-phase-discussion': [1, 'context', 'accept-premature-work'],
@@ -47,7 +48,7 @@ export function engineCommandHelp(command) {
     ...strings.split(/\s+/).filter(Boolean).map(flag => `--${flag} <value>`),
     ...booleans.split(/\s+/).filter(flag => flag && flag !== 'help' && flag !== 'force').map(flag => `--${flag}`),
     ...(dispatchCommands.includes(command) ? ['--model <value>', '--effort <value>'] : [])]
-  return { usage: `${command}${positionals ? ' [<task-or-phase>]' : ''} [options]`, flags }
+  return { usage: `${command}${positionals ? command === 'answer-question' ? ' <ref>' : ' [<task-or-phase>]' : ''} [options]`, flags }
 }
 
 // Argumentos inválidos são recusados antes de qualquer gravação, para que erros de

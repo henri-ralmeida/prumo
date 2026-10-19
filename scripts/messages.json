@@ -1919,5 +1919,9 @@
   "Dashboard crashed at {0} with signal {1}": "O dashboard caiu às {0} com sinal {1}",
   "Fixed — Dashboard availability": "Corrigido — Disponibilidade do dashboard",
   "Recreate the dashboard after an unexpected exit with a progressive wait and a limit of restarts per time window, recording each restart, and never after disable, an intentional stop or a restart request": "Recrie o dashboard após uma saída inesperada com espera progressiva e limite de reinícios por janela de tempo, registrando cada reinício e nunca após disable, uma parada intencional ou um pedido de restart",
-  "Show in dashboard status when and with which code or signal the dashboard crashed if the last process event was an unexpected exit": "Mostre em dashboard status quando e com qual código ou sinal o dashboard caiu se o último evento do processo foi uma saída inesperada"
+  "Show in dashboard status when and with which code or signal the dashboard crashed if the last process event was an unexpected exit": "Mostre em dashboard status quando e com qual código ou sinal o dashboard caiu se o último evento do processo foi uma saída inesperada",
+  "answer-question needs a question reference and a nonempty --answer": "answer-question exige a referência da pergunta e --answer preenchido",
+  "answer-question requires --confirmed-by-user to record the user answer": "answer-question exige --confirmed-by-user para registrar a resposta do usuário",
+  "open question {0} is not a user-now question; resolve it in discussion or planning decisions": "a pergunta aberta {0} não é user-now; resolva-a nas decisões da discussão ou do planejamento",
+  "User answer recorded for question {0}": "Resposta do usuário registrada para a pergunta {0}"
 }

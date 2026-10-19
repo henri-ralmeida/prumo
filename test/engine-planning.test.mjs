@@ -2886,3 +2886,79 @@ for (const change of ['scope', 'dependencies', 'global', 'missing-revision']) te
   assert.deepEqual(f.state(), before)
   assert.equal(f.events(), events)
 })
+
+
+for (const lang of ['en', 'pt-BR']) test(`answer-question registra resposta sem reabrir discussão e libera execução em ${lang}`, t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }], { lang })
+  f.ok('skip-phase-discussion', 'F1', '--reason', 'Contrato aceito', '--confirmed-by-user')
+  f.ok('plan-phase', 'F1', '--agent', 'planejador')
+  f.writeArtifacts('F1')
+  const artifactPath = join(f.plans, 'task-plan-A.json')
+  const artifact = JSON.parse(readFileSync(artifactPath, 'utf8'))
+  artifact.openQuestions = [{ question: 'Qual regra deve valer?', blocking: false, decideBy: 'user-now' }]
+  writeFileSync(artifactPath, JSON.stringify(artifact))
+  const finished = f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans).stdout
+  const current = f.state(), ref = current.tasks.A.taskPlan.openQuestions[0].questionRef
+  assert.ok(finished.includes(ref), finished)
+  for (const command of ['status', 'ready']) assert.ok(f.ok(command).stdout.includes(ref))
+  f.rejects(/unresolved questions|perguntas sem resposta/, 'start', 'A', '--agent', 'executor')
+  if (lang === 'pt-BR') {
+    current.questionResolutions = [{ questionRef: 'pergunta-anterior', answer: 'Resposta anterior', at: '2026-01-01T00:00:00Z' }]
+    f.save(current)
+  }
+  const before = f.state(), events = f.events()
+  const answer = '  Aplicar a regra aprovada literalmente.  '
+  const output = f.ok('answer-question', ref, '--answer', answer, '--confirmed-by-user').stdout
+  assert.match(output, lang === 'en' ? /User answer recorded for question/ : /Resposta do usuário registrada para a pergunta/)
+  const after = f.state()
+  assert.deepEqual(after.tasks, before.tasks)
+  assert.deepEqual(after.phaseWorkflows, before.phaseWorkflows)
+  assert.deepEqual(after.authorizations, before.authorizations)
+  assert.deepEqual(after.questionResolutions.slice(0, -1), before.questionResolutions ?? [])
+  assert.deepEqual(after.questionResolutions.at(-1), {
+    questionRef: ref, question: artifact.openQuestions[0].question, answer,
+    at: after.questionResolutions.at(-1).at, confirmedByUser: true,
+  })
+  assert.ok(Number.isFinite(Date.parse(after.questionResolutions.at(-1).at)))
+  assert.ok(f.events().startsWith(events))
+  const event = f.events().trim().split('\n').map(line => JSON.parse(line)).findLast(event => event.type === 'question_answered')
+  assert.ok(event)
+  for (const command of ['status', 'ready']) assert.ok(!f.ok(command).stdout.includes(ref))
+  const resolved = f.state(), resolvedEvents = f.events()
+  f.rejects(lang === 'en' ? /already resolved/ : /já foi resolvida/, 'answer-question', ref, '--answer', 'Outra resposta', '--confirmed-by-user')
+  assert.deepEqual(f.state(), resolved)
+  assert.equal(f.events(), resolvedEvents)
+  f.ok('start', 'A', '--agent', 'executor')
+  assert.equal(f.state().tasks.A.state, 'running')
+})
+
+for (const lang of ['en', 'pt-BR']) test(`answer-question recusa entradas inválidas sem alterar histórico em ${lang}`, t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }], { lang })
+  const help = f.ok('answer-question', '--help').stdout
+  assert.match(help, /answer-question <ref>/)
+  assert.match(help, /--answer <value>/)
+  assert.match(help, /--confirmed-by-user/)
+  const current = f.state()
+  current.tasks.A.taskPlan = { openQuestions: [
+    { question: 'Qual regra?', blocking: false, decideBy: 'user-now', questionRef: 'A:agora' },
+    { question: 'Já foi respondida?', blocking: false, decideBy: 'user-now', questionRef: 'A:respondida', answer: 'Sim' },
+    { question: 'Decisão do executor?', blocking: false, decideBy: 'executor', questionRef: 'A:executor' },
+    { question: 'Decisão futura?', blocking: false, decideBy: { beforePhase: 'F2' }, questionRef: 'A:futura' },
+  ] }
+  f.save(current)
+  const before = f.state(), events = f.events()
+  const required = lang === 'en' ? /reference and a nonempty --answer/ : /referência da pergunta e --answer preenchido/
+  for (const args of [[], ['--answer', 'Sim'], ['A:agora'], ['A:agora', '--answer', '  ']])
+    f.rejects(required, 'answer-question', ...args)
+  f.rejects(lang === 'en' ? /requires --confirmed-by-user/ : /exige --confirmed-by-user/,
+    'answer-question', 'A:agora', '--answer', 'Sim')
+  f.rejects(lang === 'en' ? /unknown open question/ : /pergunta aberta desconhecida/,
+    'answer-question', 'inexistente', '--answer', 'Sim', '--confirmed-by-user')
+  f.rejects(lang === 'en' ? /already resolved/ : /já foi resolvida/,
+    'answer-question', 'A:respondida', '--answer', 'Outra', '--confirmed-by-user')
+  for (const ref of ['A:executor', 'A:futura'])
+    f.rejects(lang === 'en' ? /is not a user-now/ : /não é user-now/,
+      'answer-question', ref, '--answer', 'Sim', '--confirmed-by-user')
+  assert.deepEqual(f.state(), before)
+  assert.equal(f.events(), events)
+})

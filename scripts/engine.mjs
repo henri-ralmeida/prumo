@@ -46,6 +46,7 @@
  *   node $ENGINE plan-task <task> --agent <name> [--context <legacy-discovery.json>]
  *   node $ENGINE skip-planning <task> --reason <text> --confirmed-by-user
  *   node $ENGINE finish-planning <task> --plan <task-plan.json>
+ *   node $ENGINE answer-question <ref> --answer "..." --confirmed-by-user
  *   node $ENGINE start <task> --agent <name> [--confirmed-by-user]   (manual mode; max 3 executors)
  *   node $ENGINE progress <task> --step <1-based index> --agent <executor>
  *   node $ENGINE review <task> --agent <name> [--confirmed-by-user]  (manual mode; hands it to a reviewer)
@@ -2723,6 +2724,28 @@ const commands = {
       channel: authorization.channel, tasks: taskIds })
     log('[prumo] ' + tr('authorized {0} task(s) for {1} mode ({2}) via {3}', taskIds.length, mode, scope, authorization.channel))
     printDispatchSuggestions(state)
+  },
+
+  'answer-question'() {
+    const name = runName()
+    const ref = args._[0]
+    if (!ref || typeof args.answer !== 'string' || !args.answer.trim())
+      die(tr('answer-question needs a question reference and a nonempty --answer'))
+    if (args['confirmed-by-user'] !== true)
+      die(tr('answer-question requires --confirmed-by-user to record the user answer'))
+    const state = loadState(name)
+    const item = openQuestionRecords(state).find(question => question.ref === ref)
+    if (!item) die(tr('decision references unknown open question {0}', ref))
+    if (item.question.answer || questionResolutionMap(state).has(ref))
+      die(tr('open question {0} was already resolved', ref))
+    if (item.decideBy !== 'user-now')
+      die(tr('open question {0} is not a user-now question; resolve it in discussion or planning decisions', ref))
+    recordQuestionResolutions(state, [ref], [{ resolvesQuestion: ref, question: item.question.question, answer: args.answer }])
+    const resolution = state.questionResolutions.at(-1)
+    resolution.confirmedByUser = true
+    saveState(name, state)
+    emit(name, 'question_answered', item.sourceTask, resolution)
+    log('[prumo] ' + tr('User answer recorded for question {0}', ref))
   },
 
   'set-agent-limit'() {

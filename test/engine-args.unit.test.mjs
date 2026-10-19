@@ -104,3 +104,17 @@ test('ajuda lista opções reais sem transformar consulta em ação', () => {
   assert.throws(() => parseEngineArgs('show', []), /available commands:.*show-contract.*review-progress.*use <command> --help/)
   assert.throws(() => parseEngineArgs('validate', ['T1', '--agent', 'wrong']), /uses the reviewer recorded by review.*manual inspection uses validationMode/)
 })
+
+
+test('answer-question aceita referência e resposta literal e documenta confirmação explícita', () => {
+  const answer = '  Resposta $literal; com espaços e acentos  '
+  assert.deepEqual(parseEngineArgs('answer-question', ['A:plan:pergunta', '--answer', answer, '--confirmed-by-user']),
+    { _: ['A:plan:pergunta'], answer, 'confirmed-by-user': true })
+  const help = engineCommandHelp('answer-question')
+  assert.equal(help.usage, 'answer-question <ref> [options]')
+  assert.ok(help.flags.includes('--answer <value>'))
+  assert.ok(help.flags.includes('--confirmed-by-user'))
+  assert.throws(() => parseEngineArgs('answer-question', ['A:plan:pergunta', '--answer']), /requires a value/)
+  assert.throws(() => parseEngineArgs('answer-question', ['A:plan:pergunta', '--agent', 'executor']), /Unknown option/)
+  assert.throws(() => parseEngineArgs('answer-question', ['primeira', 'segunda']), /positional/)
+})

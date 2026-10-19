@@ -164,6 +164,21 @@ The attempt records the disjoint file scopes of contemporaneous executors; a new
 
 ## Open questions after planning
 
+Before the task-plan artifact has been recorded, the user's literal answer may be entered in the
+question's `answer` field. After recording, use the reference printed by `finish-phase-planning`,
+`status` or `ready`: `node $ENGINE answer-question <ref> --answer "..." --confirmed-by-user`.
+This records the actual user answer to a `user-now` question without reopening discussion or changing
+the recorded plan. Already answered questions are refused and their original answers are preserved.
+The flag confirms that the user supplied the answer; it does not authorize task execution.
+
+Antes de o artefato do plano da tarefa ser registrado, a resposta literal do usuário pode entrar no
+campo `answer` da pergunta. Depois do registro, use a referência exibida por `finish-phase-planning`,
+`status` ou `ready`: `node $ENGINE answer-question <ref> --answer "..." --confirmed-by-user`.
+O comando registra a resposta real do usuário a uma pergunta `user-now`, sem reabrir a discussão nem
+alterar o plano registrado. Perguntas já respondidas são recusadas e preservam a resposta original.
+A opção confirma que o usuário forneceu a resposta; ela não autoriza a execução da tarefa.
+
+
 After `finish-phase-planning` or `finish-planning`, user questions with an answer recorded in the plan
 appear separately as answered, with their recorded answer; they are not offered as pending decisions.
 No answer is inferred or rewritten. The engine lists unanswered questions for the user now and
