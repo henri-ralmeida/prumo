@@ -1135,6 +1135,24 @@ case-insensitive literals with letter/digit boundaries (underscore separates ide
 Common role words are not indiscriminately prohibited. Baseline stores line hashes, not source text;
 identical pre-existing lines are discounted by occurrence. Review remains independent.
 
+In C# files, a phase identifier that coincides with a standard numeric format is permitted only
+in a recognized format position: `$"{amount:F2}"`, `string.Format("{0:F2}", amount)` or `amount.ToString("F2")`,
+including regular and verbatim string literals. Comments, filenames, ordinary text and escaped
+literal braces remain checked. Composite formats require a recognized `string.Format` or
+`Console.Write`/`Console.WriteLine` call with values to format. Raw strings and expressions whose format position cannot be
+recognized retain the literal check. Explicit `textRules.patterns`, task ids and run/plan names
+remain checked even in format positions; exact approved exceptions still apply.
+
+Em arquivos C#, um identificador de fase que coincide com um formato numérico padrão é aceito
+somente em uma posição reconhecida de formato: `$"{amount:F2}"`, `string.Format("{0:F2}", amount)` ou
+`amount.ToString("F2")`, inclusive em strings comuns e verbatim. Comentários, nomes de arquivo,
+texto comum e chaves literais escapadas continuam sendo conferidos. Formatos compostos exigem
+uma chamada reconhecida de `string.Format` ou `Console.Write`/`Console.WriteLine` com valores
+a formatar. Strings raw e expressões
+cuja posição de formato não possa ser reconhecida mantêm a checagem literal. Padrões explícitos
+em `textRules.patterns`, IDs de tarefa e nomes de execução/plano continuam sendo conferidos
+mesmo nessas posições; exceções exatas aprovadas continuam válidas.
+
 Optional task fields: `deliveries: ["out/result.json"]` includes declared ignored artifacts;
 `textRules: { "patterns": ["internal-literal"], "exceptions": [{ "path": "out/example.json", "line": 4, "identifier": "T6" }] }`.
 Patterns/exceptions are bounded to 64; literal strings to 128 characters. Exceptions match

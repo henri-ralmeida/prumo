@@ -149,6 +149,25 @@ export function captureDelivery(task, cwd, content = false, declaredOnly = false
   return { files, ...(externalPaths.length ? { externalPaths } : {}),
     ...(nestedRepositories.length ? { nestedRepositories } : {}), ...(limitations.length ? { limitation: limitations.join(' ') } : {}) }
 }
+function csharpFormattingText(text) {
+  // Apenas a posicao de formato numerico deixa de ser metadado; comentarios e texto comum continuam inspecionados.
+  let previousEnd = 0
+  return text.replace(/\/\/[^\n]*|\/\*[\s\S]*?(?:\*\/|$)|\$*("{3,})[\s\S]*?(?:\1|$)|'(?:\\.|[^'\\\r\n])*'|(?:\$@|@\$|@)"(?:""|[^"])*"|\$?"(?:\\.|[^"\\\r\n])*"/g, (token, raw, offset) => {
+    const prefix = text.slice(previousEnd, offset)
+    previousEnd = offset + token.length
+    if (raw || !/^(?:\$@|@\$|@|\$)?"/.test(token)) return token
+    const quote = token.indexOf('"'), content = token.slice(quote + 1, -1)
+    if (/^[BCDEFGNPRX]\d+$/i.test(content) &&
+        /\.\s*ToString\s*\(\s*$/.test(prefix) && /^\s*[,)]/.test(text.slice(offset + token.length)))
+      return token.slice(0, quote + 1) + ' '.repeat(content.length) + '"'
+    const interpolated = token.slice(0, quote).includes('$')
+    const composite = /(?:^|[^\p{L}\p{N}_.])(?:(?:string|(?:System\.)?String)\s*\.\s*Format|(?:System\.)?Console\s*\.\s*Write(?:Line)?)\s*\(\s*$/u.test(prefix) && /^\s*,/.test(text.slice(offset + token.length))
+    return token.replace(/(?<!\{)\{([^{}:"'\r\n]+):([BCDEFGNPRX]\d+)\}(?!\})/gi, (placeholder, expression, format) => {
+      if (!interpolated && !(composite && /^\d+(?:\s*,\s*-?\d+)?$/.test(expression))) return placeholder
+      return placeholder.slice(0, -format.length - 1) + ' '.repeat(format.length) + '}'
+    })
+  })
+}
 export function checkDelivery(state, task, cwd) {
   cwd = task.project ?? cwd
   assertEvidenceContract(task)
@@ -156,13 +175,14 @@ export function checkDelivery(state, task, cwd) {
   if (!baseline && !task.deliveries?.length) return { fingerprint: null, binaryPaths: [], limitation: 'Legacy attempt has no content baseline or declared deliveries; identifier inspection unavailable.' }
   const current = captureDelivery(task, cwd, true, !baseline)
   const declaredPaths = new Set((task.deliveries ?? []).map(safeEvidencePath))
-  const identifiers = [...new Set([...Object.keys(state.tasks), ...(state.plan.phases ?? []).map(phase => phase.id), state.run, state.plan.name, ...(task.textRules?.patterns ?? [])].filter(Boolean).map(value => value.toLowerCase()))]
-  const matches = text => identifiers.filter(identifier => {
+  const protectedIdentifiers = new Set([...Object.keys(state.tasks), state.run, state.plan.name, ...(task.textRules?.patterns ?? [])].filter(Boolean).map(value => value.toLowerCase()))
+  const identifiers = [...new Set([...protectedIdentifiers, ...(state.plan.phases ?? []).map(phase => phase.id)].filter(Boolean).map(value => value.toLowerCase()))]
+  const matches = (text, formattedText) => identifiers.filter(identifier => {
     const escaped = identifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    return new RegExp('(^|[^\\p{L}\\p{N}])' + escaped + '(?=$|[^\\p{L}\\p{N}])', 'iu').test(text)
+    return new RegExp('(^|[^\\p{L}\\p{N}])' + escaped + '(?=$|[^\\p{L}\\p{N}])', 'iu').test(protectedIdentifiers.has(identifier) ? text : formattedText)
   })
   const findings = [], binaryPaths = []
-  const report = (path, line, text) => { for (const identifier of matches(text)) {
+  const report = (path, line, text, formattedText = text) => { for (const identifier of matches(text, formattedText)) {
     if (!(task.textRules?.exceptions ?? []).some(item => safeEvidencePath(item.path) === path && item.line === line && item.identifier.toLowerCase() === identifier)) findings.push({ path, line })
   } }
   for (const [path, file] of Object.entries(current.files)) {
@@ -170,13 +190,14 @@ export function checkDelivery(state, task, cwd) {
     if (!old || old.digest !== file.digest || declaredPaths.has(path)) report(path, 0, path)
     if (file.binary) { binaryPaths.push(path); continue }
     if (old?.digest === file.digest && !declaredPaths.has(path)) continue
+    const formattedLines = /\.cs$/i.test(path) ? csharpFormattingText(file.lines.join('\n')).split('\n') : file.lines
     const existing = new Map()
     for (const line of declaredPaths.has(path) ? [] : old?.lineHashes ?? []) existing.set(line, (existing.get(line) ?? 0) + 1)
     file.lines.forEach((line, index) => {
       const lineHash = hash(line)
       const count = existing.get(lineHash) ?? 0
       if (count) existing.set(lineHash, count - 1)
-      else report(path, index + 1, line)
+      else report(path, index + 1, line, formattedLines[index])
     })
   }
   if (findings.length) throw new Error('Delivery identifiers refused: ' + [...new Set(findings.map(item => `${item.path}:${item.line}`))].join(', '))
