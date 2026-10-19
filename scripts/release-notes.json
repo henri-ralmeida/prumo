@@ -1,4 +1,20 @@
 {
+  "2.11.2": {
+    "en": [
+      {
+        "title": "Fixed — Delivery identifier checks",
+        "items": [
+          "Recognize numeric format specifiers in supported C# formatting calls and interpolated strings without treating them as phase identifiers; keep real identifiers, file names and explicit patterns protected"
+        ]
+      },
+      {
+        "title": "Fixed — Update verification",
+        "items": [
+          "Rescan late files while cleaning isolated historical update tests, preserving bounded retries, temporary-path checks and visible cleanup failures"
+        ]
+      }
+    ]
+  },
   "2.11.1": {
     "en": [
       {

@@ -1,4 +1,8 @@
 {
+  "Fixed — Delivery identifier checks": "Corrigido — Verificação de identificadores na entrega",
+  "Recognize numeric format specifiers in supported C# formatting calls and interpolated strings without treating them as phase identifiers; keep real identifiers, file names and explicit patterns protected": "Reconheça especificadores de formato numérico nas chamadas de formatação C# aceitas e em strings interpoladas sem tratá-los como identificadores de fase; mantenha protegidos os identificadores reais, nomes de arquivos e padrões explícitos",
+  "Fixed — Update verification": "Corrigido — Verificação de atualizações",
+  "Rescan late files while cleaning isolated historical update tests, preserving bounded retries, temporary-path checks and visible cleanup failures": "Liste novamente arquivos tardios durante a limpeza dos testes isolados de atualização histórica, preservando tentativas limitadas, validações de caminhos temporários e falhas de limpeza visíveis",
   "{0} {1} activity by {2} already ended at {3}": "Atividade {1} de {0} por {2} já encerrada em {3}",
   "{0} planning activity by {1} ended at {2}": "Atividade de planejamento de {0} por {1} encerrada em {2}",
   "Latest plan source: {0}": "Fonte mais recente do plano: {0}",

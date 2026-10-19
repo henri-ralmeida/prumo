@@ -2,6 +2,11 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.11.2 — 2026-10-19
+
+- Reconheça formatos numéricos nas chamadas de formatação C# aceitas e em strings interpoladas sem confundi-los com identificadores de fase. Preserve a recusa de identificadores reais, nomes de arquivos e padrões explícitos.
+- Liste novamente arquivos criados durante a limpeza dos testes isolados de atualização histórica, evitando falhas transitórias de diretório não vazio sem ocultar erros de limpeza nem alterar os limites de tentativas e as validações de caminhos temporários.
+
 ## 2.11.1 — 2026-10-16
 
 - Restaure a porta padrão 4949 no dashboard, mantendo --port e o nome de host prumo.localhost, por correspondência exata e com as checagens de porta, origem e token.

@@ -5,6 +5,21 @@ import { releaseHistory, releaseNotes } from '../lib/release-notes.mjs'
 
 const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 
+test('atualizacao para 2.11.2 explica a verificacao de identificadores e a limpeza isolada nos dois idiomas', () => {
+  const messages = JSON.parse(readFileSync(new URL('../scripts/messages.json', import.meta.url), 'utf8'))
+  const history = releaseHistory(['2.11.1'], '2.11.2')
+  assert.deepEqual(history.map(release => release.version), ['2.11.2'])
+  const items = history[0].sections.flatMap(section => section.items)
+  for (const section of history[0].sections) {
+    assert.ok(messages[section.title]?.trim())
+    for (const item of section.items) assert.ok(messages[item]?.trim())
+  }
+  for (const rule of ['C#', 'real identifiers', 'explicit patterns', 'late files', 'temporary-path checks', 'visible cleanup failures'])
+    assert.ok(items.some(item => item.includes(rule)), rule)
+  assert.deepEqual(releaseHistory(['2.11.2'], '2.11.2'), [])
+  assert.deepEqual(releaseHistory(['2.11.2'], '2.11.1'), [])
+})
+
 test('atualizacao para 2.11.1 devolve o dashboard a porta 4949 e migra quem usou a 4950 sem repetir notas instaladas', () => {
   const messages = JSON.parse(readFileSync(new URL('../scripts/messages.json', import.meta.url), 'utf8'))
   const history = releaseHistory(['2.11.0'], '2.11.1')
