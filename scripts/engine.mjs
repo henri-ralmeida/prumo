@@ -1726,6 +1726,39 @@ function rebindUnchangedPhasePlan(phase, round, task, plan, binding) {
   return { ...plan, phaseBinding: binding }
 }
 
+function printPlanSyncHistory(name, state) {
+  const source = state.plan.source
+  if (source) {
+    log('[prumo] ' + tr('Latest plan source: {0}', source))
+    if (!inside(join(GRAPH_DIR, 'plans'), resolve(source)))
+      log('[prumo] ' + tr('WARNING: plan source is outside .specs/graph/plans/: {0}', source))
+  }
+  let events
+  try { events = readFileSync(join(runDir(name), 'events.ndjson'), 'utf8') }
+  catch { return }
+  for (const line of events.split(/\r?\n/).filter(line => line.trim())) {
+    let event
+    try { event = JSON.parse(line) } catch { continue }
+    if (event.type !== 'plan_sync' || !event.at) continue
+    const moves = new Map()
+    for (const change of event.changes ?? []) {
+      if (change.applied === false) continue
+      const movement = change.fields?.find(field => field.field === 'phase')
+      if (!movement || !movement.before || !movement.after || movement.before === movement.after) continue
+      const rounds = state.phaseWorkflows?.[movement.before]?.discussionAttempts ?? []
+      for (const [index, round] of rounds.entries()) {
+        if (round.result !== 'discussed' || !round.endedAt || round.endedAt > event.at || !round.targets?.includes(change.task)) continue
+        const key = JSON.stringify([movement.before, movement.after, index])
+        if (!moves.has(key)) moves.set(key, { from: movement.before, to: movement.after, round: round.n ?? index + 1, tasks: [] })
+        moves.get(key).tasks.push(change.task)
+      }
+    }
+    for (const move of moves.values()) log('[prumo] ' + tr(
+      '{0} moved from {1} to {2} at {3}; phase {1} round {4} refers to them',
+      move.tasks.join(', '), move.from, move.to, event.at, move.round))
+  }
+}
+
 function latestPlanSyncAuditAt(name) {
   try {
     const lines = readFileSync(join(runDir(name), 'events.ndjson'), 'utf8').trim().split(/\r?\n/)
@@ -2724,6 +2757,7 @@ const commands = {
     const scoped = runHasAuthorizationScope(state)
     log(`run: ${name}  plan: ${state.plan.name}  ${p.done}/${p.total} done`)
     log(`states: ${JSON.stringify(p.by)}`)
+    printPlanSyncHistory(name, state)
     const countGateSkips = field => new Set([
       ...Object.values(state.phaseWorkflows ?? {}).flatMap(phase => phase[field] ?? []),
       ...Object.values(state.tasks).flatMap(task => task[field] ?? []),
