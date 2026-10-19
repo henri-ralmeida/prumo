@@ -2351,6 +2351,14 @@ const commands = {
         added.length, updated.length, metadataUpdated.length))
       return
     }
+    const completedPhases = invalidatedWorkflows.filter(item => item.scope === 'phase' && item.workflow === 'discussion' &&
+      beforeState.phaseWorkflows[item.id].discussionAttempts.some(round =>
+        round.roundId === item.roundId && round.endedAt && round.result === 'discussed'))
+    if (completedPhases.length && !args['confirm-invalidation']) {
+      printSyncPlanAudit(changes, diagnostics)
+      die(tr('sync-plan requires --confirm-invalidation to invalidate completed phase discussions: {0}; inspect --dry-run first',
+        completedPhases.map(item => item.id).join(', ')))
+    }
     if (completed.length && !args['confirm-invalidation'])
       die(tr('sync-plan requires --confirm-invalidation to invalidate completed rounds after a description change; inspect --dry-run first'))
     // Migração só persiste após a confirmação; a nova leitura preserva o comportamento dos contratos históricos.

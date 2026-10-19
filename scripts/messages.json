@@ -1,4 +1,5 @@
 {
+  "sync-plan requires --confirm-invalidation to invalidate completed phase discussions: {0}; inspect --dry-run first": "sync-plan exige --confirm-invalidation para invalidar discussões concluídas das fases: {0}; confira --dry-run primeiro",
   "Fixed — Bounded-memory binary evidence": "Corrigido — Evidências binárias com memória limitada",
   "Fingerprint large binary deliveries in bounded chunks instead of rejecting them by file size, preserving path, identity and concurrent-change checks": "Registre a impressão digital de entregas binárias grandes em blocos limitados, sem recusá-las pelo tamanho, preservando verificações de caminho, identidade e alterações concorrentes",
   "Keep fingerprints distinct from independent inspection and preserve post-validation freshness checks": "Diferencie impressões digitais de inspeção independente e preserve a conferência de alterações após a validação",
