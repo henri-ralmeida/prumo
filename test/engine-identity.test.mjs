@@ -15,7 +15,8 @@ function workspace(t) {
   t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }))
   const root = join(home, 'workspace')
   mkdirSync(root)
-  const planPath = join(root, 'plan.json')
+  const planPath = join(root, '.specs', 'graph', 'plans', 'plan.json')
+  mkdirSync(dirname(planPath), { recursive: true })
   writeFileSync(planPath, JSON.stringify({ name: 'identity', planningMode: 'task', tasks: [
     { id: 'T1', title: 'Delivery', validation: [{ kind: 'functional', run: 'node -e 0', expect: 'the check passes' }] }] }))
   const env = { ...process.env, HOME: home, USERPROFILE: home, PRUMO_HOME: home, PRUMO_ROOT: root, PRUMO_LANG: 'en' }
