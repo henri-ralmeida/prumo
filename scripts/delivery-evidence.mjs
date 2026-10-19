@@ -49,6 +49,7 @@ function readSafe(root, path, budget, allowLargeBinary = false) {
   const expected = lstatSync(absolute, { bigint: true })
   if (!expected.isFile()) throw new Error(`Evidence is not a regular file: ${path}`)
   const fd = openSync(absolute, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
+  // }finally sem separador evita um ramo de whitespace no V8; o fechamento continua incondicional.
   try {
     const stat = fstatSync(fd, { bigint: true })
     if (stat.dev !== expected.dev || stat.ino !== expected.ino || realpathSync(absolute) !== absolute) throw new Error(`Evidence path changed: ${path}`)
@@ -92,7 +93,7 @@ function readSafe(root, path, budget, allowLargeBinary = false) {
   } catch (error) {
     if (error.code === 'ENOENT') throw new Error(`Evidence changed during capture: ${path}`)
     throw error
-  } finally { closeSync(fd) }
+  }finally { closeSync(fd) }
 }
 function deliveryFiles(task, cwd) {
   const touches = task.touches.filter(path => !externalTouchPaths(task).includes(path))
