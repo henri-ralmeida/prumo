@@ -2799,7 +2799,7 @@ const commands = {
       const digest = t.taskPlan?.digest ?? t.attempts.at(-1)?.planDigest
       const plan = digest ? `  ${tr('Plan {0}', digest.slice(0, 4))}` : ''
       const auth = t.executionAuthorization ? `  [${tr('authorized')} ${t.executionAuthorization.mode}]` :
-        `  [${tr(scoped ? 'authorization required' : 'no authorization scope recorded')}]`
+        ['done', 'skipped'].includes(t.state) ? '' : `  [${tr(scoped ? 'authorization required' : 'no authorization scope recorded')}]`
       const review = t.attempts.at(-1)?.reviewProgress
       let reviewLabel = ''
       if (t.state === 'reviewing') {
