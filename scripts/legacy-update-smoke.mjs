@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync, cpSync, symlinkSync, realpathSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, cpSync, symlinkSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -8,6 +8,7 @@ import { spawnSync, spawn, fork } from 'node:child_process'
 import { createServer } from 'node:net'
 import { dashboardPortClosed } from '../test/fixtures/dashboard-port-closed.mjs'
 import { initializeLegacyPlanFixture } from '../test/fixtures/legacy-plan-init.mjs'
+import { removeLegacySmokeHome } from '../test/fixtures/legacy-smoke-cleanup.mjs'
 
 // Exercite um atualizador publicado contra um registro local que fornece o pacote candidato.
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -492,13 +493,11 @@ try {
   if (previousDashboardClosed) await previousDashboardClosed
   if (registry && registry.exitCode === null && registry.signalCode === null) { const closed = new Promise(resolve => registry.once('exit', resolve)); registry.kill(); await closed }
   put(join(repo, `.test-output/legacy-update-${fromVersion}.json`), evidence)
-  assert.equal(dirname(home), realpathSync(tmpdir()))
-  assert.ok(basename(home).startsWith('prumo-legacy-smoke-'))
   // A limpeza nao substitui o erro da atualizacao; ambos permanecem disponiveis no diagnostico.
   if (dashboardCleanupError && scenarioError) console.error(`Falha adicional ao encerrar dashboard isolado: ${dashboardCleanupError.stack}`)
   if (dashboardCleanupError && !scenarioError) throw dashboardCleanupError
   try {
-    rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+    await removeLegacySmokeHome(home)
   } catch (error) {
     if (!scenarioError) throw error
     console.error(`Diretório temporário preservado após falha na limpeza: ${home} (${error.code})`)
