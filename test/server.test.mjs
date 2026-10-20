@@ -258,6 +258,77 @@ test('histórico vazio, parcial e muitos planos mantêm paginação consistente'
   assert.deepEqual(returned.events, complete.events)
 })
 
+test('histórico renumerado usa o log ativo e reinicia a paginação ao trocar sua fonte', async t => {
+  const home = dashboardHome(t, 'prumo-history-renumber-')
+  const root = join(home, 'project'), graph = join(root, '.specs', 'graph'), run = join(graph, 'renumber')
+  const firstPath = 'task-id-backups/11111111-1111-4111-8111-111111111111/events.ndjson'
+  const secondPath = 'task-id-backups/22222222-2222-4222-8222-222222222222/events.ndjson'
+  const historical = [{ type: 'task_done', task: 'T16', attempt: 3 }]
+  const first = [{ type: 'task_done', task: 'T14', originalTask: 'T16', attempt: 3 },
+    { type: 'task_note', task: 'T15', originalTask: 'T17', text: 'Contrato preservado' }]
+  const second = [{ type: 'task_done', task: 'T16', originalTask: 'T16', attempt: 3 },
+    { type: 'task_note', task: 'T17', originalTask: 'T17', text: 'Contrato preservado' }]
+  const serialize = events => events.map(event => JSON.stringify(event)).join('\n') + '\n'
+  mkdirSync(dirname(join(run, firstPath)), { recursive: true })
+  mkdirSync(dirname(join(run, secondPath)), { recursive: true })
+  writeFileSync(join(run, 'events.ndjson'), serialize(historical))
+  writeFileSync(join(run, firstPath), serialize(first))
+  writeFileSync(join(run, secondPath), serialize(second))
+  const state = { plan: { name: 'Renumeração preserva o histórico' }, tasks: {}, eventLog: firstPath }
+  writeFileSync(join(run, 'state.json'), JSON.stringify(state))
+  writeFileSync(join(graph, 'CURRENT'), 'renumber')
+  const request = await startDashboard(t, join(packageRoot, 'scripts/serve.mjs'), [], {
+    ...process.env, PRUMO_ROOT: root, PRUMO_HOME: join(home, 'central'),
+  })
+  const latest = await request('/api/events')
+  assert.equal(latest.status, 200)
+  assert.deepEqual(await latest.json(), { events: first })
+  const pageResponse = await request('/api/events?after=0&limit=1')
+  assert.equal(pageResponse.status, 200)
+  const page = await pageResponse.json()
+  assert.deepEqual(page.events, first.slice(0, 1))
+  assert.equal(page.next, 1)
+  assert.equal(page.total, 2)
+  assert.equal(page.complete, false)
+  const continuation = await (await request(`/api/events?after=1&limit=1&revision=${page.revision}`)).json()
+  assert.deepEqual(continuation.events, first.slice(1))
+  assert.equal(continuation.reset, false)
+  assert.equal(continuation.complete, true)
+  state.eventLog = secondPath
+  writeFileSync(join(run, 'state.json'), JSON.stringify(state))
+  const replaced = await (await request(`/api/events?after=1&limit=1&revision=${page.revision}`)).json()
+  assert.deepEqual(replaced.events, second.slice(0, 1))
+  assert.notEqual(replaced.revision, page.revision)
+  assert.equal(replaced.reset, true)
+  assert.equal(replaced.next, 1)
+  assert.deepEqual(await (await request('/api/events')).json(), { events: second })
+  assert.equal(readFileSync(join(run, 'events.ndjson'), 'utf8'), serialize(historical))
+})
+
+test('histórico legado continua disponível quando a execução ainda não tem state.json', async t => {
+  const home = dashboardHome(t, 'prumo-history-no-state-')
+  const root = join(home, 'project'), graph = join(root, '.specs', 'graph'), run = join(graph, 'legacy')
+  mkdirSync(run, { recursive: true })
+  const events = [{ type: 'task_note', task: 'T1', text: 'Histórico anterior ao estado' }]
+  writeFileSync(join(run, 'events.ndjson'), JSON.stringify(events[0]) + '\n')
+  writeFileSync(join(graph, 'CURRENT'), 'legacy')
+  const request = await startDashboard(t, join(packageRoot, 'scripts/serve.mjs'), [], {
+    ...process.env, PRUMO_ROOT: root, PRUMO_HOME: join(home, 'central'),
+  })
+  for (const endpoint of ['/api/events', '/api/events?after=0']) {
+    const response = await request(endpoint)
+    assert.equal(response.status, 200)
+    assert.deepEqual((await response.json()).events, events)
+  }
+  rmSync(join(run, 'events.ndjson'))
+  const response = await request('/api/events?after=1')
+  assert.equal(response.status, 200)
+  const empty = await response.json()
+  assert.deepEqual(empty.events, [])
+  assert.equal(empty.complete, false)
+  assert.equal(empty.reset, true)
+})
+
 test('guia carrega apenas quadros locais e preserva dados existentes', async t => {
   const home = dashboardHome(t, 'prumo-guia-')
   const graph = join(home, 'project', '.specs', 'graph')

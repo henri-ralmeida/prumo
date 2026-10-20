@@ -67,7 +67,7 @@
  */
 import {
   mkdirSync, readFileSync, writeFileSync, appendFileSync, existsSync, readdirSync,
-  rmSync, statSync, copyFileSync, realpathSync, constants,
+  rmSync, statSync, lstatSync, copyFileSync, realpathSync, constants,
 } from 'node:fs'
 import { randomUUID, createHash } from 'node:crypto'
 import { homedir } from 'node:os'
@@ -96,6 +96,7 @@ import * as engineArgs from './engine-args.mjs'
 const { parseEngineArgs, engineCommandHelp } = engineArgs
 import { replanningRecovery } from './replanning-recovery.mjs'
 import { taskIdentifierProblem, phaseIdentifierProblem } from './task-identifiers.mjs'
+import { parseTaskMapping, renumberTasks, eventLogPath, renumberEventHistory } from './task-renumber.mjs'
 import { captureDelivery, checkDelivery, verifyNumericProvenance, assertEvidenceContract } from './delivery-evidence.mjs'
 import { assertRolePreferences, recordDispatchMetadata, dispatchOwners, reportedUsageTotals, pauseRun, resumeRun, shellCommand, taskBrief, agentRoles, repeatedPlanQuestions, recordedPlanIdentity } from './run-metadata.mjs'
 import { newCommandRecord, recordCommand } from './command-metrics.mjs'
@@ -129,7 +130,8 @@ const DEFAULT_MAX_PARALLEL = 4
 const DEFAULT_MAX_EXECUTORS = 3   // Metadado legado; maxAgents governa todos os papéis.
 const STATE_SCHEMA_VERSION = 1
 const LOCK_WAIT_MS = 5000         // quanto tempo um comando aguarda pelo bloqueio da execução
-const LOCK_STALE_MS = 30000       // um bloqueio mais antigo que isso pertencia a um processo que morreu
+const ACTIVITY_LOCK_WAIT_MS = 15000 // registros leves aguardam comandos concorrentes sem perder a medição
+const LOCK_STALE_MS = 30000       // compatibilidade com bloqueios antigos que não registravam o dono
 
 // ---------- analisador minúsculo de argumentos ----------
 let metricRunName
@@ -141,7 +143,7 @@ if (recognizedCommand) {
   const metric = newCommandRecord(cmd)
   process.on('exit', code => {
     try {
-      if (cmd === 'sync-plan' && args?.['dry-run'] || args?.help) return
+      if (['sync-plan', 'renumber-tasks'].includes(cmd) && args?.['dry-run'] || args?.help) return
       const runFlag = rest.lastIndexOf('--run')
       if (runFlag >= 0 && rest[runFlag + 1] === undefined) return
       const requestedRun = args?.run ?? process.env.PRUMO_RUN ?? (runFlag >= 0 ? rest[runFlag + 1] : undefined)
@@ -226,7 +228,7 @@ function saveState(name, state) {
   const previous = existsSync(join(runDir(name), 'state.json')) ? loadState(name) : { tasks: {} }
   const aliases = state.taskIdAliases ?? {}
   const redispatchTask = cmd === 'unblock' ? Object.hasOwn(aliases, args._[0]) ? aliases[args._[0]] : args._[0] : undefined
-  for (const record of recordDispatchMetadata(previous, state, args, redispatchTask)) log('[prumo] model dispatch (reported, not verified): ' + JSON.stringify(record))
+  for (const record of cmd === 'renumber-tasks' ? [] : recordDispatchMetadata(previous, state, args, redispatchTask)) log('[prumo] model dispatch (reported, not verified): ' + JSON.stringify(record))
   closeInactiveActivity(state, state.updatedAt)
   const dir = runDir(name)
   compactDiscoveries(state, dir)
@@ -235,7 +237,7 @@ function saveState(name, state) {
 
 function stopOpenActivity(owner, at) {
   const open = owner?.activityIntervals?.findLast(interval => !interval.endedAt)
-  if (open) open.endedAt = at
+  if (open) { open.endedAt = at; open.endedBy = cmd }
 }
 
 function closeInactiveActivity(state, at) {
@@ -253,7 +255,7 @@ function closeInactiveActivity(state, at) {
     if (task.state !== 'planning' || task.planningAttempts?.at(-1)?.endedAt) stopOpenActivity(task.planningAttempts?.at(-1), at)
     const attempt = task.attempts?.at(-1)
     const open = attempt?.activityIntervals?.findLast(interval => !interval.endedAt)
-    if (open && (task.state !== (open.role === 'execution' ? 'running' : 'reviewing') || attempt.endedAt)) open.endedAt = at
+    if (open && (task.state !== (open.role === 'execution' ? 'running' : 'reviewing') || attempt.endedAt)) stopOpenActivity(attempt, at)
   }
 }
 
@@ -390,7 +392,8 @@ function withLock(name, fn) {
   const dir = runDir(name)
   mkdirSync(dir, { recursive: true })   // init adquire o bloqueio antes de o diretório da execução existir
   const lock = join(dir, '.lock')
-  const deadline = Date.now() + LOCK_WAIT_MS
+  const waitMs = ['activity-start', 'activity-stop'].includes(cmd) ? ACTIVITY_LOCK_WAIT_MS : LOCK_WAIT_MS
+  const deadline = Date.now() + waitMs
   for (;;) {
     try {
       mkdirSync(lock)
@@ -398,24 +401,34 @@ function withLock(name, fn) {
       break
     } catch (e) {
       if (e.code !== 'EEXIST') throw e
-      /* Um processo encerrado no meio do comando deixa seu bloqueio para trás. A idade é a única evidência
-         disponível, então um bloqueio antigo é presumido abandonado e rompido — uma execução que nunca
-         mais pudesse gravar seria uma falha pior que a colisão que isto protege. */
       let age
       try { age = Date.now() - statSync(lock).mtimeMs } catch (error) {
         // Outro comando pode liberar o bloqueio entre a disputa e a leitura; tente adquiri-lo novamente.
         if (error.code === 'ENOENT') continue
         throw error
       }
-      if (age > LOCK_STALE_MS) {
+      let owner = null
+      try {
+        const value = JSON.parse(readFileSync(join(lock, 'owner.json'), 'utf8'))
+        if (Number.isInteger(value.pid) && value.pid > 0 && typeof value.command === 'string' && typeof value.acquiredAt === 'string') owner = value
+      } catch { /* Bloqueios legados ou metadados incompletos conservam a espera limitada por idade. */ }
+      let abandoned = !owner && age > LOCK_STALE_MS
+      if (owner) {
+        try { process.kill(owner.pid, 0) }
+        catch (error) { abandoned = error.code === 'ESRCH' }
+      }
+      // A idade não autoriza remover a trava de um processo vivo; um dono comprovadamente encerrado libera a execução.
+      if (abandoned) {
         rmSync(lock, { recursive: true, force: true })
         continue
       }
-      if (Date.now() > deadline) die(`run "${name}" is locked by another command (waited ${LOCK_WAIT_MS}ms) — retry`)
+      if (Date.now() > deadline) die(tr('run "{0}" is locked by another command (waited {1}ms) — retry', name, waitMs) + ' ' +
+        (owner ? tr('Lock owner: command {0}, PID {1}, acquired at {2}', owner.command, owner.pid, owner.acquiredAt) : tr('Lock owner metadata is unavailable')))
       sleepSync(25)
     }
   }
   try {
+    writeFileSync(join(lock, 'owner.json'), JSON.stringify({ pid: process.pid, command: cmd, acquiredAt: new Date().toISOString() }), { flag: 'wx' })
     return fn()
   } finally {
     rmSync(lock, { recursive: true, force: true })
@@ -425,7 +438,11 @@ function withLock(name, fn) {
 
 function emit(name, type, task, data = {}) {
   const line = JSON.stringify({ at: new Date().toISOString(), type, task, ...data })
-  appendFileSync(join(runDir(name), 'events.ndjson'), line + '\n')
+  appendFileSync(eventsPath(name), line + '\n')
+}
+
+function eventsPath(name) {
+  return eventLogPath(runDir(name), loadState(name))
 }
 
 function getTask(state, id) {
@@ -1735,7 +1752,7 @@ function printPlanSyncHistory(name, state) {
       log('[prumo] ' + tr('WARNING: plan source is outside .specs/graph/plans/: {0}', source))
   }
   let events
-  try { events = readFileSync(join(runDir(name), 'events.ndjson'), 'utf8') }
+  try { events = readFileSync(eventsPath(name), 'utf8') }
   catch { return }
   for (const line of events.split(/\r?\n/).filter(line => line.trim())) {
     let event
@@ -1762,7 +1779,7 @@ function printPlanSyncHistory(name, state) {
 
 function latestPlanSyncAuditAt(name) {
   try {
-    const lines = readFileSync(join(runDir(name), 'events.ndjson'), 'utf8').trim().split(/\r?\n/)
+    const lines = readFileSync(eventsPath(name), 'utf8').trim().split(/\r?\n/)
     for (let index = lines.length - 1; index >= 0; index--) {
       const event = JSON.parse(lines[index])
       if (event.type === 'plan_sync_audit' && typeof event.at === 'string') return event.at
@@ -1776,7 +1793,7 @@ function syncChangedFieldsSince(name, since) {
   const fields = new Map()
   if (typeof since !== 'string') return fields
   try {
-    for (const line of readFileSync(join(runDir(name), 'events.ndjson'), 'utf8').split(/\r?\n/)) {
+    for (const line of readFileSync(eventsPath(name), 'utf8').split(/\r?\n/)) {
       if (!line.trim()) continue
       const event = JSON.parse(line)
       if (event.type !== 'plan_sync' || typeof event.at !== 'string' || event.at < since) continue
@@ -2274,6 +2291,43 @@ const commands = {
 
   migrate() {
     return migrateState(runName(), { check: args.check === true })
+  },
+
+  'renumber-tasks'() {
+    const name = runName(), state = loadState(name)
+    if (migrationStatus(state).needed) die('Migre o estado legado com migrate antes de renumerar; a prévia não altera o estado')
+    if (!args['dry-run'] && args['confirmed-by-user'] !== true) die('renumber-tasks requires --confirmed-by-user')
+    const mapping = parseTaskMapping(args.map)
+    const { plan } = readPlan(state.plan.source, state)
+    const drift = contractDrift(state, { plan })
+    if (drift.planFields.length || drift.tasks.length) die('Sincronize o plano de origem antes de renumerar tarefas')
+    const migrated = renumberTasks(state, plan, mapping, { contextDigests: taskContextDigests })
+    log(JSON.stringify({ mapping, tasks: Object.keys(state.tasks).length,
+      changes: ['state.json', 'plano de origem versionado', 'referências, vínculos e histórico de IDs'],
+      external: 'Atualize os títulos das tarefas espelhadas nos serviços externos, quando aplicável.' }, null, 2))
+    if (args['dry-run']) return
+    // A fonte nova só fica ativa na troca atômica do estado; uma falha anterior conserva o plano antigo.
+    const backupRoot = join(runDir(name), 'task-id-backups'), plans = join(GRAPH_DIR, 'plans')
+    for (const directory of [backupRoot, plans]) {
+      if (lstatSync(directory, { throwIfNoEntry: false })?.isSymbolicLink()) die('A renumeração não aceita diretórios ligados')
+      mkdirSync(directory, { recursive: true })
+    }
+    const backup = join(backupRoot, randomUUID())
+    mkdirSync(backup, { recursive: true })
+    writeFileSync(join(backup, 'mapping.json'), JSON.stringify(mapping, null, 2))
+    copyFileSync(join(runDir(name), 'state.json'), join(backup, 'state.json'))
+    const events = readFileSync(eventsPath(name), 'utf8').split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line))
+    writeFileSync(join(backup, 'original-events.ndjson'), events.map(event => JSON.stringify(event)).join('\n') + '\n')
+    writeFileSync(join(backup, 'events.ndjson'), renumberEventHistory(events, mapping).map(event => JSON.stringify(event)).join('\n') + '\n')
+    copyFileSync(state.plan.source, join(backup, 'original-plan.json'))
+    const source = join(plans, `${safeRun(name)}-renumbered-${randomUUID()}.plan.json`)
+    writeAtomicState(source, JSON.stringify(migrated.plan, null, 2))
+    migrated.state.plan.source = source
+    migrated.state.eventLog = `task-id-backups/${basename(backup)}/events.ndjson`
+    migrated.state.taskIdMigrations ??= []
+    migrated.state.taskIdMigrations.push({ mapping, backup, at: new Date().toISOString(), confirmedByUser: true })
+    saveState(name, migrated.state)
+    emit(name, 'task_renumbered', null, { mapping, backup })
   },
 
   'sync-plan'() {
@@ -2820,7 +2874,7 @@ const commands = {
       }
       const action = actions.get(t.id) ?? ''
       const block = blockedTaskNotice(state, t)
-      console.log(`  ${t.id.padEnd(width)}  ${tr(t.effective).padEnd(8)}${agent}${attempts}${wait}${manual}${plan}${auth}${reviewLabel}${block ? `  [${block}]` : ''}${action ? `  → ${action}` : ''}`)
+      console.log(`  ${t.id.padEnd(width)}${t.previousTaskId ? ` (${t.previousTaskId} → ${t.id})` : ''}  ${tr(t.effective).padEnd(8)}${agent}${attempts}${wait}${manual}${plan}${auth}${reviewLabel}${block ? `  [${block}]` : ''}${action ? `  → ${action}` : ''}`)
     }
     for (const phase of state.plan.phases) {
       console.log(`\n${phase.id} — ${phase.title}`)
@@ -4139,7 +4193,7 @@ const commands = {
     const task = getTask(state, id)
     let proof
     try {
-      const events = readFileSync(join(runDir(name), 'events.ndjson'), 'utf8').split(/\r?\n/)
+      const events = readFileSync(eventsPath(name), 'utf8').split(/\r?\n/)
         .filter(line => line.trim()).map(line => JSON.parse(line))
       const discussion = currentDiscussion(state, task)
       proof = replanningRecovery(task, events, planningContext(state, task), Boolean(discussion))
@@ -4341,14 +4395,16 @@ const commands = {
     const target = scope === 'phase' ? getPhase(state, id) : getTask(state, id)
     const owner = phaseActivityWorker(state, id, scope, role, agent, true) ?? (role === 'discussion' ? target.discussionAttempts?.at(-1) : role === 'planning' ?
       target.planningAttempts?.at(-1) : target.attempts?.at(-1))
-    const closed = owner?.endedAt && owner.activityIntervals?.findLast(interval => interval.endedAt && interval.role === role && interval.agent === agent)
-    if (closed) {
-      log('[prumo] ' + tr('{0} {1} activity by {2} already ended at {3}', id, role, agent, closed.endedAt))
+    const closed = owner?.activityIntervals?.findLast(interval => interval.role === role && interval.agent === agent)
+    if (closed?.endedAt) {
+      log('[prumo] ' + (closed.endedBy ? tr('{0} {1} activity by {2} already ended at {3} by {4}', id, role, agent, closed.endedAt, closed.endedBy) :
+        tr('{0} {1} activity by {2} already ended at {3}', id, role, agent, closed.endedAt)))
       return
     }
     const open = owner?.activityIntervals?.findLast(interval => !interval.endedAt)
     if (!open || open.role !== role || open.agent !== agent) die(tr('{0} has no active {1} work by {2}', id, role, agent))
     open.endedAt = new Date().toISOString()
+    open.endedBy = cmd
     saveState(name, state)
     emit(name, 'activity_stop', id, { scope, role, agent })
     log('[prumo] ' + tr('{0} {1} activity stopped by {2}', id, role, agent))
@@ -4395,7 +4451,7 @@ function assertMigrationCommandAllowed(state, command) {
   die('migration is blocked by unsafe in-flight planning; only legacy attempt continuation, read-only commands, sync-plan and note are allowed')
 }
 if (cmd === 'set-agent-limit') agentLimitChange()
-if (!['init', 'runs', 'migrate', 'sync-plan'].includes(cmd)) {
+if (!['init', 'runs', 'migrate', 'sync-plan', 'renumber-tasks'].includes(cmd)) {
   const name = runName()
   const initialState = loadState(name)
   const aliases = initialState.taskIdAliases ?? {}
@@ -4429,5 +4485,5 @@ function runCommand() {
   return commands[cmd]()
 }
 if (cmd === 'migrate' && args.check !== true) withLock(runName(), runCommand)
-else if (READ_ONLY.has(cmd) || cmd === 'validate' || cmd === 'migrate' || cmd === 'sync-plan' && args['dry-run']) await runCommand()
+else if (READ_ONLY.has(cmd) || cmd === 'validate' || cmd === 'migrate' || cmd === 'sync-plan' && args['dry-run'] || cmd === 'renumber-tasks' && args['dry-run']) await runCommand()
 else withLock(runName(), runCommand)

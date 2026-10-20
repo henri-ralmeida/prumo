@@ -1545,6 +1545,117 @@ test('lock ocupado recusa escrita após o prazo sem perder dados', t => {
   assert.equal(existsSync(lock), true)
 })
 
+test('trava viva informa dono e não é removida por ser antiga', t => {
+  const f = fixture(t)
+  const initialized = f.init()
+  assert.equal(initialized.status, 0, f.output(initialized))
+  const lock = join(f.graph, 'hardening', '.lock')
+  mkdirSync(lock)
+  const acquiredAt = new Date(Date.now() - 60000).toISOString()
+  const owner = { pid: process.pid, command: 'review', acquiredAt }
+  writeFileSync(join(lock, 'owner.json'), JSON.stringify(owner))
+  const old = new Date(acquiredAt)
+  utimesSync(lock, old, old)
+  const before = f.snapshot(), result = f.cli('note', 'T1', '--text', 'Preservar exclusão de escrita')
+  assert.equal(result.status, 1, f.output(result))
+  assert.match(f.output(result), new RegExp(`command review, PID ${process.pid}, acquired at ${acquiredAt}`))
+  assert.deepEqual(f.snapshot(), before)
+  assert.deepEqual(JSON.parse(readFileSync(join(lock, 'owner.json'), 'utf8')), owner)
+})
+
+function lockClock(f, { releaseAt = null, killError = null } = {}) {
+  const preload = join(f.home, 'lock-clock.mjs')
+  const lock = join(f.graph, 'hardening', '.lock')
+  writeFileSync(preload, `import fs from 'node:fs'
+const now = Date.now, kill = process.kill
+let elapsed = 0
+Date.now = () => now() + elapsed
+Atomics.wait = () => {
+  elapsed += 1000
+  if (${JSON.stringify(releaseAt)} !== null && elapsed >= ${JSON.stringify(releaseAt)}) fs.rmSync(${JSON.stringify(lock)}, { recursive: true, force: true })
+  return 'timed-out'
+}
+if (${JSON.stringify(killError)} !== null) process.kill = () => { throw Object.assign(new Error('Consulta do processo recusada'), { code: ${JSON.stringify(killError)} }) }
+`)
+  f.env.NODE_OPTIONS = `${f.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(preload).href}`.trim()
+}
+
+test('dono encerrado libera uma trava recente sem esperar a idade legada', t => {
+  const f = fixture(t), initialized = f.init()
+  assert.equal(initialized.status, 0, f.output(initialized))
+  const exited = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8', windowsHide: true })
+  assert.equal(exited.status, 0, exited.stderr)
+  const lock = join(f.graph, 'hardening', '.lock')
+  mkdirSync(lock)
+  writeFileSync(join(lock, 'owner.json'), JSON.stringify({ pid: Number(exited.stdout), command: 'review', acquiredAt: new Date().toISOString() }))
+  const result = f.cli('note', 'T1', '--text', 'Retomar após encerramento do dono')
+  assert.equal(result.status, 0, f.output(result))
+  assert.equal(existsSync(lock), false)
+  assert.equal(f.state().tasks.T1.notes.at(-1).text, 'Retomar após encerramento do dono')
+})
+
+test('metadados incompletos e permissão negada preservam a trava e explicam a espera', t => {
+  for (const owner of [null, { pid: 0 }, { pid: process.pid, command: 7 }, { pid: process.pid, command: 'review' },
+    { pid: process.pid, command: 'review', acquiredAt: new Date().toISOString() }]) {
+    const f = fixture(t), initialized = f.init()
+    assert.equal(initialized.status, 0, f.output(initialized))
+    const lock = join(f.graph, 'hardening', '.lock')
+    mkdirSync(lock)
+    writeFileSync(join(lock, 'owner.json'), JSON.stringify(owner))
+    lockClock(f, { killError: 'EPERM' })
+    const before = f.snapshot(), result = f.cli('note', 'T1', '--text', 'Não remover trava sem prova')
+    assert.equal(result.status, 1, f.output(result))
+    assert.match(f.output(result), /Lock owner metadata is unavailable|Lock owner: command review, PID/)
+    assert.deepEqual(f.snapshot(), before)
+    assert.equal(existsSync(lock), true)
+  }
+})
+
+test('atividades aguardam um comando que termina depois do prazo comum e liberam a trava própria', t => {
+  for (const command of ['activity-start', 'activity-stop']) {
+    const f = fixture(t), initialized = f.init()
+    assert.equal(initialized.status, 0, f.output(initialized))
+    makeLegacy(f)
+    const authorization = f.cli('authorize', '--scope', 'run', '--confirmed-by-user')
+    assert.equal(authorization.status, 0, f.output(authorization))
+    const started = f.cli('start', 'T1', '--agent', 'executor')
+    assert.equal(started.status, 0, f.output(started))
+    if (command === 'activity-stop') {
+      const activity = f.cli('activity-start', 'T1', '--role', 'execution', '--agent', 'executor')
+      assert.equal(activity.status, 0, f.output(activity))
+    }
+    const lock = join(f.graph, 'hardening', '.lock')
+    mkdirSync(lock)
+    writeFileSync(join(lock, 'owner.json'), JSON.stringify({ pid: process.pid, command: 'review', acquiredAt: new Date().toISOString() }))
+    lockClock(f, { releaseAt: 6000 })
+    const result = f.cli(command, 'T1', '--role', 'execution', '--agent', 'executor')
+    assert.equal(result.status, 0, f.output(result))
+    assert.equal(existsSync(lock), false)
+  }
+})
+
+test('cada escrita registra PID, comando e início da própria posse da trava', t => {
+  const f = fixture(t), initialized = f.init()
+  assert.equal(initialized.status, 0, f.output(initialized))
+  const preload = join(f.home, 'lock-owner.mjs'), observed = join(f.home, 'observed-owner.json')
+  writeFileSync(preload, `import fs from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
+const write = fs.writeFileSync
+fs.writeFileSync = function(path, bytes, ...args) {
+  if (String(path).endsWith('owner.json')) write(${JSON.stringify(observed)}, bytes)
+  return write.call(this, path, bytes, ...args)
+}
+syncBuiltinESMExports()
+`)
+  f.env.NODE_OPTIONS = `${f.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(preload).href}`.trim()
+  const result = f.cli('note', 'T1', '--text', 'Dono identificável durante a escrita')
+  assert.equal(result.status, 0, f.output(result))
+  const owner = JSON.parse(readFileSync(observed, 'utf8'))
+  assert.ok(Number.isInteger(owner.pid) && owner.pid > 0)
+  assert.equal(owner.command, 'note')
+  assert.ok(Number.isFinite(Date.parse(owner.acquiredAt)))
+})
+
 test('consulta de execução sem estado informa a falha sem alterar a execução selecionada', t => {
   const f = fixture(t)
   assert.equal(f.init().status, 0)

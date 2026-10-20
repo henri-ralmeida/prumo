@@ -6213,6 +6213,26 @@ test('task labels, summaries and plan identities stay visible across concise and
   assert.ok(history.includes('Complete observation two.'), 'the detail view retains the full evidence')
 })
 
+test('tooltip preserva a identificação anterior da tarefa renumerada e escapa HTML', () => {
+  const ui = dashboard('pt-BR'), state = graphState(1, 1)
+  const before = structuredClone(state)
+  ui.render(state)
+  assert.doesNotMatch(ui.nodes.get('#nodes').innerHTML, / → T001/)
+  assert.deepEqual(state, before)
+
+  state.tasks.T001.previousTaskId = 'T016'
+  ui.render(state)
+  assert.match(ui.nodes.get('#nodes').innerHTML, /title="[^"]*T016 → T001/)
+
+  state.tasks.T001.previousTaskId = 'T016"><img src=x onerror="alert(1)">'
+  const renamed = structuredClone(state)
+  ui.render(state)
+  const markup = ui.nodes.get('#nodes').innerHTML
+  assert.match(markup, /T016&quot;&gt;&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt; → T001/)
+  assert.doesNotMatch(markup, /<img|onerror="alert\(1\)"/)
+  assert.deepEqual(state, renamed, 'a identificação histórica altera apenas a apresentação')
+})
+
 test('retomada do run avança duração e relógio após fechar checkpoint sem afirmar atividade nova', () => {
   const ui = dashboard('pt-BR'), state = graphState(1, 1), value = state.tasks.T001
   ui.run('Date.now = () => Date.parse(now)', { now: instant(360) })

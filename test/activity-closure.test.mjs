@@ -143,3 +143,45 @@ test('planejamento legado sem workers preserva intervalos medidos e ausencia de 
     assert.equal(f.events(), events)
   }
 })
+
+for (const lang of ['en', 'pt-BR']) test('revisão e execução encerradas aceitam STOP repetido sem alterar o histórico em ' + lang, t => {
+  const f = phaseFixture(t, [{ id: 'T1', phase: 'F1', title: 'Entrega' }], { lang })
+  f.ok('skip-phase-discussion', 'F1', '--reason', 'Escopo aceito', '--confirmed-by-user')
+  f.ok('skip-phase-planning', 'F1', '--reason', 'Contrato suficiente para execução', '--confirmed-by-user')
+  f.ok('start', 'T1', '--agent', 'executor')
+  f.ok('activity-start', 'T1', '--role', 'execution', '--agent', 'executor')
+  f.ok('review', 'T1', '--agent', 'reviewer')
+  let before = f.state(), events = f.events()
+  const execution = before.tasks.T1.attempts.at(-1).activityIntervals.at(-1)
+  assert.ok(execution.endedAt)
+  const stopped = f.ok('activity-stop', 'T1', '--role', 'execution', '--agent', 'executor')
+  assert.match(stopped.stdout, lang === 'en' ? /already ended at .* by review/ : /já encerrada em .* por review/)
+  assert.ok(stopped.stdout.includes(execution.endedAt))
+  assert.deepEqual(f.state(), before)
+  assert.equal(f.events(), events)
+  f.rejects(/activity|atividade|work|trabalho/, 'activity-stop', 'T1', '--role', 'review', '--agent', 'reviewer')
+  for (const verdict of ['failed', 'ok']) {
+    f.ok('activity-start', 'T1', '--role', 'review', '--agent', 'reviewer')
+    f.ok('validate', 'T1', `--${verdict}`, '--evidence', 'Comportamento conferido por revisão independente', '--cwd', f.project)
+    before = f.state(); events = f.events()
+    const review = before.tasks.T1.attempts.at(-1).activityIntervals.at(-1)
+    assert.ok(review.endedAt)
+    for (let repeat = 0; repeat < 2; repeat++) {
+      const result = f.ok('activity-stop', 'T1', '--role', 'review', '--agent', 'reviewer')
+      assert.match(result.stdout, lang === 'en' ? /already ended at .* by validate/ : /já encerrada em .* por validate/)
+      assert.ok(result.stdout.includes(review.endedAt))
+    }
+    f.rejects(/activity|atividade|work|trabalho/, 'activity-stop', 'T1', '--role', 'review', '--agent', 'intruso')
+    f.rejects(/activity|atividade|work|trabalho/, 'activity-stop', 'T1', '--role', 'planning', '--agent', 'reviewer')
+    assert.deepEqual(f.state(), before)
+    assert.equal(f.events(), events)
+  }
+  const legacy = f.state()
+  delete legacy.tasks.T1.attempts.at(-1).activityIntervals.at(-1).endedBy
+  f.save(legacy)
+  const legacyStop = f.ok('activity-stop', 'T1', '--role', 'review', '--agent', 'reviewer')
+  assert.match(legacyStop.stdout, lang === 'en' ? /already ended at/ : /já encerrada em/)
+  assert.doesNotMatch(legacyStop.stdout, /validate/)
+  assert.deepEqual(f.state(), legacy)
+  assert.equal(f.events(), events)
+})

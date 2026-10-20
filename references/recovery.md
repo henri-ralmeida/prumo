@@ -242,6 +242,34 @@ Validation-only changes can still use `refresh-contract` and fresh review in the
   the new planning requirement. Installation never resets a run.
 - `sync-plan` preserves `done` and `skipped` contracts as history. Their old prose does not block synchronization or retry of other tasks. Do not relabel completed functional work as inspection. New and nonterminal tasks still need valid contracts; graph structure is checked for every task.
 
+### Renumerar tarefas preservando a entrega aprovada
+
+Use `renumber-tasks` quando a mudança for apenas de identificação: o conteúdo das tarefas,
+as fases, as dependências e os aceites existentes devem continuar representando as mesmas entregas.
+O mapa aceita trocas e ciclos, mas recusa identificadores repetidos, colisões e números reservados
+por tarefas removidas, para não misturar históricos.
+
+```sh
+node $ENGINE renumber-tasks --map T14=T16,T15=T17,T16=T14,T17=T15 --dry-run --run <run-name>
+node $ENGINE renumber-tasks --map T14=T16,T15=T17,T16=T14,T17=T15 --confirmed-by-user --run <run-name>
+```
+
+Confira a prévia com `--dry-run` antes de aplicar o mapa autorizado pelo usuário com
+`--confirmed-by-user`. A prévia não altera tarefas, planos, eventos nem backups. O plano de origem
+precisa estar sincronizado. A renumeração é recusada enquanto houver execução, revisão,
+discussão, planejamento ou tentativa aberta. Pausar a execução com `pause-run` não encerra esse
+trabalho; aguarde seu encerramento antes de renumerar.
+
+Ao aplicar, o comando preserva cópias do estado, plano e eventos anteriores em
+`task-id-backups/<identificador>/`. Prepara um novo plano versionado e um novo log de eventos;
+ambos passam a ser usados na troca atômica do estado. Os arquivos originais permanecem preservados.
+Somente referências e vínculos correspondentes à renumeração são atualizados: tentativas,
+resultados, aprovações e decisões de planejamento continuam associados à mesma entrega.
+O painel mantém a identificação anterior na dica da tarefa para facilitar a conferência.
+
+Confira `status` após a mudança. Atualize manualmente os títulos dos itens espelhados em serviços
+externos, quando necessário: a renumeração local não altera esses serviços.
+
 ### Appending a phase to the plan
 
 After approval of the new scope, `sync-plan` accepts phases appended at the end with the next `F` IDs

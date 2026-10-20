@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { hydrateDiscoveries } from './discovery-history.mjs'
+import { eventLogPath } from './task-renumber.mjs'
 /**
  * Prumo — servidor de observabilidade. Ele renderiza state.json sem gravá-lo. Opcionalmente,
  * --sync-plan delega a reconciliação do plano aprovado a engine.mjs, o único gravador de estado.
@@ -585,7 +586,9 @@ const server = createServer((req, res) => {
       }
       return json(res, 404, { error: 'no run' })
     }
-    const p = join(selected.graphDir, run, 'events.ndjson')
+    const directory = join(selected.graphDir, run)
+    const statePath = join(directory, 'state.json')
+    const p = eventLogPath(directory, existsSync(statePath) ? JSON.parse(readFileSync(statePath, 'utf8')) : {})
     if (!existsSync(p)) {
       forgetEventHistory(p)
       return json(res, 200, hasCursor
