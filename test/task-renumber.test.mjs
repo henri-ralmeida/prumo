@@ -199,6 +199,19 @@ test('prévia em estado legado não executa migração implícita e recusa forma
   }
 })
 
+test('renumeração preserva a recusa de um plano cujo contrato já estava obsoleto', t => {
+  const f = fixture(t); f.planPhase()
+  const state = f.state()
+  state.tasks.T4.taskPlan.scope = 'contrato-anterior'
+  f.save(state)
+  assert.equal(hasCurrentTaskPlan(f.state(), f.state().tasks.T4), false)
+  f.ok('renumber-tasks', '--map', mapping, '--confirmed-by-user')
+  const after = f.state()
+  assert.equal(after.tasks.T2.taskPlan.scope, 'contrato-anterior')
+  assert.equal(hasCurrentTaskPlan(after, after.tasks.T2), false)
+  assert.equal(hasCurrentTaskScope(after, after.tasks.T2, 1), false)
+})
+
 for (const directory of ['task-id-backups', 'plans']) test(`renumeração recusa diretório ligado em ${directory} sem escrever no destino`, t => {
   const f = fixture(t), target = join(f.root, 'destino-do-link')
   mkdirSync(target)

@@ -96,7 +96,10 @@ export function renumberTasks(original, originalPlan, mapping, { contextDigests 
     if (before.digest && before.steps && before.digest === taskPlanDigest(before)) bind(before.digest, () => taskPlanDigest(after))
     if (before.digest && before.coverage && before.digest === discoveryDigest(before)) bind(before.digest, () => discoveryDigest(after))
     // Arquivos de descoberta são recompactados pelo gravador após a migração.
-    if (before.discoveryArtifact) delete after.discoveryArtifact
+    if (before.discoveryArtifact) {
+      assert.ok(before.discovery || before.discoveries, 'A descoberta arquivada está indisponível; restaure a evidência antes de renumerar')
+      delete after.discoveryArtifact
+    }
   }
   for (const id of ids) {
     const before = original.tasks[id], after = state.tasks[remap(id)]

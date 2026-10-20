@@ -103,6 +103,10 @@ test('migração recusa colisões, planos divergentes e qualquer trabalho em abe
   assert.ok(renumberTasks(state, plan, { T1: 'T4' }).state.tasks.T4)
   state.removedTasks = { T4: { id: 'T4' } }
   assert.throws(() => renumberTasks(state, plan, { T1: 'T4' }), /removido/)
+  state.phaseWorkflows = { F1: { discussionAttempts: [{ endedAt: '1', discoveryArtifact: 'discoveries/ausente.json' }] } }
+  assert.throws(() => renumberTasks(state, plan, { T1: 'T5' }), /arquivada.*indisponível/)
+  state.phaseWorkflows.F1.discussionAttempts[0].discoveries = []
+  assert.ok(renumberTasks(state, plan, { T1: 'T5' }).state.tasks.T5)
 })
 
 test('histórico remapeia referências e diferenças contratuais sem reescrever texto e origem', () => {
