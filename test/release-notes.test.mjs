@@ -5,6 +5,21 @@ import { releaseHistory, releaseNotes } from '../lib/release-notes.mjs'
 
 const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 
+test('atualização para 2.11.3 explica renumeração, encerramento e travas com tradução completa', () => {
+  const messages = JSON.parse(readFileSync(new URL('../scripts/messages.json', import.meta.url), 'utf8'))
+  const history = releaseHistory(['2.11.2'], '2.11.3')
+  assert.deepEqual(history.map(release => release.version), ['2.11.3'])
+  const items = history[0].sections.flatMap(section => section.items)
+  for (const section of history[0].sections) {
+    assert.ok(messages[section.title]?.trim())
+    for (const item of section.items) assert.ok(messages[item]?.trim())
+  }
+  for (const rule of ['--dry-run', '--confirmed-by-user', 'atomic activation', 'stale contracts', 'activity-stop', 'live processes', '15 seconds', 'outside the source checkout'])
+    assert.ok(items.some(item => item.includes(rule)), rule)
+  assert.deepEqual(releaseHistory(['2.11.3'], '2.11.3'), [])
+  assert.deepEqual(releaseHistory(['2.11.3'], '2.11.2'), [])
+})
+
 test('atualizacao para 2.11.2 explica a verificacao de identificadores e a limpeza isolada nos dois idiomas', () => {
   const messages = JSON.parse(readFileSync(new URL('../scripts/messages.json', import.meta.url), 'utf8'))
   const history = releaseHistory(['2.11.1'], '2.11.2')

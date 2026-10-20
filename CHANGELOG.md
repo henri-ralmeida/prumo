@@ -2,6 +2,13 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.11.3 — 2026-10-20
+
+- Renumere tarefas com `renumber-tasks --map`, incluindo trocas e ciclos, usando prévia sem gravações e confirmação explícita. Preserve tentativas, resultados, decisões, autorizações e vínculos atuais; recuse trabalho aberto, identificadores removidos e evidência arquivada indisponível. Prepare backups, plano e eventos versionados antes da troca atômica do estado, sem tornar válido um contrato já obsoleto.
+- Reconheça atividades já encerradas em `activity-stop`, informando horário e comando de encerramento sem duplicar registros nem aceitar agentes incorretos.
+- Identifique comando, PID e horário do dono de uma trava, preserve travas de processos vivos e recupere as de processos comprovadamente encerrados. Registros de atividade aguardam até 15 segundos.
+- Inclua o módulo de renumeração nas skills instaladas, para que o motor e o dashboard continuem funcionando fora do checkout em todos os harnesses suportados.
+
 ## 2.11.2 — 2026-10-19
 
 - Reconheça formatos numéricos nas chamadas de formatação C# aceitas e em strings interpoladas sem confundi-los com identificadores de fase. Preserve a recusa de identificadores reais, nomes de arquivos e padrões explícitos.

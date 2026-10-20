@@ -1,4 +1,32 @@
 {
+  "2.11.3": {
+    "en": [
+      {
+        "title": "Added — Safe task renumbering",
+        "items": [
+          "Renumber task IDs with renumber-tasks --map, --dry-run and --confirmed-by-user, preserving attempts, approvals and current contracts with backups and atomic activation of versioned plans and events; reject open work, removed IDs and unavailable archived evidence without validating stale contracts"
+        ]
+      },
+      {
+        "title": "Fixed — Activity closure",
+        "items": [
+          "Report when activity-stop work was already closed, including its time and closing command, without duplicating records or accepting the wrong agent"
+        ]
+      },
+      {
+        "title": "Fixed — Run locking",
+        "items": [
+          "Identify the lock owner by command, PID and time, retain locks held by live processes and recover locks from confirmed dead processes; activity commands wait up to 15 seconds"
+        ]
+      },
+      {
+        "title": "Fixed — Installed runtime",
+        "items": [
+          "Include the task renumbering module in installed skills so the engine and dashboard work outside the source checkout across all supported harnesses"
+        ]
+      }
+    ]
+  },
   "2.11.2": {
     "en": [
       {

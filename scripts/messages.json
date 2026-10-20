@@ -1,4 +1,12 @@
 {
+  "Added — Safe task renumbering": "Adicionado — Renumeração segura de tarefas",
+  "Renumber task IDs with renumber-tasks --map, --dry-run and --confirmed-by-user, preserving attempts, approvals and current contracts with backups and atomic activation of versioned plans and events; reject open work, removed IDs and unavailable archived evidence without validating stale contracts": "Renumere tarefas com renumber-tasks --map, --dry-run e --confirmed-by-user, preservando tentativas, aprovações e contratos atuais com backups e ativação atômica de planos e eventos versionados; recuse trabalho aberto, IDs removidos e evidência arquivada indisponível sem validar contratos obsoletos",
+  "Fixed — Activity closure": "Corrigido — Encerramento de atividades",
+  "Report when activity-stop work was already closed, including its time and closing command, without duplicating records or accepting the wrong agent": "Informe quando a atividade de activity-stop já foi encerrada, incluindo horário e comando de encerramento, sem duplicar registros nem aceitar o agente incorreto",
+  "Fixed — Run locking": "Corrigido — Travas da execução",
+  "Identify the lock owner by command, PID and time, retain locks held by live processes and recover locks from confirmed dead processes; activity commands wait up to 15 seconds": "Identifique o dono da trava por comando, PID e horário, preserve travas de processos vivos e recupere travas de processos comprovadamente encerrados; comandos de atividade aguardam até 15 segundos",
+  "Fixed — Installed runtime": "Corrigido — Motor instalado",
+  "Include the task renumbering module in installed skills so the engine and dashboard work outside the source checkout across all supported harnesses": "Inclua o módulo de renumeração nas skills instaladas para que o motor e o dashboard funcionem fora do checkout em todos os harnesses suportados",
   "Fixed — Delivery identifier checks": "Corrigido — Verificação de identificadores na entrega",
   "Recognize numeric format specifiers in supported C# formatting calls and interpolated strings without treating them as phase identifiers; keep real identifiers, file names and explicit patterns protected": "Reconheça especificadores de formato numérico nas chamadas de formatação C# aceitas e em strings interpoladas sem tratá-los como identificadores de fase; mantenha protegidos os identificadores reais, nomes de arquivos e padrões explícitos",
   "Fixed — Update verification": "Corrigido — Verificação de atualizações",
