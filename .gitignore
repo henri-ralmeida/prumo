@@ -8,6 +8,20 @@ node_modules/
 .npm-cache/
 /.ai-memory.toml
 /.serena/
+# Instruções locais de assistentes não fazem parte do código distribuído.
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+.github/copilot-instructions.md
+.github/instructions/
+/.claude/
+/.codex/
+/.agents/
+/.cursor/
+/.gemini/
+.cursorrules
+.clinerules
+.windsurfrules
 
 # Áreas locais de agentes e orquestração: worktrees, configuração de prévia e arquivos temporários ficam por máquina.
 .claude/worktrees/
