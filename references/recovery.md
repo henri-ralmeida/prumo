@@ -256,9 +256,21 @@ node $ENGINE renumber-tasks --map T14=T16,T15=T17,T16=T14,T17=T15 --confirmed-by
 
 Confira a prévia com `--dry-run` antes de aplicar o mapa autorizado pelo usuário com
 `--confirmed-by-user`. A prévia não altera tarefas, planos, eventos nem backups. O plano de origem
-precisa estar sincronizado. A renumeração é recusada enquanto houver execução, revisão,
-discussão, planejamento ou tentativa aberta. Pausar a execução com `pause-run` não encerra esse
-trabalho; aguarde seu encerramento antes de renumerar.
+precisa estar sincronizado para as tarefas ainda não encerradas. Diferenças de contrato em tarefas
+`done` ou `skipped` permanecem históricas e não impedem a renumeração; não apague campos da fonte
+para contorná-las. Tarefas ausentes e diferenças atuais continuam bloqueando, com os identificadores
+e campos que precisam ser conferidos por `sync-plan --dry-run`.
+
+A prévia mostra o mapa e os bloqueios encontrados, com saída diferente de zero quando a aplicação
+não é permitida. Execução, revisão, discussão, planejamento ou a última tentativa aberta de uma
+tarefa não encerrada continuam bloqueando. Tentativas anteriores e tentativas legadas de tarefas
+`done` ou `skipped` não representam trabalho ativo. Pausar com `pause-run` não encerra trabalho;
+aguarde seu encerramento antes de renumerar.
+
+Use `migrate --check` para identificar tentativas legadas sem encerramento. O `migrate` explícito
+preserva backup e registra auditoria ao fechá-las usando o próximo início ou evento de encerramento
+comprovado. Sem evidência, mantém o registro sem inventar datas. Consultas e a renumeração não
+executam esse reparo implicitamente.
 
 Ao aplicar, o comando preserva cópias do estado, plano e eventos anteriores em
 `task-id-backups/<identificador>/`. Prepara um novo plano versionado e um novo log de eventos;

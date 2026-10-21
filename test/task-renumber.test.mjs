@@ -64,6 +64,194 @@ function fixture(t) {
   return { root, project, runDir, planPath, ok, rejects, state, save, snapshot, planPhase, cliWithEnv }
 }
 
+test('legado concluído e divergências históricas permitem prévia e aplicação sem reabrir contratos', t => {
+  const f = fixture(t), state = f.state()
+  state.tasks.T3.state = 'done'
+  state.tasks.T3.attempts = [
+    { n: 1, agent: 'executor-legado', startedAt: '2026-01-01T10:00:00Z' },
+    { n: 2, agent: 'executor-final', startedAt: '2026-01-01T11:00:00Z', endedAt: '2026-01-01T12:00:00Z', result: 'done' },
+  ]
+  state.tasks.T4.state = 'skipped'
+  state.tasks.T4.attempts = [{ n: 1, startedAt: '2026-01-01T09:00:00Z' }]
+  f.save(state)
+  const plan = JSON.parse(readFileSync(f.planPath, 'utf8'))
+  for (const task of plan.tasks.filter(task => ['T3', 'T4'].includes(task.id))) {
+    task.validationMode = 'inspection'
+    task.inspectionReason = 'Contrato histórico preservado após normalização do plano'
+  }
+  writeFileSync(f.planPath, JSON.stringify(plan))
+  const before = f.snapshot(), source = readFileSync(f.planPath, 'utf8')
+  const preview = f.ok('renumber-tasks', '--map', mapping, '--dry-run')
+  assert.deepEqual(JSON.parse(preview.stdout).blockers, [])
+  assert.deepEqual(f.snapshot(), before)
+  assert.equal(readFileSync(f.planPath, 'utf8'), source)
+  assert.equal(readdirSync(f.runDir).includes('task-id-backups'), false)
+  f.ok('renumber-tasks', '--map', mapping, '--confirmed-by-user')
+  const after = f.state()
+  assert.equal(after.tasks.T1.state, 'done')
+  assert.deepEqual(after.tasks.T1.attempts, state.tasks.T3.attempts)
+  assert.deepEqual(after.tasks.T2.attempts, state.tasks.T4.attempts)
+  assert.equal(after.tasks.T1.validationMode, state.tasks.T3.validationMode)
+  assert.equal(after.tasks.T2.inspectionReason, state.tasks.T4.inspectionReason)
+  assert.equal(after.phaseWorkflows.F1.state, state.phaseWorkflows.F1.state)
+  assert.equal(after.phaseWorkflows.F2.state, state.phaseWorkflows.F2.state)
+  const afterPlan = JSON.parse(readFileSync(after.plan.source, 'utf8'))
+  assert.equal(afterPlan.tasks.find(task => task.id === 'T1').validationMode, 'inspection')
+  assert.deepEqual(contractDrift(after, { plan: afterPlan, preserveCompleted: true }).tasks, [])
+  const beforeStatus = f.snapshot()
+  const status = f.ok('status')
+  assert.doesNotMatch(status.stdout, /migration required|run sync-plan/)
+  assert.deepEqual(f.snapshot(), beforeStatus)
+})
+
+for (const lang of ['en', 'pt-BR']) test(`prévia lista trabalho realmente aberto com diagnóstico em ${lang}, sem gravação ou stack trace`, t => {
+  const f = fixture(t), state = f.state()
+  state.tasks.T1.state = 'failed'
+  state.tasks.T1.attempts = [{ n: 3, startedAt: '2026-01-01T10:00:00Z' }]
+  f.save(state)
+  const before = f.snapshot(), plan = readFileSync(f.planPath, 'utf8')
+  const result = f.cliWithEnv({ PRUMO_LANG: lang }, 'renumber-tasks', '--map', mapping, '--dry-run')
+  assert.notEqual(result.status, 0)
+  const preview = JSON.parse(result.stdout)
+  assert.equal(preview.mapping.T1, 'T3')
+  assert.equal(preview.blockers.length, 1)
+  assert.match(preview.blockers[0], /T1.*3/)
+  assert.match(result.stderr, lang === 'en' ? /\[prumo\] ERROR:.*T1 attempt 3/ : /\[prumo\] ERRO:.*T1 tentativa 3/)
+  assert.doesNotMatch(result.stdout + result.stderr, /AssertionError|triggerUncaughtException|at renumberTasks/)
+  assert.deepEqual(f.snapshot(), before)
+  assert.equal(readFileSync(f.planPath, 'utf8'), plan)
+  assert.equal(readdirSync(f.runDir).includes('task-id-backups'), false)
+})
+
+test('evidência JSON inválida é recusada sem stack trace nem troca do estado ativo', t => {
+  const f = fixture(t), originalState = readFileSync(join(f.runDir, 'state.json'), 'utf8')
+  const originalPlan = readFileSync(f.planPath, 'utf8'), eventsPath = join(f.runDir, 'events.ndjson')
+  const originalEvents = readFileSync(eventsPath, 'utf8')
+  for (const file of [f.planPath, join(f.runDir, 'state.json'), eventsPath]) {
+    writeFileSync(file, '{JSON inválido')
+    const before = readFileSync(join(f.runDir, 'state.json'), 'utf8')
+    const result = f.rejects(/\[prumo\] ERROR: Invalid JSON/, 'renumber-tasks', '--map', mapping, '--confirmed-by-user')
+    assert.doesNotMatch(result.stderr, /SyntaxError|triggerUncaughtException|at JSON.parse/)
+    assert.equal(readFileSync(join(f.runDir, 'state.json'), 'utf8'), before)
+    writeFileSync(join(f.runDir, 'state.json'), originalState)
+    writeFileSync(f.planPath, originalPlan)
+    writeFileSync(eventsPath, originalEvents)
+  }
+})
+
+test('divergência atual lista tarefa e campo que o sync-plan pode sincronizar', t => {
+  const f = fixture(t), plan = JSON.parse(readFileSync(f.planPath, 'utf8'))
+  plan.tasks[0].title = 'Contrato pendente aprovado na fonte'
+  writeFileSync(f.planPath, JSON.stringify(plan))
+  const before = f.snapshot()
+  const preview = f.rejects(/T1: title.*sync-plan --dry-run/, 'renumber-tasks', '--map', mapping, '--dry-run')
+  assert.match(JSON.parse(preview.stdout).blockers.join(';'), /T1: title/)
+  assert.doesNotMatch(preview.stderr, /AssertionError|at renumberTasks/)
+  const sync = f.ok('sync-plan', '--plan', f.planPath, '--dry-run')
+  assert.match(sync.stdout, /T1/)
+  assert.match(sync.stdout, /updated 1|atualizadas 1/)
+  assert.deepEqual(f.snapshot(), before)
+})
+
+test('migrate detecta legado terminal, preserva backup anterior e registra somente encerramento comprovado', t => {
+  const f = fixture(t), state = f.state()
+  state.tasks.T3.state = 'done'
+  state.tasks.T3.attempts = [
+    { n: 1, agent: 'executor-legado', startedAt: '2026-01-01T10:00:00Z' },
+    { n: 2, startedAt: '2026-01-01T11:00:00Z', endedAt: '2026-01-01T12:00:00Z', result: 'done' },
+  ]
+  f.save(state)
+  const previousBackup = join(f.runDir, 'state.pre-migrate-v1.json')
+  writeFileSync(previousBackup, 'Backup anterior precisa permanecer intacto')
+  const before = f.snapshot()
+  const check = f.ok('migrate', '--check')
+  assert.match(check.stdout, /legacy terminal attempts: 1/)
+  assert.deepEqual(f.snapshot(), before)
+  assert.equal(readdirSync(f.runDir).some(path => path.includes('-legacy-')), false)
+  f.ok('migrate')
+  const after = f.state(), attempt = after.tasks.T3.attempts[0]
+  assert.equal(attempt.endedAt, state.tasks.T3.attempts[1].startedAt)
+  assert.equal(attempt.result, 'legacy-superseded')
+  assert.deepEqual(attempt.legacyClosure, { type: 'next-attempt', attempt: 2, context: { version: 1, resultAdded: true, appliedEndedAt: state.tasks.T3.attempts[1].startedAt } })
+  assert.equal(after.tasks.T3.state, 'done')
+  assert.deepEqual(after.phaseWorkflows, state.phaseWorkflows)
+  assert.equal(readFileSync(previousBackup, 'utf8'), 'Backup anterior precisa permanecer intacto')
+  const backup = readdirSync(f.runDir).find(path => path.includes('-legacy-'))
+  assert.equal(readFileSync(join(f.runDir, backup), 'utf8'), before[0])
+  const events = f.snapshot()[1].trim().split('\n').map(line => JSON.parse(line))
+  assert.equal(events.at(-1).type, 'legacy_attempts_repaired')
+  assert.equal(events.at(-1).repairs[0].owner, 'T3')
+  assert.ok(f.snapshot()[1].startsWith(before[1]))
+  const migrated = f.snapshot(), files = readdirSync(f.runDir).sort()
+  f.ok('migrate')
+  assert.deepEqual(f.snapshot(), migrated)
+  assert.deepEqual(readdirSync(f.runDir).sort(), files)
+})
+
+test('migração sem evidência preserva o legado e continua permitindo renumerar tarefa terminal', t => {
+  const f = fixture(t), state = f.state()
+  state.tasks.T3.state = 'done'
+  state.tasks.T3.attempts = [{ n: 1, startedAt: '2026-01-01T10:00:00Z' }]
+  f.save(state)
+  const before = f.snapshot(), files = readdirSync(f.runDir).sort()
+  assert.match(f.ok('migrate', '--check').stdout, /0 can be closed.*1 lack evidence/)
+  assert.match(f.ok('migrate').stdout, /lack closing evidence: T3 #1/)
+  assert.deepEqual(f.snapshot(), before)
+  assert.deepEqual(readdirSync(f.runDir).sort(), files)
+  f.ok('renumber-tasks', '--map', mapping, '--dry-run')
+  assert.deepEqual(f.snapshot(), before)
+})
+
+test('prévia identifica decisão global divergente e recusa fonte indisponível sem stack trace', t => {
+  const f = fixture(t), plan = JSON.parse(readFileSync(f.planPath, 'utf8'))
+  plan.name = 'Decisão global aprovada diferente'
+  writeFileSync(f.planPath, JSON.stringify(plan))
+  const before = f.snapshot()
+  const drift = f.rejects(/plan: name.*sync-plan --dry-run/, 'renumber-tasks', '--map', mapping, '--dry-run')
+  assert.match(JSON.parse(drift.stdout).blockers.join(';'), /plan: name/)
+  assert.deepEqual(f.snapshot(), before)
+  rmSync(f.planPath)
+  const missing = f.rejects(/Cannot access renumbering evidence/, 'renumber-tasks', '--map', mapping, '--dry-run')
+  assert.doesNotMatch(missing.stderr, /at readPlan|triggerUncaughtException/)
+  assert.deepEqual(f.snapshot(), before)
+})
+
+test('migração sem log antigo usa somente o início posterior e cria seu evento de auditoria', t => {
+  const f = fixture(t), state = f.state()
+  state.tasks.T3.state = 'done'
+  state.tasks.T3.attempts = [{ n: 1, startedAt: '2026-01-01T10:00:00Z' },
+    { n: 2, startedAt: '2026-01-01T11:00:00Z', endedAt: '2026-01-01T12:00:00Z' }]
+  f.save(state)
+  rmSync(join(f.runDir, 'events.ndjson'))
+  assert.match(f.ok('migrate', '--check').stdout, /legacy terminal attempts: 1/)
+  assert.equal(readdirSync(f.runDir).includes('events.ndjson'), false)
+  f.ok('migrate')
+  assert.equal(f.state().tasks.T3.attempts[0].endedAt, state.tasks.T3.attempts[1].startedAt)
+  const events = f.snapshot()[1].trim().split('\n').map(line => JSON.parse(line))
+  assert.equal(events.length, 1)
+  assert.equal(events[0].type, 'legacy_attempts_repaired')
+})
+
+test('migração de esquema com reparo histórico também preserva backup anterior e recibo original', t => {
+  const f = fixture(t), state = f.state()
+  state.schemaVersion = 0
+  state.tasks.T3.state = 'done'
+  state.tasks.T3.attempts = [{ n: 1, startedAt: '2026-01-01T10:00:00Z' },
+    { n: 2, startedAt: '2026-01-01T11:00:00Z', endedAt: '2026-01-01T12:00:00Z' }]
+  f.save(state)
+  writeFileSync(join(f.runDir, 'state.pre-migrate-v1.json'), 'Backup da migração anterior')
+  const before = f.snapshot()
+  f.ok('migrate')
+  const backup = readdirSync(f.runDir).find(path => path.includes('-legacy-'))
+  assert.equal(readFileSync(join(f.runDir, backup), 'utf8'), before[0])
+  assert.equal(readFileSync(join(f.runDir, 'state.pre-migrate-v1.json'), 'utf8'), 'Backup da migração anterior')
+  assert.equal(f.state().schemaVersion, 1)
+  assert.equal(f.state().tasks.T3.attempts[0].endedAt, state.tasks.T3.attempts[1].startedAt)
+  const event = JSON.parse(f.snapshot()[1].trim().split('\n').at(-1))
+  assert.equal(event.type, 'schema_migrate')
+  assert.equal(event.legacyAttemptRepairs[0].owner, 'T3')
+})
+
 test('renumerar tarefas troca ciclos preservando três tentativas, revisão independente e plano dependente executável', t => {
   const f = fixture(t)
   f.planPhase()
@@ -156,7 +344,7 @@ test('renumeração recusa estados e rodadas abertos sem alterar estado ou event
     value => { value.tasks.T3.state = 'reviewing' },
     value => { value.tasks.T3.state = 'planning' },
     value => { value.tasks.T3.state = 'discussing' },
-    value => { value.tasks.T3.attempts = [{ startedAt: '2026-01-01' }] },
+    value => { value.tasks.T3.state = 'failed'; value.tasks.T3.attempts = [{ startedAt: '2026-01-01' }] },
     value => { value.tasks.T3.discussionAttempts = [{ startedAt: '2026-01-01' }] },
     value => { value.tasks.T3.planningAttempts = [{ startedAt: '2026-01-01' }] },
     value => { value.phaseWorkflows.F1.discussionAttempts = [{ startedAt: '2026-01-01' }] },
@@ -165,7 +353,7 @@ test('renumeração recusa estados e rodadas abertos sem alterar estado ou event
   for (const change of cases) {
     const value = structuredClone(initial); change(value); f.save(value)
     const before = f.snapshot()
-    f.rejects(/ativo|aberta/, 'renumber-tasks', '--map', mapping, '--confirmed-by-user')
+    f.rejects(/active work|open .*round|attempt .*no ending/, 'renumber-tasks', '--map', mapping, '--confirmed-by-user')
     assert.deepEqual(f.snapshot(), before)
   }
 })
@@ -176,7 +364,7 @@ test('renumeração recusa divergência do plano e identificador removido sem al
   changed.tasks[0].title = 'Contrato ainda não sincronizado'
   writeFileSync(f.planPath, JSON.stringify(changed))
   let before = f.snapshot()
-  f.rejects(/Sincronize o plano/, 'renumber-tasks', '--map', mapping, '--confirmed-by-user')
+  f.rejects(/Synchronize the source plan.*T1: title/, 'renumber-tasks', '--map', mapping, '--confirmed-by-user')
   assert.deepEqual(f.snapshot(), before)
   assert.equal(readFileSync(f.planPath, 'utf8'), JSON.stringify(changed))
   writeFileSync(f.planPath, originalPlan)
@@ -184,7 +372,7 @@ test('renumeração recusa divergência do plano e identificador removido sem al
   state.removedTasks = { T5: { id: 'T5', title: 'Entrega removida', removedAt: '2026-01-01' } }
   f.save(state)
   before = f.snapshot()
-  f.rejects(/removido.*T5/, 'renumber-tasks', '--map', 'T1=T5', '--confirmed-by-user')
+  f.rejects(/removed identifier.*T5/, 'renumber-tasks', '--map', 'T1=T5', '--confirmed-by-user')
   assert.deepEqual(f.snapshot(), before)
   assert.equal(readFileSync(f.planPath, 'utf8'), originalPlan)
 })

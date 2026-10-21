@@ -46,6 +46,8 @@ test('fonte inválida informa indisponibilidade sem modificar o arquivo aprovado
     assert.deepEqual(contractDrift(state), { available: false, reason: 'unreadable', planFields: [], tasks: [] })
     assert.equal(readFileSync(source, 'utf8'), input)
   }
+  rmSync(source)
+  assert.deepEqual(contractDrift(state), { available: false, reason: 'missing', planFields: [], tasks: [] })
   assert.equal(contractDrift({ plan: { source: 1 } }).reason, 'missing')
   assert.equal(contractDrift({ plan: { source: '' } }).reason, 'missing')
 })

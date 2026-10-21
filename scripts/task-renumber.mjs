@@ -1,4 +1,3 @@
-import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { lstatSync } from 'node:fs'
 import { discoveryDigest, taskPlanDigest, phasePlanningContext, planningContext, executionInputReceipt, hasCurrentTaskPlan, hasCurrentTaskScope } from './validation.mjs'
@@ -8,13 +7,47 @@ const dictionaries = new Set(['tasks', 'workers', 'requiredInputs', 'assignments
 const questionKeys = new Set(['questionRef', 'questionRefs', 'resolvesQuestion', 'ref'])
 const bindingKey = key => /digest|context|scope/i.test(key)
 
+export class RenumberError extends Error {
+  constructor(message, ...params) {
+    super(message)
+    this.name = 'RenumberError'
+    this.code = 'PRUMO_RENUMBER'
+    this.params = params
+  }
+}
+
+function requireRenumber(condition, message, ...params) {
+  if (!condition) throw new RenumberError(message, ...params)
+}
+
+// Tentativas antigas continuam históricas; só a tentativa atual de trabalho não terminal pode estar aberta.
+export function renumberBlockers(state) {
+  const blockers = []
+  for (const [ownerType, owners] of [['task', state.tasks], ['phase', state.phaseWorkflows]]) {
+    for (const [id, owner] of Object.entries(owners ?? {})) {
+      const detail = { owner: owner.id ?? id, ownerType, state: owner.state }
+      if (['running', 'reviewing', 'planning', 'discussing'].includes(owner.state))
+        blockers.push({ ...detail, kind: 'active-state' })
+      for (const kind of ['discussion', 'planning']) {
+        for (const [index, round] of (owner[`${kind}Attempts`] ?? []).entries()) {
+          if (!round.endedAt) blockers.push({ ...detail, kind, round: round.n ?? index + 1 })
+        }
+      }
+      const attempts = owner.attempts ?? [], attempt = attempts.at(-1)
+      if (!['done', 'skipped'].includes(owner.state) && attempt && !attempt.endedAt)
+        blockers.push({ ...detail, kind: 'attempt', attempt: attempt.n ?? attempts.length })
+    }
+  }
+  return blockers
+}
+
 export function eventLogPath(directory, state) {
   if (!state.eventLog) return join(directory, 'events.ndjson')
-  assert.match(state.eventLog, /^task-id-backups\/[a-f0-9-]{36}\/events\.ndjson$/)
+  requireRenumber(/^task-id-backups\/[a-f0-9-]{36}\/events\.ndjson$/.test(state.eventLog), 'The event history path is invalid')
   let path = directory
   for (const part of state.eventLog.split('/')) {
     path = join(path, part)
-    assert.ok(!lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink(), 'O histórico não aceita caminhos ligados')
+    requireRenumber(!lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink(), 'The event history does not accept linked paths')
   }
   return join(directory, state.eventLog)
 }
@@ -43,15 +76,15 @@ export function renumberEventHistory(events, mapping) {
 }
 
 export function parseTaskMapping(value) {
-  assert.equal(typeof value, 'string', 'Informe --map T1=T2,T2=T1')
+  requireRenumber(typeof value === 'string', 'Provide --map T1=T2,T2=T1')
   const mapping = {}
   for (const item of value.split(',')) {
     const match = /^(T[1-9]\d*[a-z]?)=(T[1-9]\d*[a-z]?)$/.exec(item.trim())
-    assert.ok(match, 'O mapa deve conter pares T1=T2 separados por vírgulas')
-    assert.ok(!Object.hasOwn(mapping, match[1]), `Origem repetida: ${match[1]}`)
+    requireRenumber(match, 'The mapping must contain comma-separated T1=T2 pairs')
+    requireRenumber(!Object.hasOwn(mapping, match[1]), 'Repeated source identifier: {0}', match[1])
     mapping[match[1]] = match[2]
   }
-  assert.ok(Object.entries(mapping).some(([from, to]) => from !== to), 'O mapa não altera identificadores')
+  requireRenumber(Object.entries(mapping).some(([from, to]) => from !== to), 'The mapping does not change identifiers')
   return mapping
 }
 
@@ -60,16 +93,18 @@ export function renumberTasks(original, originalPlan, mapping, { contextDigests 
   const remap = id => Object.hasOwn(mapping, id) ? mapping[id] : id
   const ids = Object.keys(original.tasks)
   for (const [from, to] of Object.entries(mapping)) {
-    assert.ok(ids.includes(from), `Tarefa ausente: ${from}`)
-    assert.match(to, /^T[1-9]\d*[a-z]?$/)
-    assert.ok(!Object.hasOwn(original.removedTasks ?? {}, to), `Identificador removido não pode ser reutilizado: ${to}`)
+    requireRenumber(ids.includes(from), 'Missing task: {0}', from)
+    requireRenumber(/^T[1-9]\d*[a-z]?$/.test(to), 'Invalid target identifier: {0}', to)
+    requireRenumber(!Object.hasOwn(original.removedTasks ?? {}, to), 'A removed identifier cannot be reused: {0}', to)
   }
-  assert.equal(new Set(ids.map(remap)).size, ids.length, 'A renumeração não pode unir tarefas')
-  assert.deepEqual(new Set(originalPlan.tasks.map(task => task.id)), new Set(ids), 'O plano de origem deve conter as mesmas tarefas')
-  for (const owner of [...Object.values(original.tasks), ...Object.values(original.phaseWorkflows ?? {})]) {
-    assert.ok(!['running', 'reviewing', 'planning', 'discussing'].includes(owner.state), 'Encerre o trabalho ativo antes de renumerar')
-    assert.ok(![...(owner.discussionAttempts ?? []), ...(owner.planningAttempts ?? [])].some(round => !round.endedAt), 'Existe uma rodada aberta')
-    assert.ok(!(owner.attempts ?? []).some(attempt => !attempt.endedAt), 'Existe uma tentativa aberta')
+  requireRenumber(new Set(ids.map(remap)).size === ids.length, 'Renumbering cannot merge tasks')
+  const planIds = new Set(originalPlan.tasks.map(task => task.id))
+  requireRenumber(planIds.size === ids.length && ids.every(id => planIds.has(id)), 'The source plan must contain the same tasks')
+  const blockers = renumberBlockers(original)
+  if (blockers.length) {
+    const error = new RenumberError('Renumbering is blocked by open work')
+    error.blockers = blockers
+    throw error
   }
   const pairs = []
   const text = (value, key) => referenceText(value, key, mapping)
@@ -91,13 +126,20 @@ export function renumberTasks(original, originalPlan, mapping, { contextDigests 
     .filter(([from]) => !Object.hasOwn(state.tasks, from)).map(([from, to]) => [from, remap(to)]))
   for (const [from, to] of Object.entries(mapping)) if (!Object.hasOwn(state.tasks, from)) state.taskIdAliases[from] = to
   const bindings = []
+  let contextCache = new Map()
+  // Todos os vínculos do passe leem o mesmo estado; não recalcule o histórico transitivo para cada campo.
+  const currentContexts = phasePlanning => {
+    if (!contextCache.has(phasePlanning)) contextCache.set(phasePlanning,
+      new Map(contextDigests(state, Object.values(state.tasks), { phasePlanning }).map(item => [item.task, item])))
+    return contextCache.get(phasePlanning)
+  }
   const bind = (before, compute) => { if (typeof before === 'string') bindings.push([before, compute]) }
   for (const [before, after] of pairs) {
     if (before.digest && before.steps && before.digest === taskPlanDigest(before)) bind(before.digest, () => taskPlanDigest(after))
     if (before.digest && before.coverage && before.digest === discoveryDigest(before)) bind(before.digest, () => discoveryDigest(after))
     // Arquivos de descoberta são recompactados pelo gravador após a migração.
     if (before.discoveryArtifact) {
-      assert.ok(before.discovery || before.discoveries, 'A descoberta arquivada está indisponível; restaure a evidência antes de renumerar')
+      requireRenumber(before.discovery || before.discoveries, 'The archived discovery is unavailable; restore the evidence before renumbering')
       delete after.discoveryArtifact
     }
   }
@@ -112,23 +154,24 @@ export function renumberTasks(original, originalPlan, mapping, { contextDigests 
       for (const input of oldReceipt.inputs) if (input.validation)
         bind(input.validation, () => executionInputReceipt(state, after).inputs.find(value => value.task === remap(input.task)).validation)
     } catch { /* Uma entrada ainda indisponível não pode ganhar um recibo durante a migração. */ }
-    for (const phasePlanning of [false, true]) {
-      const oldValues = contextDigests(original, [before], { phasePlanning })
-      for (const item of oldValues) for (const key of ['contextDigest', 'inputDigest', 'outputDigest'])
-        bind(item[key], () => contextDigests(state, [after], { phasePlanning }).find(value => value.task === remap(item.task))[key])
-    }
+  }
+  for (const phasePlanning of [false, true]) {
+    const oldValues = contextDigests(original, Object.values(original.tasks), { phasePlanning })
+    for (const item of oldValues) for (const key of ['contextDigest', 'inputDigest', 'outputDigest'])
+      bind(item[key], () => currentContexts(phasePlanning).get(remap(item.task))[key])
   }
   let digests = new Map()
   // Recalcule os vínculos transitivos até estabilizar, sem tornar atual uma prova antes inválida.
   for (let pass = 0; ; pass++) {
+    contextCache = new Map()
     const next = new Map()
     for (const [before, compute] of bindings) {
       const value = compute()
-      assert.ok(!next.has(before) || next.get(before) === value, 'Vínculo ambíguo; renumeração recusada')
+      requireRenumber(!next.has(before) || next.get(before) === value, 'Ambiguous binding; renumbering refused')
       next.set(before, value)
     }
     if (JSON.stringify([...next]) === JSON.stringify([...digests])) break
-    assert.ok(pass < ids.length * 4 + 20, 'Os vínculos da renumeração não estabilizaram')
+    requireRenumber(pass < ids.length * 4 + 20, 'Renumbering bindings did not stabilize')
     digests = next
     for (const [before, after] of pairs) for (const [key, value] of Object.entries(before)) {
       if (typeof value !== 'string' || !bindingKey(key) || key === 'discoveryArtifact') continue
@@ -142,8 +185,8 @@ export function renumberTasks(original, originalPlan, mapping, { contextDigests 
   }
   for (const id of ids) {
     const before = original.tasks[id], after = state.tasks[remap(id)]
-    assert.equal(hasCurrentTaskPlan(state, after), hasCurrentTaskPlan(original, before), `A prontidão do plano de ${id} mudou`)
-    assert.equal(hasCurrentTaskScope(state, after), hasCurrentTaskScope(original, before), `O aceite do contrato de ${id} mudou`)
+    requireRenumber(hasCurrentTaskPlan(state, after) === hasCurrentTaskPlan(original, before), 'The readiness of the task plan changed: {0}', id)
+    requireRenumber(hasCurrentTaskScope(state, after) === hasCurrentTaskScope(original, before), 'The accepted task scope changed: {0}', id)
     if (remap(id) !== id) after.previousTaskId = id
   }
   return { state, plan }

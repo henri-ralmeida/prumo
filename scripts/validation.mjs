@@ -1,4 +1,5 @@
 import { log, tr } from './i18n.mjs'
+import { attemptsForContext } from './legacy-attempts.mjs'
 import { spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { delimiter, isAbsolute, join, resolve } from 'node:path'
@@ -350,7 +351,7 @@ export function planningContext(state, task, {
     scopeOnly ? [scope, task.scopeRevision ?? 0] : contract(task), attempt,
     [...dependencies].sort().map(id => {
       const dep = state.tasks[id]
-      return dep ? [id, contract(dep), dep.state, dep.attempts, dep.validations, dep.skipReason] : [id, null]
+      return dep ? [id, contract(dep), dep.state, attemptsForContext(dep.attempts), dep.validations, dep.skipReason] : [id, null]
     }),
   ])).digest('hex')
 }

@@ -4,6 +4,16 @@ import { planTaskFromState } from './validation.mjs'
 export const TASK_CONTRACT_FIELDS = ['phase', 'title', 'deps', 'validation', 'validationMode', 'inspectionReason', 'requireReview', 'maxAttempts', 'tags', 'touches', 'project', 'unavailable', 'writeScope', 'sharedResources', 'textRules', 'deliveries', 'numericProvenance']
 export const GLOBAL_PLAN_FIELDS = ['name', 'description', 'requireReview', 'scopePolicy']
 
+// Contratos encerrados permanecem históricos; ausência de tarefa no plano continua sendo divergência.
+export function preservesCompletedContract(task) {
+  return ['done', 'skipped'].includes(task?.state)
+}
+
+export function preservedContractDrift(state, change) {
+  return preservesCompletedContract(state.tasks?.[change.task]) &&
+    !change.fields.some(field => ['notSynchronized', 'missingFromApprovedPlan'].includes(field))
+}
+
 function globalPlanValues(plan = {}) {
   return {
     name: plan.name,
@@ -51,7 +61,7 @@ function sourcePlan(state, suppliedPlan) {
 }
 
 /** Compara o contrato persistido da execução com a fonte aprovada sem bloquear quem consulta. */
-export function contractDrift(state, { plan: suppliedPlan } = {}) {
+export function contractDrift(state, { plan: suppliedPlan, preserveCompleted = false } = {}) {
   const source = sourcePlan(state, suppliedPlan)
   if (!source.plan) return { available: false, reason: source.error, planFields: [], tasks: [] }
 
@@ -74,7 +84,8 @@ export function contractDrift(state, { plan: suppliedPlan } = {}) {
     const planned = sourceTask(task)
     const fields = TASK_CONTRACT_FIELDS.filter(field =>
       JSON.stringify(persisted[field]) !== JSON.stringify(planned[field]))
-    if (fields.length) tasks.push({ task: task.id, fields })
+    if (fields.length && !(preserveCompleted && preservesCompletedContract(current)))
+      tasks.push({ task: task.id, fields })
   }
   for (const id of persistedIds) {
     if (!approvedIds.has(id)) tasks.push({ task: id, fields: ['missingFromApprovedPlan'] })

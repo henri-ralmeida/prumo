@@ -91,12 +91,13 @@ import {
   auditSyncPlan, contractChanges, displayIdentifier, formatContractChange,
   sanitizeChanges, sanitizeDiagnostics, sanitizeTaskIds,
 } from './sync-plan-audit.mjs'
-import { businessContract, contractDrift, GLOBAL_PLAN_FIELDS, TASK_CONTRACT_FIELDS } from './contract-drift.mjs'
+import { businessContract, contractDrift, preservedContractDrift, preservesCompletedContract, GLOBAL_PLAN_FIELDS, TASK_CONTRACT_FIELDS } from './contract-drift.mjs'
 import * as engineArgs from './engine-args.mjs'
 const { parseEngineArgs, engineCommandHelp } = engineArgs
 import { replanningRecovery } from './replanning-recovery.mjs'
 import { taskIdentifierProblem, phaseIdentifierProblem } from './task-identifiers.mjs'
-import { parseTaskMapping, renumberTasks, eventLogPath, renumberEventHistory } from './task-renumber.mjs'
+import { parseTaskMapping, renumberTasks, renumberBlockers, RenumberError, eventLogPath, renumberEventHistory } from './task-renumber.mjs'
+import { terminalAttemptRepairs, repairTerminalAttempts, attemptsForContext } from './legacy-attempts.mjs'
 import { captureDelivery, checkDelivery, verifyNumericProvenance, assertEvidenceContract } from './delivery-evidence.mjs'
 import { assertRolePreferences, recordDispatchMetadata, dispatchOwners, reportedUsageTotals, pauseRun, resumeRun, shellCommand, taskBrief, agentRoles, repeatedPlanQuestions, recordedPlanIdentity } from './run-metadata.mjs'
 import { newCommandRecord, recordCommand } from './command-metrics.mjs'
@@ -143,7 +144,7 @@ if (recognizedCommand) {
   const metric = newCommandRecord(cmd)
   process.on('exit', code => {
     try {
-      if (['sync-plan', 'renumber-tasks'].includes(cmd) && args?.['dry-run'] || args?.help) return
+      if (['sync-plan', 'renumber-tasks'].includes(cmd) && args?.['dry-run'] || cmd === 'migrate' && args?.check || args?.help) return
       const runFlag = rest.lastIndexOf('--run')
       if (runFlag >= 0 && rest[runFlag + 1] === undefined) return
       const requestedRun = args?.run ?? process.env.PRUMO_RUN ?? (runFlag >= 0 ? rest[runFlag + 1] : undefined)
@@ -290,23 +291,43 @@ function migrationStatus(state) {
       if (phase.planningAttempts?.some(round => !round.endedAt)) blockers.push(`${phase.id}: open phase planning`)
     }
   }
-  return { needed: state.schemaVersion !== STATE_SCHEMA_VERSION || structural || state.plan.maxAgents === undefined, structural, mode, blockers }
+  const schemaNeeded = state.schemaVersion !== STATE_SCHEMA_VERSION || structural || state.plan.maxAgents === undefined
+  const legacy = terminalAttemptRepairs(state)
+  return { needed: schemaNeeded || legacy.repairs.length > 0 || legacy.unresolved.length > 0, schemaNeeded, structural, mode, blockers }
 }
 
 function migrateState(name, { check = false, quiet = false } = {}) {
   const state = loadState(name)
   const status = migrationStatus(state)
+  const path = eventsPath(name)
+  const events = existsSync(path) ? readFileSync(path, 'utf8').split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line)) : []
+  const legacy = terminalAttemptRepairs(state, events)
   if (check) {
-    log(status.needed ? `[prumo] run "${name}" needs schema migration to v${STATE_SCHEMA_VERSION}` :
+    log(status.schemaNeeded ? `[prumo] run "${name}" needs schema migration to v${STATE_SCHEMA_VERSION}` :
       `[prumo] run "${name}" already uses schema v${STATE_SCHEMA_VERSION}`)
     if (status.blockers.length) log(`[prumo] migration blocked by ${status.blockers.join('; ')}`)
-    return status
+    if (legacy.repairs.length || legacy.unresolved.length)
+      log(tr('legacy terminal attempts: {0} can be closed from recorded evidence; {1} lack evidence; run migrate to apply supported repairs', legacy.repairs.length, legacy.unresolved.length))
+    return { ...status, legacy }
   }
   if (!status.needed) return status
   if (status.blockers.length) die(`run "${name}" needs migration, blocked by ${status.blockers.join('; ')}`)
+  if (!status.schemaNeeded && !legacy.repairs.length) {
+    log(tr('legacy attempts lack closing evidence: {0}; records preserved without inventing dates', legacy.unresolved.map(item => `${item.owner} #${item.attempt}`).join(', ')))
+    return { ...status, legacy, migrated: false }
+  }
   const dir = runDir(name)
-  const backup = join(dir, `state.pre-migrate-v${STATE_SCHEMA_VERSION}.json`)
+  const schemaBackup = join(dir, `state.pre-migrate-v${STATE_SCHEMA_VERSION}.json`)
+  const backup = legacy.repairs.length > 0 && existsSync(schemaBackup)
+    ? join(dir, `state.pre-migrate-v${STATE_SCHEMA_VERSION}-legacy-${randomUUID()}.json`) : schemaBackup
   if (!existsSync(backup)) copyFileSync(join(dir, 'state.json'), backup)
+  repairTerminalAttempts(state, events)
+  if (!status.schemaNeeded) {
+    saveState(name, state)
+    emit(name, 'legacy_attempts_repaired', null, { repairs: legacy.repairs, unresolved: legacy.unresolved, backup })
+    log(tr('closed {0} legacy terminal attempts from recorded evidence; backup: {1}', legacy.repairs.length, backup))
+    return { ...status, legacy, migrated: true, backup }
+  }
   const adoptingLegacy = !['phase', 'task'].includes(state.plan.planningMode)
   state.schemaVersion = STATE_SCHEMA_VERSION
   state.plan.planningMode = status.mode
@@ -362,7 +383,7 @@ function migrateState(name, { check = false, quiet = false } = {}) {
     }
   }
   saveState(name, state)
-  emit(name, 'schema_migrate', null, { schemaVersion: STATE_SCHEMA_VERSION, planningMode: status.mode })
+  emit(name, 'schema_migrate', null, { schemaVersion: STATE_SCHEMA_VERSION, planningMode: status.mode, legacyAttemptRepairs: legacy.repairs })
   if (!quiet) log(`[prumo] run "${name}" migrated to schema v${STATE_SCHEMA_VERSION}; backup: ${backup}`)
   return { ...status, migrated: true, backup }
 }
@@ -772,7 +793,7 @@ function printContractDriftWarnings(state) {
   const preserved = []
   for (const item of drift.tasks) {
     const task = displayIdentifier(item.task)
-    if (['done', 'skipped'].includes(state.tasks[item.task]?.state) && !item.fields.includes('missingFromApprovedPlan')) {
+    if (preservedContractDrift(state, item)) {
       preserved.push(task)
       continue
     }
@@ -1701,7 +1722,7 @@ function taskContextDigests(state, targets, { phasePlanning = false } = {}) {
       const value = state.tasks[dependency]
       return phasePlanning
         ? [dependency, value ? phasePlanningContext(state, value) : null]
-        : [dependency, value ? [phasePlanningContext(state, value), value.state, value.attempts, value.validations, value.skipReason] : null]
+        : [dependency, value ? [phasePlanningContext(state, value), value.state, attemptsForContext(value.attempts), value.validations, value.skipReason] : null]
     })
     const output = [task.id, task.phase ?? null, task.title, task.deps, task.validation ?? '',
       task.validationMode, task.inspectionReason, task.requireReview, task.maxAttempts, task.tags ?? [],
@@ -2294,17 +2315,31 @@ const commands = {
   },
 
   'renumber-tasks'() {
+    try {
     const name = runName(), state = loadState(name)
-    if (migrationStatus(state).needed) die('Migre o estado legado com migrate antes de renumerar; a prévia não altera o estado')
+    if (migrationStatus(state).schemaNeeded) die('Migre o estado legado com migrate antes de renumerar; a prévia não altera o estado')
     if (!args['dry-run'] && args['confirmed-by-user'] !== true) die('renumber-tasks requires --confirmed-by-user')
     const mapping = parseTaskMapping(args.map)
     const { plan } = readPlan(state.plan.source, state)
-    const drift = contractDrift(state, { plan })
-    if (drift.planFields.length || drift.tasks.length) die('Sincronize o plano de origem antes de renumerar tarefas')
-    const migrated = renumberTasks(state, plan, mapping, { contextDigests: taskContextDigests })
+    const drift = contractDrift(state, { plan, preserveCompleted: true })
+    const blockers = renumberBlockers(state).map(blocker => {
+      if (blocker.kind === 'active-state') return tr('{0} is {1}; finish the active work before renumbering', blocker.owner, tr(blocker.state))
+      if (blocker.kind === 'attempt') return tr('{0} attempt {1} has no ending; finish the current attempt before renumbering', blocker.owner, blocker.attempt)
+      return tr('{0} has an open {1} round {2}; finish the round before renumbering', blocker.owner, tr(blocker.kind), blocker.round)
+    })
+    if (drift.planFields.length || drift.tasks.length) {
+      const differences = [
+        ...(drift.planFields.length ? ['plan: ' + drift.planFields.join(', ')] : []),
+        ...drift.tasks.map(item => `${item.task}: ${item.fields.join(', ')}`),
+      ]
+      blockers.push(tr('Synchronize the source plan before renumbering tasks: {0}; inspect sync-plan --dry-run; restore missing tasks or explicitly approve eligible removals', differences.join('; ')))
+    }
     log(JSON.stringify({ mapping, tasks: Object.keys(state.tasks).length,
       changes: ['state.json', 'plano de origem versionado', 'referências, vínculos e histórico de IDs'],
+      blockers,
       external: 'Atualize os títulos das tarefas espelhadas nos serviços externos, quando aplicável.' }, null, 2))
+    if (blockers.length) die(tr('Renumbering blocked: {0}', blockers.join('; ')))
+    const migrated = renumberTasks(state, plan, mapping, { contextDigests: taskContextDigests })
     if (args['dry-run']) return
     // A fonte nova só fica ativa na troca atômica do estado; uma falha anterior conserva o plano antigo.
     const backupRoot = join(runDir(name), 'task-id-backups'), plans = join(GRAPH_DIR, 'plans')
@@ -2328,6 +2363,14 @@ const commands = {
     migrated.state.taskIdMigrations.push({ mapping, backup, at: new Date().toISOString(), confirmedByUser: true })
     saveState(name, migrated.state)
     emit(name, 'task_renumbered', null, { mapping, backup })
+    } catch (error) {
+      if (error instanceof RenumberError) die(tr(error.message, ...error.params))
+      if (error instanceof SyntaxError)
+        die(tr('Invalid JSON in renumbering evidence; inspect state.json, the source plan and the event log, then restore the original backup before retrying'))
+      if (['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM', 'EISDIR'].includes(error.code))
+        die(tr('Cannot access renumbering evidence: {0}; restore the source files and permissions before retrying', error.message))
+      throw error
+    }
   },
 
   'sync-plan'() {
@@ -2379,7 +2422,7 @@ const commands = {
       )
       if (!changed.length) continue
       const fields = contractChanges(current, next, contractFields)
-      if (['done', 'skipped'].includes(current.state)) {
+      if (preservesCompletedContract(current)) {
         preserved.push(planTask.id)
         changes.push({ task: planTask.id, applied: false, preserved: true, fields })
         continue
@@ -2751,7 +2794,7 @@ const commands = {
         if (Number(s?.schemaVersion) > STATE_SCHEMA_VERSION) throw new Error('newer schema; update Prumo before opening it')
         const p = progress(s)
         const migration = migrationStatus(s)
-        log(`${d}  ${p.done}/${p.total} done  (updated ${s.updatedAt})${migration.needed ? '  [migration required]' : ''}`)
+        log(`${d}  ${p.done}/${p.total} done  (updated ${s.updatedAt})${migration.schemaNeeded ? '  [migration required]' : ''}`)
       } catch (error) {
         errorLog(`[prumo] WARNING: could not inspect run ${d}: ${error.message}`)
       }
@@ -4472,6 +4515,7 @@ if (!['init', 'runs', 'migrate', 'sync-plan', 'renumber-tasks'].includes(cmd)) {
 }
 const BLOCKED_ACTIONS = new Set(['begin-discussion', 'finish-discussion', 'skip-discussion', 'plan-task', 'finish-planning', 'skip-planning', 'start', 'progress', 'review', 'review-progress', 'validate', 'done', 'fail', 'retry', 'skip', 'activity-start', 'pause-replanning'])
 function runCommand() {
+  if (cmd === 'renumber-tasks') return commands[cmd]()
   if (['start', 'review', 'validate', 'done'].includes(cmd)) {
     const state = loadState(runName()), task = state.tasks[args._[0]]
     const phase = state.phaseWorkflows?.[task?.phase]

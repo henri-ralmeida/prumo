@@ -87,6 +87,23 @@ test('vínculos atuais mudam com as referências e evidência inválida permanec
   assert.equal(JSON.parse(result.state.phaseWorkflows.F1.originalContext)[4][0][1], 'hash-obsoleto')
 })
 
+test('histórico transitivo é calculado por contexto e passe, sem repetir todo o grafo por campo', () => {
+  const { state, plan } = fixture()
+  let newContextCalls = 0
+  const contextDigests = (value, targets, { phasePlanning }) => {
+    if (value !== state) newContextCalls++
+    return Object.values(value.tasks).map(task => ({ task: task.id,
+      contextDigest: `context-${phasePlanning}-${task.id}`,
+      inputDigest: `input-${phasePlanning}-${task.id}`,
+      outputDigest: `output-${phasePlanning}-${task.id}`,
+    }))
+  }
+  const result = renumberTasks(state, plan, { T1: 'T2', T2: 'T1' }, { contextDigests })
+  assert.ok(newContextCalls <= Object.keys(state.tasks).length * 4,
+    `O custo não deve multiplicar cada campo por todos os históricos dependentes: ${newContextCalls}`)
+  assert.deepEqual(result.state.tasks.T3.deps, ['T1'])
+})
+
 test('migração recusa colisões, planos divergentes e qualquer trabalho em aberto', () => {
   for (const mapping of [{ ausente: 'T4' }, { T1: 'T2' }, { T1: 'T0' }]) {
     const { state, plan } = fixture()
@@ -102,9 +119,9 @@ test('migração recusa colisões, planos divergentes e qualquer trabalho em abe
   delete state.phaseWorkflows
   assert.ok(renumberTasks(state, plan, { T1: 'T4' }).state.tasks.T4)
   state.removedTasks = { T4: { id: 'T4' } }
-  assert.throws(() => renumberTasks(state, plan, { T1: 'T4' }), /removido/)
+  assert.throws(() => renumberTasks(state, plan, { T1: 'T4' }), /removed/)
   state.phaseWorkflows = { F1: { discussionAttempts: [{ endedAt: '1', discoveryArtifact: 'discoveries/ausente.json' }] } }
-  assert.throws(() => renumberTasks(state, plan, { T1: 'T5' }), /arquivada.*indisponível/)
+  assert.throws(() => renumberTasks(state, plan, { T1: 'T5' }), /archived.*unavailable/)
   state.phaseWorkflows.F1.discussionAttempts[0].discoveries = []
   assert.ok(renumberTasks(state, plan, { T1: 'T5' }).state.tasks.T5)
 })
@@ -129,5 +146,5 @@ test('histórico versionado recusa caminhos externos e links e preserva o caminh
   assert.equal(eventLogPath(directory, { eventLog }), join(directory, eventLog))
   const target = join(directory, 'target'); mkdirSync(target)
   symlinkSync(target, join(directory, 'task-id-backups'), 'junction')
-  assert.throws(() => eventLogPath(directory, { eventLog }), /ligados/)
+  assert.throws(() => eventLogPath(directory, { eventLog }), /linked/)
 })
