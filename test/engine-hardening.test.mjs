@@ -614,6 +614,39 @@ test('comandos desconhecidos e dispensa sem justificativa preservam os dados da 
   }
 })
 
+test('workspace inexistente é recusado antes de alterar a execução', t => {
+  const f = fixture(t)
+  assert.equal(f.init().status, 0)
+  const before = f.snapshot()
+  const result = spawnSync(process.execPath, [engine, 'status'], {
+    cwd: f.project, env: { ...f.env, PRUMO_ROOT: join(f.home, 'inexistente') }, encoding: 'utf8', windowsHide: true,
+  })
+  assert.equal(result.status, 1, f.output(result))
+  assert.match(result.stderr, /PRUMO_ROOT points to .*which does not exist/)
+  assert.deepEqual(f.snapshot(), before)
+})
+
+test('falha ao ler a seleção atual não impede consultar uma execução explícita', t => {
+  const f = fixture(t)
+  assert.equal(f.init().status, 0)
+  const before = f.snapshot(), preload = join(f.home, 'selecao-ocupada.mjs')
+  writeFileSync(preload, `import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const read = fs.readFileSync;
+fs.readFileSync = (path, ...args) => {
+  if (String(path) === ${JSON.stringify(f.currentPath)}) throw Object.assign(new Error('Seleção ocupada'), { code: 'EACCES' });
+  return read(path, ...args);
+};
+syncBuiltinESMExports();`)
+  const result = spawnSync(process.execPath, [engine, 'status', '--run', 'hardening'], {
+    cwd: f.project, env: { ...f.env, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(preload).href}` },
+    encoding: 'utf8', windowsHide: true,
+  })
+  assert.equal(result.status, 0, f.output(result))
+  assert.match(result.stdout, /run: hardening/)
+  assert.deepEqual(f.snapshot(), before)
+})
+
 test('instalação com parser divergente recusa comando sem handler antes de gravar dados', t => {
   const f = fixture(t)
   assert.equal(f.init().status, 0)
@@ -1606,7 +1639,8 @@ syncBuiltinESMExports();`)
   f.env.NODE_OPTIONS = `${f.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(preload).href}`.trim()
   const first = f.cli('note', 'T1', '--text', 'Primeiro registro')
   assert.equal(first.status, 0, f.output(first))
-  delete f.env.NODE_OPTIONS
+  // Retire somente a falha injetada; a coleta herdada precisa continuar nos próximos comandos.
+  f.env.NODE_OPTIONS = process.env.NODE_OPTIONS ?? ''
   for (const text of ['Segundo registro', 'Terceiro registro', 'Quarto registro']) {
     const result = f.cli('note', 'T1', '--text', text)
     assert.equal(result.status, 0, f.output(result))
@@ -1640,7 +1674,7 @@ syncBuiltinESMExports();`)
   assert.equal(first.status, ['retirada-bloqueada', 'retirada-invalida'].includes(fault) ? 1 : 0, f.output(first))
   assert.equal(existsSync(join(f.graph, 'hardening', '.lock')), fault === 'retirada-bloqueada')
   if (fault.startsWith('limpeza-')) assert.match(f.output(first), /Released lock cleanup is pending/)
-  delete f.env.NODE_OPTIONS
+  f.env.NODE_OPTIONS = process.env.NODE_OPTIONS ?? ''
   const next = f.cli('note', 'T1', '--text', 'Próximo registro sem espera artificial')
   assert.equal(next.status, 0, f.output(next))
   assert.equal(f.state().tasks.T1.notes.length, 2)
