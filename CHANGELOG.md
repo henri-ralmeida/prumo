@@ -2,6 +2,13 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.11.4 — 2026-10-21
+
+- Renumere tarefas em execuções antigas sem tratar tentativas históricas encerradas ou substituídas como trabalho ativo. A prévia informa os bloqueios reais sem gravar alterações, e as recusas identificam a tarefa, tentativa ou rodada envolvida.
+- Preserve contratos de tarefas concluídas ao renumerar, evitando exigir uma sincronização que não altera esses contratos. Mudanças reais em tarefas abertas, dependências ou configuração continuam exigindo sincronização.
+- Repare tentativas históricas somente em uma migração explícita, com evidência de encerramento, backup e registro de auditoria, preservando aprovações e a validade dos escopos atuais e obsoletos.
+- Reutilize os contextos de planejamento durante a renumeração para evitar cálculos repetidos em execuções grandes, preservando a inspeção completa e os vínculos de aprovação.
+
 ## 2.11.3 — 2026-10-20
 
 - Renumere tarefas com `renumber-tasks --map`, incluindo trocas e ciclos, usando prévia sem gravações e confirmação explícita. Preserve tentativas, resultados, decisões, autorizações e vínculos atuais; recuse trabalho aberto, identificadores removidos e evidência arquivada indisponível. Prepare backups, plano e eventos versionados antes da troca atômica do estado, sem tornar válido um contrato já obsoleto.

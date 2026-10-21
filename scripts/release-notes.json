@@ -1,4 +1,17 @@
 {
+  "2.11.4": {
+    "en": [
+      {
+        "title": "Fixed — Legacy task renumbering",
+        "items": [
+          "Renumber legacy runs without treating terminal or superseded historical attempts as active work; dry-run reports actual task, attempt and round blockers without writing changes",
+          "Preserve completed task contracts during renumbering instead of requiring a sync that cannot change them; real changes to unfinished tasks, dependencies and configuration still require synchronization",
+          "Repair historical attempts only through explicit migration with closure evidence, backups and audit records, preserving approvals and keeping current and stale scopes distinct",
+          "Reuse planning contexts during renumbering to avoid repeated computation in large runs while preserving complete inspection and approval bindings"
+        ]
+      }
+    ]
+  },
   "2.11.3": {
     "en": [
       {
