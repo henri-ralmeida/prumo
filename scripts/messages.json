@@ -1,4 +1,11 @@
 {
+  "Preview; no changes were written": "Prévia; nada foi gravado",
+  "Renumbering applied; state, source plan and event history were activated": "Renumeração aplicada; estado, plano de origem e histórico de eventos foram ativados",
+  "Invalid renumbering preparation; inspect {0} before retrying": "Preparação de renumeração inválida; inspecione {0} antes de tentar novamente",
+  "Preview; no changes were written. Previous preparation: {0}. Inspect the mapping; repeat with --confirmed-by-user to resume against the current state": "Prévia; nada foi gravado. Preparação anterior: {0}. Confira o mapa; repita com --confirmed-by-user para retomar com o estado atual",
+  "The interrupted renumbering was already activated; the mapping was not applied again": "A renumeração interrompida já foi ativada; o mapa não foi aplicado novamente",
+  "Released lock cleanup is pending at {0}: {1}": "A limpeza da trava liberada está pendente em {0}: {1}",
+  "Lock owner metadata is unavailable; lock age: {0}ms; PID cannot be verified. Wait for the current writer or restore owner metadata from the original process; the lock was preserved": "Os metadados do dono da trava estão indisponíveis; idade da trava: {0}ms; não foi possível verificar o PID. Aguarde o comando em execução ou restaure os metadados pelo processo original; a trava foi preservada",
   "Fixed — Legacy task renumbering": "Corrigido — Renumeração de tarefas em execuções antigas",
   "Renumber legacy runs without treating terminal or superseded historical attempts as active work; dry-run reports actual task, attempt and round blockers without writing changes": "Renumere execuções antigas sem tratar tentativas históricas encerradas ou substituídas como trabalho ativo; a prévia informa os bloqueios reais por tarefa, tentativa e rodada sem gravar alterações",
   "Preserve completed task contracts during renumbering instead of requiring a sync that cannot change them; real changes to unfinished tasks, dependencies and configuration still require synchronization": "Preserve os contratos de tarefas concluídas durante a renumeração sem exigir uma sincronização que não pode alterá-los; mudanças reais em tarefas abertas, dependências e configuração continuam exigindo sincronização",

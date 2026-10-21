@@ -1434,17 +1434,20 @@ test('comandos sem tarefa e argumentos inválidos falham preservando contrato e 
   }
 })
 
-test('lock abandonado é recuperado antes de gravar uma nota sem remover o contrato', t => {
+test('trava antiga sem metadados é preservada porque a idade não comprova que o dono terminou', t => {
   const f = fixture(t)
   assert.equal(f.init().status, 0)
   const lock = join(f.graph, 'hardening', '.lock')
   mkdirSync(lock)
   const old = new Date(Date.now() - 60000)
   utimesSync(lock, old, old)
+  lockClock(f)
+  const before = f.snapshot()
   const result = f.cli('note', 'T1', '--text', 'Regra preservada')
-  assert.equal(result.status, 0, f.output(result))
-  assert.equal(existsSync(lock), false)
-  assert.equal(f.state().tasks.T1.notes.at(-1).text, 'Regra preservada')
+  assert.equal(result.status, 1, f.output(result))
+  assert.equal(existsSync(lock), true)
+  assert.match(f.output(result), /lock age: \d+ms; PID cannot be verified/)
+  assert.deepEqual(f.snapshot(), before)
 })
 
 test('falhas e disputa de lock preservam o contrato, enquanto liberação concorrente permite recuperação', async t => {
@@ -1538,6 +1541,7 @@ test('lock ocupado recusa escrita após o prazo sem perder dados', t => {
   assert.equal(f.init().status, 0)
   const lock = join(f.graph, 'hardening', '.lock')
   mkdirSync(lock)
+  lockClock(f)
   const before = f.snapshot(), result = f.cli('note', 'T1', '--text', 'Não deve ser gravado')
   assert.equal(result.status, 1, f.output(result))
   assert.match(f.output(result), /locked by another command/)
@@ -1556,6 +1560,7 @@ test('trava viva informa dono e não é removida por ser antiga', t => {
   writeFileSync(join(lock, 'owner.json'), JSON.stringify(owner))
   const old = new Date(acquiredAt)
   utimesSync(lock, old, old)
+  lockClock(f)
   const before = f.snapshot(), result = f.cli('note', 'T1', '--text', 'Preservar exclusão de escrita')
   assert.equal(result.status, 1, f.output(result))
   assert.match(f.output(result), new RegExp(`command review, PID ${process.pid}, acquired at ${acquiredAt}`))
@@ -1575,10 +1580,93 @@ Atomics.wait = () => {
   if (${JSON.stringify(releaseAt)} !== null && elapsed >= ${JSON.stringify(releaseAt)}) fs.rmSync(${JSON.stringify(lock)}, { recursive: true, force: true })
   return 'timed-out'
 }
+
 if (${JSON.stringify(killError)} !== null) process.kill = () => { throw Object.assign(new Error('Consulta do processo recusada'), { code: ${JSON.stringify(killError)} }) }
 `)
   f.env.NODE_OPTIONS = `${f.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(preload).href}`.trim()
 }
+
+test('notas consecutivas continuam após uma falha transitória na limpeza da trava anterior', t => {
+  const f = fixture(t)
+  assert.equal(f.init().status, 0)
+  const preload = join(f.home, 'limpeza-transitoria.mjs')
+  writeFileSync(preload, `import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const remove = fs.rmSync;
+let failed = false;
+fs.rmSync = (path, options) => {
+  if (!failed && (String(path).endsWith('.lock') || String(path).includes('.lock.released-'))) {
+    failed = true;
+    remove(String(path) + '/owner.json', { force: true });
+    throw Object.assign(new Error('Diretorio ocupado durante a limpeza'), { code: 'EBUSY' });
+  }
+  return remove(path, options);
+};
+syncBuiltinESMExports();`)
+  f.env.NODE_OPTIONS = `${f.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(preload).href}`.trim()
+  const first = f.cli('note', 'T1', '--text', 'Primeiro registro')
+  assert.equal(first.status, 0, f.output(first))
+  delete f.env.NODE_OPTIONS
+  for (const text of ['Segundo registro', 'Terceiro registro', 'Quarto registro']) {
+    const result = f.cli('note', 'T1', '--text', text)
+    assert.equal(result.status, 0, f.output(result))
+  }
+  assert.equal(f.state().tasks.T1.notes.length, 4)
+})
+for (const fault of ['retirada-transitoria', 'retirada-bloqueada', 'retirada-invalida', 'limpeza-persistente', 'limpeza-invalida']) test(`trava preserva o registro e permite a próxima nota com ${fault}`, t => {
+  const f = fixture(t)
+  assert.equal(f.init().status, 0)
+  const preload = join(f.home, 'falha-liberacao.mjs')
+  writeFileSync(preload, `import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const rename = fs.renameSync, remove = fs.rmSync;
+let interrupted = false;
+fs.renameSync = (from, to) => {
+  if (${JSON.stringify(fault)}.startsWith('retirada-') && String(from).endsWith('.lock') && (!interrupted || ${JSON.stringify(fault)} === 'retirada-bloqueada')) {
+    interrupted = true;
+    if (!fs.existsSync(String(from) + '/owner.json')) throw new Error('O dono precisa continuar identificado durante a retirada');
+    throw Object.assign(new Error('Retirada temporariamente ocupada'), { code: ${JSON.stringify(fault)} === 'retirada-invalida' ? 'EIO' : 'EBUSY' });
+  }
+  return rename(from, to);
+};
+fs.rmSync = (path, options) => {
+  if (${JSON.stringify(fault)}.startsWith('limpeza-') && String(path).includes('.lock.released-'))
+    throw Object.assign(new Error('Limpeza temporariamente indisponivel'), { code: ${JSON.stringify(fault)} === 'limpeza-invalida' ? 'EIO' : 'EACCES' });
+  return remove(path, options);
+};
+syncBuiltinESMExports();`)
+  f.env.NODE_OPTIONS = `${f.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(preload).href}`.trim()
+  const first = f.cli('note', 'T1', '--text', 'Registro preservado apesar da limpeza')
+  assert.equal(first.status, ['retirada-bloqueada', 'retirada-invalida'].includes(fault) ? 1 : 0, f.output(first))
+  assert.equal(existsSync(join(f.graph, 'hardening', '.lock')), fault === 'retirada-bloqueada')
+  if (fault.startsWith('limpeza-')) assert.match(f.output(first), /Released lock cleanup is pending/)
+  delete f.env.NODE_OPTIONS
+  const next = f.cli('note', 'T1', '--text', 'Próximo registro sem espera artificial')
+  assert.equal(next.status, 0, f.output(next))
+  assert.equal(f.state().tasks.T1.notes.length, 2)
+})
+
+test('métricas são registradas depois da liberação, inclusive quando o comando é recusado', t => {
+  const f = fixture(t)
+  assert.equal(f.init().status, 0)
+  const lock = join(f.graph, 'hardening', '.lock'), preload = join(f.home, 'metricas-sem-trava.mjs')
+  const observed = join(f.home, 'metricas-observadas.json')
+  writeFileSync(preload, `import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const append = fs.appendFileSync;
+fs.appendFileSync = (path, ...args) => {
+  if (String(path).endsWith('.command-metrics.ndjson')) fs.writeFileSync(${JSON.stringify(observed)}, JSON.stringify({ locked: fs.existsSync(${JSON.stringify(lock)}) }));
+  return append(path, ...args);
+};
+syncBuiltinESMExports();`)
+  f.env.NODE_OPTIONS = `${f.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(preload).href}`.trim()
+  for (const id of ['T1', 'T99']) {
+    const result = f.cli('note', id, '--text', 'Métrica sem prolongar a trava')
+    assert.equal(result.status, id === 'T1' ? 0 : 1, f.output(result))
+    assert.deepEqual(JSON.parse(readFileSync(observed)), { locked: false })
+    assert.equal(existsSync(lock), false)
+  }
+})
 
 test('dono encerrado libera uma trava recente sem esperar a idade legada', t => {
   const f = fixture(t), initialized = f.init()
@@ -1611,8 +1699,8 @@ test('metadados incompletos e permissão negada preservam a trava e explicam a e
   }
 })
 
-test('atividades aguardam um comando que termina depois do prazo comum e liberam a trava própria', t => {
-  for (const command of ['activity-start', 'activity-stop']) {
+test('registros leves aguardam um comando que termina depois do prazo comum e liberam a trava própria', t => {
+  for (const command of ['note', 'progress', 'activity-start', 'activity-stop']) {
     const f = fixture(t), initialized = f.init()
     assert.equal(initialized.status, 0, f.output(initialized))
     makeLegacy(f)
@@ -1620,6 +1708,11 @@ test('atividades aguardam um comando que termina depois do prazo comum e liberam
     assert.equal(authorization.status, 0, f.output(authorization))
     const started = f.cli('start', 'T1', '--agent', 'executor')
     assert.equal(started.status, 0, f.output(started))
+    if (command === 'progress') {
+      const state = f.state()
+      state.tasks.T1.taskPlan = { steps: ['Registrar o avanço sem perder o contrato'] }
+      f.save(state)
+    }
     if (command === 'activity-stop') {
       const activity = f.cli('activity-start', 'T1', '--role', 'execution', '--agent', 'executor')
       assert.equal(activity.status, 0, f.output(activity))
@@ -1628,7 +1721,8 @@ test('atividades aguardam um comando que termina depois do prazo comum e liberam
     mkdirSync(lock)
     writeFileSync(join(lock, 'owner.json'), JSON.stringify({ pid: process.pid, command: 'review', acquiredAt: new Date().toISOString() }))
     lockClock(f, { releaseAt: 6000 })
-    const result = f.cli(command, 'T1', '--role', 'execution', '--agent', 'executor')
+    const flags = command === 'note' ? ['--text', 'Registro após a escrita concorrente'] : command === 'progress' ? ['--step', '1', '--agent', 'executor'] : ['--role', 'execution', '--agent', 'executor']
+    const result = f.cli(command, 'T1', ...flags)
     assert.equal(result.status, 0, f.output(result))
     assert.equal(existsSync(lock), false)
   }

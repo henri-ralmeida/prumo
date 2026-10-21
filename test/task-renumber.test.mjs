@@ -1,15 +1,167 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, symlinkSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, rmdirSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { contractDrift } from '../scripts/contract-drift.mjs'
+import { createHash, randomUUID } from 'node:crypto'
 import { hasCurrentTaskPlan, hasCurrentTaskScope, executionInputReceipt } from '../scripts/validation.mjs'
 
 const engine = resolve(dirname(fileURLToPath(import.meta.url)), '../scripts/engine.mjs')
 const mapping = 'T1=T3,T2=T4,T3=T1,T4=T2'
+
+test('prévia e aplicação confirmam o resultado somente depois da ativação no disco', t => {
+  const f = fixture(t), before = f.snapshot()
+  const preview = JSON.parse(f.ok('renumber-tasks', '--map', mapping, '--dry-run').stdout)
+  assert.equal(preview.dryRun, true)
+  assert.equal(preview.applied, false)
+  assert.deepEqual(f.snapshot(), before)
+  const applied = JSON.parse(f.ok('renumber-tasks', '--map', mapping, '--confirmed-by-user').stdout)
+  assert.equal(applied.dryRun, false)
+  assert.equal(applied.applied, true)
+  assert.equal(applied.source, f.state().plan.source)
+  assert.equal(readFileSync(join(applied.backup, 'state.json'), 'utf8'), before[0])
+  assert.ok(applied.message)
+  assert.notEqual(applied.message, preview.message)
+})
+
+test('preparações inválidas ou ligadas são recusadas sem gravar nem seguir caminhos externos', t => {
+  const f = fixture(t), receipt = join(f.runDir, 'task-id-preparation.json'), before = f.snapshot()
+  for (const pending of [{ backupId: '../externo' }, { backupId: randomUUID(), beforeDigest: 4, mapping: {} },
+    { backupId: randomUUID(), beforeDigest: 'digest', mapping: null }]) {
+    writeFileSync(receipt, JSON.stringify(pending))
+    const rejected = f.rejects(/Invalid renumbering preparation/, 'renumber-tasks', '--map', mapping, '--dry-run')
+    assert.equal(JSON.parse(rejected.stdout).applied, false)
+    assert.deepEqual(f.snapshot(), before)
+  }
+  rmSync(receipt)
+  const target = join(f.root, 'destino-preservado')
+  mkdirSync(target)
+  writeFileSync(join(target, 'evidencia.txt'), 'Não alterar arquivos fora da preparação')
+  symlinkSync(target, receipt, process.platform === 'win32' ? 'junction' : 'dir')
+  f.rejects(/diretórios ligados/, 'renumber-tasks', '--map', mapping, '--dry-run')
+  rmSync(receipt)
+  const backupId = randomUUID(), backup = join(f.runDir, 'task-id-backups', backupId)
+  mkdirSync(backup, { recursive: true })
+  symlinkSync(target, join(backup, 'state.json'), process.platform === 'win32' ? 'junction' : 'dir')
+  const beforeDigest = createHash('sha256').update(before[0]).update(readFileSync(f.planPath)).update(before[1]).digest('hex')
+  writeFileSync(receipt, JSON.stringify({ backupId, beforeDigest, mapping: Object.fromEntries(mapping.split(',').map(pair => pair.split('='))) }))
+  f.rejects(/diretórios ligados/, 'renumber-tasks', '--map', mapping, '--confirmed-by-user')
+  rmSync(join(backup, 'state.json'))
+  rmdirSync(backup)
+  symlinkSync(target, backup, process.platform === 'win32' ? 'junction' : 'dir')
+  f.rejects(/diretórios ligados/, 'renumber-tasks', '--map', mapping, '--confirmed-by-user')
+  assert.deepEqual(f.snapshot(), before)
+  assert.deepEqual(readdirSync(target), ['evidencia.txt'])
+})
+
+for (const different of [false, true]) test(`falha ao limpar o recibo conserva a ativação e permite ${different ? 'um mapa diferente' : 'confirmar o resultado sem repetir'}`, t => {
+  const f = fixture(t), receipt = join(f.runDir, 'task-id-preparation.json'), preload = join(f.root, 'recibo-ocupado.mjs')
+  writeFileSync(preload, `import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const remove = fs.rmSync;
+fs.rmSync = (path, options) => {
+  if (String(path) === ${JSON.stringify(receipt)}) throw Object.assign(new Error('Recibo ocupado'), { code: 'EACCES' });
+  return remove(path, options);
+};
+syncBuiltinESMExports();`)
+  const first = f.cliWithEnv({ NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(preload).href}`.trim() },
+    'renumber-tasks', '--map', mapping, '--confirmed-by-user')
+  assert.equal(first.status, 0, first.stdout + first.stderr)
+  assert.equal(JSON.parse(first.stdout).applied, true)
+  const before = f.snapshot()
+  if (!different) {
+    const stillOccupied = f.cliWithEnv({ NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(preload).href}`.trim() },
+      'renumber-tasks', '--map', mapping, '--confirmed-by-user')
+    assert.equal(stillOccupied.status, 0, stillOccupied.stdout + stillOccupied.stderr)
+    assert.equal(JSON.parse(stillOccupied.stdout).alreadyApplied, true)
+    assert.deepEqual(f.snapshot(), before)
+  }
+  const next = JSON.parse(f.ok('renumber-tasks', '--map', different ? 'T1=T2,T2=T1' : mapping, '--confirmed-by-user').stdout)
+  assert.equal(next.applied, different)
+  assert.equal(f.state().taskIdMigrations.length, different ? 2 : 1)
+  if (!different) {
+    assert.equal(next.alreadyApplied, true)
+    assert.deepEqual(f.snapshot(), before)
+  }
+})
+
+test('erro inesperado na preparação permanece diagnosticável sem confirmar uma gravação inexistente', t => {
+  const f = fixture(t), before = f.snapshot(), preload = join(f.root, 'erro-inesperado.mjs')
+  writeFileSync(preload, `import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const copy = fs.copyFileSync;
+fs.copyFileSync = (from, to, ...args) => {
+  if (String(to).endsWith('state.json')) throw new TypeError('Defeito inesperado na copia');
+  return copy(from, to, ...args);
+};
+syncBuiltinESMExports();`)
+  const failure = f.cliWithEnv({ NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(preload).href}`.trim() },
+    'renumber-tasks', '--map', mapping, '--confirmed-by-user')
+  assert.notEqual(failure.status, 0)
+  assert.match(failure.stderr, /TypeError: Defeito inesperado na copia/)
+  assert.equal(failure.stdout, '')
+  assert.deepEqual(f.snapshot(), before)
+  const preview = JSON.parse(f.ok('renumber-tasks', '--map', mapping, '--dry-run').stdout)
+  assert.equal(preview.interrupted.resumable, true)
+  assert.equal(JSON.parse(f.ok('renumber-tasks', '--map', mapping, '--confirmed-by-user').stdout).applied, true)
+})
+
+for (const stage of ['antes', 'depois', 'abrupta', 'resultado']) test(`interrupção ${stage} da ativação é reconhecida sem repetir uma troca já gravada`, t => {
+  const f = fixture(t), before = f.snapshot(), preload = join(f.root, 'interromper.mjs')
+  writeFileSync(preload, `import fs from 'node:fs';
+import { resolve } from 'node:path';
+import { syncBuiltinESMExports } from 'node:module';
+const rename = fs.renameSync;
+const originalLog = console.log;
+console.log = (...args) => {
+  if (${JSON.stringify(stage)} === 'resultado' && String(args[0]).includes('"applied": true')) process.exit(74);
+  return originalLog(...args);
+};
+fs.renameSync = (from, to) => {
+  if (resolve(to) === ${JSON.stringify(join(f.runDir, 'state.json'))}) {
+    if (${JSON.stringify(stage)} === 'depois') rename(from, to);
+    if (${JSON.stringify(stage)} === 'abrupta') process.kill(process.pid, 'SIGKILL');
+    if (${JSON.stringify(stage)} !== 'resultado') process.exit(74);
+  }
+  return rename(from, to);
+};
+syncBuiltinESMExports();`)
+  const interrupted = f.cliWithEnv({ NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(preload).href}`.trim() },
+    'renumber-tasks', '--map', mapping, '--confirmed-by-user')
+  if (stage === 'abrupta') assert.notEqual(interrupted.status, 0)
+  else assert.equal(interrupted.status, 74)
+  assert.equal(interrupted.stdout, '', 'Uma gravação interrompida não pode imprimir sucesso')
+  const afterInterruption = f.snapshot()
+  const activated = ['depois', 'resultado'].includes(stage)
+  if (!activated) assert.deepEqual(afterInterruption, before)
+  const preview = JSON.parse(f.ok('renumber-tasks', '--map', mapping, '--dry-run').stdout)
+  assert.equal(preview.interrupted.activated, activated)
+  assert.equal(preview.interrupted.resumable, !activated)
+  assert.deepEqual(f.snapshot(), afterInterruption)
+  if (stage === 'resultado') {
+    const recoveryPreload = join(f.root, 'interromper-confirmacao.mjs')
+    writeFileSync(recoveryPreload, `const log = console.log;
+console.log = (...args) => {
+  if (String(args[0]).includes('"alreadyApplied": true')) process.exit(74);
+  return log(...args);
+};`)
+    const interruptedAgain = f.cliWithEnv({ NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(recoveryPreload).href}`.trim() },
+      'renumber-tasks', '--map', mapping, '--confirmed-by-user')
+    assert.equal(interruptedAgain.status, 74)
+    assert.equal(interruptedAgain.stdout, '')
+    assert.deepEqual(f.snapshot(), afterInterruption)
+  }
+  const recovered = JSON.parse(f.ok('renumber-tasks', '--map', mapping, '--confirmed-by-user').stdout)
+  assert.equal(recovered.applied, !activated)
+  assert.equal(recovered.backup, preview.interrupted.backup)
+  assert.equal(f.state().tasks.T1.previousTaskId, 'T3')
+  assert.equal(f.state().taskIdMigrations.length, 1)
+  assert.equal(f.snapshot()[1].trim().split('\n').map(JSON.parse).filter(event => event.type === 'task_renumbered').length, 1)
+  assert.equal(readdirSync(join(f.runDir, 'task-id-backups')).length, 1)
+})
 
 function fixture(t) {
   const home = mkdtempSync(join(tmpdir(), 'prumo-renumber-'))
@@ -427,6 +579,7 @@ test('falha na troca atômica mantém estado, fonte e log anteriores ativos e li
   const failure = f.cliWithEnv({ NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(preload).href}`.trim() },
     'renumber-tasks', '--map', mapping, '--confirmed-by-user')
   assert.notEqual(failure.status, 0)
+  assert.equal(JSON.parse(failure.stdout).applied, false)
   assert.match(failure.stdout + failure.stderr, /Falha isolada na troca final/)
   assert.deepEqual(f.snapshot(), before)
   assert.equal(readFileSync(f.planPath, 'utf8'), originalPlan)
@@ -435,6 +588,10 @@ test('falha na troca atômica mantém estado, fonte e log anteriores ativos e li
   const preparedPlans = readdirSync(join(dirname(f.runDir), 'plans')).filter(file => file.includes('renumbered'))
   assert.equal(preparedPlans.length, 1)
   assert.equal(readdirSync(join(f.runDir, 'task-id-backups')).length, 1)
+  const recoveryPreview = JSON.parse(f.ok('renumber-tasks', '--map', mapping, '--dry-run').stdout)
+  assert.equal(recoveryPreview.applied, false)
+  assert.equal(recoveryPreview.interrupted.activated, false)
+  assert.equal(recoveryPreview.interrupted.resumable, true)
   const graph = JSON.parse(f.ok('graph').stdout)
   assert.equal(graph.tasks.T1.title, JSON.parse(originalPlan).tasks[0].title)
   f.ok('note', 'T3', '--text', 'A execução anterior permanece utilizável após a falha')

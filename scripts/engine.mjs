@@ -67,7 +67,7 @@
  */
 import {
   mkdirSync, readFileSync, writeFileSync, appendFileSync, existsSync, readdirSync,
-  rmSync, statSync, lstatSync, copyFileSync, realpathSync, constants,
+  rmSync, statSync, lstatSync, copyFileSync, realpathSync, renameSync, constants,
 } from 'node:fs'
 import { randomUUID, createHash } from 'node:crypto'
 import { homedir } from 'node:os'
@@ -131,8 +131,7 @@ const DEFAULT_MAX_PARALLEL = 4
 const DEFAULT_MAX_EXECUTORS = 3   // Metadado legado; maxAgents governa todos os papéis.
 const STATE_SCHEMA_VERSION = 1
 const LOCK_WAIT_MS = 5000         // quanto tempo um comando aguarda pelo bloqueio da execução
-const ACTIVITY_LOCK_WAIT_MS = 15000 // registros leves aguardam comandos concorrentes sem perder a medição
-const LOCK_STALE_MS = 30000       // compatibilidade com bloqueios antigos que não registravam o dono
+const ACTIVITY_LOCK_WAIT_MS = 30000 // registros leves aguardam uma escrita concorrente sem perder registros
 
 // ---------- analisador minúsculo de argumentos ----------
 let metricRunName
@@ -164,7 +163,14 @@ if (cmd === 'review-progress' && args.help) {
   process.exit(0)
 }
 
+var renumberOutcome, renumberReported = false
+function reportRenumber(outcome) {
+  renumberReported = true
+  log(JSON.stringify(outcome, null, 2))
+}
 function die(msg) {
+  if (cmd === 'renumber-tasks' && !renumberReported)
+    reportRenumber({ dryRun: args?.['dry-run'] === true, ...renumberOutcome, applied: false, message: msg })
   errorLog(`[prumo] ERROR: ${msg}`)
   process.exit(1)
 }
@@ -407,13 +413,37 @@ let heldLock = null
 /* die() encerra o processo DENTRO da seção bloqueada (uma transição recusada é o
    caminho normal, não uma exceção), e process.exit ignora blocos finally — portanto a liberação
    também precisa ficar no evento exit ou cada recusa deixaria seu bloqueio preso. */
-process.on('exit', () => { if (heldLock) rmSync(heldLock, { recursive: true, force: true }) })
+function releaseLock() {
+  if (!heldLock) return
+  // Retire a trava inteira antes da limpeza: uma remoção parcial não deixa o nome ativo sem dono.
+  const retired = `${heldLock}.released-${randomUUID()}`
+  for (let attempt = 0; ; attempt++) {
+    try { renameSync(heldLock, retired); break }
+    catch (error) {
+      if (!['EBUSY', 'EPERM', 'EACCES'].includes(error.code) || attempt >= 4) throw error
+      sleepSync(25 * 2 ** attempt)
+    }
+  }
+  heldLock = null
+  for (let attempt = 0; ; attempt++) {
+    try { rmSync(retired, { recursive: true, force: true }); break }
+    catch (error) {
+      if (!['EBUSY', 'EPERM', 'EACCES', 'ENOTEMPTY'].includes(error.code) || attempt >= 4) {
+        errorLog('[prumo] ' + tr('Released lock cleanup is pending at {0}: {1}', retired, error.message))
+        break
+      }
+      sleepSync(25 * 2 ** attempt)
+    }
+  }
+}
+// A liberação deve acontecer antes das métricas, inclusive quando die() pula o finally.
+process.prependListener('exit', releaseLock)
 
 function withLock(name, fn) {
   const dir = runDir(name)
   mkdirSync(dir, { recursive: true })   // init adquire o bloqueio antes de o diretório da execução existir
   const lock = join(dir, '.lock')
-  const waitMs = ['activity-start', 'activity-stop'].includes(cmd) ? ACTIVITY_LOCK_WAIT_MS : LOCK_WAIT_MS
+  const waitMs = ['note', 'progress', 'activity-start', 'activity-stop'].includes(cmd) ? ACTIVITY_LOCK_WAIT_MS : LOCK_WAIT_MS
   const deadline = Date.now() + waitMs
   for (;;) {
     try {
@@ -432,8 +462,8 @@ function withLock(name, fn) {
       try {
         const value = JSON.parse(readFileSync(join(lock, 'owner.json'), 'utf8'))
         if (Number.isInteger(value.pid) && value.pid > 0 && typeof value.command === 'string' && typeof value.acquiredAt === 'string') owner = value
-      } catch { /* Bloqueios legados ou metadados incompletos conservam a espera limitada por idade. */ }
-      let abandoned = !owner && age > LOCK_STALE_MS
+      } catch { /* A idade de uma trava sem dono não comprova que o processo terminou. */ }
+      let abandoned = false
       if (owner) {
         try { process.kill(owner.pid, 0) }
         catch (error) { abandoned = error.code === 'ESRCH' }
@@ -444,16 +474,16 @@ function withLock(name, fn) {
         continue
       }
       if (Date.now() > deadline) die(tr('run "{0}" is locked by another command (waited {1}ms) — retry', name, waitMs) + ' ' +
-        (owner ? tr('Lock owner: command {0}, PID {1}, acquired at {2}', owner.command, owner.pid, owner.acquiredAt) : tr('Lock owner metadata is unavailable')))
-      sleepSync(25)
+        (owner ? tr('Lock owner: command {0}, PID {1}, acquired at {2}', owner.command, owner.pid, owner.acquiredAt) :
+          tr('Lock owner metadata is unavailable; lock age: {0}ms; PID cannot be verified. Wait for the current writer or restore owner metadata from the original process; the lock was preserved', Math.max(0, Math.round(age)))))
+      sleepSync(100)
     }
   }
   try {
     writeFileSync(join(lock, 'owner.json'), JSON.stringify({ pid: process.pid, command: cmd, acquiredAt: new Date().toISOString() }), { flag: 'wx' })
     return fn()
   } finally {
-    rmSync(lock, { recursive: true, force: true })
-    heldLock = null
+    releaseLock()
   }
 }
 
@@ -2334,21 +2364,50 @@ const commands = {
       ]
       blockers.push(tr('Synchronize the source plan before renumbering tasks: {0}; inspect sync-plan --dry-run; restore missing tasks or explicitly approve eligible removals', differences.join('; ')))
     }
-    log(JSON.stringify({ mapping, tasks: Object.keys(state.tasks).length,
+    const preview = renumberOutcome = { dryRun: args['dry-run'] === true, applied: false,
+      message: tr('Preview; no changes were written'), mapping, tasks: Object.keys(state.tasks).length,
       changes: ['state.json', 'plano de origem versionado', 'referências, vínculos e histórico de IDs'],
       blockers,
-      external: 'Atualize os títulos das tarefas espelhadas nos serviços externos, quando aplicável.' }, null, 2))
+      taskChanges: Object.entries(mapping).map(([from, to]) => ({ from, to, title: state.tasks[from]?.title })),
+      external: 'Atualize os títulos das tarefas espelhadas nos serviços externos, quando aplicável.' }
     if (blockers.length) die(tr('Renumbering blocked: {0}', blockers.join('; ')))
+    const receiptPath = join(runDir(name), 'task-id-preparation.json')
+    if (lstatSync(receiptPath, { throwIfNoEntry: false })?.isSymbolicLink()) die('A renumeração não aceita diretórios ligados')
+    const pending = existsSync(receiptPath) ? JSON.parse(readFileSync(receiptPath, 'utf8')) : null
+    if (pending && (!/^[a-f0-9-]{36}$/.test(pending.backupId) || typeof pending.beforeDigest !== 'string' || !pending.mapping))
+      die(tr('Invalid renumbering preparation; inspect {0} before retrying', receiptPath))
+    const beforeDigest = createHash('sha256').update(readFileSync(join(runDir(name), 'state.json')))
+      .update(readFileSync(state.plan.source)).update(readFileSync(eventsPath(name))).digest('hex')
+    const sameMapping = pending && JSON.stringify(Object.entries(pending.mapping).sort()) === JSON.stringify(Object.entries(mapping).sort())
+    const alreadyActivated = pending && state.taskIdMigrations?.some(item => basename(item.backup) === pending.backupId)
+    if (pending) preview.interrupted = {
+      backup: join(runDir(name), 'task-id-backups', pending.backupId),
+      activated: !!alreadyActivated, resumable: !alreadyActivated && sameMapping && pending.beforeDigest === beforeDigest,
+    }
+    if (args['dry-run']) {
+      renumberTasks(state, plan, mapping, { contextDigests: taskContextDigests })
+      if (pending) preview.message = tr('Preview; no changes were written. Previous preparation: {0}. Inspect the mapping; repeat with --confirmed-by-user to resume against the current state', preview.interrupted.backup)
+      return reportRenumber(preview)
+    }
+    if (alreadyActivated && sameMapping) {
+      reportRenumber({ ...preview, alreadyApplied: true, message: tr('The interrupted renumbering was already activated; the mapping was not applied again'), backup: preview.interrupted.backup, source: state.plan.source })
+      try { rmSync(receiptPath) } catch { /* Preserve o reconhecimento da ativação se o recibo continuar ocupado. */ }
+      return
+    }
     const migrated = renumberTasks(state, plan, mapping, { contextDigests: taskContextDigests })
-    if (args['dry-run']) return
     // A fonte nova só fica ativa na troca atômica do estado; uma falha anterior conserva o plano antigo.
     const backupRoot = join(runDir(name), 'task-id-backups'), plans = join(GRAPH_DIR, 'plans')
     for (const directory of [backupRoot, plans]) {
       if (lstatSync(directory, { throwIfNoEntry: false })?.isSymbolicLink()) die('A renumeração não aceita diretórios ligados')
       mkdirSync(directory, { recursive: true })
     }
-    const backup = join(backupRoot, randomUUID())
+    const backup = join(backupRoot, preview.interrupted?.resumable ? pending.backupId : randomUUID())
+    if (lstatSync(backup, { throwIfNoEntry: false })?.isSymbolicLink()) die('A renumeração não aceita diretórios ligados')
     mkdirSync(backup, { recursive: true })
+    for (const file of ['mapping.json', 'state.json', 'original-events.ndjson', 'events.ndjson', 'original-plan.json'])
+      if (lstatSync(join(backup, file), { throwIfNoEntry: false })?.isSymbolicLink()) die('A renumeração não aceita diretórios ligados')
+    writeAtomicState(receiptPath, JSON.stringify({ backupId: basename(backup), beforeDigest, mapping }))
+    preview.preparedBackup = backup
     writeFileSync(join(backup, 'mapping.json'), JSON.stringify(mapping, null, 2))
     copyFileSync(join(runDir(name), 'state.json'), join(backup, 'state.json'))
     const events = readFileSync(eventsPath(name), 'utf8').split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line))
@@ -2361,13 +2420,16 @@ const commands = {
     migrated.state.eventLog = `task-id-backups/${basename(backup)}/events.ndjson`
     migrated.state.taskIdMigrations ??= []
     migrated.state.taskIdMigrations.push({ mapping, backup, at: new Date().toISOString(), confirmedByUser: true })
+    // A ativação e seu evento ficam no mesmo log preparado, sem uma janela de sucesso sem auditoria.
+    appendFileSync(join(backup, 'events.ndjson'), JSON.stringify({ at: new Date().toISOString(), type: 'task_renumbered', task: null, mapping, backup }) + '\n')
     saveState(name, migrated.state)
-    emit(name, 'task_renumbered', null, { mapping, backup })
+    reportRenumber({ ...preview, applied: true, message: tr('Renumbering applied; state, source plan and event history were activated'), backup, source })
+    try { rmSync(receiptPath) } catch { /* O recibo só é removido depois de emitir a confirmação da ativação. */ }
     } catch (error) {
       if (error instanceof RenumberError) die(tr(error.message, ...error.params))
       if (error instanceof SyntaxError)
         die(tr('Invalid JSON in renumbering evidence; inspect state.json, the source plan and the event log, then restore the original backup before retrying'))
-      if (['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM', 'EISDIR'].includes(error.code))
+      if (['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM', 'EISDIR', 'EIO', 'EBUSY'].includes(error.code))
         die(tr('Cannot access renumbering evidence: {0}; restore the source files and permissions before retrying', error.message))
       throw error
     }

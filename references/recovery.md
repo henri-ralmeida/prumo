@@ -279,6 +279,39 @@ Somente referências e vínculos correspondentes à renumeração são atualizad
 resultados, aprovações e decisões de planejamento continuam associados à mesma entrega.
 O painel mantém a identificação anterior na dica da tarefa para facilitar a conferência.
 
+Run the write command on its own, with enough time for the complete run. A preview reports
+`dryRun: true, applied: false`; only a completed activation reports `applied: true`, `backup` and
+`source`. `taskChanges` shows the actual source IDs, destination IDs and task titles: applying the
+same swap again reverses it, so inspect a fresh preview before intentionally repeating a mapping.
+An interrupted preparation is reported in `interrupted`. Confirming the same mapping resumes its
+backup only while the original state, source plan and events still match; otherwise a new preparation
+uses the current state and preserves the old backup. If activation already completed before the
+interruption, the next matching application reports `alreadyApplied: true` without applying it again.
+
+Execute o comando de escrita isoladamente, com tempo suficiente para processar a execução inteira.
+A prévia informa `dryRun: true, applied: false`; somente a ativação concluída informa `applied: true`,
+`backup` e `source`. `taskChanges` mostra os IDs e títulos reais; repetir uma troca pode invertê-la,
+portanto confira uma nova prévia antes de repetir um mapa intencionalmente. O campo `interrupted`
+identifica uma preparação interrompida: ela é retomada no mesmo backup somente se estado, plano e
+eventos originais ainda conferirem. Se mudaram, a preparação usa o estado atual e preserva o backup
+anterior. Se a ativação já terminou, a próxima aplicação correspondente informa `alreadyApplied: true`
+sem repetir a troca. Não interprete um timeout do shell como confirmação de gravação.
+
+Lightweight records (`note`, `progress`, `activity-start`, `activity-stop`) wait up to 30 seconds for
+a concurrent writer. A live owner remains protected regardless of lock age. A missing or unreadable
+owner reports lock age and the unavailable PID verification; age alone never authorizes deletion.
+The complete lock directory is detached before cleanup and before command metrics, so delayed or
+partially failed cleanup cannot leave an active lock without its metadata. Metadata is written before
+entering the protected command; the short acquisition interval does not authorize another writer.
+
+Registros leves (`note`, `progress`, `activity-start`, `activity-stop`) aguardam até 30 segundos por
+uma escrita concorrente. Donos vivos continuam protegidos independentemente da idade da trava.
+Se os metadados estiverem ausentes ou ilegíveis, a mensagem informa a idade e a impossibilidade de
+verificar o PID; a idade, sozinha, não autoriza apagar a trava. O diretório inteiro é retirado do nome
+ativo antes da limpeza e das métricas, evitando que uma remoção parcial deixe uma trava sem dono.
+Os metadados são gravados antes de entrar no comando protegido; o intervalo curto de aquisição não
+autoriza outro gravador. Aguarde o processo em execução; não apague a trava manualmente.
+
 Confira `status` após a mudança. Atualize manualmente os títulos dos itens espelhados em serviços
 externos, quando necessário: a renumeração local não altera esses serviços.
 
