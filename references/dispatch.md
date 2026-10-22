@@ -176,3 +176,9 @@ including its start, pass, failure or cache reuse. A retry reruns functional che
 When `sync-plan` adds unfinished dependencies to running work, the engine warns that the task still occupies its resources. Decide explicitly whether to pause it with `block` before dispatching dependencies that need those resources; synchronization never silently pauses work or releases ownership.
 
 Resolving an external block may leave a replanning pause when the approved scope changed. `status` identifies the remaining condition and the return state. Complete the indicated task discussion and planning, obtain the pertinent authorization, then use `unblock` to resume the same attempt; repeated `unblock` alone cannot satisfy missing planning.
+
+## Registro de passos e decisões
+
+Na linha de `progress` impressa por `start`, substitua `<N>` pelo passo real em andamento. Registre cada passo executado, inclusive fora de ordem. O aviso de revisão lista os passos sem registro na tentativa atual; registros históricos sem lista de passos informam somente a posição conhecida. O executor atual pode registrar passos realmente realizados durante `reviewing`, usando seu próprio `--agent`, sem alterar o revisor nem aprovar a entrega. Não preencha passos sem evidência de execução. Progresso continua sendo um relato, não prova de conclusão.
+
+No planejamento, uma proposta pertence a `openQuestions[].proposedAnswer`, nunca a `answer` sem uma resposta efetiva. Uma origem não verificada não pode ser apresentada como confirmação do usuário.

@@ -197,7 +197,7 @@ export function assertTaskPlan(task, plan, { checkSelfDeadline = true } = {}) {
   }
   if (plan.writes !== undefined) {
     insist(Array.isArray(plan.writes) && plan.writes.every(safeRelativePath),
-      'task plan writes must be an array of safe relative paths without absolute paths, .. or NUL')
+      'task plan writes must be an array of safe relative paths without absolute paths, .. or NUL; describe external outputs in externalDeliverables with location and purpose, without expanding write authorization')
     insist(task.writeScope !== 'read-only' || !plan.writes.length, 'read-only task plan cannot declare writes')
     if (task.touches?.length) {
       for (const write of plan.writes)
@@ -205,13 +205,18 @@ export function assertTaskPlan(task, plan, { checkSelfDeadline = true } = {}) {
           `task plan writes path "${write}" is outside task touches; correct the approved task contract, run sync-plan, and replan before execution`)
     }
   }
+  if (plan.externalDeliverables !== undefined)
+    insist(Array.isArray(plan.externalDeliverables) && plan.externalDeliverables.every(item => item &&
+      nonempty(item.location) && !item.location.includes('\0') && nonempty(item.purpose)),
+    'externalDeliverables must contain location and purpose; this declaration does not authorize writes outside approved touches')
   const validQuestionDeadline = value => value === undefined || value === 'executor' || value === 'user-now' ||
     value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 1 &&
       ((nonempty(value.beforeTask) && value.beforePhase === undefined) ||
         (nonempty(value.beforePhase) && value.beforeTask === undefined))
   insist(Array.isArray(plan.openQuestions) && plan.openQuestions.every(item => item &&
     nonempty(item.question) && typeof item.blocking === 'boolean' &&
-    (item.answer === undefined || nonempty(item.answer)) && validQuestionDeadline(item.decideBy)),
+    (item.answer === undefined || nonempty(item.answer)) &&
+    (item.proposedAnswer === undefined || nonempty(item.proposedAnswer)) && validQuestionDeadline(item.decideBy)),
   'task plan openQuestions must contain question, blocking boolean, optional nonempty answer, and a valid optional decideBy (accepted values: "executor", "user-now", {"beforeTask":"<task id>"} or {"beforePhase":"<phase id>"})')
   for (const [index, question] of plan.openQuestions.entries()) {
     // A pergunta sobre a própria tarefa precisa estar respondida quando seu plano for entregue.
@@ -248,7 +253,7 @@ export function planTaskFromState(t) {
 const digest = value => createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex')
 
 const TASK_PLAN_CONTENT_FIELDS = [
-  'research', 'decisions', 'steps', 'verification', 'openQuestions', 'writes',
+  'research', 'decisions', 'steps', 'verification', 'openQuestions', 'writes', 'externalDeliverables',
   'phaseBinding', 'unresolvedInputs',
 ]
 

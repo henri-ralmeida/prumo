@@ -101,6 +101,7 @@ import { terminalAttemptRepairs, repairTerminalAttempts, attemptsForContext } fr
 import { captureDelivery, checkDelivery, verifyNumericProvenance, assertEvidenceContract } from './delivery-evidence.mjs'
 import { assertRolePreferences, recordDispatchMetadata, dispatchOwners, reportedUsageTotals, pauseRun, resumeRun, shellCommand, taskBrief, agentRoles, repeatedPlanQuestions, recordedPlanIdentity } from './run-metadata.mjs'
 import { newCommandRecord, recordCommand } from './command-metrics.mjs'
+import { questionAnswerOrigin, missingExecutionSteps, phaseOrderChange } from './planning-context.mjs'
 
 // A ajuda geral também funciona fora de um workspace; consultar opções não grava métricas nem estado.
 const [, , cmd, ...rest] = process.argv
@@ -756,6 +757,9 @@ function warnTaskPlan(task, plan, state) {
     log(`[prumo] planning warning: ${task.id} openQuestions[${index}] repeats a literally answered discussion/decision question; inspect the current contract and answer before retaining it. No answer or resolution was inferred.`)
   if (!plan.writes?.length)
     log('[prumo] ' + tr('task plan warning: {0} declares no writes; confirm the executor stays within approved touches', task.id))
+  if (plan.externalDeliverables?.length)
+    log('[prumo] ' + tr('External deliverables for {0}: {1}; locations are descriptive, not write authorization; retain approved touches and independent evidence',
+      task.id, JSON.stringify(plan.externalDeliverables)))
   for (let index = 0; index < plan.verification.length; index++) {
     const item = plan.verification[index]
     for (const resource of new Set(item.requires ?? [])) {
@@ -1437,17 +1441,22 @@ function printQuestionsForTarget(state, taskId, phaseId) {
 /* Depois que um plano é registrado, informe ao orquestrador quais perguntas abertas vão ao usuário agora e quais
    aguardam uma tarefa ou fase posterior, para que uma decisão futura não seja trazida junto com a
    autorização de execução. Perguntas que o executor aplica a partir da resposta proposta não são listadas. */
-function printPlannedQuestionSummary(tasks) {
-  const now = [], later = [], answered = [], unanswered = []
+function printPlannedQuestionSummary(tasks, state) {
+  const now = [], later = [], answered = [], unanswered = [], proposals = []
   for (const task of tasks) {
     for (const question of task.taskPlan.openQuestions) {
       const decideBy = question.blocking ? 'user-now' : (question.decideBy ?? 'executor')
       const item = { ref: question.questionRef, task: task.id, question }
+      if (question.proposedAnswer) proposals.push(item)
+      if (question.answer) log('[prumo] ' + tr('Answer origin for {0}: {1}; only an exact recorded user discussion is identified as user input',
+        item.ref, tr(questionAnswerOrigin(question, task, state.phaseWorkflows?.[task.phase]?.discovery))))
       if (decideBy === 'user-now') (question.answer ? answered : now).push(item)
       else if (decideBy && typeof decideBy === 'object') (question.answer ? answered : later).push({ ...item, decideBy })
-      else if (question.decideBy === 'executor' && !question.answer) unanswered.push(item)
+      else if (question.decideBy === 'executor' && !question.answer && !question.proposedAnswer) unanswered.push(item)
     }
   }
+  for (const item of proposals) log('[prumo] ' + tr('Planner proposal for {0}: {1}; this is not a user answer and does not resolve the question',
+    item.ref, item.question.proposedAnswer))
   if (answered.length) {
     log('[prumo] ' + tr('answered questions recorded in the plan:'))
     for (const item of answered) log('[prumo]   ' + tr('{0} ({1}): {2} — recorded answer: {3}',
@@ -1468,6 +1477,17 @@ function printPlannedQuestionSummary(tasks) {
   for (const item of unanswered)
     log('[prumo] ' + tr('WARNING: open question {0} ({1}) is decided by the executor but has no proposed answer',
       item.ref, item.task))
+}
+
+function printMissingExecutionSteps(task) {
+  if (!task.taskPlan?.steps?.length || task.taskPlan.steps.length === 1) return
+  const missing = missingExecutionSteps(task)
+  if (missing === null) {
+    log('[prumo] ' + tr('Legacy progress records only the last position; missing steps cannot be reconstructed from this attempt. Existing progress and approvals are preserved'))
+    return
+  }
+  if (missing.length) log('[prumo] ' + tr('Executor steps without a record: {0}; record only steps actually performed with progress {1} --step <N> --agent {2}, including during review; progress is not completion evidence',
+    missing.join(', '), task.id, task.agent))
 }
 
 function assertNoOverdueQuestions(state, task) {
@@ -2447,6 +2467,12 @@ const commands = {
         existsSync(centralSource) ? centralSource : die('sync-plan needs --plan <plan.json> once')
     }
     const { plan, source } = readPlan(planPath, state)
+    const phaseOrder = phaseOrderChange(state, plan)
+    if (phaseOrder) {
+      if (phaseOrder.started.length) die(tr('Cannot reorder phases with execution history: {0}; preserve completed work and change only unexecuted phases', phaseOrder.started.join(', ')))
+      if (phaseOrder.conflicts.length) die(tr('Phase order conflicts with dependencies: {0}; adjust deps explicitly in the candidate plan and repeat sync-plan --dry-run; no dependencies were inferred', phaseOrder.conflicts.join('; ')))
+      log('[prumo] ' + tr('Phase order: {0}; dependencies remain explicit; execution readiness follows deps, not array position', phaseOrder.order.join(' -> ')))
+    }
     const cwd = projectCwd(state.plan.cwd)
     warnPlanTouchPaths(plan, cwd)
     const removed = approvedTaskRemovals(state, plan)
@@ -2683,6 +2709,7 @@ const commands = {
     saveState(name, state)
     for (const id of removed) emit(name, 'task_removed', id, { reason: args.reason.trim(), source })
     emit(name, 'plan_sync', null, {
+      ...(phaseOrder ? { phaseOrder } : {}),
       added: sanitizeTaskIds(added),
       removed: sanitizeTaskIds(removed),
       updated: sanitizeTaskIds(updated),
@@ -2804,6 +2831,10 @@ const commands = {
         ? 'Display metadata is separate from the contract and does not change its digest'
         : 'No display metadata recorded; this does not mean the contract is empty'),
       reviewCriteria: numberedReviewCriteria(task), diff: args.diff === true, fields, before: select(before), after: select(after),
+      notes: task.notes ?? [],
+      decisions: task.taskPlan?.decisions ?? [],
+      questionResolutions: (state.questionResolutions ?? []).filter(item => item.byTask === id || item.questionRef?.startsWith(`${id}:plan:`)),
+      contextNote: tr('Notes and later decisions may differ from this contract; inspect them before replanning. They do not amend or approve the contract automatically'),
       ...(args.full ? { contractDigest: phasePlanningContext(state, task), contract: planTaskFromState(task) } : {}) }, null, 2))
   },
 
@@ -3428,7 +3459,7 @@ const commands = {
     assertPhaseTargetsPaused(plans.map(([task]) => task))
     const allResolutions = []
     for (const [task, plan, questionRefs, sourcePath, reusedFrom] of plans) {
-      const fields = ['summary', 'research', 'decisions', 'steps', 'verification', 'openQuestions', 'phaseBinding', 'unresolvedInputs', 'writes']
+      const fields = ['summary', 'research', 'decisions', 'steps', 'verification', 'openQuestions', 'phaseBinding', 'unresolvedInputs', 'writes', 'externalDeliverables']
       const artifact = Object.fromEntries(fields.map(field => [field, plan[field]]))
       artifact.openQuestions = annotatePlanQuestions(task, artifact.openQuestions, round.startedAt)
       allResolutions.push(...questionRefs.map(questionRef => ({
@@ -3456,7 +3487,7 @@ const commands = {
     log(`[prumo] ${phaseId} planned atomically (${round.targets.length} task artifact(s))`)
     const reused = plans.filter(item => item[4]).map(item => item[0].id)
     if (reused.length) log('[prumo] ' + tr('Reused unchanged phase plans: {0}', reused.join(', ')))
-    printPlannedQuestionSummary(tasks)
+    printPlannedQuestionSummary(tasks, state)
   },
 
   'begin-discussion'() {
@@ -3749,7 +3780,7 @@ const commands = {
     } catch (error) { die(planningArtifactError(filename, error)) }
     const questionRefs = validateQuestionResolutions(state, plan.decisions)
     warnTaskPlan(t, plan, state)
-    const artifact = Object.fromEntries(['summary', 'research', 'decisions', 'steps', 'verification', 'openQuestions', 'writes'].map(field => [field, plan[field]]))
+    const artifact = Object.fromEntries(['summary', 'research', 'decisions', 'steps', 'verification', 'openQuestions', 'writes', 'externalDeliverables'].map(field => [field, plan[field]]))
     artifact.openQuestions = annotatePlanQuestions(t, artifact.openQuestions, round.startedAt)
     t.taskPlan = { ...artifact, sourcePath: path, digest: taskPlanDigest(artifact), planner: t.planner, startedAt: round.startedAt, completedAt: new Date().toISOString(),
       context: round.context, scope: planningContext(state, t, { scopeOnly: true }), attempt: round.attempt,
@@ -3770,7 +3801,7 @@ const commands = {
     emit(name, 'task_planned', id, { planner: t.planner, round: t.planningAttempts.length, state: t.state })
     if (t.state === 'blocked') log(`[prumo] ${id} task plan recorded; still blocked — unblock explicitly to resume the current attempt`)
     else log(`[prumo] ${id} ready to execute (task plan recorded by ${t.planner})`)
-    printPlannedQuestionSummary([t])
+    printPlannedQuestionSummary([t], state)
   },
 
   start() {
@@ -3816,7 +3847,7 @@ const commands = {
       ...(inputReceipt ? { inputReceipt: inputReceipt.inputs, inputDigest: inputReceipt.digest } : {}) })
     recordManualConfirmation(t.attempts.at(-1), 'dispatch', dispatchConfirmation)
     const total = t.taskPlan?.steps?.length
-    if (total) t.attempts.at(-1).executionStep = 1
+    if (total) Object.assign(t.attempts.at(-1), { executionStep: 1, executionSteps: [1] })
     saveState(name, state)
     emit(name, 'task_start', id, { agent, attempt: t.attempts.length,
       ...(planDigest ? { planDigest: planDigest.slice(0, 4) } : {}),
@@ -3834,10 +3865,11 @@ const commands = {
       const environment = Object.entries(context).map(([key, value]) => shell === 'powershell'
         ? `$env:${key}=${quote(value)};` : `${key}=${quote(value)}`).join(' ')
       const command = environment + ' ' + [...(shell === 'powershell' ? ['&'] : []), quote(process.execPath),
-        quote(process.argv[1]), 'progress', quote(id), '--step', '1', '--agent',
+        quote(process.argv[1]), 'progress', quote(id), '--step', '<N>', '--agent',
         quote(agent), '--run', quote(name)].join(' ')
       log('[prumo] report each actual execution step with:')
       console.log(command)
+      log('[prumo] ' + tr('Replace <N> with the actual step number; report each step, not only the first'))
     }
   },
 
@@ -3846,7 +3878,7 @@ const commands = {
     const id = args._[0] ?? die('progress <task> --step <index> --agent <executor>')
     const state = loadState(name)
     const t = getTask(state, id)
-    if (t.state !== 'running') die(`${id} is ${t.state}, not running`)
+    if (!['running', 'reviewing'].includes(t.state)) die(`${id} is ${t.state}, not running or reviewing`)
     assertCurrentTaskScope(state, t)
     assertCurrentExecutionInputs(state, t)
     if (!args.agent || args.agent !== t.agent) die('progress needs the current executor agent')
@@ -3859,6 +3891,7 @@ const commands = {
       return
     }
     attempt.executionStep = current
+    if (attempt.executionSteps && !attempt.executionSteps.includes(current)) attempt.executionSteps.push(current)
     saveState(name, state)
     emit(name, 'task_progress', id, { agent: t.agent, attempt: t.attempts.length, current, total })
     log(`[prumo] ${id} execution position recorded at ${current}/${total} (agent ${t.agent}, attempt ${t.attempts.length}); position is not completion evidence`)
@@ -3897,8 +3930,9 @@ const commands = {
     log(`[prumo] ${id} in review (reviewer ${reviewer})`)
     printReviewCriteria(t)
     const executedStep = t.attempts.at(-1).executionStep ?? 1
-    if (t.taskPlan?.steps?.length > 1 && executedStep < t.taskPlan.steps.length)
+    if (t.taskPlan?.steps?.length > 1 && executedStep < t.taskPlan.steps.length && (missingExecutionSteps(t)?.length ?? 1))
       log(`[prumo] WARNING: executor progress stayed at ${executedStep}/${t.taskPlan.steps.length}; the position is not proof of completed work`)
+    printMissingExecutionSteps(t)
     announceFreedSlot(name, state, id, 'review', slotsBeforeReview)
     printDispatchSuggestions(state)
   },
@@ -4403,8 +4437,9 @@ const commands = {
       log('[prumo] ' + tr('external block resolved for {0}; replanning is still required before returning to {1}; use begin-discussion {0}, plan-task {0}, finish-planning {0}, then unblock {0}; attempt and history preserved', id, previous))
     else log('[prumo] ' + id + ' unblocked to ' + target + '; attempt ' + t.attempts.length + ' preserved; no agent dispatched')
     const executedStep = t.attempts.at(-1)?.executionStep ?? 1
-    if (target === 'reviewing' && t.taskPlan?.steps?.length > 1 && executedStep < t.taskPlan.steps.length)
+    if (target === 'reviewing' && t.taskPlan?.steps?.length > 1 && executedStep < t.taskPlan.steps.length && (missingExecutionSteps(t)?.length ?? 1))
       log(`[prumo] WARNING: executor progress stayed at ${executedStep}/${t.taskPlan.steps.length}; the position is not proof of completed work`)
+    if (target === 'reviewing') printMissingExecutionSteps(t)
   },
 
   skip() {

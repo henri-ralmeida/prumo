@@ -2,6 +2,13 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.11.6 — 2026-10-22
+
+- Separe propostas do planejador de respostas do usuário e informe a origem das respostas, preservando registros legados. Descreva entregas externas sem ampliar autorização de escrita.
+- Mostre passos sem registro na tentativa atual e permita relato retroativo pelo executor durante a revisão, sem alterar o revisor ou a aprovação.
+- Inclua notas, decisões do planejamento e resoluções de perguntas na consulta do contrato, sem alterar contratos nem aceites automaticamente.
+- Informe a nova ordem de fases na sincronização, exija dependências explícitas coerentes e preserve fases com histórico de execução e os controles de invalidação.
+
 ## 2.11.5 — 2026-10-21
 
 - Confirme a renumeração somente após a ativação no disco, com os caminhos do backup e do plano ativo. Reconheça interrupções e permita retomar a preparação ou confirmar uma troca já aplicada sem repeti-la.

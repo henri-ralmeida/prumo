@@ -452,3 +452,9 @@ active work or use it as measured savings.
 
 Agent controls apply the limit to the selected run or, with "Apply to all runs", to current runs and the
 default for future runs on this computer. New installations use 3; personal preferences are not shipped in the package.
+
+## Propostas e contexto do contrato
+
+Ao preencher `openQuestions`, use `proposedAnswer` para propostas; `answer` registra uma resposta efetivamente obtida. Não apresente uma resposta com origem não verificada como confirmação do usuário. Confira notas e decisões posteriores em `show-contract` antes de replanejar, preservando contratos e aceites existentes. Entregas externas podem ser descritas em `externalDeliverables`, sem ampliar `writes`, `touches` ou permissões.
+
+Para reordenar fases ainda não executadas, ajuste a ordem de `phases` e os `deps` explicitamente no plano candidato e confira `sync-plan --dry-run`, inclusive suas invalidações. O motor preserva as dependências declaradas e recusa relações incompatíveis com a nova ordem. Veja `references/recovery.md`.

@@ -139,6 +139,7 @@ test('tentativa histórica sem posição preserva progresso fora de ordem sem in
   assert.equal(f.cli('start', 'T1', '--agent', 'executor').status, 0)
   state = f.state()
   delete state.tasks.T1.attempts.at(-1).executionStep
+  delete state.tasks.T1.attempts.at(-1).executionSteps
   f.save(state)
   const advanced = f.cli('progress', 'T1', '--step', '2', '--agent', 'executor')
   assert.equal(advanced.status, 0, f.output(advanced))
@@ -149,6 +150,17 @@ test('tentativa histórica sem posição preserva progresso fora de ordem sem in
   assert.match(f.output(backwards), /execution position recorded at 1\/2.*not completion evidence/)
   assert.deepEqual(f.state().tasks.T1.attempts.at(-1), { ...before, executionStep: 1 })
   assert.equal(f.state().tasks.T1.state, 'running')
+  const reviewed = f.cli('review', 'T1', '--agent', 'revisor-independente')
+  assert.equal(reviewed.status, 0, f.output(reviewed))
+  assert.match(f.output(reviewed), /Legacy progress records only the last position/)
+  assert.doesNotMatch(f.output(reviewed), /Executor steps without a record/)
+  const blocked = f.cli('block', 'T1', '--reason', 'Aguardar revisão independente')
+  assert.equal(blocked.status, 0, f.output(blocked))
+  const resumed = f.cli('unblock', 'T1', '--reviewer', 'revisor-independente')
+  assert.equal(resumed.status, 0, f.output(resumed))
+  assert.match(f.output(resumed), /Legacy progress records only the last position/)
+  assert.equal(f.state().tasks.T1.attempts.length, 1)
+  assert.equal(f.state().tasks.T1.attempts[0].executionSteps, undefined)
 })
 
 test('retry respeita o limite de tentativas e o plano aprovado antes de alterar histórico', t => {

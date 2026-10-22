@@ -198,9 +198,17 @@ for (const lang of ['en', 'pt-BR']) test(`posicao fora de ordem preserva histori
   assert.notEqual(f.cli('done', 'T1').status, 0, 'registrar posicao nao aprova a tarefa')
   f.ok('review', 'T1', '--agent', 'revisor')
   const reviewing = f.state(), reviewEvents = f.events()
-  assert.notEqual(f.cli('progress', 'T1', '--step', '2', '--agent', 'executor').status, 0)
+  assert.notEqual(f.cli('progress', 'T1', '--step', '4', '--agent', 'revisor').status, 0)
   assert.deepEqual(f.state(), reviewing)
   assert.equal(f.events(), reviewEvents)
+  f.ok('progress', 'T1', '--step', '4', '--agent', 'executor')
+  const expectedTask = structuredClone(reviewing.tasks.T1)
+  expectedTask.attempts.at(-1).executionStep = 4
+  expectedTask.attempts.at(-1).executionSteps.push(4)
+  assert.deepEqual(f.state().tasks.T1, expectedTask)
+  assert.deepEqual(f.events().slice(reviewEvents.length).trim().split('\n').map(JSON.parse)
+    .map(event => [event.type, event.task, event.agent, event.current, event.total]),
+  [['task_progress', 'T1', 'executor', 4, 5]])
 })
 
 test('event progress counts executor plan steps and actual reviewer checks per attempt', t => {
@@ -208,7 +216,7 @@ test('event progress counts executor plan steps and actual reviewer checks per a
   f.beginPlan('T1')
   f.finish('T1', { ...f.artifact('T1'), steps: ['Inspect', 'Implement', 'Verify', 'Report'] })
   const started = f.ok('start', 'T1', '--agent', 'executor')
-  assert.match(started.output, /progress 'T1' --step 1 --agent 'executor' --run 'planning'/)
+  assert.match(started.output, /progress 'T1' --step <N> --agent 'executor' --run 'planning'/)
   const log = () => f.events().trim().split('\n').map(JSON.parse)
   assert.equal(log().at(-1).current, 1)
   assert.equal(log().at(-1).total, 4)
@@ -252,7 +260,7 @@ function startWithQuotedPaths(t, shellEnv) {
 
   const copiedScripts = join(f.root, "engine path & 'quoted'")
   mkdirSync(copiedScripts)
-  for (const file of ['engine.mjs', 'engine-args.mjs', 'replanning-recovery.mjs', 'git-directory-evidence.mjs', 'atomic-state.mjs', 'discovery-history.mjs', 'legacy-attempts.mjs', 'validation.mjs', 'task-renumber.mjs', 'task-scope.mjs', 'execution-readiness.mjs', 'storage.mjs', 'i18n.mjs',
+  for (const file of ['engine.mjs', 'engine-args.mjs', 'planning-context.mjs', 'replanning-recovery.mjs', 'git-directory-evidence.mjs', 'atomic-state.mjs', 'discovery-history.mjs', 'legacy-attempts.mjs', 'validation.mjs', 'task-renumber.mjs', 'task-scope.mjs', 'execution-readiness.mjs', 'storage.mjs', 'i18n.mjs',
     'messages.json', 'region.mjs', 'sync-plan-audit.mjs', 'contract-drift.mjs', 'task-identifiers.mjs', 'review-readiness.mjs', 'command-metrics.mjs', 'delivery-evidence.mjs', 'run-metadata.mjs', 'recorded-timing.mjs'])
     copyFileSync(join(dirname(engine), file), join(copiedScripts, file))
   const copiedEngine = join(copiedScripts, 'engine.mjs')
@@ -271,7 +279,8 @@ function startWithQuotedPaths(t, shellEnv) {
   const lines = output.split(/\r?\n/)
   const command = lines[lines.findIndex(line => line.includes('report each actual execution step with:')) + 1]
   assert.ok(command?.includes(' progress '), output)
-  return { f, env, agent, command }
+  assert.match(command, /--step <N>/)
+  return { f, env, agent, command: command.replace('<N>', '1') }
 }
 
 test('start prints a PowerShell-safe command for paths and shell metacharacters', t => {

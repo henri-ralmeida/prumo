@@ -1,4 +1,27 @@
 {
+  "2.11.6": {
+    "en": [
+      {
+        "title": "Fixed — Planning proposals and external deliverables",
+        "items": [
+          "Keep planner proposals separate from user answers, identify recorded answer origins, and describe external deliverables without granting write authorization"
+        ]
+      },
+      {
+        "title": "Fixed — Execution progress and contract context",
+        "items": [
+          "Print an explicit step placeholder, list unrecorded steps from the current attempt, and allow the executor to report actual steps during review without changing approval",
+          "Show task notes, planning decisions and recorded question resolutions beside the contract without changing its digest or acceptance"
+        ]
+      },
+      {
+        "title": "Fixed — Explicit phase reordering",
+        "items": [
+          "Preview phase order changes, reject dependencies that contradict the requested order, and preserve execution history without inferring dependency rewrites"
+        ]
+      }
+    ]
+  },
   "2.11.5": {
     "en": [
       {

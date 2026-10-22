@@ -324,3 +324,9 @@ refused; extensions use letters linked to the base task. The new phase follows t
 planning, authorization, execution and review gates.
 
 A user-cancelled task should be recorded with `skip <task> --reason "<user decision>"`. It no longer requires phase contract acceptance. An open phase discussion with no active targets closes as superseded, retaining its history; remaining targets keep their controls. Do not edit state or invent a contract acceptance to clear a cancelled task. This transition applies when `skip` is executed; it does not silently rewrite already-recorded runs.
+
+## Reordenação de fases sem inferir dependências
+
+Para trocar fases ainda não executadas, altere a ordem de `phases` no plano candidato e ajuste explicitamente os `deps` que precisam mudar. Execute `sync-plan --plan <candidato> --dry-run`. A prévia mostra a ordem resultante e recusa relações que apontem para uma fase posterior, listando tarefa e dependência. Nenhuma relação é reconectada automaticamente. A liberação de tarefas continua seguindo `deps`, não a posição visual da fase.
+
+A reordenação recusa fases movidas com tentativas ou tarefas encerradas, preservando o trabalho histórico. Discussões e planejamentos já registrados seguem a análise habitual de invalidação da sincronização; confira a prévia e use `--confirm-invalidation` somente para o impacto autorizado. A aplicação usa o fluxo normal de backup, confirmação e histórico de `sync-plan`.

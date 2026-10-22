@@ -13,6 +13,113 @@ import { initializeLegacyPlanFixture } from './fixtures/legacy-plan-init.mjs'
 const engine = resolve(dirname(fileURLToPath(import.meta.url)), '../scripts/engine.mjs')
 const validation = [{ kind: 'functional', run: 'node check.cjs', expect: 'delivery behavior passes' }]
 
+for (const lang of ['en', 'pt-BR']) test(`planejamento distingue proposta, resposta sem origem e resposta literal em ${lang}`, t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }], { lang })
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('plan-phase', 'F1', '--agent', 'planner', '--plan-dir', f.plans)
+  f.writeArtifacts('F1')
+  const path = join(f.plans, 'task-plan-A.json'), plan = JSON.parse(readFileSync(path, 'utf8'))
+  plan.externalDeliverables = [{ location: '/entregas/resultado.sql', purpose: 'Execução manual após revisão' }]
+  plan.openQuestions = [
+    { question: 'Keep the approved phase behavior?', answer: 'Yes.', blocking: false, decideBy: 'user-now' },
+    { question: 'Formato legado?', answer: 'CSV', blocking: false, decideBy: 'user-now' },
+    { question: 'Destino?', proposedAnswer: 'Pasta de entregas', blocking: false, decideBy: 'user-now' },
+    { question: 'Implementação?', proposedAnswer: 'Reusar função', blocking: false, decideBy: 'executor' },
+  ]
+  writeFileSync(path, JSON.stringify(plan))
+  const output = f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans).stdout
+  assert.match(output, lang === 'en' ? /user-discussion/ : /discussão com o usuário/)
+  assert.match(output, lang === 'en' ? /unverified/ : /não verificada/)
+  assert.match(output, lang === 'en' ? /not a user answer/ : /não é uma resposta do usuário/)
+  assert.match(output, /resultado.sql/)
+  assert.deepEqual(f.state().tasks.A.taskPlan.externalDeliverables, plan.externalDeliverables)
+  f.rejects(/unresolved questions|sem resposta|pergunta/i, 'start', 'A', '--agent', 'executor')
+  const question = f.state().tasks.A.taskPlan.openQuestions[2]
+  f.ok('answer-question', question.questionRef, '--answer', 'Destino confirmado', '--confirmed-by-user')
+  const shown = JSON.parse(f.ok('show-contract', 'A').stdout)
+  assert.equal(shown.questionResolutions.at(-1).confirmedByUser, true)
+  assert.equal(shown.questionResolutions.at(-1).answer, 'Destino confirmado')
+  f.ok('start', 'A', '--agent', 'executor')
+})
+
+for (const lang of ['en', 'pt-BR']) test(`progresso lista lacunas e aceita relato retroativo sem alterar revisão em ${lang}`, t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }], { lang })
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('plan-phase', 'F1', '--agent', 'planner', '--plan-dir', f.plans)
+  f.writeArtifacts('F1')
+  const path = join(f.plans, 'task-plan-A.json'), plan = JSON.parse(readFileSync(path, 'utf8'))
+  plan.steps = ['Primeiro', 'Segundo', 'Terceiro']
+  writeFileSync(path, JSON.stringify(plan))
+  f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  assert.match(f.ok('start', 'A', '--agent', 'executor').stdout, /--step <N>/)
+  f.ok('progress', 'A', '--step', '3', '--agent', 'executor')
+  const output = f.ok('review', 'A', '--agent', 'reviewer').stdout
+  assert.match(output, lang === 'en' ? /steps without a record: 2;/ : /Passos sem registro: 2;/)
+  f.rejects(/current executor|executor atual/, 'progress', 'A', '--step', '2', '--agent', 'reviewer')
+  const before = f.state().tasks.A.attempts.at(-1).reviewProgress
+  f.ok('progress', 'A', '--step', '2', '--agent', 'executor')
+  assert.deepEqual(f.state().tasks.A.attempts.at(-1).executionSteps, [1, 3, 2])
+  assert.deepEqual(f.state().tasks.A.attempts.at(-1).reviewProgress, before)
+  f.ok('block', 'A', '--reason', 'Aguardar revisão independente')
+  const resumed = f.ok('unblock', 'A', '--reviewer', 'reviewer').stdout
+  assert.doesNotMatch(resumed, /executor progress stayed|progresso do executor permaneceu|steps without a record|Passos sem registro/)
+  f.ok('progress', 'A', '--step', '3', '--agent', 'executor')
+  assert.match(f.ok('progress', 'A', '--step', '3', '--agent', 'executor').stdout, /already|já/)
+  const validationOutput = f.ok('validate', 'A', '--ok', '--evidence', 'Inspeção independente', '--cwd', f.project).stdout
+  assert.doesNotMatch(validationOutput, /steps without a record|passos sem registro/)
+})
+
+test('contrato mostra notas e decisões sem alterar digest, contrato ou autorização', t => {
+  const f = fixture(t)
+  const before = JSON.parse(f.ok('show-contract', 'T1', '--full').stdout)
+  const authorization = f.state().tasks.T1.executionAuthorization
+  f.ok('note', 'T1', '--text', 'O usuário pediu revisar o destino antes da entrega')
+  const state = f.state()
+  state.questionResolutions = [
+    { byTask: 'T1', questionRef: 'T2:plan:anterior', answer: 'Decisão que afeta outra tarefa' },
+    { questionRef: 'T2:plan:outra', answer: 'Contexto exclusivo de outra tarefa' }, {},
+  ]
+  f.save(state)
+  const shown = JSON.parse(f.ok('show-contract', 'T1', '--full').stdout)
+  assert.equal(shown.notes.at(-1).text, state.tasks.T1.notes.at(-1).text)
+  assert.deepEqual(shown.decisions, state.tasks.T1.taskPlan.decisions)
+  assert.deepEqual(shown.questionResolutions, [state.questionResolutions[0]])
+  assert.equal(shown.contractDigest, before.contractDigest)
+  assert.deepEqual(shown.contract, before.contract)
+  assert.match(shown.contextNote, /do not amend or approve/)
+  assert.deepEqual(f.state().tasks.T1.executionAuthorization, authorization)
+  delete state.tasks.T1.notes
+  f.save(state)
+  const legacy = JSON.parse(f.ok('show-contract', 'T1', '--full').stdout)
+  assert.deepEqual(legacy.notes, [])
+  assert.equal(legacy.contractDigest, before.contractDigest)
+  assert.deepEqual(f.state(), state)
+})
+
+for (const lang of ['en', 'pt-BR']) test(`reordenação exige dependências coerentes e preserva execução histórica em ${lang}`, t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Antes' }, { id: 'B', phase: 'F2', title: 'Depois', deps: ['A'] }], { lang })
+  const before = f.state(), events = f.events()
+  f.plan.phases.reverse()
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.rejects(/B <- A/, 'sync-plan', '--plan', f.planPath, '--dry-run')
+  assert.deepEqual(f.state(), before)
+  assert.equal(f.events(), events)
+  f.plan.tasks[0].deps = ['B']; f.plan.tasks[1].deps = []
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  assert.match(f.ok('sync-plan', '--plan', f.planPath, '--dry-run').stdout, /F2 -> F1/)
+  assert.deepEqual(f.state(), before)
+  f.ok('sync-plan', '--plan', f.planPath)
+  assert.deepEqual(f.state().plan.phases.map(phase => phase.id), ['F2', 'F1'])
+  assert.deepEqual(f.state().tasks.A.deps, ['B'])
+  assert.match(f.events(), /phaseOrder/)
+  const state = f.state(); state.tasks.B.attempts.push({ n: 1, result: 'failed', endedAt: new Date().toISOString() }); f.save(state)
+  f.plan.phases.reverse(); f.plan.tasks[0].deps = []; f.plan.tasks[1].deps = ['A']
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.rejects(/execution history|histórico de execução/, 'sync-plan', '--plan', f.planPath)
+})
+
 test('alterar descrição lista fases e tarefas concluídas, mas dispensa fases sem rodadas', t => {
   const f = phaseFixture(t, [{ id: 'T1', phase: 'F1', title: 'Primeira' }, { id: 'T2', phase: 'F1', title: 'Segunda' },
     { id: 'T3', phase: 'F2', title: 'Terceira' }])
