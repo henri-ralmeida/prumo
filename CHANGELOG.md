@@ -2,6 +2,12 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.11.7 — 2026-10-22
+
+- Mantenha os controles de agentes e ao vivo alinhados em janelas compactas, com o formulário inteiramente visível. Em larguras de até 900 px, a lateral aberta sobrepõe o grafo para preservar sua largura.
+- Apresente o resultado de cada etapa do `prumo update`, sem percentuais artificiais. Adapte os rótulos à largura do terminal e use linhas estáticas quando a saída for redirecionada.
+- Não anuncie um aplicativo apenas por uma configuração vazia ou comentada. Preserve a descoberta e o reparo das instalações existentes do Prumo.
+
 ## 2.11.6 — 2026-10-22
 
 - Separe propostas do planejador de respostas do usuário e informe a origem das respostas, preservando registros legados. Descreva entregas externas sem ampliar autorização de escrita.

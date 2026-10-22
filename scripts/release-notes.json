@@ -1,4 +1,26 @@
 {
+  "2.11.7": {
+    "en": [
+      {
+        "title": "Fixed — Compact dashboard controls",
+        "items": [
+          "Keep agents and live controls aligned in compact windows and keep the agents form inside the viewport; at widths up to 900 px, the open sidebar overlays the graph to preserve its width"
+        ]
+      },
+      {
+        "title": "Improved — Update stage trail",
+        "items": [
+          "Show the outcome of each prumo update stage without artificial percentages, fit labels to terminal width and use static lines for redirected output"
+        ]
+      },
+      {
+        "title": "Fixed — Empty environment configurations",
+        "items": [
+          "Do not announce an application based only on empty or commented configuration files; preserve discovery and repair of existing Prumo installations"
+        ]
+      }
+    ]
+  },
   "2.11.6": {
     "en": [
       {

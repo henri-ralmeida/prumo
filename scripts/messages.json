@@ -1,4 +1,10 @@
 {
+  "Fixed — Compact dashboard controls": "Corrigido — Controles do dashboard em janelas compactas",
+  "Keep agents and live controls aligned in compact windows and keep the agents form inside the viewport; at widths up to 900 px, the open sidebar overlays the graph to preserve its width": "Mantenha os controles de agentes e ao vivo alinhados em janelas compactas e o formulário de agentes dentro da área visível; em larguras de até 900 px, a lateral aberta sobrepõe o grafo para preservar sua largura",
+  "Improved — Update stage trail": "Melhorado — Trilha de etapas da atualização",
+  "Show the outcome of each prumo update stage without artificial percentages, fit labels to terminal width and use static lines for redirected output": "Mostre o resultado de cada etapa do prumo update sem percentuais artificiais, adapte os rótulos à largura do terminal e use linhas estáticas quando a saída for redirecionada",
+  "Fixed — Empty environment configurations": "Corrigido — Configurações vazias de ambientes",
+  "Do not announce an application based only on empty or commented configuration files; preserve discovery and repair of existing Prumo installations": "Não anuncie um aplicativo apenas por uma configuração vazia ou comentada; preserve a descoberta e o reparo das instalações existentes do Prumo",
   "Fixed — Renumbering confirmation and recovery": "Corrigido — Confirmação e recuperação da renumeração",
   "Confirm renumbering only after activation on disk, including backup and active plan paths; recognize interruptions and resume preparation or acknowledge an applied mapping without repeating it": "Confirme a renumeração somente após a ativação no disco, incluindo os caminhos do backup e do plano ativo; reconheça interrupções e retome a preparação ou confirme um mapa já aplicado sem repeti-lo",
   "Fixed — Run lock release": "Corrigido — Liberação da trava da execução",
