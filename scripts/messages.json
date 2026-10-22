@@ -1,4 +1,10 @@
 {
+  "Fixed — Renumbering confirmation and recovery": "Corrigido — Confirmação e recuperação da renumeração",
+  "Confirm renumbering only after activation on disk, including backup and active plan paths; recognize interruptions and resume preparation or acknowledge an applied mapping without repeating it": "Confirme a renumeração somente após a ativação no disco, incluindo os caminhos do backup e do plano ativo; reconheça interrupções e retome a preparação ou confirme um mapa já aplicado sem repeti-lo",
+  "Fixed — Run lock release": "Corrigido — Liberação da trava da execução",
+  "Release the run lock before cleaning its files and preserve owner identification when cleanup fails; notes, progress and activity records wait up to 30 seconds while locks without a verifiable owner remain protected": "Libere a trava da execução antes de limpar seus arquivos e preserve a identificação do dono quando a limpeza falhar; notas, progresso e registros de atividade aguardam até 30 segundos, enquanto travas sem dono verificável continuam protegidas",
+  "Fixed — Coverage collection": "Corrigido — Coleta de cobertura",
+  "Preserve coverage instrumentation after lock fault injection so exercised paths are consolidated correctly without lowering coverage requirements": "Preserve a instrumentação de cobertura após simular falhas de trava para consolidar corretamente os caminhos exercitados sem reduzir os limites de cobertura exigidos",
   "Preview; no changes were written": "Prévia; nada foi gravado",
   "Renumbering applied; state, source plan and event history were activated": "Renumeração aplicada; estado, plano de origem e histórico de eventos foram ativados",
   "Invalid renumbering preparation; inspect {0} before retrying": "Preparação de renumeração inválida; inspecione {0} antes de tentar novamente",
