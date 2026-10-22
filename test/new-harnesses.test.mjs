@@ -241,6 +241,20 @@ test('Grok updates the installation locale and PO First while preserving persona
   assert.deepEqual(discoverInstallations(f.options).map(entry => entry.harness), ['grok'])
 })
 
+test('configuração vazia não anuncia um aplicativo, mas preserva a descoberta de instalações existentes', t => {
+  const f = fixture(t, 'grok')
+  applyInstall(f.plan())
+  const config = join(f.home, '.grok', 'config.toml')
+  for (const content of ['', '  \n', '# configuração antiga\n', '{}', '/* preferências antigas */']) {
+    put(config, content)
+    assert.deepEqual(detectHarnesses({ ...f.options, includeManaged: false }), [])
+    assert.deepEqual(discoverInstallations(f.options).map(entry => entry.harness), ['grok'])
+    assert.deepEqual(detectHarnesses(f.options), ['grok'])
+  }
+  put(config, 'model = "grok"\n')
+  assert.deepEqual(detectHarnesses({ ...f.options, includeManaged: false }), ['grok'])
+})
+
 test('arquivos criados apenas pelo Prumo permitem reparo sem anunciar aplicativos inexistentes', t => {
   const f = fixture(t, 'grok')
   const env = { CODEX_HOME: join(f.home, '.codex') }

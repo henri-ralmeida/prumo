@@ -256,14 +256,15 @@ test('prévia de atualização anuncia o CLI primeiro e apenas harnesses realmen
   assert.match(cliOnly.stdout, /(^|\n)would update the cli(\r?\n|$)/)
   assert.doesNotMatch(cliOnly.stdout, /(?:would )?update the harness|(?:would )?update (claude|kiro|codex|dsh|antigravity|opencode|grok)/)
 
-  for (const harness of ['codex', 'dsh']) {
-    const root = harness === 'codex' ? join(home, '.agents', 'skills') : join(home, '.dsh', 'skills')
+  for (const harness of ['codex', 'dsh', 'grok']) {
+    const root = harness === 'codex' ? join(home, '.agents', 'skills') : join(home, `.${harness}`, 'skills')
     put(join(root, 'prumo', '.prumo-install.json'), { product: 'prumo', harness, version })
   }
+  put(join(home, '.grok', 'config.toml'), '')
   const managedOnly = run()
   assert.equal(managedOnly.status, 0, managedOnly.stdout + managedOnly.stderr)
   assert.match(managedOnly.stdout, /would update the harness/)
-  assert.doesNotMatch(managedOnly.stdout, /would update (codex|dsh)/)
+  assert.doesNotMatch(managedOnly.stdout, /would update (codex|dsh|grok)/)
   put(join(home, '.codex', 'config.toml'), '[model]\n')
   put(join(home, '.dsh', 'profiles', 'headless', 'package.json'), { dsh: { profile: { bundles: [] } } })
   const discovered = run()

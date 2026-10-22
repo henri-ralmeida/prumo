@@ -8,6 +8,7 @@ import { resolve, join, dirname } from 'node:path'
 import { HARNESSES, planInstall, applyInstall, restoreInstall, installationStatus, discoverInstallations, detectHarnesses, reconcileDashboardInstall, readInstallationMarker, installedPoFirstLanguage, inspectInstallation } from '../lib/install.mjs'
 import { assertUpdateVersion, ensureGlobalCliContent, globalCliContentCurrent, globalCliState, launchUpdate, reconcileDashboardUpdate, updateGlobalCliFromPackage, updateRequest } from '../lib/update.mjs'
 import { releaseHistory } from '../lib/release-notes.mjs'
+import { updateProgress } from '../lib/update-progress.mjs'
 import { DASHBOARD_ALIAS_URL, DASHBOARD_URL, dashboardNeedsRepair, dashboardStatus, disableDashboard, enableDashboard, readDashboardEvents, runDashboardForeground, stopDashboardForUpdate } from '../lib/autostart.mjs'
 import { openDashboardBrowser, BOARD_URL } from '../lib/browser.mjs'
 import { LEGACY_DASHBOARD_PORT } from '../scripts/serve-args.mjs'
@@ -234,7 +235,7 @@ try {
       const request = updateRequest(process.env.PRUMO_UPDATE_REQUEST)
       assertUpdateVersion(request.sourceVersion, version)
       const quiet = !request.dryRun
-      const progress = progressUi(quiet)
+      const progress = updateProgress({ enabled: quiet, color })
       const previousGlobal = globalCliState(packageRoot)
       const previousVersions = [previousGlobal.version]
       const dashboardBefore = await dashboardStatus()
@@ -260,13 +261,15 @@ try {
         }
         const reported = new Set()
         const nativeHarnesses = new Set(detectHarnesses({ cwd: request.cwd, projects: request.projects, includeManaged: false }))
-        progress.update(10, t('preparing prumo update'))
+        progress.start(t('preparing prumo update'), t('Update prepared'))
+        progress.finish()
         if (request.updateCli) {
           if (request.dryRun) print(t('would update the cli'))
           else {
-            progress.update(30, t('updating the cli'))
+            progress.start(t('updating the cli'), t('CLI updated'))
             try {
               await updateGlobalCliFromPackage(packageRoot, { lang: request.lang ?? lang })
+              progress.finish()
             } catch (error) {
               throw new Error(`Global Prumo CLI update failed: ${error.message}`, { cause: error })
             }
@@ -274,8 +277,7 @@ try {
         }
         if (!installed.length) print('No Prumo installations found; install an environment first')
         else if (!quiet) print(t('would update the harness'))
-        else progress.update(40, t('updating the harness'))
-        for (const [index, entry] of installed.entries()) {
+        for (const entry of installed) {
           try {
             const variants = new Map()
             let firstSavedLanguage
@@ -293,16 +295,21 @@ try {
               t = createTranslator(messages, language(lang))
               if (nativeHarnesses.has(entry.harness)) {
                 if (!quiet) print(t('would update {0}', entry.harness))
-                else progress.update(45 + Math.round(45 * (index + 1) / Math.max(installed.length, 1)), t('updating {0}', entry.harness))
               }
-              const percent = 45 + Math.round(45 * (index + 1) / Math.max(installed.length, 1))
-              runInstall({ harness: entry.harness, configRoot: entry.config, skillRoots: roots, onlyInstalled: true, cwd: request.cwd, projects: entry.projects, lang, poFirstLang }, { dryRun: request.dryRun, quiet, reported,
-                onProgress: event => progress.update(percent, t('migrating workspace {0}', event.name)) })
+              if (quiet) {
+                progress.start(nativeHarnesses.has(entry.harness) ? t('updating {0}', entry.harness) : t('Updating installed Prumo files'),
+                  nativeHarnesses.has(entry.harness) ? t('Updated {0}', entry.harness) : t('Installed Prumo files updated'))
+                progress.suspend()
+              }
+              const result = runInstall({ harness: entry.harness, configRoot: entry.config, skillRoots: roots, onlyInstalled: true, cwd: request.cwd, projects: entry.projects, lang, poFirstLang }, { dryRun: request.dryRun, quiet, reported })
+              if (quiet) progress.finish(result.viable && !result.pendingActivation.length)
             }
-          } catch (error) { console.error(`[prumo] ${t(error.message)}`); process.exitCode = 2 }
+          } catch (error) { progress.clear(); console.error(`[prumo] ${t(error.message)}`); process.exitCode = 2 }
         }
         const globalPackage = globalCliState(packageRoot).packageRoot ?? packageRoot
+        progress.start(t('Checking dashboard'), t('Dashboard checked'))
         const dashboard = await reconcileDashboardUpdate({ dryRun: request.dryRun, before: dashboardBefore, lang: request.lang, dashboardOptions: { packageRoot: globalPackage } })
+        progress.finish(dashboard.ok)
         dashboardRestored = true
         if (dashboard.action === 'enable' && request.dryRun) print('Would enable and start the Prumo dashboard')
         if (dashboard.action === 'restart' && request.dryRun) print('Would restart the enabled Prumo dashboard')
@@ -326,6 +333,7 @@ try {
           }
         }
       } finally {
+        progress.clear()
         if (stopped.stopped && !dashboardRestored) {
           try {
             const globalPackage = globalCliState(packageRoot).packageRoot ?? packageRoot

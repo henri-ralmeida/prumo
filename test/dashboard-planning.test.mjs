@@ -3379,12 +3379,12 @@ test('page never scrolls sideways: hidden sidebar leaves the layout, main rows a
   assert.match(html, /#pop \.ptxt \{[^}]*overflow-wrap: anywhere; \}/)
 })
 
-test('an open sidebar on a phone overlays the graph instead of widening the page', () => {
+test('lateral aberta em meia tela preserva a largura do grafo e espaço para seu controle', () => {
   const phone = html.slice(html.indexOf('main.sidebar-collapsed #sidebarToggle { right: 0; }'))
-  const block = phone.slice(phone.indexOf('@media (max-width: 700px) {'), phone.indexOf('\n  }', phone.indexOf('@media (max-width: 700px) {')))
+  const block = phone.slice(phone.indexOf('@media (max-width: 900px) {'), phone.indexOf('\n  }', phone.indexOf('@media (max-width: 900px) {')))
   assert.match(block, /main, main\.sidebar-collapsed \{ grid-template-columns: minmax\(0, 1fr\); \}/)
-  assert.match(block, /main > aside \{ position: absolute;[^}]*width: min\(360px, calc\(100vw - 32px\)\)/)
-  assert.match(block, /#sidebarToggle \{ right: min\(360px, calc\(100vw - 32px\)\); \}/)
+  assert.match(block, /main > aside \{ position: absolute;[^}]*width: min\(340px, calc\(100vw - 48px\)\)/)
+  assert.match(block, /#sidebarToggle \{ right: min\(340px, calc\(100vw - 48px\)\); \}/)
 })
 
 test('detail preserves every recorded line in summaries, plans and validations while lean remains a preview', () => {
@@ -4500,10 +4500,12 @@ test('o cabecalho ordena plano e filtros antes do status e separa resultados do 
   const separator = header.indexOf('<div class="guide-slot">')
   assert.ok(results < separator && separator < guide, 'o separador fica entre resultados e guia')
   assert.match(html, /\.guide-slot \{[^}]*padding-left: 12px;[^}]*border-left: 1px solid var\(--line\);/)
-  assert.match(html, /header \.run-menu \{ grid-column: 2; grid-row: 1;/)
-  assert.match(html, /header \.header-guide \{ grid-column: 3; grid-row: 2;/)
-  assert.match(html, /header \.header-guide \{ grid-column: 1 \/ 3; grid-row: 3;/)
-  assert.match(html, /header \.orch \{ grid-column: 2; grid-row: 2;/)
+  assert.match(html, /header \.run-menu \{ grid-column: 2 \/ 5; grid-row: 1;/)
+  assert.match(html, /header \.header-guide \{ grid-column: 4; grid-row: 2;/)
+  assert.match(html, /header \.header-guide \{ grid-column: 1 \/ 4; grid-row: 3;/)
+  assert.match(html, /header \.orch \{ grid-column: 3; grid-row: 2;/)
+  assert.match(html, /header \.agent-limit-menu \{ grid-column: 2; grid-row: 2; position: static; \}/)
+  assert.match(html, /header \.agent-limit-panel \{ right: auto; left: 12px;[^}]*width: min\(290px, calc\(100vw - 24px\)\);[^}]*overflow-y: auto;/)
   assert.match(html, /header \.header-menu \{ grid-column: 1; grid-row: 2;/)
   assert.match(html, /\.header-menu-content \{[^}]*left: 0;[^}]*width: min\(calc\(100vw - 24px\), 280px\)/)
 })
