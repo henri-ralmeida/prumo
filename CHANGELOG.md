@@ -2,6 +2,12 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.11.5 — 2026-10-21
+
+- Confirme a renumeração somente após a ativação no disco, com os caminhos do backup e do plano ativo. Reconheça interrupções e permita retomar a preparação ou confirmar uma troca já aplicada sem repeti-la.
+- Libere a trava da execução antes de limpar seus arquivos, preservando a identificação do dono em falhas de limpeza. Notas, progresso e registros de atividade aguardam até 30 segundos; travas sem dono verificável continuam protegidas.
+- Preserve a instrumentação de cobertura nos testes de recuperação de travas, para consolidar corretamente os caminhos exercitados sem reduzir os limites exigidos.
+
 ## 2.11.4 — 2026-10-21
 
 - Renumere tarefas em execuções antigas sem tratar tentativas históricas encerradas ou substituídas como trabalho ativo. A prévia informa os bloqueios reais sem gravar alterações, e as recusas identificam a tarefa, tentativa ou rodada envolvida.

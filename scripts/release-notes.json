@@ -1,4 +1,26 @@
 {
+  "2.11.5": {
+    "en": [
+      {
+        "title": "Fixed — Renumbering confirmation and recovery",
+        "items": [
+          "Confirm renumbering only after activation on disk, including backup and active plan paths; recognize interruptions and resume preparation or acknowledge an applied mapping without repeating it"
+        ]
+      },
+      {
+        "title": "Fixed — Run lock release",
+        "items": [
+          "Release the run lock before cleaning its files and preserve owner identification when cleanup fails; notes, progress and activity records wait up to 30 seconds while locks without a verifiable owner remain protected"
+        ]
+      },
+      {
+        "title": "Fixed — Coverage collection",
+        "items": [
+          "Preserve coverage instrumentation after lock fault injection so exercised paths are consolidated correctly without lowering coverage requirements"
+        ]
+      }
+    ]
+  },
   "2.11.4": {
     "en": [
       {
