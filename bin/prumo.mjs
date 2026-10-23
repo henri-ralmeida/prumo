@@ -155,7 +155,8 @@ try {
   if (!values.version && !values.help && positionals.length) assertCliOptions(positionals[0], values)
   if (values.version) print(version)
   else if (values.help || positionals.length === 0) {
-    print(`Prumo ${version} — graph-foreman + PO First\n\nprumo install [--all | ${harnessFlags}] [--lang en|pt-BR] [--dry-run] [--project <path>]\nprumo update [--dry-run] [--lang en|pt-BR] [--project <path>]\nprumo status [--verify-install] [--project <path>]\nprumo migrate [--check] [--run <name>]\nprumo doctor ${harnessFlags} [--lang en|pt-BR] [--project <path>]\nprumo dashboard [enable|disable|status|logs]\nprumo restore <backup>\n`)
+    print(`Prumo ${version} + PO First\n\nprumo install [--all | ${harnessFlags}] [--lang en|pt-BR] [--dry-run] [--project <path>]\nprumo update [--dry-run] [--lang en|pt-BR] [--project <path>]\nprumo status [--verify-install] [--project <path>]\nprumo migrate [--check] [--run <name>]\nprumo doctor ${harnessFlags} [--lang en|pt-BR] [--project <path>]\nprumo dashboard [enable|disable|status|logs]\nprumo restore <backup>\n`)
+    print(t('Dashboard at: {0}', DASHBOARD_URL))
     print('Install opens a selection of detected environments; --all selects all without prompting')
   } else if (positionals[0] === 'status') {
     if (positionals.length !== 1) {
@@ -294,11 +295,11 @@ try {
             for (const [lang, roots] of variants) {
               t = createTranslator(messages, language(lang))
               if (nativeHarnesses.has(entry.harness)) {
-                if (!quiet) print(t('would update {0}', entry.harness))
+                if (!quiet) print(t('would update {0}', harnessLabels[entry.harness]))
               }
               if (quiet) {
-                progress.start(nativeHarnesses.has(entry.harness) ? t('updating {0}', entry.harness) : t('Updating installed Prumo files'),
-                  nativeHarnesses.has(entry.harness) ? t('Updated {0}', entry.harness) : t('Installed Prumo files updated'))
+                progress.start(nativeHarnesses.has(entry.harness) ? t('updating {0}', harnessLabels[entry.harness]) : t('Updating installed Prumo files'),
+                  nativeHarnesses.has(entry.harness) ? t('Updated {0}', harnessLabels[entry.harness]) : t('Installed Prumo files updated'))
                 progress.suspend()
               }
               const result = runInstall({ harness: entry.harness, configRoot: entry.config, skillRoots: roots, onlyInstalled: true, cwd: request.cwd, projects: entry.projects, lang, poFirstLang }, { dryRun: request.dryRun, quiet, reported })
@@ -372,7 +373,7 @@ try {
     let harnesses = selected.length ? selected : detected
     if (!harnesses.length) throw new Error('No supported environments detected; install or configure a supported harness first')
     if (!selected.length) {
-      print(t('Detected environments: {0}', harnesses.join(', ')))
+      print(t('Detected environments: {0}', harnesses.map(harness => harnessLabels[harness]).join(', ')))
       const allCurrent = command === 'install' && harnesses.every(harness => {
         const status = installationStatus(planInstall({ ...options, harness }))
         return status.installed && status.configured
@@ -392,7 +393,7 @@ try {
         const status = installationStatus(planInstall({ ...options, harness }))
         ;(status.installed && status.configured ? current : pending).push(harness)
       }
-      if (current.length) print(color('32', t('Prumo v{0} is already installed in {1}', version, current.join(', '))))
+      if (current.length) print(color('32', t('Prumo v{0} is already installed in {1}', version, current.map(harness => harnessLabels[harness]).join(', '))))
       successfulHarnesses = current.length
       harnesses = pending
     }
@@ -428,7 +429,7 @@ try {
     }
     for (const [index, harness] of harnesses.entries()) {
       try {
-        if (quiet) progress.update(40 + Math.round(50 * (index + 1) / Math.max(harnesses.length, 1)), t('Installing {0}', harness))
+        if (quiet) progress.update(40 + Math.round(50 * (index + 1) / Math.max(harnesses.length, 1)), t('Installing {0}', harnessLabels[harness]))
         const status = runInstall({ ...options, harness }, { command, dryRun, quiet })
         if (command === 'doctor') doctorLang = status.lang
         if (command === 'install' && (dryRun ? status.viable : status.installed && status.configured)) successfulHarnesses += 1

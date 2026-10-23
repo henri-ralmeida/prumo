@@ -480,6 +480,7 @@
   "Use --verify-install with status": "Use --verify-install com status",
   "unknown": "desconhecido",
   "Dashboard: {0}; {1}; {2}": "Dashboard: {0}; {1}; {2}",
+  "Dashboard at: {0}": "Dashboard em: {0}",
   "version: {0}; content: {1}; port: {2}; URL: {3}": "versão: {0}; conteúdo: {1}; porta: {2}; URL: {3}",
   "origin: {0}; path: {1}": "origem: {0}; caminho: {1}",
   "Also available at {0} (no hosts file needed in Chrome, Edge or Firefox)": "Também disponível em {0} (sem arquivo hosts no Chrome, Edge ou Firefox)",

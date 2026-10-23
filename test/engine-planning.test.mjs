@@ -708,6 +708,60 @@ test('aceite coletivo não confirma a tarefa individual pendente', t => {
   assert.equal(f.state().phaseWorkflows.F1.contractConfirmationRequired, null)
 })
 
+test('nova sincronização preserva o aceite individual pendente quando só outra tarefa muda', t => {
+  const f = individualConfirmationFixture(t, true)
+  f.plan.tasks.find(task => task.id === 'B').title = 'Entrega coletiva revisada'
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.ok('sync-plan', '--plan', f.planPath, '--propose', '--confirm-invalidation')
+  assert.deepEqual(f.state().phaseWorkflows.F1.contractConfirmationRequired.tasks.sort(), ['A', 'B'])
+  f.ok('begin-discussion', 'A')
+  f.ok('finish-discussion', 'A', '--context', individualAcceptance(f))
+  assert.deepEqual(f.state().phaseWorkflows.F1.contractConfirmationRequired.tasks, ['B'])
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  assert.equal(f.state().phaseWorkflows.F1.contractConfirmationRequired, null)
+  for (const task of f.plan.tasks) task.title += ' com novo contrato'
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.ok('sync-plan', '--plan', f.planPath, '--confirm-invalidation')
+  assert.deepEqual(f.state().phaseWorkflows.F1.contractConfirmationRequired.tasks.sort(), ['A', 'B'])
+})
+
+test('proposta preserva confirmações históricas e específicas de fases sem executar tarefas', t => {
+  const f = phaseFixture(t, ['A', 'B', 'C', 'D'].map((id, index) => ({ id,
+    phase: index < 2 ? 'F1' : 'F2', title: `Entrega ${id}` })))
+  const historical = f.state()
+  historical.tasks.A.individualPlanning = true
+  historical.tasks.C.individualPlanning = true
+  historical.phaseWorkflows.F1.contractConfirmationRequired = { at: new Date().toISOString(), source: f.planPath }
+  historical.phaseWorkflows.F2.contractConfirmationRequired = { at: new Date().toISOString(), source: f.planPath, tasks: ['C', 'D'] }
+  f.save(historical)
+  for (const task of f.plan.tasks) task.title += ' revisada'
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.ok('sync-plan', '--plan', f.planPath, '--propose', '--confirm-invalidation')
+  assert.deepEqual(f.state().phaseWorkflows.F1.contractConfirmationRequired.tasks.sort(), ['A', 'B'])
+  assert.deepEqual(f.state().phaseWorkflows.F2.contractConfirmationRequired.tasks.sort(), ['C', 'D'])
+  for (const task of Object.values(f.state().tasks)) {
+    assert.equal(task.state, historical.tasks[task.id].state)
+    assert.deepEqual(task.attempts, historical.tasks[task.id].attempts)
+  }
+})
+
+test('discussão coletiva pode encerrar após o último aceite pendente chegar pela discussão individual', t => {
+  const f = individualConfirmationFixture(t, true)
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('begin-phase-discussion', 'F1')
+  const collectivePath = f.discovery('F1')
+  const collective = readFileSync(collectivePath, 'utf8')
+  f.ok('begin-discussion', 'A')
+  f.ok('finish-discussion', 'A', '--context', individualAcceptance(f))
+  assert.equal(f.state().phaseWorkflows.F1.contractConfirmationRequired, null)
+  writeFileSync(collectivePath, collective)
+  f.ok('finish-phase-discussion', 'F1', '--context', collectivePath)
+  assert.equal(f.state().phaseWorkflows.F1.contractConfirmationRequired, null)
+  assert.equal(f.state().tasks.A.state, 'blocked')
+})
+
 test('aceite individual preserva modo manual e pausa até planejamento e retomada explícitos', t => {
   const f = individualConfirmationFixture(t)
   f.ok('authorize', '--scope', 'tasks:A', '--mode', 'manual', '--confirmed-by-user')

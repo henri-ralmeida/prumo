@@ -669,6 +669,7 @@ test('install preserva progresso TTY com e sem métodos de limpeza e respeita NO
 
 test('worker _update preserva o fluxo local quando updateCli está desabilitado', t => {
   const f = detectedClaude(t, 'prumo-cli-worker-update-')
+  writeFileSync(join(f.home, '.claude.json'), JSON.stringify({ theme: 'dark' }))
   installHarness(f, 'claude')
   disableDashboard(f.home)
   const request = {
@@ -685,6 +686,8 @@ test('worker _update preserva o fluxo local quando updateCli está desabilitado'
   }, f.project)
   assert.equal(result.status, 0, result.output)
   assert.match(result.output, /prumo updated successfully/)
+  assert.match(result.output, /Updated Claude Code/)
+  assert.doesNotMatch(result.output, /Updated claude\b/)
   assert.equal(existsSync(join(f.home, '.local', 'share', 'prumo', 'update-pending.json')), false)
 
   const preview = runCli(f.home, ['_update'], {
@@ -692,6 +695,7 @@ test('worker _update preserva o fluxo local quando updateCli está desabilitado'
     PRUMO_UPDATE_REQUEST: JSON.stringify({ ...request, dryRun: true }),
   }, f.project)
   assert.equal(preview.status, 0, preview.output)
+  assert.match(preview.output, /would update Claude Code/)
   assert.match(preview.output, /Dashboard remains disabled by user preference/)
 })
 
@@ -784,9 +788,13 @@ test('CLI exibe versão e ajuda e recusa Node incompatível antes de alterar arq
   const version = runCli(home, ['--version'])
   assert.equal(version.status, 0, version.output)
   assert.equal(version.stdout.trim(), packageVersion)
-  for (const args of [[], ['--help']]) {
-    const help = runCli(home, args)
+  for (const lang of ['en', 'pt-BR']) for (const args of [[], ['--help']]) {
+    const help = runCli(home, args, { PRUMO_LANG: lang })
     assert.equal(help.status, 0, help.output)
+    assert.equal(help.stdout.split(/\r?\n/)[0], `Prumo ${packageVersion} + PO First`)
+    assert.doesNotMatch(help.stdout, /graph-foreman/)
+    assert.match(help.stdout, lang === 'pt-BR' ? /Dashboard em: http:\/\/localhost:4949/ : /Dashboard at: http:\/\/localhost:4949/)
+    assert.doesNotMatch(help.stdout, /(?:Use|Run) prumo dashboard enable/)
     assert.match(help.stdout, /prumo install.*prumo update/s)
   }
   const unsupported = runCli(home, ['--version'], preloadEnvironment(home, { nodeVersion: '20.0.0' }))
