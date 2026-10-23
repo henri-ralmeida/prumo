@@ -1,4 +1,21 @@
 {
+  "2.11.8": {
+    "en": [
+      {
+        "title": "Fixed — Individual contract acceptance",
+        "items": [
+          "Reconcile individual acceptance with only its pending phase confirmation after validating the current task, discussion round and contract digest; preserve other pending confirmations and reject missing or stale acceptance",
+          "Recover previously recorded individual acceptance through finish-discussion without duplicate effects, reopening terminal tasks or changing pauses, operation mode and execution authorization"
+        ]
+      },
+      {
+        "title": "Improved — CLI identification and environment names",
+        "items": [
+          "Show Prumo <version> + PO First and the dashboard address in help, and use environment display names during installation and update"
+        ]
+      }
+    ]
+  },
   "2.11.7": {
     "en": [
       {

@@ -1,4 +1,9 @@
 {
+  "Fixed — Individual contract acceptance": "Corrigido — Aceite individual de contrato",
+  "Reconcile individual acceptance with only its pending phase confirmation after validating the current task, discussion round and contract digest; preserve other pending confirmations and reject missing or stale acceptance": "Reconcilie o aceite individual somente com sua confirmação pendente da fase após validar a tarefa, a rodada de discussão e o digest do contrato vigente; preserve as demais confirmações pendentes e recuse aceites ausentes ou obsoletos",
+  "Recover previously recorded individual acceptance through finish-discussion without duplicate effects, reopening terminal tasks or changing pauses, operation mode and execution authorization": "Recupere o aceite individual já registrado por finish-discussion sem duplicar efeitos, reabrir tarefas terminais ou alterar pausas, modo de operação e autorização de execução",
+  "Improved — CLI identification and environment names": "Melhorado — Identificação do CLI e nomes dos ambientes",
+  "Show Prumo <version> + PO First and the dashboard address in help, and use environment display names during installation and update": "Mostre Prumo <versão> + PO First e o endereço do dashboard na ajuda e use os nomes de apresentação dos ambientes na instalação e atualização",
   "Fixed — Compact dashboard controls": "Corrigido — Controles do dashboard em janelas compactas",
   "Keep agents and live controls aligned in compact windows and keep the agents form inside the viewport; at widths up to 900 px, the open sidebar overlays the graph to preserve its width": "Mantenha os controles de agentes e ao vivo alinhados em janelas compactas e o formulário de agentes dentro da área visível; em larguras de até 900 px, a lateral aberta sobrepõe o grafo para preservar sua largura",
   "Improved — Update stage trail": "Melhorado — Trilha de etapas da atualização",

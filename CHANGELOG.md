@@ -2,6 +2,12 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.11.8 — 2026-10-23
+
+- Reconcilie o aceite individual com a pendência correspondente da fase, validando tarefa, rodada e digest do contrato vigente. Preserve as confirmações ainda exigidas das demais tarefas e os bloqueios para aceites ausentes ou obsoletos.
+- Recupere confirmações individuais já registradas pelo comando público `finish-discussion`, sem duplicar efeitos, reativar tarefas concluídas ou alterar pausas, modo de operação e autorização de execução.
+- Apresente `Prumo <versão> + PO First` na ajuda, informe o endereço do dashboard e use os nomes de apresentação dos ambientes na instalação e atualização.
+
 ## 2.11.7 — 2026-10-22
 
 - Mantenha os controles de agentes e ao vivo alinhados em janelas compactas, com o formulário inteiramente visível. Em larguras de até 900 px, a lateral aberta sobrepõe o grafo para preservar sua largura.
