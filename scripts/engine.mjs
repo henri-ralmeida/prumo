@@ -894,10 +894,12 @@ function printPendingContractConfirmations(state) {
     if (!phase.contractConfirmationRequired) continue
     const tasks = (phase.contractConfirmationRequired.tasks ?? []).map(displayIdentifier).join(', ')
     log('[prumo] ' + tr('contract confirmation required for phase {0}: {1}', phase.id, tasks || tr('current phase tasks')))
-    log('[prumo] ' + tr('skipping discussion is unavailable: inspect each updated contract with show-contract <task> --diff, then use begin-phase-discussion {0} and record the explicit user acceptance with confirmsContract', phase.id))
+    if ((phase.contractConfirmationRequired.tasks ?? phaseMembers(state, phase.id).map(task => task.id))
+      .some(id => !state.tasks[id]?.individualPlanning))
+      log('[prumo] ' + tr('skipping discussion is unavailable: inspect each updated contract with show-contract <task> --diff, then use begin-phase-discussion {0} and record the explicit user acceptance with confirmsContract', phase.id))
   }
   for (const task of Object.values(state.tasks)) {
-    if (task.contractConfirmationRequired) {
+    if (task.contractConfirmationRequired || individualPhaseConfirmation(state, task)) {
       log('[prumo] ' + tr('contract confirmation required for task {0}', displayIdentifier(task.id)))
       log('[prumo] ' + tr('skipping discussion is unavailable: inspect show-contract {0} --diff, then use begin-discussion {0} and record the explicit user acceptance with confirmsContract', displayIdentifier(task.id)))
     }
@@ -1203,10 +1205,10 @@ function closeDiscussion(task, result, cause) {
     ...(cause ? { cause } : {}) })
 }
 
-function currentDiscussion(state, task) {
+function currentDiscussion(state, task, attempt = task.attempts.length + (task.planningReturn ? 0 : 1)) {
   const round = task.discussionAttempts?.at(-1)
-  return round?.result === 'discussed' && round.context === planningContext(state, task) &&
-    round.attempt === task.attempts.length + (task.planningReturn ? 0 : 1) &&
+  return round?.result === 'discussed' && round.context === planningContext(state, task, { attempt }) &&
+    round.attempt === attempt &&
     task.discovery?.roundId === round.roundId && task.discovery?.nonce === round.nonce &&
     task.discovery?.digest === round.discoveryDigest && task.discovery.digest === discoveryDigest(task.discovery)
 }
@@ -1225,6 +1227,23 @@ function phaseTargets(state, phaseId) {
   return phaseMembers(state, phaseId).filter(task => !['done', 'skipped'].includes(task.state) && !isExternalBlock(task) && !task.individualPlanning &&
     usesCurrentPlanning(state, task) &&
     !(task.taskPlan?.phaseId === phaseId && hasCurrentTaskPlan(state, task)))
+}
+
+function individualPhaseConfirmation(state, task) {
+  const phase = state.phaseWorkflows?.[task.phase]
+  return task.individualPlanning && phase?.contractConfirmationRequired?.tasks?.includes(task.id) ? phase : null
+}
+
+// O aceite individual remove apenas sua própria pendência, preservando os demais contratos da fase.
+function reconcileIndividualConfirmation(state, task, round, digest) {
+  const phase = individualPhaseConfirmation(state, task)
+  if (!phase) return
+  phase.contractConfirmationHistory ??= []
+  phase.contractConfirmationHistory.push({ confirmation: structuredClone(phase.contractConfirmationRequired),
+    at: new Date().toISOString(), task: task.id, roundId: round.roundId,
+    contracts: [{ task: task.id, digest: phasePlanningContext(state, task) }], discoveryDigest: digest, result: 'confirmed' })
+  const tasks = phase.contractConfirmationRequired.tasks.filter(id => id !== task.id)
+  phase.contractConfirmationRequired = tasks.length ? { ...phase.contractConfirmationRequired, tasks } : null
 }
 
 function phaseDiscussionTargets(state, phaseId, round = null) {
@@ -2680,6 +2699,14 @@ const commands = {
         let targets = phaseTargets(state, phaseId)
         if (!targets.length) targets = phaseMembers(state, phaseId).filter(task =>
           usesCurrentPlanning(state, task) && !['done', 'skipped'].includes(task.state))
+        // Uma tarefa individual alterada também precisa de aceite, embora não participe da rodada coletiva.
+        for (const task of phaseMembers(state, phaseId)) {
+          if (!task.individualPlanning || targets.includes(task) || ['done', 'skipped'].includes(task.state) ||
+              !usesCurrentPlanning(state, task)) continue
+          if (beforeState.phaseWorkflows?.[phaseId]?.contractConfirmationRequired?.tasks?.includes(task.id) ||
+              !beforeState.tasks[task.id] || phasePlanningContext(beforeState, beforeState.tasks[task.id]) !== phasePlanningContext(state, task))
+            targets.push(task)
+        }
         if (!targets.length) continue
         const pendingConfirmation = beforeState.phaseWorkflows?.[phaseId]?.contractConfirmationRequired
         const outstanding = new Set(pendingConfirmation ? (pendingConfirmation.tasks ?? targets.map(task => task.id)) : [])
@@ -3283,7 +3310,9 @@ const commands = {
       phase.contractConfirmations ??= []
       phase.contractConfirmations.push({ roundId: round.roundId, at: new Date().toISOString(),
         contracts: round.confirmsContract, discoveryDigest: digest })
-      phase.contractConfirmationRequired = null
+      const remaining = phase.contractConfirmationRequired?.tasks?.filter(id =>
+        !round.confirmsContract.some(item => item.task === id)) ?? []
+      phase.contractConfirmationRequired = remaining.length ? { ...phase.contractConfirmationRequired, tasks: remaining } : null
     }
     phase.state = 'pending'
     recordQuestionResolutions(state, round.questionRefs, discovery.decisions, { phase: phaseId })
@@ -3536,7 +3565,7 @@ const commands = {
       superseded.push({ workflow: 'planning', round: staleRound.n, cause })
     }
     if (pausedExecution) t.planningReturn = { stateBeforeBlock: t.stateBeforeBlock, blockReason: t.blockReason, blockKind: 'replan' }
-    const requiresContractConfirmation = Boolean(t.contractConfirmationRequired)
+    const requiresContractConfirmation = Boolean(t.contractConfirmationRequired || individualPhaseConfirmation(state, t))
     const round = {
       roundId: randomUUID(), nonce: randomUUID(), startedAt: new Date().toISOString(),
       activityTiming: 'explicit', activityIntervals: [],
@@ -3582,7 +3611,7 @@ const commands = {
     const task = getTask(state, id)
     const blockedBy = task.deps.filter(dep => !['done', 'skipped'].includes(state.tasks[dep]?.state))
     if (blockedBy.length) die(id + ' still waiting on: ' + blockedBy.join(', '))
-    if (task.contractConfirmationRequired)
+    if (task.contractConfirmationRequired || individualPhaseConfirmation(state, task))
       die(tr('{0} requires a fresh answered contract confirmation; begin-discussion and ask the user before skipping discussion', id))
     const pausedExecution = task.planningRequired && task.state === 'blocked' &&
       ['running', 'reviewing'].includes(task.stateBeforeBlock) && !task.blockQuestion
@@ -3608,12 +3637,22 @@ const commands = {
     if (state.plan.planningMode === 'phase' && !state.tasks[id]?.individualPlanning) die('this run uses phase planning; use finish-phase-discussion')
     const t = getTask(state, id)
     const round = t.discussionAttempts?.at(-1)
-    if (t.state !== 'discussing' || !round || round.endedAt)
+    // O plano concluído substitui o marcador temporário, mas mantém o vínculo com a mesma tentativa pausada.
+    const plannedPause = t.state === 'blocked' && t.blockKind === 'replan' &&
+      ['running', 'reviewing'].includes(t.stateBeforeBlock) && hasCurrentTaskScope(state, t) &&
+      t.taskPlan?.discoveryDigest === round?.discoveryDigest
+    const attempt = plannedPause ? t.attempts.length : t.attempts.length + (t.planningReturn ? 0 : 1)
+    const replay = t.individualPlanning && ['pending', 'blocked'].includes(t.state) &&
+      round?.endedAt && currentDiscussion(state, t, attempt)
+    if (!replay && (t.state !== 'discussing' || !round || round.endedAt))
       die(id + ' has no open discussion round')
-    const currentContext = planningContext(state, t)
-    if (round.context !== currentContext || round.attempt !== t.attempts.length + (t.planningReturn ? 0 : 1))
+    const currentContext = planningContext(state, t, { attempt })
+    if (round.context !== currentContext || round.attempt !== attempt)
       die(tr('{0} discussion is stale: {1} — begin a fresh discussion', id,
         staleReason(name, round, taskContextSnapshot(state, t), currentContext)))
+    const phaseConfirmation = individualPhaseConfirmation(state, t)?.contractConfirmationRequired
+    if (phaseConfirmation && Date.parse(round.startedAt) < Date.parse(phaseConfirmation.at))
+      die(tr('{0} discussion is stale: {1} — begin a fresh discussion', id, tr('contract confirmation changed after this round began')))
     let discovery, digest
     try {
       discovery = JSON.parse(readFileSync(resolve(args.context), 'utf8'))
@@ -3623,8 +3662,8 @@ const commands = {
         throw new Error('discovery roundId and nonce must match the current discussion')
       if (!discovery.questions.some(question => question.roundId === round.roundId))
         throw new Error('discovery needs a fresh answered question bound to the current discussion roundId')
-      if (round.requiresContractConfirmation) {
-        const expected = round.confirmsContract ?? []
+      if (round.requiresContractConfirmation || individualPhaseConfirmation(state, t)) {
+        const expected = [{ task: id, digest: phasePlanningContext(state, t) }]
         const confirmed = discovery.questions.some(question => {
           if (question.roundId !== round.roundId || !Array.isArray(question.confirmsContract)) return false
           const actual = question.confirmsContract.map(item => ({ task: item?.task, digest: item?.digest }))
@@ -3633,18 +3672,31 @@ const commands = {
         if (!confirmed)
           throw new Error(tr('discovery needs an answered question with confirmsContract matching every current task and digest'))
       }
-      round.questionRefs = validateQuestionResolutions(state, discovery.decisions)
+      const questionRefs = validateQuestionResolutions(state, discovery.decisions)
+      if (!replay) round.questionRefs = questionRefs
       digest = discoveryDigest(discovery)
     } catch (error) { die(error.message) }
+    if (replay) {
+      if (digest !== round.discoveryDigest) die(tr('discovery must match the recorded discussion'))
+      if (phaseConfirmation) {
+        reconcileIndividualConfirmation(state, t, round, digest)
+        saveState(name, state)
+        emit(name, 'phase_contract_confirmed', id, { phase: t.phase, roundId: round.roundId,
+          contracts: [{ task: id, digest: phasePlanningContext(state, t) }], discoveryDigest: digest })
+      }
+      log('[prumo] ' + tr('{0} discussion {1} already closed; execution pauses and authorization are preserved', id, round.roundId))
+      return
+    }
     const fields = ['research', 'questions', 'coverage', 'decisions', 'deferred', 'executionBoundary', 'closure', 'roundId', 'nonce']
     t.discovery = { ...Object.fromEntries(fields.map(field => [field, discovery[field]])),
       recordedAt: new Date().toISOString(), context: round.context, attempt: round.attempt, digest }
     Object.assign(round, { endedAt: new Date().toISOString(), result: 'discussed', discoveryDigest: digest, discovery: t.discovery })
-    if (round.requiresContractConfirmation) {
+    if (round.requiresContractConfirmation || individualPhaseConfirmation(state, t)) {
       t.contractConfirmations ??= []
       t.contractConfirmations.push({ roundId: round.roundId, at: new Date().toISOString(),
-        contracts: round.confirmsContract, discoveryDigest: digest })
+        contracts: [{ task: id, digest: phasePlanningContext(state, t) }], discoveryDigest: digest })
       t.contractConfirmationRequired = null
+      reconcileIndividualConfirmation(state, t, round, digest)
     }
     t.state = t.planningReturn ? 'blocked' : 'pending'
     // Keep the original execution pause resumable after discussion, even when
@@ -3734,7 +3786,7 @@ const commands = {
     const task = getTask(state, id)
     if (!['pending', 'failed'].includes(task.state)) die(`${id} must be pending or failed to skip planning`)
     if (!usesCurrentPlanning(state, task)) die(`${id} is a legacy task without current planning gates`)
-    if (task.contractConfirmationRequired)
+    if (task.contractConfirmationRequired || individualPhaseConfirmation(state, task))
       die(tr('{0} requires a fresh answered contract confirmation; finish the discussion before skipping planning', id))
     if (task.discussionRequired && !currentTaskDiscussionDecision(state, task))
       die(`${id} needs a completed discussion or an explicit user-confirmed discussion skip`)

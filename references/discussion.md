@@ -172,6 +172,19 @@ atomically. Before dispatching the workers, read [planning.md](planning.md).
 
 ## Task-scoped discussion in existing runs
 
+Tarefas com `individualPlanning: true` confirmam seu contrato por `begin-discussion <task>` e
+`finish-discussion <task> --context <discovery.json>`. O aceite precisa identificar a tarefa e o digest
+vigente em `confirmsContract`, com `roundId` e `nonce` da rodada atual. Ele remove somente a pendência
+correspondente na fase; tarefas coletivas ou individuais ainda não aceitas continuam pendentes.
+
+Para recuperar uma discussão individual já encerrada cujo aceite exato não foi reconciliado, repita
+`finish-discussion <task> --context <discovery-aceita.json>`. O motor exige o mesmo conteúdo registrado,
+contrato vigente e rodada posterior à invalidação, registra a reconciliação no histórico e preserva
+tentativas, pausas e autorização. Repetições não duplicam efeitos. Se o aceite exato estiver ausente,
+obsoleto ou o arquivo diferir do registro, abra uma nova discussão individual e obtenha novo aceite;
+não edite o estado. Depois siga `ready`: planeje quando necessário e use `unblock <task>` somente
+após autorização explícita para retomar uma tentativa pausada. O aceite não ativa AUTO nem conclui tarefas.
+
 Existing task-scoped runs use `begin-discussion`, `finish-discussion`, `plan-task` and
 `finish-planning` when the user explicitly selected one existing task or when legacy phase boundaries
 cannot be mapped without broadening scope. That path still receives current discovery and exactly one

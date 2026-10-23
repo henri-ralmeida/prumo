@@ -2020,5 +2020,8 @@
   "Show task notes, planning decisions and recorded question resolutions beside the contract without changing its digest or acceptance": "Exiba notas da tarefa, decisões do planejamento e resoluções de perguntas junto ao contrato sem alterar sua identidade nem seu aceite",
   "Fixed — Explicit phase reordering": "Correção — Reordenação explícita de fases",
   "Preview phase order changes, reject dependencies that contradict the requested order, and preserve execution history without inferring dependency rewrites": "Mostre a prévia da troca de ordem das fases, recuse dependências incompatíveis e preserve o histórico de execução sem inferir novas relações",
-  "Legacy progress records only the last position; missing steps cannot be reconstructed from this attempt. Existing progress and approvals are preserved": "O progresso legado registra somente a última posição; não é possível reconstruir os passos ausentes desta tentativa. O progresso existente e as aprovações são preservados"
+  "Legacy progress records only the last position; missing steps cannot be reconstructed from this attempt. Existing progress and approvals are preserved": "O progresso legado registra somente a última posição; não é possível reconstruir os passos ausentes desta tentativa. O progresso existente e as aprovações são preservados",
+  "contract confirmation changed after this round began": "a confirmação do contrato mudou após o início desta rodada",
+  "discovery must match the recorded discussion": "a descoberta deve corresponder à discussão registrada",
+  "{0} discussion {1} already closed; execution pauses and authorization are preserved": "Discussão {1} de {0} já encerrada; pausas de execução e autorização foram preservadas"
 }

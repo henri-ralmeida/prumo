@@ -584,6 +584,194 @@ function phaseFixture(t, tasks, { planningMode = 'phase', maxAgents, lang = 'en'
   return { root, project, plans, plan, planPath, ok, rejects, state, save, events, discovery, writeArtifacts }
 }
 
+function individualConfirmationFixture(t, mixed = false) {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega individual' },
+    ...(mixed ? [{ id: 'B', phase: 'F1', title: 'Entrega coletiva' }] : [])])
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('skip-phase-planning', 'F1', '--reason', 'Planejamento dispensado pelo usuário', '--confirmed-by-user')
+  f.ok('start', 'A', '--agent', 'executor')
+  f.ok('pause-replanning', 'A', '--reason', 'Reconhecer entrega externa no contrato')
+  f.plan.description = 'Base externa reconhecida no contrato vigente'
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.ok('sync-plan', '--plan', f.planPath, '--confirm-invalidation')
+  return f
+}
+
+function individualAcceptance(f) {
+  const round = f.state().tasks.A.discussionAttempts.at(-1)
+  const path = f.discovery('F1'), discovery = JSON.parse(readFileSync(path, 'utf8'))
+  discovery.roundId = round.roundId; discovery.nonce = round.nonce
+  discovery.questions[0].roundId = round.roundId
+  discovery.questions[0].confirmsContract = [{ task: 'A', digest: validationRuntime.phasePlanningContext(f.state(), f.state().tasks.A) }]
+  discovery.executionBoundary.deferredToExecutor = ['A']
+  writeFileSync(path, JSON.stringify(discovery))
+  return path
+}
+
+test('aceite individual reconcilia somente sua pendência de fase sem retomar execução', t => {
+  for (const mixed of [false, true]) {
+    const f = individualConfirmationFixture(t, mixed)
+    assert.ok(f.state().phaseWorkflows.F1.contractConfirmationRequired.tasks.includes('A'))
+    if (!mixed) {
+      const ready = f.ok('ready').stdout
+      assert.match(ready, /begin-discussion A/)
+      assert.doesNotMatch(ready, /begin-phase-discussion F1/)
+      f.rejects(/no nonterminal tasks to discuss/, 'begin-phase-discussion', 'F1')
+    }
+    f.ok('begin-discussion', 'A')
+    const round = f.state().tasks.A.discussionAttempts.at(-1)
+    assert.equal(round.requiresContractConfirmation, true)
+    const path = individualAcceptance(f)
+    f.ok('finish-discussion', 'A', '--context', path)
+    assert.deepEqual(f.state().phaseWorkflows.F1.contractConfirmationRequired?.tasks ?? [], mixed ? ['B'] : [])
+    assert.equal(f.state().tasks.A.state, 'blocked')
+    assert.equal(f.state().tasks.A.attempts.length, 1)
+    if (!mixed) assert.doesNotMatch(f.ok('ready').stdout, /begin-phase-discussion F1|contract confirmation required/)
+    const before = f.state(), events = f.events()
+    f.ok('finish-discussion', 'A', '--context', path)
+    assert.deepEqual(f.state(), before); assert.equal(f.events(), events)
+    f.ok('plan-task', 'A', '--agent', 'planner')
+  }
+})
+
+test('discussão individual recusa aceite ausente, de outra tarefa, digest ou rodada', t => {
+  const f = individualConfirmationFixture(t)
+  f.rejects(/fresh answered contract confirmation/, 'skip-discussion', 'A', '--reason', 'Sem aceite', '--confirmed-by-user')
+  f.ok('begin-discussion', 'A')
+  const path = individualAcceptance(f), valid = JSON.parse(readFileSync(path, 'utf8'))
+  for (const mutate of [
+    value => { delete value.questions[0].confirmsContract },
+    value => { value.questions[0].confirmsContract[0].task = 'B' },
+    value => { value.questions[0].confirmsContract[0].digest = '0'.repeat(64) },
+    value => { value.questions[0].roundId = 'rodada-antiga' },
+    value => { value.nonce = 'outra-rodada' },
+  ]) {
+    const value = structuredClone(valid); mutate(value); writeFileSync(path, JSON.stringify(value))
+    const before = f.state(), events = f.events()
+    f.rejects(/confirmsContract|fresh answered question|roundId and nonce/, 'finish-discussion', 'A', '--context', path)
+    assert.deepEqual(f.state(), before); assert.equal(f.events(), events)
+  }
+  writeFileSync(path, JSON.stringify(valid))
+  f.ok('finish-discussion', 'A', '--context', path)
+})
+
+for (const planned of [false, true]) test(`recuperação individual exige a descoberta aceita e vigente sem duplicar efeitos, planejamento ${planned}`, t => {
+  const f = individualConfirmationFixture(t)
+  const pending = structuredClone(f.state().phaseWorkflows.F1.contractConfirmationRequired)
+  f.ok('begin-discussion', 'A')
+  const path = individualAcceptance(f)
+  f.ok('finish-discussion', 'A', '--context', path)
+  if (planned) {
+    f.ok('plan-task', 'A', '--agent', 'planner')
+    const plan = join(f.plans, 'individual.json')
+    writeFileSync(plan, JSON.stringify({ research: [{ source: 'fixture', findings: 'Contrato vigente inspecionado' }],
+      decisions: [], steps: ['Conferir a entrega aprovada'], verification: [{ criterion: validation[0].expect, check: 1 }], openQuestions: [] }))
+    f.ok('finish-planning', 'A', '--plan', plan)
+  }
+  // Simula apenas a omissão da versão antiga em um workspace descartável.
+  const legacy = f.state()
+  legacy.phaseWorkflows.F1.contractConfirmationRequired = pending
+  delete legacy.phaseWorkflows.F1.contractConfirmationHistory
+  delete legacy.tasks.A.discussionAttempts.at(-1).requiresContractConfirmation
+  delete legacy.tasks.A.discussionAttempts.at(-1).confirmsContract
+  f.save(legacy)
+  const valid = JSON.parse(readFileSync(path, 'utf8'))
+  for (const mutate of [
+    value => { delete value.questions[0].confirmsContract },
+    value => { value.questions[0].confirmsContract[0].digest = '0'.repeat(64) },
+    value => { value.roundId = 'outra-rodada' },
+    value => { value.questions[0].answer = 'Outra resposta não registrada' },
+  ]) {
+    const value = structuredClone(valid); mutate(value); writeFileSync(path, JSON.stringify(value))
+    const before = f.state(), events = f.events()
+    f.rejects(/confirmsContract|roundId and nonce|recorded discussion/, 'finish-discussion', 'A', '--context', path)
+    assert.deepEqual(f.state(), before); assert.equal(f.events(), events)
+  }
+  writeFileSync(path, JSON.stringify(valid))
+  f.ok('finish-discussion', 'A', '--context', path)
+  assert.equal(f.state().phaseWorkflows.F1.contractConfirmationRequired, null)
+  assert.deepEqual(f.state().tasks, legacy.tasks)
+  assert.match(f.events(), /phase_contract_confirmed/)
+  const before = f.state(), events = f.events()
+  f.ok('finish-discussion', 'A', '--context', path)
+  assert.deepEqual(f.state(), before); assert.equal(f.events(), events)
+})
+
+test('aceite coletivo não confirma a tarefa individual pendente', t => {
+  const f = individualConfirmationFixture(t, true)
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  assert.deepEqual(f.state().phaseWorkflows.F1.contractConfirmationRequired.tasks, ['A'])
+  f.ok('begin-discussion', 'A')
+  f.ok('finish-discussion', 'A', '--context', individualAcceptance(f))
+  assert.equal(f.state().phaseWorkflows.F1.contractConfirmationRequired, null)
+})
+
+test('aceite individual preserva modo manual e pausa até planejamento e retomada explícitos', t => {
+  const f = individualConfirmationFixture(t)
+  f.ok('authorize', '--scope', 'tasks:A', '--mode', 'manual', '--confirmed-by-user')
+  const authorization = f.state().tasks.A.executionAuthorization
+  f.ok('begin-discussion', 'A')
+  const path = individualAcceptance(f)
+  f.ok('pause-run', '--reason', 'Aguardar decisão humana')
+  const paused = f.state(), events = f.events()
+  f.rejects(/Run is paused/, 'finish-discussion', 'A', '--context', path)
+  assert.deepEqual(f.state(), paused); assert.equal(f.events(), events)
+  f.ok('resume-run')
+  f.ok('finish-discussion', 'A', '--context', path)
+  assert.deepEqual(f.state().tasks.A.executionAuthorization, authorization)
+  f.rejects(/confirmed-by-user/, 'unblock', 'A')
+  f.ok('plan-task', 'A', '--agent', 'planner')
+  const plan = join(f.plans, 'individual.json')
+  writeFileSync(plan, JSON.stringify({ research: [{ source: 'fixture', findings: 'Contrato vigente inspecionado' }],
+    decisions: [], steps: ['Conferir a entrega aprovada'], verification: [{ criterion: validation[0].expect, check: 1 }], openQuestions: [] }))
+  f.ok('finish-planning', 'A', '--plan', plan)
+  assert.equal(f.state().tasks.A.state, 'blocked')
+  f.ok('unblock', 'A', '--confirmed-by-user')
+  assert.equal(f.state().tasks.A.state, 'running')
+  assert.equal(f.state().tasks.A.executionAuthorization.mode, 'manual')
+  assert.equal(f.state().tasks.A.attempts.length, 1)
+})
+
+test('novo contrato ou invalidação posterior exige novo aceite individual', t => {
+  const f = individualConfirmationFixture(t)
+  f.ok('begin-discussion', 'A')
+  const path = individualAcceptance(f)
+  f.ok('finish-discussion', 'A', '--context', path)
+  f.plan.tasks[0].title = 'Contrato posterior com nova entrega'
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.ok('sync-plan', '--plan', f.planPath, '--confirm-invalidation')
+  const before = f.state(), events = f.events()
+  f.rejects(/no open discussion round|stale/, 'finish-discussion', 'A', '--context', path)
+  assert.deepEqual(f.state(), before); assert.equal(f.events(), events)
+  f.ok('begin-discussion', 'A')
+  f.rejects(/roundId and nonce/, 'finish-discussion', 'A', '--context', path)
+  f.ok('finish-discussion', 'A', '--context', individualAcceptance(f))
+  assert.equal(f.state().phaseWorkflows.F1.contractConfirmationRequired, null)
+})
+
+test('repetição do aceite não reativa tarefas terminais nem cobre invalidação posterior', t => {
+  const f = individualConfirmationFixture(t)
+  const pending = structuredClone(f.state().phaseWorkflows.F1.contractConfirmationRequired)
+  f.ok('begin-discussion', 'A')
+  const path = individualAcceptance(f)
+  f.ok('finish-discussion', 'A', '--context', path)
+  const accepted = f.state()
+  for (const taskState of ['done', 'skipped']) {
+    const terminal = structuredClone(accepted); terminal.tasks.A.state = taskState; f.save(terminal)
+    const events = f.events()
+    f.rejects(/no open discussion round/, 'finish-discussion', 'A', '--context', path)
+    assert.deepEqual(f.state(), terminal); assert.equal(f.events(), events)
+  }
+  accepted.phaseWorkflows.F1.contractConfirmationRequired = { ...pending,
+    at: new Date(Date.parse(accepted.tasks.A.discussionAttempts.at(-1).endedAt) + 1000).toISOString() }
+  f.save(accepted)
+  const events = f.events()
+  f.rejects(/discussion is stale/, 'finish-discussion', 'A', '--context', path)
+  assert.deepEqual(f.state(), accepted); assert.equal(f.events(), events)
+})
+
 for (const lang of ['en', 'pt-BR']) test(`abertura e recusa da discussao mostram os IDs atuais em ${lang}`, t => {
   const f = phaseFixture(t, [
     { id: 'T1', phase: 'F1', title: 'Concluida' },
