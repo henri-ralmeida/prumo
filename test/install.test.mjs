@@ -588,7 +588,7 @@ test('CLI install --dsh and doctor --dsh use custom DSH_HOME without extra orche
   assert.match(verified.stdout, /Installation files match the current package/)
   const repeated = cli(['install', '--dsh'], { DSH_HOME: custom })
   assert.equal(repeated.status, 0, repeated.stdout + repeated.stderr)
-  assert.match(repeated.stdout, /already installed in dsh/)
+  assert.match(repeated.stdout, /already installed in DeepSeek Harness/)
   assert.equal(read(join(custom, 'AGENTS.md')).split('<!-- po-first:start -->').length - 1, 1)
   const markerFile = join(custom, 'skills', 'prumo', '.prumo-install.json')
   const legacy = JSON.parse(read(markerFile))
