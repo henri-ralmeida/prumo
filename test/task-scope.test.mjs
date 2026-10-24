@@ -47,6 +47,55 @@ test('início paralelo registra os dois escopos e orienta a revisão independent
   assert.deepEqual(state.tasks.T2.attempts[0].concurrentScopes, [['T1']])
 })
 
+test('revisão somente leitura após checkout concorrente conclui na mesma tentativa com atribuição independente', t => {
+  const f = engineFixture(t, [{ id: 'T1', writeScope: 'read-only', touches: [] }, { id: 'T2', touches: ['other'] }])
+  const git = (...args) => {
+    const result = spawnSync('git', ['-C', f.project, ...args], { encoding: 'utf8', windowsHide: true })
+    assert.equal(result.status, 0, result.stderr)
+    return result.stdout.trim()
+  }
+  git('init'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid')
+  writeFileSync(join(f.project, 'other'), 'base'); git('add', '.'); git('commit', '-m', 'base')
+  const initialHead = git('rev-parse', 'HEAD')
+  f.ok('init', '--plan', f.source, '--run', 'scope')
+  f.ok('authorize', '--scope', 'run', '--confirmed-by-user')
+  for (const id of ['T1', 'T2']) {
+    f.ok('skip-discussion', id, '--reason', 'Escopo aprovado', '--confirmed-by-user')
+    f.ok('skip-planning', id, '--reason', 'Contrato suficiente', '--confirmed-by-user')
+    f.ok('start', id, '--agent', 'executor-' + id)
+  }
+  writeFileSync(join(f.project, 'other'), 'entrega concorrente'); git('add', '.'); git('commit', '-m', 'delivery')
+  const deliveryHead = git('rev-parse', 'HEAD')
+  git('checkout', '--detach', initialHead); git('checkout', '--detach', deliveryHead)
+  f.ok('review', 'T1', '--agent', 'reviewer')
+  f.rejected(/scope-evidence/, 'validate', 'T1', '--ok', '--cwd', f.project, '--evidence', 'Verificação funcional')
+  f.ok('validate', 'T1', '--ok', '--cwd', f.project, '--evidence', 'Verificação funcional', '--summary', 'Verificação independente aprovada', '--scope-evidence', 'O revisor inspecionou other e atribuiu seu conteúdo à entrega concorrente registrada.')
+  const reviewed = f.state().tasks.T1
+  assert.equal(reviewed.attempts.length, 1)
+  assert.deepEqual(reviewed.validations.at(-1).scopeCheck.excludedPaths, ['other'])
+  assert.equal(reviewed.validations.at(-1).summary, 'Verificação independente aprovada')
+  f.ok('done', 'T1')
+  assert.equal(f.state().tasks.T1.state, 'done')
+  assert.equal(f.state().tasks.T1.attempts.length, 1)
+})
+
+test('recusa de escopo resume o motivo e preserva separadamente o parecer enviado', t => {
+  const f = engineFixture(t, [{ id: 'T1', touches: ['allowed'] }])
+  assert.equal(spawnSync('git', ['init', f.project], { windowsHide: true }).status, 0)
+  f.ok('init', '--plan', f.source, '--run', 'scope')
+  f.ok('authorize', '--scope', 'run', '--confirmed-by-user')
+  f.ok('skip-discussion', 'T1', '--reason', 'Escopo aprovado', '--confirmed-by-user')
+  f.ok('skip-planning', 'T1', '--reason', 'Contrato suficiente', '--confirmed-by-user')
+  f.ok('start', 'T1', '--agent', 'executor')
+  writeFileSync(join(f.project, 'own-write'), 'alteração fora do contrato')
+  f.ok('review', 'T1', '--agent', 'reviewer')
+  f.rejected(/outside approved touches/, 'validate', 'T1', '--ok', '--cwd', f.project, '--evidence', 'Verificação funcional', '--summary', 'Comandos passaram')
+  const refused = f.state().tasks.T1.validations.at(-1)
+  assert.equal(refused.ok, false)
+  assert.match(refused.summary, /outside approved touches: own-write/)
+  assert.equal(refused.submittedSummary, 'Comandos passaram')
+})
+
 test('projetos diferentes isolam caminhos, mas recursos compartilhados permanecem globais', () => {
   const a = { project: join(tmpdir(), 'repo-a'), touches: ['src'], sharedResources: [{ id: 'db', access: 'write' }] }
   const b = { project: join(tmpdir(), 'repo-b'), touches: ['src'], sharedResources: [{ id: 'db', access: 'read' }] }
@@ -275,9 +324,9 @@ test('recusa de escopo explica outra tarefa, nova tentativa e que --force nao se
   writeFileSync(join(cwd, 'outside.txt'), 'delivery')
   let message
   try { verifyTaskScope({ writeScope: 'files', touches: ['src'] }, baseline) } catch (caught) { message = caught.message }
-  assert.equal(message, 'Delivery changes are outside approved touches: outside.txt. These changes may belong to another task or be absorbed by a new attempt; --force does not apply to scope')
+  assert.equal(message, 'Delivery changes are outside approved touches: outside.txt. These changes may belong to another task or be absorbed by a new attempt; --force does not apply to scope. Git scope context: baseline HEAD unavailable; current HEAD unavailable. HEAD changes alone do not establish authorship.')
   const pt = createTranslator(messages, 'pt-BR')
-  const expected = 'As alterações da entrega estão fora dos touches aprovados: outside.txt. Elas podem pertencer a outra tarefa ou ser absorvidas em uma nova tentativa; --force não se aplica ao escopo'
+  const expected = 'Mudanças da entrega fora dos touches aprovados: outside.txt. Essas mudanças podem pertencer a outra tarefa ou ser absorvidas por uma nova tentativa; --force não se aplica ao escopo. Contexto Git do escopo: HEAD inicial unavailable; HEAD atual unavailable. Mudanças de HEAD, isoladamente, não comprovam autoria.'
   assert.equal(pt(message), expected)
   assert.equal(pt('[prumo] ERROR: ' + message), '[prumo] ERRO: ' + expected)
 })
@@ -382,11 +431,13 @@ test('motor mantém paralelismo disjunto com revisão de atribuição e rejeita 
   assert.deepEqual(state().tasks.T1.validations.at(-1).scopeCheck.excludedPaths, ['two'])
   writeFileSync(join(cwd, 'external'), 'out of scope')
   reject(/outside/, 'done', 'T1')
-  reject(/outside/, 'validate', 'T1', '--ok', '--cwd', cwd, '--evidence', 'Inspecionado', '--scope-evidence', 'Declaração independente não autoriza external')
+  reject(/outside approved touches: external/, 'validate', 'T1', '--ok', '--cwd', cwd, '--evidence', 'Inspecionado', '--scope-evidence', 'Declaração independente não autoriza external')
   rmSync(join(cwd, 'external'))
   ok('validate', 'T1', '--ok', '--cwd', cwd, '--evidence', 'Inspecionado', '--scope-evidence', 'two foi entregue por second')
   writeFileSync(join(cwd, 'one'), 'changed after validation')
   reject(/changed after scope validation/, 'done', 'T1')
+  ok('block', 'T1', '--reason', 'A entrega mudou e requer nova inspeção independente')
+  ok('unblock', 'T1', '--reviewer', 'reviewer-one')
   ok('validate', 'T1', '--ok', '--cwd', cwd, '--evidence', 'Inspecionado', '--scope-evidence', 'two foi entregue por second'); ok('done', 'T1')
   const graph = JSON.parse(ok('graph').stdout)
   assert.equal(graph.derived.T3.executionReadiness.ready, false)

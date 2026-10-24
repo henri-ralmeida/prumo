@@ -64,8 +64,11 @@ export function assertDiscovery(context) {
   'discovery research needs nonempty source and findings for each entry')
   insist(Array.isArray(context.questions) && context.questions.length > 0 &&
     context.questions.every(item => item && nonempty(item.question) && nonempty(item.answer) &&
-      ['native', 'chat-fallback'].includes(item.channel) && Number.isSafeInteger(item.round) && item.round > 0),
+      ['native', 'chat-fallback'].includes(item.channel)),
   'discovery needs at least one answered question with channel native or chat-fallback and a positive round')
+  for (const [index, item] of context.questions.entries())
+    insist(Number.isSafeInteger(item.round) && item.round > 0,
+      tr('discovery questions[{0}].round must be a positive safe integer; received type {1}', index, typeof item.round))
   insist(context.questions.every(item => item.confirmsContract === undefined ||
     (Array.isArray(item.confirmsContract) && item.confirmsContract.every(confirmation =>
       confirmation && nonempty(confirmation.task) && /^[a-f0-9]{64}$/i.test(confirmation.digest)))),
@@ -620,6 +623,7 @@ export async function runValidation(task, cwd, previousReceipt = null, onCheck =
     const shell = step.shell ?? (process.platform === 'win32' ? process.env.ComSpec ?? 'cmd.exe' : '/bin/sh')
     const env = environments[index]
     log(`[prumo] running check ${index + 1}/${contract.steps.length}; timeout ${timeoutMs === 0 ? 'disabled by plan' : timeoutMs + 'ms'}; expected exit ${expectedExitCodes(step).join(',')}`)
+    log('[prumo] ' + tr('Executing validation command: {0}', step.run))
     onCheck({ current: index + 1, total: contract.steps.length, kind: step.kind ?? 'static', status: 'started' })
     const result = await execute(step.run, {
       cwd: directories[index], shell, env,

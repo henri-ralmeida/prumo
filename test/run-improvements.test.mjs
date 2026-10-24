@@ -65,12 +65,14 @@ test('nested evidence keeps independent approval, outside-scope refusal and post
   f.cli(['validate', 'T1', '--ok', '--evidence', 'Inspected'], 1)
   assert.deepEqual(f.read(), paused)
   f.cli(['done', 'T1'], 1)
-  const validate = () => f.cli(['validate', 'T1', '--ok', '--cwd', f.cwd, '--evidence', 'Behavior inspected',
-    '--scope-evidence', 'Nested source and ignored outputs inspected independently; directory scope unchanged'])
+  const validate = (status = 0) => f.cli(['validate', 'T1', '--ok', '--cwd', f.cwd, '--evidence', 'Behavior inspected',
+    '--scope-evidence', 'Nested source and ignored outputs inspected independently; directory scope unchanged'], status)
   validate()
   assert.match(f.read().tasks.T1.validations.at(-1).deliveryCheck.limitation, /independent inspection/)
   f.write('out/vendor/source.txt', 'Changed after validation')
   assert.match(f.cli(['done', 'T1'], 1), /changed after/)
+  assert.match(validate(1), /Delivery changed since review/)
+  f.cli(['review-progress', 'T1', '--step', '1', '--agent', 'reviewer'])
   validate()
   f.write('unauthorized.txt', 'Outside approved scope')
   const baseline = f.read().tasks.T1.attempts[0].scopeBaseline
@@ -114,11 +116,13 @@ test('large binary evidence reaches independent review and refuses stale complet
   f.cli(['review', 'T1', '--agent', 'executor'], 1)
   f.cli(['review', 'T1', '--agent', 'independent'])
   f.cli(['done', 'T1'], 1)
-  const validate = () => f.cli(['validate', 'T1', '--ok', '--cwd', f.cwd, '--evidence', 'Binary origin and behavior independently inspected'])
+  const validate = (status = 0) => f.cli(['validate', 'T1', '--ok', '--cwd', f.cwd, '--evidence', 'Binary origin and behavior independently inspected'], status)
   validate()
   data[data.length - 1] = 0x43
   f.write('out/installer.exe', data)
   assert.match(f.cli(['done', 'T1'], 1), /changed after validation/)
+  assert.match(validate(1), /Delivery changed since review/)
+  f.cli(['review-progress', 'T1', '--step', '1', '--agent', 'independent'])
   validate()
   f.cli(['done', 'T1'])
   assert.equal(f.read().tasks.T1.attempts.length, 1)

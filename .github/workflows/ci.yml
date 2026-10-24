@@ -6,21 +6,32 @@ on:
 permissions:
   contents: read
 jobs:
+  prepare:
+    name: Planejar lotes
+    runs-on: ubuntu-latest
+    outputs:
+      regular: ${{ steps.plan.outputs.regular }}
+      published: ${{ steps.plan.outputs.published }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - id: plan
+        run: node .github/scripts/ci-plan.mjs
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ci-plan
+          path: .test-output/ci-plan.json
+          if-no-files-found: error
   test:
-    name: Testes · ${{ matrix.os == 'ubuntu-latest' && 'Linux' || matrix.os == 'macos-latest' && 'macOS' || 'Win' }} · N${{ matrix.node }}${{ matrix.os == 'windows-latest' && format(' · {0}/2', matrix.shard == 0 && '1' || '2') || '' }}
+    name: Testes · ${{ matrix.os == 'ubuntu-latest' && 'Linux' || matrix.os == 'macos-latest' && 'macOS' || 'Win' }} · N${{ matrix.node }} · ${{ matrix.label }}
+    needs: prepare
     strategy:
       fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        node: [22, 24]
-        shard: [0]
-        include:
-          - os: windows-latest
-            node: 22
-            shard: 1
-          - os: windows-latest
-            node: 24
-            shard: 1
+      matrix: ${{ fromJSON(needs.prepare.outputs.regular) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     steps:
@@ -32,21 +43,16 @@ jobs:
           node-version: ${{ matrix.node }}
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile --ignore-scripts
-      # No Windows, testes independentes rodam em paralelo e integracoes permanecem sequenciais.
-      - run: bun run test:coverage:collect
+      # Cada grupo preserva o inventario completo em conjunto com os demais runners.
+      - run: node .github/scripts/run-ci-batch.mjs
         env:
           PRUMO_TEST_CONCURRENCY: ${{ runner.os == 'Windows' && 1 || 4 }}
           PRUMO_TEST_PARTITIONED: ${{ runner.os == 'Windows' && '1' || '0' }}
-          PRUMO_TEST_SUITE: ${{ runner.os == 'Windows' && 'regular' || 'all' }}
-          PRUMO_TEST_SHARD_INDEX: ${{ matrix.shard }}
-          PRUMO_TEST_SHARD_COUNT: ${{ runner.os == 'Windows' && 2 || 1 }}
-      - run: npm run check
-      - run: npm pack
-      - run: node scripts/package-smoke.mjs
+          PRUMO_CI_TEST_FILES: ${{ toJSON(matrix.files) }}
       - uses: actions/upload-artifact@v6
         if: always()
         with:
-          name: coverage-${{ matrix.os }}-node-${{ matrix.node }}-shard-${{ matrix.shard }}
+          name: coverage-${{ matrix.os }}-node-${{ matrix.node }}-${{ matrix.label }}
           path: |
             .test-output/coverage/coverage-final.json
             .test-output/coverage/coverage-summary.json
@@ -55,20 +61,19 @@ jobs:
       - uses: actions/upload-artifact@v6
         if: always()
         with:
-          name: verification-${{ matrix.os }}-node-${{ matrix.node }}-shard-${{ matrix.shard }}
+          name: verification-${{ matrix.os }}-node-${{ matrix.node }}-${{ matrix.label }}
           path: |
             .test-output/
             !.test-output/coverage/tmp/**
           include-hidden-files: true
           if-no-files-found: ignore
-  published-windows:
-    name: Update · Win · N${{ matrix.node }} · ${{ matrix.shard == 0 && '1' || '2' }}/2
+  published:
+    name: Update · ${{ matrix.os == 'ubuntu-latest' && 'Linux' || matrix.os == 'macos-latest' && 'macOS' || 'Win' }} · N${{ matrix.node }} · ${{ matrix.label }}
+    needs: prepare
     strategy:
       fail-fast: false
-      matrix:
-        node: [22, 24]
-        shard: [0, 1]
-    runs-on: windows-latest
+      matrix: ${{ fromJSON(needs.prepare.outputs.published) }}
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
@@ -84,16 +89,17 @@ jobs:
         env:
           PRUMO_TEST_SUITE: published
           PRUMO_TEST_CONCURRENCY: 1
-          PRUMO_TEST_PUBLISHED_SHARD_INDEX: ${{ matrix.shard }}
-          PRUMO_TEST_PUBLISHED_SHARD_COUNT: 2
+          PRUMO_TEST_PUBLISHED_SHARD_INDEX: 0
+          PRUMO_TEST_PUBLISHED_SHARD_COUNT: 1
+          PRUMO_CI_PUBLISHED_VERSIONS: ${{ toJSON(matrix.versions) }}
       - name: Resumir resultados das versões publicadas
         if: always()
         shell: pwsh
-        run: ./.github/scripts/published-update-summary.ps1 -ResultsPath ".test-output/published-update-results-${{ matrix.shard }}.json"
+        run: ./.github/scripts/published-update-summary.ps1 -ResultsPath ".test-output/published-update-results.json"
       - uses: actions/upload-artifact@v6
         if: always()
         with:
-          name: coverage-windows-published-node-${{ matrix.node }}-shard-${{ matrix.shard }}
+          name: coverage-published-${{ matrix.os }}-node-${{ matrix.node }}-${{ matrix.label }}
           path: |
             .test-output/coverage/coverage-final.json
             .test-output/coverage/coverage-summary.json
@@ -102,15 +108,43 @@ jobs:
       - uses: actions/upload-artifact@v6
         if: always()
         with:
-          name: verification-windows-published-node-${{ matrix.node }}-shard-${{ matrix.shard }}
+          name: verification-published-${{ matrix.os }}-node-${{ matrix.node }}-${{ matrix.label }}
           path: |
             .test-output/
             !.test-output/coverage/tmp/**
           include-hidden-files: true
           if-no-files-found: ignore
+  package:
+    name: Pacote · ${{ matrix.os }} · N${{ matrix.node }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: [22, 24]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: npm run check
+      - run: npm pack
+      - run: node scripts/package-smoke.mjs
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: verification-package-${{ matrix.os }}-node-${{ matrix.node }}
+          path: .test-output/
+          include-hidden-files: true
+          if-no-files-found: ignore
   coverage:
     name: coverage
-    needs: [test, published-windows]
+    needs: [test, published, package]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

@@ -62,6 +62,9 @@ export function captureScopeBaseline(cwd) {
     const git = (...args) => { const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }); if (result.status !== 0) throw new Error('Git repository snapshot is unavailable'); return result.stdout }
     const repository = realpathSync.native(git('rev-parse', '--show-toplevel').trim())
     if (relative(root, repository) !== '') throw new Error('project directory must be the Git repository root')
+    // HEAD contextualiza trocas de checkout; somente o conteúdo determina mudanças de escopo.
+    const revision = spawnSync('git', ['-C', root, 'rev-parse', '--verify', 'HEAD'], { encoding: 'utf8', windowsHide: true })
+    const head = revision.status === 0 ? revision.stdout.trim() : null
     const files = Object.create(null), nestedRepositories = []
     for (const entry of new Set(git('ls-files', '-z', '--cached', '--others', '--exclude-standard').split('\0').filter(Boolean))) {
       const path = gitInventoryPath(entry)
@@ -80,7 +83,7 @@ export function captureScopeBaseline(cwd) {
         files[path] = stat.isSymbolicLink() ? createHash('sha256').update(readlinkSync(absolute)).update(String(stat.mode)).digest('hex') : scopeFileDigest(root, path, stat.mode)
       } catch (error) { if (error.code !== 'ENOENT') throw error }
     }
-    return { method: 'git', cwd: root, files, ...(nestedRepositories.length ? { nestedRepositories } : {}),
+    return { method: 'git', cwd: root, head, files, ...(nestedRepositories.length ? { nestedRepositories } : {}),
       limitation: 'Ignored files are not included in the Git scope check.' + (nestedRepositories.length ? ' Nested repositories require independent inspection; their directory scope is fingerprinted.' : '') }
   } catch (error) { return { method: 'unavailable', limitation: error.message } }
 }
@@ -112,11 +115,12 @@ export function verifyTaskScope(task, baseline, independentEvidence, concurrentS
   const excludedPaths = paths.filter(path => !fileScope || !insideTouches(path, touches)).filter(path =>
     independentEvidence?.evidence?.trim() && independentEvidence.agent && independentEvidence.agent !== task.agent && concurrentScopes.some(scope => insideTouches(path, scope)))
   const outside = paths.filter(path => (!fileScope || !insideTouches(path, touches)) && !excludedPaths.includes(path))
-  if (outside.length) throw new Error('Delivery changes are outside approved touches: ' + outside.join(', ') + '. These changes may belong to another task or be absorbed by a new attempt; --force does not apply to scope')
+  const gitContext = { baselineHead: baseline.head ?? null, currentHead: current.head ?? null }
+  if (outside.length) throw new Error('Delivery changes are outside approved touches: ' + outside.join(', ') + '. These changes may belong to another task or be absorbed by a new attempt; --force does not apply to scope. Git scope context: baseline HEAD ' + (gitContext.baselineHead ?? 'unavailable') + '; current HEAD ' + (gitContext.currentHead ?? 'unavailable') + '. HEAD changes alone do not establish authorship.')
   if ((baseline.nestedRepositories?.length || current.nestedRepositories?.length) &&
       (!independentEvidence?.evidence?.trim() || !independentEvidence.agent || independentEvidence.agent === task.agent))
     throw new Error('Nested repositories require an independent reviewer --scope-evidence with inspected paths and method')
-  return { method: 'git', paths, excludedPaths, ...(excludedPaths.length || externalPaths.length || current.nestedRepositories?.length || baseline.nestedRepositories?.length ? { independentEvidence } : {}),
+  return { method: 'git', paths, excludedPaths, gitContext, ...(excludedPaths.length || externalPaths.length || current.nestedRepositories?.length || baseline.nestedRepositories?.length ? { independentEvidence } : {}),
     ...(externalPaths.length ? { externalPaths, externalLimitation: 'External paths are not captured by repository evidence; independent inspection is required.' } : {}),
     // O commit pode mudar a ordem do inventário sem mudar arquivos ou permissões.
     fingerprint: createHash('sha256').update(JSON.stringify(Object.fromEntries(Object.keys(current.files).sort().map(path => [path, current.files[path]])))).digest('hex'),

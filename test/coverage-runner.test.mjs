@@ -19,19 +19,23 @@ test('importacao como biblioteca sem caminho de CLI nao dispara testes', async (
 test('runners separados cobrem cada arquivo regular uma vez e conservam as plataformas', () => {
   const repo = dirname(dirname(fileURLToPath(import.meta.url)))
   const all = coverageBatches(repo, 1, true, 'regular').flatMap(batch => batch.files).sort()
-  const shards = [0, 1].flatMap(index => coverageBatches(repo, 1, true, 'regular', { index, count: 2 }).flatMap(batch => batch.files))
+  const shards = [0, 1, 2, 3].flatMap(index => coverageBatches(repo, 1, true, 'regular', { index, count: 4 }).flatMap(batch => batch.files))
   assert.deepEqual(shards.sort(), all)
   assert.equal(new Set(shards).size, all.length)
   assert.deepEqual(coverageBatches(repo, 4, false, 'regular', { index: 0, count: 2 }).flatMap(batch => batch.files).sort(), coverageBatches(repo, 1, true, 'regular', { index: 0, count: 2 }).flatMap(batch => batch.files).sort())
   assert.equal(coverageBatches(repo, 4, false, 'all', { index: 0, count: 2 }).length, 1)
   const workflow = readFileSync(join(repo, '.github/workflows/ci.yml'), 'utf8')
   assert.match(workflow, /os: \[ubuntu-latest, windows-latest, macos-latest\]/)
-  assert.match(workflow, /shard: \[0, 1\]/)
-  assert.match(workflow, /PRUMO_TEST_PUBLISHED_SHARD_COUNT: 2/)
-  assert.match(workflow, /needs: \[test, published-windows\]/)
+  assert.match(workflow, /fromJSON\(needs\.prepare\.outputs\.regular\)/)
+  assert.match(workflow, /fromJSON\(needs\.prepare\.outputs\.published\)/)
+  assert.match(workflow, /PRUMO_CI_TEST_FILES:.*toJSON\(matrix\.files\)/)
+  assert.match(workflow, /PRUMO_CI_PUBLISHED_VERSIONS:.*toJSON\(matrix\.versions\)/)
+  assert.match(workflow, /PRUMO_TEST_PUBLISHED_SHARD_COUNT: 1/)
+  assert.match(workflow, /needs: \[test, published, package\]/)
   assert.match(workflow, /^name: CI · Prumo/m)
-  assert.match(workflow, /name: Testes ·.*Linux.*macOS.*Win.*N\$\{\{ matrix.node.*\/2/)
-  assert.match(workflow, /name: Update · Win · N\$\{\{ matrix.node.*\/2/)
+  assert.match(workflow, /name: Testes ·.*Linux.*macOS.*Win.*N\$\{\{ matrix.node.*matrix.label/)
+  assert.match(workflow, /name: Update ·.*Linux.*macOS.*Win.*N\$\{\{ matrix.node.*matrix.label/)
+  assert.match(workflow, /^  package:/m)
   assert.match(workflow, /^    name: coverage$/m)
   assert.ok(!workflow.includes('matrix.shard + 1'), 'A expressão do GitHub deve usar somente operadores suportados.')
 })
@@ -136,7 +140,7 @@ test('particionamento aceita lotes unicos e recusa configuracao invalida ou suit
   for (const value of ['', '2', 'true']) assert.throws(() => runCoverage({ root: empty, env: { PRUMO_TEST_PARTITIONED: value } }), /Particionamento/)
 })
 
-test('jobs regulares e historicos preservam a suite completa sem duplicar o historico Windows', t => {
+test('jobs regulares e historicos preservam a suite completa sem duplicar cenarios', t => {
   const files = ['test/upgrade-from-previous.test.mjs', 'test/one.unit.test.mjs', 'test/install.test.mjs', 'scripts/validation.test.mjs']
   const root = batchFixture(t, files)
   const regular = coverageBatches(root, 1, true, 'regular')
@@ -157,9 +161,6 @@ test('jobs regulares e historicos preservam a suite completa sem duplicar o hist
   const actual = coverageBatches(repo, 1, true).flatMap(batch => batch.files).sort()
   const separated = [...coverageBatches(repo, 1, true, 'regular'), ...coverageBatches(repo, 1, false, 'published')].flatMap(batch => batch.files).sort()
   assert.deepEqual(separated, actual)
-  const workflow = readFileSync(join(repo, '.github/workflows/ci.yml'), 'utf8')
-  assert.match(workflow, /published-windows:[\s\S]*node: \[22, 24\][\s\S]*runs-on: windows-latest/)
-  assert.match(workflow, /needs: \[test, published-windows\]/)
 })
 
 test('execucao real paraleliza os unitarios e preserva a cobertura conjunta antes das integracoes', t => {

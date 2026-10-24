@@ -174,6 +174,43 @@ function fixture(t, tasks = [{ id: 'T1', title: 'Delivery estimate' }], options 
     artifact, discovery, contextPath, discuss, beginPlan, finish, planTask, initialized }
 }
 
+for (const lang of ['en', 'pt-BR']) test(`contrato antecipa verificacoes e ajuda explica execucao em ${lang}`, t => {
+  const f = fixture(t, [{ id: 'T1', title: 'Estimativas', notes: ['Contexto aprovado. '.repeat(1000)],
+    validation: [{ ...check, timeoutMs: 0 }, { ...check }] }], {}, { lang })
+  const help = f.ok('validate', '--help').output
+  assert.match(help, lang === 'en' ? /executes.*validation commands/ : /executa.*comandos de validação/)
+  const full = f.ok('show-contract', 'T1', '--full').stdout
+  const parsed = JSON.parse(full)
+  assert.deepEqual(parsed.validationChecks, [
+    { check: 1, kind: 'functional', run: check.run, timeoutMs: 0 },
+    { check: 2, kind: 'functional', run: check.run, timeoutMs: 600000 },
+  ])
+  assert.ok(full.indexOf('validationChecks') < full.indexOf('before'))
+  assert.deepEqual(parsed.contract.validation, f.state().tasks.T1.validation)
+  assert.deepEqual(parsed.notes, f.state().tasks.T1.notes)
+  f.planTask()
+  f.ok('start', 'T1', '--agent', 'executor')
+  f.ok('review', 'T1', '--agent', 'reviewer')
+  const output = f.ok('validate', 'T1', '--ok', '--evidence', 'As duas estimativas foram verificadas.', '--cwd', f.project).output
+  assert.ok(output.includes(check.run), output)
+})
+
+for (const lang of ['en', 'pt-BR']) test(`progresso identifica o passo sem declarar conclusao em ${lang}`, t => {
+  const f = fixture(t, undefined, {}, { lang })
+  f.beginPlan()
+  f.finish('T1', { ...f.artifact(), steps: ['Conferir estimativa expressa', 'Conferir estimativa normal'] })
+  f.ok('start', 'T1', '--agent', 'executor')
+  for (let repeat = 0; repeat < 2; repeat++) {
+    const output = f.ok('progress', 'T1', '--step', '2', '--agent', 'executor').output
+    assert.match(output, /Conferir estimativa normal/)
+    assert.match(output, lang === 'en' ? /position is not completion evidence/ : /posição não comprova conclusão/)
+  }
+  const invalid = f.cli('progress', 'T1', '--step', '3', '--agent', 'executor')
+  assert.notEqual(invalid.status, 0)
+  assert.match(invalid.output, /2/)
+  assert.equal(f.state().tasks.T1.state, 'running')
+})
+
 for (const lang of ['en', 'pt-BR']) test(`posicao fora de ordem preserva historico e controles em ${lang}`, t => {
   const f = fixture(t, [{ id: 'T1', title: 'Cinco etapas' }], {}, { lang })
   f.beginPlan('T1')
@@ -439,7 +476,11 @@ test('relato legado sem vinculo de entrega permanece historico e exige criterios
     inspectionReason: 'Somente documentacao', validation: [{ ...check, kind: 'static' }] }])
   f.planTask(); f.ok('start', 'T1', '--agent', 'executor'); f.ok('review', 'T1', '--agent', 'reviewer')
   f.ok('review-progress', 'T1', '--step', '1', '--agent', 'reviewer')
-  const legacy = f.state(); delete legacy.tasks.T1.attempts.at(-1).reviewProgress.deliveryFingerprint; f.save(legacy)
+  const legacy = f.state(), legacyAttempt = legacy.tasks.T1.attempts.at(-1)
+  delete legacyAttempt.reviewDelivery
+  delete legacyAttempt.reviewProgress.deliveryFingerprint
+  delete legacyAttempt.reviewProgress.contentFingerprint
+  f.save(legacy)
   assert.match(f.ok('status').output, /review criteria reported: 1\/1; stale/)
   f.rejected(/Current review progress is missing or stale/, 'validate', 'T1', '--ok', '--evidence', 'Relato legado')
   f.ok('block', 'T1', '--reason', 'Retomar com entrega vigente'); f.ok('unblock', 'T1')

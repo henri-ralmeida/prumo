@@ -98,7 +98,7 @@ import { replanningRecovery } from './replanning-recovery.mjs'
 import { taskIdentifierProblem, phaseIdentifierProblem } from './task-identifiers.mjs'
 import { parseTaskMapping, renumberTasks, renumberBlockers, RenumberError, eventLogPath, renumberEventHistory } from './task-renumber.mjs'
 import { terminalAttemptRepairs, repairTerminalAttempts, attemptsForContext } from './legacy-attempts.mjs'
-import { captureDelivery, checkDelivery, verifyNumericProvenance, assertEvidenceContract } from './delivery-evidence.mjs'
+import { captureDelivery, checkDelivery, verifyNumericProvenance, assertEvidenceContract, assertReviewedDelivery } from './delivery-evidence.mjs'
 import { assertRolePreferences, recordDispatchMetadata, dispatchOwners, reportedUsageTotals, pauseRun, resumeRun, shellCommand, taskBrief, agentRoles, repeatedPlanQuestions, recordedPlanIdentity } from './run-metadata.mjs'
 import { newCommandRecord, recordCommand } from './command-metrics.mjs'
 import { questionAnswerOrigin, missingExecutionSteps, phaseOrderChange } from './planning-context.mjs'
@@ -115,7 +115,10 @@ if (args?.help && !(cmd === 'review-progress' && args._[0])) {
   const help = engineCommandHelp(cmd)
   log(tr('Usage: {0}', help.usage))
   log(tr('Options: {0}', help.flags.join(' ')))
-  if (cmd === 'validate') log(tr('validate uses the reviewer recorded by review; --evidence records independent observations, not a progress counter'))
+  if (cmd === 'validate') {
+    log(tr('validate uses the reviewer recorded by review; --evidence records independent observations, not a progress counter'))
+    log(tr('validate --ok executes the approved validation commands in their configured environment; --failed only records a refusal. Inspect commands and timeouts with show-contract <task> --full'))
+  }
   if (cmd === 'review-progress') {
     log(tr('Read the numbered current criteria with show-contract <task>; progress is a reviewer report, not proof of inspection or approval'))
     printReviewValidationGuidance('<task>')
@@ -533,8 +536,16 @@ function printReviewValidationGuidance(id) {
   log('[prumo] ' + tr('After inspecting the current delivery, use validate {0} --ok --evidence <observations> [--cwd <project>]. Evidence records what the reviewer inspected; no flag or progress counter proves inspection automatically, and validation still enforces the current contract', id))
 }
 
-function reviewProgressRecord(state, task, agent, denominator, deliveryFingerprint = checkDelivery(state, task, state.plan.cwd).fingerprint) {
+function reviewDeliveryMatches(progress, deliveryCheck) {
+  return progress.contentFingerprint !== undefined
+    ? progress.contentFingerprint === deliveryCheck.contentFingerprint
+    : progress.deliveryFingerprint === deliveryCheck.fingerprint
+}
+
+function reviewProgressRecord(state, task, agent, denominator, deliveryCheck = checkDelivery(state, task, state.plan.cwd)) {
   const attempt = task.attempts.at(-1)
+  const deliveryFingerprint = deliveryCheck.fingerprint
+  attempt.reviewDelivery = { fingerprint: deliveryFingerprint, contentFingerprint: deliveryCheck.contentFingerprint }
   if (attempt.reviewProgress) {
     attempt.reviewProgressHistory ??= []
     attempt.reviewProgressHistory.push({ ...attempt.reviewProgress, supersededAt: new Date().toISOString() })
@@ -545,7 +556,7 @@ function reviewProgressRecord(state, task, agent, denominator, deliveryFingerpri
   }
   const record = { current: 1, total: denominator.total, traversed: 0, basis: denominator.basis,
     agent, selfReported: false, contractRevision: task.contractRevision ?? 0,
-    scopeRevision: task.scopeRevision ?? 0, deliveryFingerprint }
+    scopeRevision: task.scopeRevision ?? 0, deliveryFingerprint, contentFingerprint: deliveryCheck.contentFingerprint }
   attempt.reviewProgress = record
   return record
 }
@@ -2854,6 +2865,9 @@ const commands = {
     }
     const display = Object.fromEntries(['label', 'summary', 'validationSummary'].filter(field => task[field] !== undefined).map(field => [field, task[field]]))
     console.log(JSON.stringify({ task: id, source, ...(changedAt ? { changedAt } : {}),
+      ...(args.full ? { validationChecks: validationContract(task).steps.map((step, index) => ({
+        check: index + 1, kind: step.kind ?? 'static', run: step.run, timeoutMs: step.timeoutMs ?? 600000,
+      })) } : {}),
       display, displayNote: tr(Object.values(display).some(value => typeof value === 'string' && value.trim())
         ? 'Display metadata is separate from the contract and does not change its digest'
         : 'No display metadata recorded; this does not mean the contract is empty'),
@@ -3030,7 +3044,7 @@ const commands = {
           let stale = !review || review.agent !== t.reviewer || review.total !== denominator.total ||
             review.basis !== denominator.basis || review.contractRevision !== (t.contractRevision ?? 0) ||
             review.scopeRevision !== (t.scopeRevision ?? 0)
-          try { stale ||= review.deliveryFingerprint !== checkDelivery(state, t, state.plan.cwd).fingerprint } catch { stale = true }
+          try { stale ||= !reviewDeliveryMatches(review, checkDelivery(state, t, state.plan.cwd)) } catch { stale = true }
           reviewLabel = '  [' + tr('review criteria reported: {0}/{1}; {2}', review?.traversed ?? 0, denominator.total,
             tr(stale ? 'stale; report the current delivery again' : 'not proof of inspection')) + ']'
         } else reviewLabel = '  [' + tr('review criteria reported: unknown; no structured criteria') + ']'
@@ -3936,7 +3950,8 @@ const commands = {
     if (!args.agent || args.agent !== t.agent) die('progress needs the current executor agent')
     const current = Number(args.step), total = t.taskPlan?.steps?.length
     if (!total || !Number.isSafeInteger(current) || current < 1 || current > total)
-      die('progress step must be an index in the current task plan')
+      die(tr('progress step must be an index in the current task plan (1..{0})', total ?? 0))
+    log('[prumo] ' + tr('Execution step {0}/{1}: {2}', current, total, t.taskPlan.steps[current - 1]))
     const attempt = t.attempts.at(-1)
     if (current === attempt.executionStep) {
       log(`[prumo] ${id} execution position already recorded at ${current}/${total} (agent ${t.agent}, attempt ${t.attempts.length}); position is not completion evidence`)
@@ -4006,12 +4021,12 @@ const commands = {
     if (step > denominator.total) die(tr('review-progress step must be between 1 and {0}', denominator.total))
     printReviewValidationGuidance(id)
     const attempt = t.attempts.at(-1)
-    const deliveryFingerprint = checkDelivery(state, t, state.plan.cwd).fingerprint
+    const deliveryCheck = checkDelivery(state, t, state.plan.cwd)
     let progress = attempt.reviewProgress
     if (!progress || progress.total !== denominator.total || progress.basis !== denominator.basis ||
         progress.agent !== agent || progress.contractRevision !== (t.contractRevision ?? 0) ||
-        progress.scopeRevision !== (t.scopeRevision ?? 0) || progress.deliveryFingerprint !== deliveryFingerprint) {
-      progress = reviewProgressRecord(state, t, agent, denominator, deliveryFingerprint)
+        progress.scopeRevision !== (t.scopeRevision ?? 0) || !reviewDeliveryMatches(progress, deliveryCheck)) {
+      progress = reviewProgressRecord(state, t, agent, denominator, deliveryCheck)
     }
     if (step <= progress.traversed) {
       log(`[prumo] ${id} review progress already reports ${progress.traversed}/${progress.total} criteria traversed; no state change; reviewer report is not proof of inspection or approval`)
@@ -4102,7 +4117,7 @@ const commands = {
         const stale = !progress || progress.total !== denominator.total || progress.basis !== denominator.basis ||
           progress.agent !== reviewer || progress.contractRevision !== (t.contractRevision ?? 0) ||
           progress.scopeRevision !== (t.scopeRevision ?? 0) || progress.selfReported !== true ||
-          progress.deliveryFingerprint !== checkDelivery(state, t, state.plan.cwd).fingerprint
+          !reviewDeliveryMatches(progress, checkDelivery(state, t, state.plan.cwd))
         if (stale || progress.traversed !== denominator.total) {
           if (stale) errorLog('[prumo] ' + tr('Current review progress is missing or stale; earlier reports cannot satisfy these criteria'))
           const traversed = stale ? 0 : progress.traversed
@@ -4140,6 +4155,7 @@ const commands = {
     if (requestedOk) {
       try {
         result.deliveryCheck = checkDelivery(snapshot.evidenceState, snapshot, snapshot.evidenceState.plan.cwd)
+        assertReviewedDelivery(snapshot, result.deliveryCheck)
         result.numericProvenance = verifyNumericProvenance(snapshot, snapshot.evidenceState.plan.cwd)
         const previous = snapshot.validations.slice(0, -1).reverse().find(receipt =>
           receipt.by === snapshot.validations.at(-1).by && receipt.checks?.length)
@@ -4183,10 +4199,15 @@ const commands = {
         assertCurrentExecutionInputs(state, t)
       }
       Object.assign(last, result, { ok: requestedOk && !error, error, at: new Date().toISOString() })
+      if (error) {
+        if (last.summary !== undefined) last.submittedSummary = last.summary
+        last.summary = tr('Validation failed: {0}', tr(error))
+      }
       if (last.by === 'review') stopOpenActivity(t.attempts.at(-1), last.at)
       saveState(name, state)
       emit(name, 'task_validate', id, { ok: last.ok, by: last.by, evidence: last.evidence,
-        ...(last.summary === undefined ? {} : { summary: last.summary }), error })
+        ...(last.summary === undefined ? {} : { summary: last.summary }),
+        ...(last.submittedSummary === undefined ? {} : { submittedSummary: last.submittedSummary }), error })
       log('[prumo] ' + id + ' validation recorded by ' + last.by + ': ' + (last.ok ? 'OK' : 'FAILED'))
       if (!last.ok) log('[prumo] ' + tr('Validation failed; no approval was recorded. The following summary and evidence belong to the failed validation.'))
       if (last.summary !== undefined) log('[prumo] ' + tr('Recorded summary: {0}', last.summary))
@@ -4458,7 +4479,7 @@ const commands = {
       if (!progress || progress.agent !== reviewer || progress.total !== reviewDenom?.total ||
           progress.basis !== reviewDenom?.basis || progress.contractRevision !== (t.contractRevision ?? 0) ||
           progress.scopeRevision !== (t.scopeRevision ?? 0) ||
-          progress.deliveryFingerprint !== checkDelivery(state, t, state.plan.cwd).fingerprint)
+          !reviewDeliveryMatches(progress, checkDelivery(state, t, state.plan.cwd)))
         reviewProgressRecord(state, t, reviewer, reviewDenom)
     }
     if (state.plan.scopePolicy === 'explicit' && (target === 'running' || target === 'reviewing')) t.attempts.at(-1).concurrentScopes = recordConcurrentScopes(state, t, true)

@@ -2712,6 +2712,14 @@ test('status and ready show planning age and accepted artifacts from 0/N through
     const output = f.ok(command).stdout
     assert.match(output, /planning round F1 \(1\) open for \d+s; artifacts 0\/2/)
   }
+  const legacy = f.state()
+  delete legacy.phaseWorkflows.F1.planningAttempts.at(-1).activeTargets
+  f.save(legacy)
+  const events = f.events(), graph = JSON.parse(f.ok('graph').stdout)
+  assert.equal(graph.derived.A.effective, 'planning')
+  assert.equal(graph.derived.B.effective, 'planning')
+  assert.deepEqual(f.state(), legacy, 'Consultar alvos legados conserva a rodada persistida')
+  assert.deepEqual(f.events(), events, 'Consultar alvos legados nao cria eventos')
   f.writeArtifacts('F1')
   f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
   for (const command of ['status', 'ready']) {

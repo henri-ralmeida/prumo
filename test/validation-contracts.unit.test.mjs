@@ -164,7 +164,8 @@ for (const field of Object.keys(discovery().coverage)) for (const value of empty
 for (const field of ['question', 'answer', 'channel', 'round']) {
   const values = field === 'round' ? [undefined, null, 0, -1, 1.5, '1', false, [], {}] : empty
   for (const value of values) test(`descoberta exige pergunta ${field}=${label(value)}`, () => {
-    const d = discovery(); d.questions[0][field] = value; assert.throws(() => assertDiscovery(d), /answered question/)
+    const d = discovery(); d.questions[0][field] = value
+    assert.throws(() => assertDiscovery(d), field === 'round' ? /questions\[0\]\.round.*(?:positive safe integer|inteiro positivo seguro).*type|questions\[0\]\.round.*tipo recebido/ : /answered question/)
   })
 }
 for (const field of ['research', 'questions', 'coverage', 'decisions', 'deferred', 'executionBoundary', 'closure']) for (const value of [undefined, null, '', false, 0]) test(`descoberta rejeita ${field}=${label(value)}`, () => {

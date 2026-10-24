@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { downloadPublishedFile } from '../test/fixtures/published-download.mjs'
-import { shardConfig, selectShard } from '../tools/ci-shards.mjs'
+import { shardConfig } from '../tools/ci-shards.mjs'
+import { publishedSelection } from '../test/fixtures/ci-published-selection.mjs'
 
 // Consulte o npm para não manter uma lista manual que deixe versões publicadas de fora.
 const directory = new URL('../.test-output/npm-versions/', import.meta.url)
@@ -48,7 +49,7 @@ async function checkVersion([version, pkg]) {
   writeFileSync(resultsPath, JSON.stringify(results, null, 2))
   console.log(`${version}: ${status === 0 ? 'PASS' : 'FAIL'}${status ? `\n${output}` : ''}`)
 }
-const selected = selectShard(Object.entries(metadata.versions).sort(([a], [b]) => a.localeCompare(b, 'en')), shard)
+const selected = publishedSelection(metadata.versions, process.env)
 const pending = [...selected]
 writeFileSync(new URL(`../published-update-selection-${shard.index}.json`, directory), JSON.stringify({ shard, all: Object.keys(metadata.versions).sort(), selected: selected.map(([version]) => version) }, null, 2))
 // As versões antigas consultam processos via PowerShell; serializar no Windows evita disputar a inicialização do dashboard.

@@ -276,7 +276,8 @@ for (const lang of ['en', 'pt-BR']) test(`validacao reprovada distingue evidenci
   const current = f.state().tasks.T1
   assert.deepEqual(current.validations.slice(0, -1), before.validations)
   assert.equal(current.validations.at(-1).ok, false)
-  assert.equal(current.validations.at(-1).summary, 'Observação da falha')
+  assert.equal(current.validations.at(-1).submittedSummary, 'Observação da falha')
+  assert.match(current.validations.at(-1).summary, /exit 1/)
   assert.equal(current.validations.at(-1).evidence, 'A regra não passou')
   for (const field of ['taskPlan', 'attempts', 'agent', 'reviewer', 'executionAuthorization', 'deps'])
     assert.deepEqual(current[field], before[field])

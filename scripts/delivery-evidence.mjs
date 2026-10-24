@@ -169,6 +169,16 @@ function csharpFormattingText(text) {
     })
   })
 }
+export function assertReviewedDelivery(task, delivery) {
+  const attempt = task.attempts?.at(-1)
+  const reviewed = attempt?.reviewDelivery?.fingerprint ?? attempt?.reviewProgress?.deliveryFingerprint
+  const content = attempt?.reviewDelivery?.contentFingerprint
+  // A revisao acompanha o conteudo apresentado; commits equivalentes e entregas sem Git continuam validos.
+  // Tentativas antigas sem identidade capturada preservam as exigencias de evidencia independente existentes.
+  if (task.state === 'reviewing' && reviewed != null &&
+      (content == null ? reviewed !== delivery.fingerprint : content !== delivery.contentFingerprint))
+    throw new Error('Delivery changed since review; restore the reviewed content or inspect the current delivery and record review-progress (legacy criteria: block, then unblock --reviewer) before validating again')
+}
 export function checkDelivery(state, task, cwd) {
   cwd = task.project ?? cwd
   assertEvidenceContract(task)
@@ -203,7 +213,10 @@ export function checkDelivery(state, task, cwd) {
   }
   if (findings.length) throw new Error('Delivery identifiers refused: ' + [...new Set(findings.map(item => `${item.path}:${item.line}`))].join(', '))
   const fingerprints = Object.fromEntries(Object.entries(current.files).map(([path, { lines, ...file }]) => [path, file]))
-  return { fingerprint: hash({ ...current, files: fingerprints }), binaryPaths,
+  // Entre revisoes, bytes identicos continuam equivalentes mesmo se o sistema substituir o arquivo.
+  // A identidade fisica permanece no fingerprint original para detectar trocas durante a validacao.
+  const contentFiles = Object.fromEntries(Object.entries(fingerprints).map(([path, { identity, ...file }]) => [path, file]))
+  return { fingerprint: hash({ ...current, files: fingerprints }), contentFingerprint: hash({ ...current, files: contentFiles }), binaryPaths,
     ...(current.nestedRepositories ? { nestedRepositories: current.nestedRepositories } : {}),
     limitation: baseline ? current.limitation : 'Legacy attempt has no content baseline; only declared deliveries were checked.' }
 }

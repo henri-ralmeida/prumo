@@ -983,10 +983,15 @@ test('real rejection and approved contract change preserve history and verify th
 
   // Corrigir apenas o defeito antigo é insuficiente para o contrato recém-aprovado.
   writeFileSync(join(f.project, 'delivery.cjs'), 'exports.days = express => express ? 1 : 3;\n')
+  assert.match(f.validate().output, /Delivery changed since review/)
+  f.ok('block', 'T1', '--reason', 'Reinspecionar a entrega alterada para o contrato atual')
+  f.ok('unblock', 'T1', '--reviewer', 'reviewer-v2')
   assert.notEqual(f.validate().status, 0)
   f.rejected(/no passing validation/, 'done', 'T1')
   assert.equal(f.state().tasks.T1.validations.at(-1).checks[1].run, 'node current-policy.test.cjs')
   writeFileSync(join(f.project, 'delivery.cjs'), 'exports.days = express => express ? 1 : 4;\n')
+  f.ok('block', 'T1', '--reason', 'Inspecionar a correcao antes de validar novamente')
+  f.ok('unblock', 'T1', '--reviewer', 'reviewer-v2')
   assert.equal(f.validate().status, 0)
   const receipt = f.state().tasks.T1.validations.at(-1)
   assert.match(receipt.checks[1].stdout, /2 current policy scenarios passed/)
