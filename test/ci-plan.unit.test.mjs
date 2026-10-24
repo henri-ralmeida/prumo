@@ -9,6 +9,17 @@ import { planCi } from '../.github/scripts/ci-plan.mjs'
 
 const planner = new URL('../.github/scripts/ci-plan.mjs', import.meta.url)
 const platforms = ['ubuntu-latest', 'windows-latest', 'macos-latest']
+
+test('tempos medidos reduzem preparação repetida sem omitir testes ou versões', () => {
+  const root = fileURLToPath(new URL('..', import.meta.url))
+  const versions = Array.from({ length: 59 }, (_, index) => `3.${index}.0`)
+  const plan = planCi({ root, versions })
+  assert.ok(plan.regular.include.length + plan.published.include.length < 100)
+  const files = ['scripts', 'test'].flatMap(directory => readdirSync(join(root, directory))
+    .filter(name => name.endsWith('.test.mjs') && name !== 'upgrade-from-previous.test.mjs').map(name => `${directory}/${name}`))
+  assertMatrix(plan.regular, 'files', files)
+  assertMatrix(plan.published, 'versions', versions)
+})
 function fixture(t, count = 27) {
   const root = mkdtempSync(join(tmpdir(), 'prumo-ci-plan-'))
   t.after(() => rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
@@ -32,46 +43,37 @@ function assertMatrix(matrix, key, expected) {
   }
 }
 
-test('oito grupos regulares preservam todos os testes nas seis combinações', t => {
+test('lotes balanceados preservam todos os testes nas seis combinações', t => {
   const { root, files } = fixture(t)
   const versions = Array.from({ length: 13 }, (_, index) => `2.11.${index}`)
   const before = JSON.stringify(versions)
   const plan = planCi({ root, versions })
-  assert.equal(plan.regular.include.length, 48)
+  assert.ok(plan.regular.include.length < 48)
   assertMatrix(plan.regular, 'files', files)
   assertMatrix(plan.published, 'versions', versions)
-  assert.ok(plan.published.include.every(job => job.versions.length <= 2))
-  assert.ok(plan.published.include.filter(job => job.os === 'windows-latest').every(job => job.versions.length === 1))
+  assert.ok([...plan.regular.include, ...plan.published.include].every(job => Number.isFinite(job.estimatedSeconds) && job.estimatedSeconds > 0))
   assert.equal(JSON.stringify(versions), before)
   assert.deepEqual(planCi({ root, versions }), plan)
   writeFileSync(join(root, 'test/future.test.mjs'), '')
   assertMatrix(planCi({ root, versions }).regular, 'files', [...files, 'test/future.test.mjs'])
 })
 
-test('catálogo npm futuro aumenta lotes somente quando necessário para caber na matriz', t => {
+test('catálogo npm futuro preserva a união exata e o limite da matriz', t => {
   const { root } = fixture(t, 8)
   for (const count of [1, 2, 3, 59, 64, 65, 84, 85, 1000]) {
     const versions = Array.from({ length: count }, (_, index) => `3.${index}.0`)
     const plan = planCi({ root, versions })
     assertMatrix(plan.published, 'versions', versions)
-    let multiplier = 1
-    while (2 * Math.ceil(count / multiplier) + 4 * Math.ceil(count / (2 * multiplier)) > 256) multiplier++
-    assert.ok(plan.published.include.every(job => job.versions.length <= multiplier * (job.os === 'windows-latest' ? 1 : 2)))
-    for (const os of platforms) {
-      const groups = plan.published.include.filter(job => job.os === os && job.node === 22)
-      assert.equal(groups.length, Math.ceil(count / (multiplier * (os === 'windows-latest' ? 1 : 2))))
-    }
-    if (count === 59) assert.equal(plan.published.include.length, 238)
-    if (count === 64) assert.equal(plan.published.include.length, 256)
-    if (count === 65) assert.equal(multiplier, 2)
+    assert.ok(plan.published.include.every(job => job.estimatedSeconds > 0))
+    if (count === 59) assert.ok(plan.published.include.length < 60)
   }
 })
 
-test('inventário desequilibrado continua com oito grupos não vazios e sem duplicação', t => {
+test('inventário desequilibrado continua com grupos não vazios e sem duplicação', t => {
   const { root, files } = fixture(t, 7)
   writeFileSync(join(root, 'test/engine-planning.test.mjs'), '')
   const plan = planCi({ root, versions: ['2.11.8'] })
-  assert.equal(plan.regular.include.length, 48)
+  assert.ok(plan.regular.include.length <= 48)
   assertMatrix(plan.regular, 'files', [...files, 'test/engine-planning.test.mjs'])
 })
 
@@ -79,7 +81,7 @@ test('projetos pequenos usam somente grupos não vazios e preservam todos os arq
   for (const count of [1, 2, 3, 4, 5, 6, 7]) {
     const { root, files } = fixture(t, count)
     const plan = planCi({ root, versions: ['2.11.8'] })
-    assert.equal(plan.regular.include.length, count * 6)
+    assert.ok(plan.regular.include.length <= count * 6)
     assertMatrix(plan.regular, 'files', files)
   }
 })

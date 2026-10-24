@@ -8,6 +8,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { downloadPublishedFile } from '../test/fixtures/published-download.mjs'
 import { shardConfig } from '../tools/ci-shards.mjs'
 import { publishedSelection } from '../test/fixtures/ci-published-selection.mjs'
+import { sharedCandidate } from '../.github/scripts/ci-candidate.mjs'
 
 // Consulte o npm para não manter uma lista manual que deixe versões publicadas de fora.
 const directory = new URL('../.test-output/npm-versions/', import.meta.url)
@@ -16,8 +17,11 @@ const repo = fileURLToPath(new URL('../', import.meta.url))
 const packageVersion = JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8')).version
 const shard = shardConfig(process.env, 'PRUMO_TEST_PUBLISHED_SHARD')
 const resultsPath = new URL(`../published-update-results${shard.count > 1 ? `-${shard.index}` : ''}.json`, directory)
-const candidateDirectory = mkdtempSync(join(tmpdir(), 'prumo-published-candidate-'))
+let candidate = sharedCandidate(repo)
+let candidateDirectory
 try {
+if (!candidate) {
+candidateDirectory = mkdtempSync(join(tmpdir(), 'prumo-published-candidate-'))
 const npm = process.platform === 'win32'
   ? [process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', 'npm', 'pack', '--ignore-scripts', '--pack-destination', candidateDirectory, '--loglevel=error']]
   : ['npm', ['pack', '--ignore-scripts', '--pack-destination', candidateDirectory, '--loglevel=error']]
@@ -26,7 +30,8 @@ assert.ifError(packed.error)
 assert.equal(packed.status, 0, packed.stdout + packed.stderr)
 const candidates = readdirSync(candidateDirectory).filter(file => file.endsWith('.tgz'))
 assert.deepEqual(candidates, [`henri-ralmeida-prumo-${packageVersion}.tgz`])
-const candidate = resolve(candidateDirectory, candidates[0])
+candidate = resolve(candidateDirectory, candidates[0])
+}
 const candidateSha256 = createHash('sha256').update(readFileSync(candidate)).digest('hex')
 const metadata = JSON.parse((await downloadPublishedFile('https://registry.npmjs.org/@henri-ralmeida%2fprumo')).toString('utf8'))
 const results = []
@@ -62,7 +67,9 @@ assert.deepEqual(results.map(result => result.version).sort(), selected.map(([ve
 assert.ok(results.every(result => result.status === 0), `See ${fileURLToPath(resultsPath)}`)
 console.log(`All ${results.length} selected npm releases upgraded successfully (shard ${shard.index + 1}/${shard.count})`)
 } finally {
+  if (candidateDirectory) {
   assert.equal(dirname(realpathSync(candidateDirectory)), realpathSync(tmpdir()))
   assert.ok(basename(candidateDirectory).startsWith('prumo-published-candidate-'))
   rmSync(candidateDirectory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  }
 }

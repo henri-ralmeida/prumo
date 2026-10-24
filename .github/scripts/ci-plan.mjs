@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { coverageBatches } from '../../tools/run-coverage.mjs'
@@ -6,6 +6,26 @@ import { downloadPublishedFile } from '../../test/fixtures/published-download.mj
 
 const platforms = ['ubuntu-latest', 'windows-latest', 'macos-latest']
 const nodes = [22, 24]
+const timings = JSON.parse(readFileSync(new URL('../ci-timings.json', import.meta.url), 'utf8'))
+
+function balance(items, count, weight) {
+  const groups = Array.from({ length: Math.min(items.length, count) }, () => ({ items: [], seconds: 0 }))
+  for (const item of [...items].sort((a, b) => weight(b) - weight(a) || a.localeCompare(b, 'en'))) {
+    const group = groups.reduce((best, next) => next.seconds < best.seconds ? next : best)
+    group.items.push(item)
+    group.seconds += weight(item)
+  }
+  return groups
+}
+
+function matrix(combinations, key, prefix) {
+  const include = []
+  for (let index = 0; index < Math.max(...combinations.map(item => item.groups.length)); index++)
+    for (const { os, node, groups } of combinations) if (groups[index])
+      include.push({ os, node, label: `${prefix}-${index + 1}-of-${groups.length}`, [key]: groups[index].items,
+        estimatedSeconds: Math.ceil(groups[index].seconds) })
+  return { include }
+}
 
 // O plano explícito mantém cada teste e versão uma vez por sistema e versão do Node.
 export function planCi({ root, versions }) {
@@ -14,42 +34,21 @@ export function planCi({ root, versions }) {
   if (!Array.isArray(versions) || !versions.length || versions.some(version => typeof version !== 'string' || version !== version.trim() || !versionPattern.test(version)) || new Set(versions).size !== versions.length)
     throw new Error('As versões publicadas devem formar uma lista não vazia, válida e sem duplicações')
 
-  // Conserva o balanceamento existente em quatro lotes e divide cada lote entre dois runners.
+  // O orçamento amortiza a preparação; pesos medidos estimam duração sem limitar artefatos ou omitir casos novos.
   const inventory = coverageBatches(resolve(root), 1, false, 'regular').flatMap(batch => batch.files)
-  const originalCount = Math.min(4, inventory.length)
-  const regularGroups = Array.from({ length: originalCount }, (_, index) =>
-    coverageBatches(resolve(root), 1, false, 'regular', { index, count: originalCount }).flatMap(batch => batch.files))
-    .flatMap(files => [files.filter((_, index) => index % 2 === 0), files.filter((_, index) => index % 2 === 1)])
-  // Oito é uma meta de paralelismo, não um tamanho mínimo de projeto.
-  const targetCount = Math.min(8, inventory.length)
-  while (regularGroups.length > targetCount) regularGroups.splice(regularGroups.findIndex(group => group.length === 0), 1)
-  // Um arquivo pesado pode ocupar sozinho um lote original; redistribuir evita um runner vazio.
-  for (const group of regularGroups.filter(group => group.length === 0)) {
-    const donor = regularGroups.reduce((largest, candidate) => candidate.length > largest.length ? candidate : largest)
-    group.push(donor.pop())
-  }
-
-  // Windows executa versões sequencialmente; POSIX executa duas em paralelo.
-  // Acima de 64 versões, o multiplicador cresce sem ultrapassar as 256 entradas do GitHub.
-  const baseSize = os => os === 'windows-latest' ? 1 : 2
-  let multiplier = 1
-  while (platforms.reduce((total, os) => total + nodes.length * Math.ceil(versions.length / (baseSize(os) * multiplier)), 0) > 256) multiplier++
-  const publishedGroups = new Map(platforms.map(os => {
-    const groups = [], size = baseSize(os) * multiplier
-    for (let index = 0; index < versions.length; index += size) groups.push(versions.slice(index, index + size))
-    return [os, groups]
-  }))
-  const published = { include: [] }
-  for (let index = 0; index < Math.max(...[...publishedGroups.values()].map(groups => groups.length)); index++) {
-    for (const os of platforms) {
-      const groups = publishedGroups.get(os)
-      if (index < groups.length) for (const node of nodes)
-        published.include.push({ os, node, label: `published-${index + 1}-of-${groups.length}`, versions: [...groups[index]] })
-    }
-  }
-  const matrix = (groups, key, prefix) => ({ include: groups.flatMap((items, index) => platforms.flatMap(os =>
-    nodes.map(node => ({ os, node, label: `${prefix}-${index + 1}-of-${groups.length}`, [key]: [...items] })))) })
-  return { regular: matrix(regularGroups, 'files', 'regular'), published }
+  const baseline = Object.values(timings.fileSeconds).reduce((sum, seconds) => sum + seconds, 0)
+  const combinations = platforms.flatMap(os => nodes.map(node => ({ os, node, measured: timings.combinations[`${os}:${node}`] })))
+  const groups = (items, weight, budget) => balance(items, Math.max(1, Math.min(42, Math.ceil(items.reduce((sum, item) => sum + weight(item), 0) / budget))), weight)
+  const regular = combinations.map(({ os, node, measured }) => {
+    const weight = file => (timings.fileSeconds[file] ?? 10) * measured.regularSeconds / baseline
+    return { os, node, groups: groups(inventory, weight, timings.targetSeconds) }
+  })
+  const published = combinations.map(({ os, node, measured }) => {
+    const workers = os === 'windows-latest' ? 1 : 2
+    const weight = version => (measured.versionSeconds[version] ?? measured.publishedSeconds) / workers
+    return { os, node, groups: groups(versions, weight, timings.targetSeconds) }
+  })
+  return { regular: matrix(regular, 'files', 'regular'), published: matrix(published, 'versions', 'published') }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

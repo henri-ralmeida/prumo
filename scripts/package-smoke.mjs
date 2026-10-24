@@ -5,10 +5,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { spawnSync, fork } from 'node:child_process'
 import { retiredInstructionFiles } from './installation-bundle.mjs'
 import assert from 'node:assert/strict'
+import { sharedCandidate } from '../.github/scripts/ci-candidate.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const { name, version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
-const archive = join(root, `${name.replace('@', '').replace('/', '-')}-${version}.tgz`)
+const archive = sharedCandidate(root) ?? join(root, `${name.replace('@', '').replace('/', '-')}-${version}.tgz`)
 const base = realpathSync(tmpdir())
 const home = mkdtempSync(join(base, 'prumo-package-'))
 const cwd = join(home, 'project')

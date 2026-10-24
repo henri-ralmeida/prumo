@@ -25,6 +25,8 @@ test('lote regular executa apenas arquivos selecionados e limpa a primeira colet
     assert.equal(calls[0].args.includes('--clean=false'), false)
     if (calls.length > 1) assert.equal(calls[1].args.includes('--clean=false'), true)
     assert.ok(calls.every(call => call.args.includes('--check-coverage=false')))
+    assert.ok(calls.every(call => call.args.includes('--reporter=json') && call.args.includes('--reporter=json-summary')),
+      'A coleta entrega os contadores completos; HTML pertence somente à consolidação')
   }
 })
 

@@ -21,7 +21,8 @@ export function runCiBatch({ root = process.cwd(), env = process.env, run = spaw
     const selected = args.slice(firstFile).filter(file => selection.has(file))
     if (!selected.length) return { status: 0 }
     for (const file of selected) visited.add(file)
-    const command = args.slice(0, firstFile).filter(arg => executed || arg !== '--clean=false').concat(selected)
+    const command = [args[0], '--reporter=json', '--reporter=json-summary',
+      ...args.slice(1, firstFile).filter(arg => executed || arg !== '--clean=false'), ...selected]
     executed = true
     return run(executable, command, options)
   } })

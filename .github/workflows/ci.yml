@@ -12,6 +12,7 @@ jobs:
     outputs:
       regular: ${{ steps.plan.outputs.regular }}
       published: ${{ steps.plan.outputs.published }}
+      candidate_sha256: ${{ steps.candidate.outputs.sha256 }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -21,6 +22,14 @@ jobs:
       - run: bun install --frozen-lockfile --ignore-scripts
       - id: plan
         run: node .github/scripts/ci-plan.mjs
+      - run: bun run check
+      - id: candidate
+        run: node .github/scripts/prepare-ci-candidate.mjs
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ci-candidate
+          path: .test-output/ci-candidate/
+          if-no-files-found: error
       - uses: actions/upload-artifact@v6
         with:
           name: ci-plan
@@ -64,7 +73,10 @@ jobs:
           name: verification-${{ matrix.os }}-node-${{ matrix.node }}-${{ matrix.label }}
           path: |
             .test-output/
-            !.test-output/coverage/tmp/**
+            !.test-output/coverage/**
+            !.test-output/coverage-sources/**
+            !.test-output/ci-candidate/**
+            !.test-output/npm-versions/**
           include-hidden-files: true
           if-no-files-found: ignore
   published:
@@ -84,14 +96,20 @@ jobs:
           node-version: ${{ matrix.node }}
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile --ignore-scripts
+      - uses: actions/download-artifact@v7
+        with:
+          name: ci-candidate
+          path: .test-output/ci-candidate/
       # Cada runner conserva os cenarios historicos sequenciais, com homes, portas e caches isolados.
-      - run: bun run test:coverage:collect
+      - run: node .github/scripts/run-ci-published.mjs
         env:
           PRUMO_TEST_SUITE: published
           PRUMO_TEST_CONCURRENCY: 1
           PRUMO_TEST_PUBLISHED_SHARD_INDEX: 0
           PRUMO_TEST_PUBLISHED_SHARD_COUNT: 1
           PRUMO_CI_PUBLISHED_VERSIONS: ${{ toJSON(matrix.versions) }}
+          PRUMO_CI_CANDIDATE_MANIFEST: .test-output/ci-candidate/manifest.json
+          PRUMO_CI_CANDIDATE_SHA256: ${{ needs.prepare.outputs.candidate_sha256 }}
       - name: Resumir resultados das versões publicadas
         if: always()
         shell: pwsh
@@ -111,11 +129,18 @@ jobs:
           name: verification-published-${{ matrix.os }}-node-${{ matrix.node }}-${{ matrix.label }}
           path: |
             .test-output/
-            !.test-output/coverage/tmp/**
+            !.test-output/coverage/**
+            !.test-output/coverage-sources/**
+            !.test-output/ci-candidate/**
+            !.test-output/npm-versions/**
           include-hidden-files: true
           if-no-files-found: ignore
   package:
     name: Pacote · ${{ matrix.os }} · N${{ matrix.node }}
+    needs: prepare
+    env:
+      PRUMO_CI_CANDIDATE_MANIFEST: .test-output/ci-candidate/manifest.json
+      PRUMO_CI_CANDIDATE_SHA256: ${{ needs.prepare.outputs.candidate_sha256 }}
     strategy:
       fail-fast: false
       matrix:
@@ -132,14 +157,19 @@ jobs:
           node-version: ${{ matrix.node }}
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile --ignore-scripts
+      - uses: actions/download-artifact@v7
+        with:
+          name: ci-candidate
+          path: .test-output/ci-candidate/
       - run: npm run check
-      - run: npm pack
       - run: node scripts/package-smoke.mjs
       - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: verification-package-${{ matrix.os }}-node-${{ matrix.node }}
-          path: .test-output/
+          path: |
+            .test-output/
+            !.test-output/ci-candidate/**
           include-hidden-files: true
           if-no-files-found: ignore
   coverage:
@@ -158,6 +188,7 @@ jobs:
           pattern: coverage-*
           path: .test-output/coverage-artifacts
       - run: bun run coverage:merge
+      - run: node .github/scripts/coverage-html.mjs
       - uses: actions/upload-artifact@v6
         if: always()
         with:
