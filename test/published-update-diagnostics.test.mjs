@@ -9,10 +9,37 @@ import { spawnSync } from 'node:child_process'
 const repo = dirname(dirname(fileURLToPath(import.meta.url)))
 const script = join(repo, '.github/scripts/published-update-summary.ps1')
 
+function assertUpdateDiagnostics(source) {
+  // A publicação dos diagnósticos deve acompanhar quem executa as atualizações, independentemente do nome do job.
+  const jobs = source.replaceAll('\r\n', '\n').split(/^  [\w-]+:[ \t]*$/m).slice(1)
+    .filter(job => /^\s*PRUMO_TEST_SUITE: published[ \t]*$/m.test(job))
+  assert.ok(jobs.length, 'A matriz deve executar os cenários de atualização publicados')
+  for (const job of jobs) {
+    const steps = job.split(/^      - /m).slice(1)
+    const summary = steps.find(step => /^\s*run: .*published-update-summary\.ps1 /m.test(step))
+    assert.ok(summary, 'O job de atualização deve publicar seu resumo')
+    assert.match(summary, /^\s*if: always\(\)[ \t]*$/m)
+    assert.match(summary, /^\s*shell: pwsh[ \t]*$/m)
+    assert.match(summary, /-ResultsPath "\.test-output\/published-update-results\.json"/)
+    const artifact = steps.find(step => /^uses: actions\/upload-artifact@/m.test(step) && /^\s*name: verification-/m.test(step))
+    assert.ok(artifact, 'O job deve preservar os resultados completos no artefato de verificação')
+    assert.match(artifact, /^\s*if: always\(\)[ \t]*$/m)
+    assert.match(artifact, /^\s*path: \|\n\s*\.test-output\//m)
+  }
+}
+
 test('jobs de atualização publicam o resumo mesmo quando o teste falha', () => {
-  const workflow = readFileSync(join(repo, '.github/workflows/ci.yml'), 'utf8').split('  published-windows:')[1].split('  coverage:')[0]
-  assert.match(workflow, /if: always\(\)\n        shell: pwsh\n        run: .*published-update-summary\.ps1 -ResultsPath "\.test-output\/published-update-results-\$\{\{ matrix\.shard \}\}\.json"/)
-  assert.match(workflow, /name: verification-windows-published[\s\S]*path: \|\n            \.test-output\//)
+  assertUpdateDiagnostics(readFileSync(join(repo, '.github/workflows/ci.yml'), 'utf8'))
+})
+
+test('verificação aceita renomear o job e recusa perder diagnósticos após falha', () => {
+  const workflow = readFileSync(join(repo, '.github/workflows/ci.yml'), 'utf8').replaceAll('\r\n', '\n')
+  assertUpdateDiagnostics(workflow.replace(/^  published:/m, '  historical-updates:').replaceAll('\n', '\r\n'))
+  for (const invalid of [
+    workflow.replace('always()\n        shell: pwsh', 'success()\n        shell: pwsh'),
+    workflow.replace('published-update-results.json', 'published-update-results-wrong.json'),
+    workflow.replace('name: verification-published-', 'name: omitted-published-'),
+  ]) assert.throws(() => assertUpdateDiagnostics(invalid), assert.AssertionError)
 })
 
 test('resumo identifica versão e erro, preserva resultados e suporta sucesso ou interrupção', { skip: process.platform !== 'win32' }, t => {
