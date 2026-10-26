@@ -1,4 +1,30 @@
 {
+  "2.11.9": {
+    "en": [
+      {
+        "title": "Fixed — Review and delivery consistency",
+        "items": [
+          "Bind validation to the delivery inspected by the independent reviewer; identical content after checkout remains valid, while changed content requires a new review",
+          "Preserve legacy review recovery and document registered concurrent-scope attribution without bypassing task scope or independent approval"
+        ]
+      },
+      {
+        "title": "Improved — Progress and validation diagnostics",
+        "items": [
+          "Show the execution step and valid index range; include initial and current Git commits in scope diagnostics without treating commit identity as proof of authorship",
+          "Show validation commands, kinds and timeouts at the start of the full contract; clarify that validate --ok executes approved commands in their configured environment",
+          "Identify invalid question rounds by field and type, and record the engine failure reason while preserving the submitted reviewer summary"
+        ]
+      },
+      {
+        "title": "Improved — CI resource use",
+        "items": [
+          "Balance every test and published upgrade scenario across Windows, Linux and macOS with Node.js 22 and 24 using observed timings",
+          "Reuse a candidate package verified by digest and revision, collect JSON coverage per group and render HTML after consolidation while retaining 100% coverage requirements per file"
+        ]
+      }
+    ]
+  },
   "2.11.8": {
     "en": [
       {

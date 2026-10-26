@@ -2,6 +2,15 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.11.9 — 2026-10-24
+
+- Vincule a validação à entrega inspecionada pelo revisor independente. Conteúdo idêntico após checkout preserva a revisão; conteúdo alterado exige nova revisão, mantendo a recuperação legada, o histórico e os controles de escopo.
+- Mostre o passo de execução, a faixa válida de índices e os commits Git inicial e atual nos diagnósticos. Commits, isoladamente, não comprovam autoria de alterações.
+- Apresente comandos, tipos e prazos de validação no início do contrato completo e esclareça o ambiente em que validate --ok executa os comandos aprovados.
+- Identifique rodadas inválidas de perguntas pelo campo e tipo. Em falhas de validação, preserve o resumo enviado pelo revisor junto ao motivo registrado pelo motor.
+- Documente a atribuição de alterações concorrentes registradas sem dispensar o escopo da tarefa nem a aprovação independente.
+- Balanceie o CI pelos tempos observados, reutilize um pacote candidato verificado e gere HTML somente após consolidar os contadores JSON. Preserve todos os testes, versões publicadas e as seis combinações de sistema e Node.js, com cobertura de 100% por arquivo.
+
 ## 2.11.8 — 2026-10-23
 
 - Reconcilie o aceite individual com a pendência correspondente da fase, validando tarefa, rodada e digest do contrato vigente. Preserve as confirmações ainda exigidas das demais tarefas e os bloqueios para aceites ausentes ou obsoletos.
