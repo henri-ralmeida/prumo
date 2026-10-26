@@ -1,4 +1,8 @@
 {
+  "Fixed — Scope and validation diagnostics": "Corrigido — Diagnósticos de escopo e validação",
+  "Show the initial and current Git branches and file digests in scope refusals without treating a branch change as evidence of authorship": "Mostre as branches Git e os hashes inicial e atual dos arquivos nas recusas de escopo, sem tratar a mudança de branch como prova de autoria",
+  "Keep archived phase discussions available after saving so an unrelated new discussion does not falsely indicate that active work needs replanning": "Mantenha discussões de fase arquivadas disponíveis após salvar para que uma nova discussão de outra tarefa não indique replanejamento indevido de uma execução válida",
+  "Report missing validation evidence and the required absolute working directory together while preserving existing review and question gates": "Informe em conjunto a evidência ausente e o diretório absoluto exigido para validação, preservando os bloqueios existentes de revisão e perguntas pendentes",
   "Fixed — Review and delivery consistency": "Corrigido — Coerência entre revisão e entrega",
   "Bind validation to the delivery inspected by the independent reviewer; identical content after checkout remains valid, while changed content requires a new review": "Vincule a validação à entrega inspecionada pelo revisor independente; conteúdo idêntico após checkout continua válido, enquanto conteúdo alterado exige nova revisão",
   "Preserve legacy review recovery and document registered concurrent-scope attribution without bypassing task scope or independent approval": "Preserve a recuperação de revisões legadas e documente a atribuição de escopo concorrente registrado sem dispensar o escopo da tarefa nem a aprovação independente",

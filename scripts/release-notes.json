@@ -1,4 +1,16 @@
 {
+  "2.11.10": {
+    "en": [
+      {
+        "title": "Fixed — Scope and validation diagnostics",
+        "items": [
+          "Show the initial and current Git branches and file digests in scope refusals without treating a branch change as evidence of authorship",
+          "Keep archived phase discussions available after saving so an unrelated new discussion does not falsely indicate that active work needs replanning",
+          "Report missing validation evidence and the required absolute working directory together while preserving existing review and question gates"
+        ]
+      }
+    ]
+  },
   "2.11.9": {
     "en": [
       {

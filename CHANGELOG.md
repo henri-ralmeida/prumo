@@ -2,6 +2,12 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.11.10 — 2026-10-26
+
+- Mostre as branches Git e os hashes inicial e atual dos arquivos nas recusas de escopo, sem tratar a mudança de branch como prova de autoria.
+- Mantenha o histórico de discussões disponível após salvar, evitando avisos indevidos de replanejamento quando outra tarefa da fase inicia uma nova discussão.
+- Informe em conjunto a evidência e o diretório absoluto ausentes na validação, preservando os bloqueios existentes de revisão e perguntas pendentes.
+
 ## 2.11.9 — 2026-10-24
 
 - Vincule a validação à entrega inspecionada pelo revisor independente. Conteúdo idêntico após checkout preserva a revisão; conteúdo alterado exige nova revisão, mantendo a recuperação legada, o histórico e os controles de escopo.
