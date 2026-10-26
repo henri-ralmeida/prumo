@@ -244,6 +244,8 @@ function saveState(name, state) {
   const dir = runDir(name)
   compactDiscoveries(state, dir)
   writeAtomicState(join(dir, 'state.json'), JSON.stringify(state, null, 2))
+  // Diagnósticos após a gravação precisam do mesmo histórico disponível na próxima leitura.
+  hydrateDiscoveries(state, dir)
 }
 
 function stopOpenActivity(owner, at) {
@@ -4089,7 +4091,6 @@ const commands = {
     const name = runName()
     const id = args._[0] ?? die('validate <task> --ok|--failed --evidence "<text>" [--cwd <project>]')
     const requestedOk = args.ok === true ? true : args.failed === true ? false : die('pass --ok or --failed')
-    if (typeof args.evidence !== 'string' || !args.evidence.trim()) die('validation evidence must not be empty')
     if (args.summary !== undefined && (typeof args.summary !== 'string' || !args.summary.trim()))
       die('validation summary must be a nonempty string when present')
     const tail = tailLineLimit(args.tail)
@@ -4098,6 +4099,10 @@ const commands = {
       const state = loadState(name)
       if (state.runPause && !state.runPause.endedAt) die('Run is paused; resume-run explicitly. External harness processes are not interrupted.')
       const t = getTask(state, id)
+      const inputErrors = []
+      if (typeof args.evidence !== 'string' || !args.evidence.trim()) inputErrors.push('validation evidence must not be empty')
+      if (requestedOk && inputErrors.length) try { validationDirectories(t, args.cwd) } catch (error) { inputErrors.push(error.message) }
+      if (inputErrors.length) die(inputErrors.map(message => tr(message)).join('\n'))
       assertExternalBlockAction(state, id)
       if (t.state !== 'running' && t.state !== 'reviewing') die(id + ' is not running or reviewing')
       if (requestedOk) {

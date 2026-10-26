@@ -13,6 +13,41 @@ import { initializeLegacyPlanFixture } from './fixtures/legacy-plan-init.mjs'
 const engine = resolve(dirname(fileURLToPath(import.meta.url)), '../scripts/engine.mjs')
 const validation = [{ kind: 'functional', run: 'node check.cjs', expect: 'delivery behavior passes' }]
 
+for (const lang of ['en', 'pt-BR']) test(`discussao da vizinha nao indica replanejamento de execucao valida em ${lang}`, t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega aprovada' },
+    { id: 'B', phase: 'F1', title: 'Entrega vizinha' }], { lang })
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('plan-phase', 'F1', '--agent', 'planner', '--plan-dir', f.plans)
+  f.writeArtifacts('F1'); f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  const plan = f.state().tasks.A.taskPlan
+  f.ok('start', 'A', '--agent', 'executor')
+  f.plan.tasks[1].title = 'Contrato novo da vizinha'
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.ok('sync-plan', '--plan', f.planPath, '--confirm-invalidation')
+  f.ok('begin-phase-discussion', 'F1')
+  assert.deepEqual(f.state().phaseWorkflows.F1.discussionAttempts.at(-1).targets, ['B'])
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  const before = f.state().tasks.A
+  const hydrated = hydrateDiscoveries(f.state(), join(f.root, '.specs/graph/phase-negative'))
+  assert.equal(validationRuntime.hasCurrentTaskScope(hydrated, hydrated.tasks.A), true)
+  const output = f.ok('authorize', '--scope', 'tasks:A', '--confirmed-by-user').stdout
+  assert.doesNotMatch(output, /pause-replanning A/)
+  f.ok('review', 'A', '--agent', 'reviewer')
+  f.ok('validate', 'A', '--ok', '--evidence', 'Entrega inalterada inspecionada', '--cwd', f.project)
+  assert.deepEqual(f.state().tasks.A.taskPlan, plan)
+  assert.equal(f.state().tasks.A.attempts.length, 1)
+  const stale = f.state()
+  stale.tasks.A.title = 'Contrato realmente alterado'
+  f.save(stale)
+  assert.match(f.ok('authorize', '--scope', 'tasks:A', '--confirmed-by-user').stdout, /pause-replanning A/)
+  const events = f.events(), beforeRefusal = f.state()
+  f.rejects(/execution scope needs current planning|escopo de execução/, 'validate', 'A', '--ok',
+    '--evidence', 'Um aviso nao dispensa contrato vigente', '--cwd', f.project)
+  assert.deepEqual(f.state(), beforeRefusal)
+  assert.equal(f.events(), events)
+})
+
 for (const lang of ['en', 'pt-BR']) test(`planejamento distingue proposta, resposta sem origem e resposta literal em ${lang}`, t => {
   const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega' }], { lang })
   f.ok('begin-phase-discussion', 'F1')

@@ -9,6 +9,39 @@ import { fileURLToPath } from 'node:url'
 const engine = resolve(dirname(fileURLToPath(import.meta.url)), '../scripts/engine.mjs')
 const check = { kind: 'functional', run: 'node delivery.test.cjs', expect: 'Express delivery takes 1 day and normal delivery takes 3 days' }
 
+for (const lang of ['en', 'pt-BR']) test(`validacao informa requisitos juntos antes de executar ou gravar recibo em ${lang}`, t => {
+  const f = fixture(t, undefined, {}, { lang })
+  const marker = join(f.project, 'validation-executed')
+  writeFileSync(join(f.project, 'delivery.test.cjs'), readFileSync(join(f.project, 'delivery.test.cjs'), 'utf8') +
+    "require('node:fs').writeFileSync('validation-executed', 'executado');\n")
+  f.planTask(); f.ok('start', 'T1', '--agent', 'executor'); f.ok('review', 'T1', '--agent', 'reviewer')
+  const evidenceError = lang === 'en' ? /validation evidence must not be empty/ : /evidência de validação não pode estar vazia/
+  const cwdError = lang === 'en' ? /executable validation needs an absolute --cwd or step.cwd/ : /validação executável exige --cwd ou step.cwd absoluto/
+  for (const supplied of [[], ['--evidence', 'Inspecao independente'], ['--cwd', f.project],
+    ['--evidence', 'Inspecao independente', '--cwd', 'relativo']]) {
+    const before = f.state(), events = f.events()
+    const result = f.cli('validate', 'T1', '--ok', ...supplied)
+    assert.notEqual(result.status, 0)
+    assert.match(result.output, supplied.includes('--evidence') ? cwdError : evidenceError)
+    if (!supplied.length) assert.match(result.output, cwdError)
+    if (supplied.includes('--cwd') && supplied.includes(f.project)) assert.doesNotMatch(result.output, cwdError)
+    assert.deepEqual(f.state(), before)
+    assert.equal(f.events(), events)
+    assert.equal(existsSync(marker), false)
+  }
+  f.ok('validate', 'T1', '--ok', '--evidence', 'Inspecao independente', '--cwd', f.project)
+  assert.equal(readFileSync(marker, 'utf8'), 'executado')
+  assert.equal(f.state().tasks.T1.validations.at(-1).ok, true)
+  const ownDirectory = fixture(t, undefined, {}, { lang })
+  ownDirectory.plan.tasks[0].validation = [{ ...check, cwd: ownDirectory.project }]
+  ownDirectory.writePlan()
+  ownDirectory.ok('sync-plan', '--plan', ownDirectory.planPath)
+  ownDirectory.planTask(); ownDirectory.ok('start', 'T1', '--agent', 'executor')
+  ownDirectory.ok('review', 'T1', '--agent', 'reviewer')
+  ownDirectory.ok('validate', 'T1', '--ok', '--evidence', 'Diretorio absoluto aprovado em cada verificacao')
+  assert.equal(ownDirectory.state().tasks.T1.validations.at(-1).ok, true)
+})
+
 for (const lang of ['en', 'pt-BR']) test(`descrição exige confirmação antes de invalidar decisões concluídas em ${lang}`, t => {
   const f = fixture(t, undefined, {}, { lang })
   f.planTask()

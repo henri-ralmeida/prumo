@@ -65,6 +65,8 @@ export function captureScopeBaseline(cwd) {
     // HEAD contextualiza trocas de checkout; somente o conteúdo determina mudanças de escopo.
     const revision = spawnSync('git', ['-C', root, 'rev-parse', '--verify', 'HEAD'], { encoding: 'utf8', windowsHide: true })
     const head = revision.status === 0 ? revision.stdout.trim() : null
+    const symbolic = spawnSync('git', ['-C', root, 'symbolic-ref', '--quiet', '--short', 'HEAD'], { encoding: 'utf8', windowsHide: true })
+    const branch = symbolic.status === 0 ? symbolic.stdout.trim() : null
     const files = Object.create(null), nestedRepositories = []
     for (const entry of new Set(git('ls-files', '-z', '--cached', '--others', '--exclude-standard').split('\0').filter(Boolean))) {
       const path = gitInventoryPath(entry)
@@ -83,7 +85,7 @@ export function captureScopeBaseline(cwd) {
         files[path] = stat.isSymbolicLink() ? createHash('sha256').update(readlinkSync(absolute)).update(String(stat.mode)).digest('hex') : scopeFileDigest(root, path, stat.mode)
       } catch (error) { if (error.code !== 'ENOENT') throw error }
     }
-    return { method: 'git', cwd: root, head, files, ...(nestedRepositories.length ? { nestedRepositories } : {}),
+    return { method: 'git', cwd: root, head, branch, files, ...(nestedRepositories.length ? { nestedRepositories } : {}),
       limitation: 'Ignored files are not included in the Git scope check.' + (nestedRepositories.length ? ' Nested repositories require independent inspection; their directory scope is fingerprinted.' : '') }
   } catch (error) { return { method: 'unavailable', limitation: error.message } }
 }
@@ -115,8 +117,9 @@ export function verifyTaskScope(task, baseline, independentEvidence, concurrentS
   const excludedPaths = paths.filter(path => !fileScope || !insideTouches(path, touches)).filter(path =>
     independentEvidence?.evidence?.trim() && independentEvidence.agent && independentEvidence.agent !== task.agent && concurrentScopes.some(scope => insideTouches(path, scope)))
   const outside = paths.filter(path => (!fileScope || !insideTouches(path, touches)) && !excludedPaths.includes(path))
-  const gitContext = { baselineHead: baseline.head ?? null, currentHead: current.head ?? null }
-  if (outside.length) throw new Error('Delivery changes are outside approved touches: ' + outside.join(', ') + '. These changes may belong to another task or be absorbed by a new attempt; --force does not apply to scope. Git scope context: baseline HEAD ' + (gitContext.baselineHead ?? 'unavailable') + '; current HEAD ' + (gitContext.currentHead ?? 'unavailable') + '. HEAD changes alone do not establish authorship.')
+  const gitContext = { baselineHead: baseline.head ?? null, currentHead: current.head ?? null,
+    baselineBranch: baseline.branch ?? null, currentBranch: current.branch ?? null }
+  if (outside.length) throw new Error('Delivery changes are outside approved touches: ' + outside.join(', ') + '. These changes may belong to another task or be absorbed by a new attempt; --force does not apply to scope. Git scope context: baseline HEAD ' + (gitContext.baselineHead ?? 'unavailable') + '; current HEAD ' + (gitContext.currentHead ?? 'unavailable') + '; baseline branch ' + (gitContext.baselineBranch ?? 'unavailable') + '; current branch ' + (gitContext.currentBranch ?? 'unavailable') + '. File scope digests: ' + outside.map(path => path + ': baseline ' + (baseline.files[path] ?? 'absent') + '; current ' + (current.files[path] ?? 'absent')).join(', ') + '. HEAD changes alone do not establish authorship.')
   if ((baseline.nestedRepositories?.length || current.nestedRepositories?.length) &&
       (!independentEvidence?.evidence?.trim() || !independentEvidence.agent || independentEvidence.agent === task.agent))
     throw new Error('Nested repositories require an independent reviewer --scope-evidence with inspected paths and method')

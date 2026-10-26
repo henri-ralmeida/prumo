@@ -322,11 +322,13 @@ test('recusa de escopo explica outra tarefa, nova tentativa e que --force nao se
   assert.equal(spawnSync('git', ['-C', cwd, 'init']).status, 0)
   const baseline = captureScopeBaseline(cwd)
   writeFileSync(join(cwd, 'outside.txt'), 'delivery')
+  const current = captureScopeBaseline(cwd)
   let message
   try { verifyTaskScope({ writeScope: 'files', touches: ['src'] }, baseline) } catch (caught) { message = caught.message }
-  assert.equal(message, 'Delivery changes are outside approved touches: outside.txt. These changes may belong to another task or be absorbed by a new attempt; --force does not apply to scope. Git scope context: baseline HEAD unavailable; current HEAD unavailable. HEAD changes alone do not establish authorship.')
+  const context = `unavailable; baseline branch ${baseline.branch}; current branch ${current.branch}. File scope digests: outside.txt: baseline absent; current ${current.files['outside.txt']}`
+  assert.equal(message, 'Delivery changes are outside approved touches: outside.txt. These changes may belong to another task or be absorbed by a new attempt; --force does not apply to scope. Git scope context: baseline HEAD unavailable; current HEAD ' + context + '. HEAD changes alone do not establish authorship.')
   const pt = createTranslator(messages, 'pt-BR')
-  const expected = 'Mudanças da entrega fora dos touches aprovados: outside.txt. Essas mudanças podem pertencer a outra tarefa ou ser absorvidas por uma nova tentativa; --force não se aplica ao escopo. Contexto Git do escopo: HEAD inicial unavailable; HEAD atual unavailable. Mudanças de HEAD, isoladamente, não comprovam autoria.'
+  const expected = 'Mudanças da entrega fora dos touches aprovados: outside.txt. Essas mudanças podem pertencer a outra tarefa ou ser absorvidas por uma nova tentativa; --force não se aplica ao escopo. Contexto Git do escopo: HEAD inicial unavailable; HEAD atual ' + context + '. Mudanças de HEAD, isoladamente, não comprovam autoria.'
   assert.equal(pt(message), expected)
   assert.equal(pt('[prumo] ERROR: ' + message), '[prumo] ERRO: ' + expected)
 })
