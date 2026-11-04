@@ -1,4 +1,12 @@
 {
+  "Fixed — Workflow diagnostics and safe recovery": "Corrigido — Diagnósticos e recuperação segura",
+  "Explain workspace, run selection and storage location; show rejected reviews and dependent tasks released by skipping work": "Esclareça o workspace, a seleção da execução e o local de armazenamento; mostre revisões reprovadas e tarefas dependentes liberadas ao pular uma tarefa",
+  "Warn about missing file and line evidence only for explicitly marked code claims, without blocking unmarked criteria": "Avise sobre evidência sem arquivo e linha somente em afirmações sobre código explicitamente marcadas, sem bloquear critérios sem marcação",
+  "Reorder and renumber phases through a preview and explicit confirmation while preserving history, approvals and atomic recovery": "Reorganize e renumere fases com prévia e confirmação explícita, preservando histórico, aprovações e recuperação atômica",
+  "Reject task identifiers that collide with historical aliases and report source changes preserved by plan synchronization": "Recuse identificadores de tarefas que colidam com aliases históricos e informe divergências da fonte preservadas na sincronização do plano",
+  "Validate temporary JSON before activation and preserve existing state when storage writes fail": "Valide o JSON temporário antes da ativação e preserve o estado existente quando a gravação falhar",
+  "Explain missing, invalid and unsafe touches; list all conflicting resource and path pairs": "Explique escopos touches ausentes, inválidos e inseguros; liste todos os pares de recursos e caminhos em conflito",
+  "Show a compact task status summary and command descriptions without interfering with detailed authorization output": "Mostre um resumo compacto do estado das tarefas e descrições de comandos sem interferir na saída detalhada de autorização",
   "Fixed — Scope and validation diagnostics": "Corrigido — Diagnósticos de escopo e validação",
   "Show the initial and current Git branches and file digests in scope refusals without treating a branch change as evidence of authorship": "Mostre as branches Git e os hashes inicial e atual dos arquivos nas recusas de escopo, sem tratar a mudança de branch como prova de autoria",
   "Keep archived phase discussions available after saving so an unrelated new discussion does not falsely indicate that active work needs replanning": "Mantenha discussões de fase arquivadas disponíveis após salvar para que uma nova discussão de outra tarefa não indique replanejamento indevido de uma execução válida",

@@ -1,4 +1,20 @@
 {
+  "2.11.11": {
+    "en": [
+      {
+        "title": "Fixed — Workflow diagnostics and safe recovery",
+        "items": [
+          "Explain workspace, run selection and storage location; show rejected reviews and dependent tasks released by skipping work",
+          "Warn about missing file and line evidence only for explicitly marked code claims, without blocking unmarked criteria",
+          "Reorder and renumber phases through a preview and explicit confirmation while preserving history, approvals and atomic recovery",
+          "Reject task identifiers that collide with historical aliases and report source changes preserved by plan synchronization",
+          "Validate temporary JSON before activation and preserve existing state when storage writes fail",
+          "Explain missing, invalid and unsafe touches; list all conflicting resource and path pairs",
+          "Show a compact task status summary and command descriptions without interfering with detailed authorization output"
+        ]
+      }
+    ]
+  },
   "2.11.10": {
     "en": [
       {

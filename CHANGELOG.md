@@ -2,6 +2,16 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.11.11 — 2026-11-04
+
+- Esclareça o workspace, a seleção da execução e o local de armazenamento; mostre revisões reprovadas e tarefas dependentes liberadas ao pular uma tarefa.
+- Avise sobre evidência sem arquivo e linha somente em afirmações sobre código explicitamente marcadas, sem bloquear critérios sem marcação.
+- Reorganize e renumere fases com prévia e confirmação explícita, preservando histórico, aprovações e recuperação atômica.
+- Recuse identificadores de tarefas que colidam com aliases históricos e informe divergências da fonte preservadas na sincronização do plano.
+- Valide o JSON temporário antes da ativação e preserve o estado existente quando a gravação falhar.
+- Explique escopos touches ausentes, inválidos e inseguros; liste todos os pares de recursos e caminhos em conflito.
+- Mostre um resumo compacto do estado das tarefas e descrições de comandos sem interferir na saída detalhada de autorização.
+
 ## 2.11.10 — 2026-10-26
 
 - Mostre as branches Git e os hashes inicial e atual dos arquivos nas recusas de escopo, sem tratar a mudança de branch como prova de autoria.
