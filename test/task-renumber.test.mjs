@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, rmdirSync, symlinkSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, rmdirSync, symlinkSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -11,6 +11,248 @@ import { hasCurrentTaskPlan, hasCurrentTaskScope, executionInputReceipt } from '
 
 const engine = resolve(dirname(fileURLToPath(import.meta.url)), '../scripts/engine.mjs')
 const mapping = 'T1=T3,T2=T4,T3=T1,T4=T2'
+
+test('reordenar fases preserva histórico, aprovações e plano executável com prévia', t => {
+  const f = fixture(t)
+  f.planPhase()
+  f.ok('authorize', '--scope', 'phase:F1', '--confirmed-by-user')
+  f.ok('start', 'T3', '--agent', 'executor')
+  f.ok('review', 'T3', '--agent', 'reviewer')
+  f.ok('validate', 'T3', '--ok', '--evidence', 'Critérios e resultado conferidos', '--cwd', f.project)
+  f.ok('done', 'T3')
+  const before = f.state(), snapshot = f.snapshot(), originalPlan = readFileSync(f.planPath, 'utf8')
+  assert.ok(hasCurrentTaskPlan(before, before.tasks.T4))
+  assert.ok(hasCurrentTaskScope(before, before.tasks.T4, 1))
+  const preview = JSON.parse(f.ok('reorder-phases', '--order', 'F2,F1', '--dry-run').stdout)
+  assert.deepEqual(preview.mapping, { F2: 'F1', F1: 'F2' })
+  assert.equal(preview.applied, false)
+  assert.deepEqual(f.snapshot(), snapshot)
+  f.rejects(/confirmed-by-user/, 'reorder-phases', '--order', 'F2,F1')
+  assert.deepEqual(f.snapshot(), snapshot)
+  const applied = JSON.parse(f.ok('reorder-phases', '--order', 'F2,F1', '--confirmed-by-user').stdout)
+  assert.equal(applied.applied, true)
+  const after = f.state()
+  assert.deepEqual(after.plan.phases.map(phase => [phase.id, phase.title]), [['F1', 'Publicar'], ['F2', 'Verificar qualidade']])
+  assert.equal(after.tasks.T3.phase, 'F2'); assert.equal(after.tasks.T4.phase, 'F2')
+  assert.equal(after.tasks.T3.state, 'done')
+  assert.deepEqual(after.tasks.T3.attempts.map(attempt => [attempt.agent, attempt.reviewer, attempt.result]),
+    before.tasks.T3.attempts.map(attempt => [attempt.agent, attempt.reviewer, attempt.result]))
+  assert.equal(after.tasks.T3.validations.at(-1).evidence, before.tasks.T3.validations.at(-1).evidence)
+  assert.deepEqual(after.tasks.T4.executionAuthorization, { ...before.tasks.T4.executionAuthorization, scope: 'phase:F2' })
+  assert.equal(after.authorizations.at(-1).scope, 'phase:F2')
+  assert.equal(after.authorizations.at(-1).authorizationId, before.authorizations.at(-1).authorizationId)
+  assert.equal(after.tasks.T4.taskPlan.phaseId, 'F2')
+  assert.equal(after.tasks.T4.taskPlan.phaseBinding.phaseId, 'F2')
+  assert.ok(hasCurrentTaskPlan(after, after.tasks.T4))
+  assert.ok(hasCurrentTaskScope(after, after.tasks.T4, 1))
+  assert.deepEqual(contractDrift(after, { plan: JSON.parse(readFileSync(after.plan.source, 'utf8')) }),
+    { available: true, planFields: [], tasks: [] })
+  assert.equal(readFileSync(f.planPath, 'utf8'), originalPlan)
+  assert.equal(readFileSync(join(applied.backup, 'state.json'), 'utf8'), snapshot[0])
+  assert.equal(readFileSync(join(applied.backup, 'original-events.ndjson'), 'utf8'), snapshot[1])
+  assert.equal(JSON.parse(f.snapshot()[1].trim().split('\n').at(-1)).type, 'phase_reordered')
+  f.ok('start', 'T4', '--agent', 'executor-dependente')
+  f.ok('review', 'T4', '--agent', 'reviewer-dependente')
+  f.ok('validate', 'T4', '--ok', '--evidence', 'Dependência e resultado conferidos após a reordenação', '--cwd', f.project)
+  f.ok('done', 'T4')
+  assert.equal(f.state().tasks.T4.state, 'done')
+})
+
+test('reordenar fases recusa trabalho ativo e ordem que contraria dependências', t => {
+  const f = fixture(t)
+  const plan = JSON.parse(readFileSync(f.planPath, 'utf8'))
+  plan.tasks.find(task => task.id === 'T1').deps = ['T3']
+  writeFileSync(f.planPath, JSON.stringify(plan))
+  f.ok('sync-plan', '--plan', f.planPath)
+  const before = f.snapshot()
+  f.rejects(/dependencies|dependências/, 'reorder-phases', '--order', 'F2,F1', '--dry-run')
+  assert.deepEqual(f.snapshot(), before)
+  f.planPhase(); f.ok('start', 'T3', '--agent', 'executor')
+  const active = f.snapshot()
+  f.rejects(/active|open|ativo|abert/, 'reorder-phases', '--order', 'F2,F1', '--dry-run')
+  assert.deepEqual(f.snapshot(), active)
+})
+
+test('reordenar fases considera dependências históricas mesmo se a fonte divergir', t => {
+  const f = fixture(t), plan = JSON.parse(readFileSync(f.planPath, 'utf8'))
+  plan.tasks.find(task => task.id === 'T1').deps = ['T3']
+  writeFileSync(f.planPath, JSON.stringify(plan)); f.ok('sync-plan', '--plan', f.planPath)
+  f.ok('skip', 'T1', '--reason', 'Entrega dispensada')
+  plan.tasks.find(task => task.id === 'T1').deps = []
+  writeFileSync(f.planPath, JSON.stringify(plan))
+  const before = f.snapshot()
+  f.rejects(/T1 <- T3/, 'reorder-phases', '--order', 'F2,F1', '--dry-run')
+  assert.deepEqual(f.snapshot(), before)
+})
+
+test('reordenar fases exige sincronizar novas tarefas e definições de fase ausentes', t => {
+  const f = fixture(t), original = JSON.parse(readFileSync(f.planPath, 'utf8'))
+  const expanded = structuredClone(original)
+  expanded.tasks.push({ ...expanded.tasks[0], id: 'T1a', deps: ['T1'], summary: 'Conferir a nova entrega antes da execução.' })
+  writeFileSync(f.planPath, JSON.stringify(expanded))
+  const before = f.snapshot()
+  f.rejects(/Synchronize the source plan/, 'reorder-phases', '--order', 'F2,F1', '--dry-run')
+  assert.deepEqual(f.snapshot(), before)
+  const missingPhases = structuredClone(original)
+  delete missingPhases.phases
+  writeFileSync(f.planPath, JSON.stringify(missingPhases))
+  const legacy = f.state()
+  legacy.plan.planningMode = 'task'
+  f.save(legacy)
+  const legacyBefore = f.snapshot()
+  f.rejects(/Synchronize the phase definitions/, 'reorder-phases', '--order', 'F2,F1', '--dry-run')
+  assert.deepEqual(f.snapshot(), legacyBefore)
+})
+
+test('reordenar fases recusa estado sem definições de fase', t => {
+  const f = fixture(t), legacy = f.state()
+  delete legacy.plan.phases
+  f.save(legacy)
+  const before = f.snapshot()
+  f.rejects(/Phase order|phase|fase/i, 'reorder-phases', '--order', 'F2,F1', '--dry-run')
+  assert.deepEqual(f.snapshot(), before)
+})
+
+test('reordenar fases recusa preparação ligada a destino ausente', t => {
+  const f = fixture(t), other = join(f.runDir, 'task-id-preparation.json')
+  try { symlinkSync(join(f.root, 'destino-ausente'), other, process.platform === 'win32' ? 'junction' : 'file') }
+  catch (error) {
+    if (['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) return t.skip('A criação de link exige suporte e permissão no sistema')
+    throw error
+  }
+  assert.equal(existsSync(other), false)
+  const before = f.snapshot()
+  f.rejects(/Another renumbering is pending/, 'reorder-phases', '--order', 'F2,F1', '--dry-run')
+  assert.deepEqual(f.snapshot(), before)
+})
+
+test('reordenar fases reconhece ativação interrompida mesmo após outro trabalho começar', t => {
+  const f = fixture(t); f.planPhase()
+  const preload = join(f.root, 'interrupt-phase.mjs')
+  writeFileSync(preload, `import fs from 'node:fs';
+import { resolve } from 'node:path';
+const rename = fs.renameSync;
+fs.renameSync = (from, to) => {
+  if (resolve(to) === ${JSON.stringify(join(f.runDir, 'state.json'))}) {
+    rename(from, to); process.exit(74);
+  }
+  return rename(from, to);
+};`)
+  const interrupted = f.cliWithEnv({ NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(preload).href}`.trim() },
+    'reorder-phases', '--order', 'F2,F1', '--confirmed-by-user')
+  assert.equal(interrupted.status, 74)
+  assert.equal(f.state().phaseIdMigrations.length, 1)
+  f.ok('start', 'T3', '--agent', 'executor')
+  const before = f.snapshot()
+  const preview = JSON.parse(f.ok('reorder-phases', '--order', 'F2,F1', '--dry-run').stdout)
+  assert.equal(preview.interrupted.activated, true)
+  assert.deepEqual(f.snapshot(), before)
+  const invalid = f.state()
+  invalid.phaseIdMigrations[0].order = ['F1', 'F2']
+  f.save(invalid)
+  const invalidSnapshot = f.snapshot()
+  f.rejects(/Invalid renumbering preparation/, 'reorder-phases', '--order', 'F2,F1', '--dry-run')
+  assert.deepEqual(f.snapshot(), invalidSnapshot)
+  writeFileSync(join(f.runDir, 'state.json'), before[0])
+  const refuseRemoval = join(f.root, 'refuse-receipt-removal.mjs')
+  writeFileSync(refuseRemoval, `import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const remove = fs.rmSync;
+fs.rmSync = (path, ...args) => {
+  if (String(path).endsWith('phase-order-preparation.json')) throw Object.assign(new Error('busy'), { code: 'EBUSY' });
+  return remove(path, ...args);
+};
+syncBuiltinESMExports();`)
+  const retained = f.cliWithEnv({ NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(refuseRemoval).href}`.trim() },
+    'reorder-phases', '--order', 'F2,F1', '--confirmed-by-user')
+  assert.equal(retained.status, 0, retained.stdout + retained.stderr)
+  assert.equal(JSON.parse(retained.stdout).alreadyApplied, true)
+  assert.equal(readFileSync(join(f.runDir, 'phase-order-preparation.json'), 'utf8').length > 0, true)
+  assert.deepEqual(f.snapshot(), before)
+  const recovered = JSON.parse(f.ok('reorder-phases', '--order', 'F2,F1', '--confirmed-by-user').stdout)
+  assert.equal(recovered.alreadyApplied, true)
+  assert.deepEqual(f.snapshot(), before)
+  assert.equal(f.state().tasks.T3.state, 'running')
+  assert.equal(f.state().phaseIdMigrations.length, 1)
+})
+
+test('reordenar fases na ordem já aplicada não cria backup nem altera eventos', t => {
+  const f = fixture(t), before = f.snapshot()
+  for (const flags of [['--dry-run'], ['--confirmed-by-user']]) {
+    const result = JSON.parse(f.ok('reorder-phases', '--order', 'F1,F2', ...flags).stdout)
+    assert.equal(result.alreadyApplied, true)
+    assert.equal(result.applied, false)
+    assert.deepEqual(f.snapshot(), before)
+  }
+  assert.equal(readdirSync(f.runDir).includes('task-id-backups'), false)
+})
+
+test('preparação interrompida retoma somente a ordem original sem repetir o histórico', t => {
+  const f = fixture(t), before = f.snapshot(), preload = join(f.root, 'interrupt-phase-before.mjs')
+  writeFileSync(preload, `import fs from 'node:fs';
+import { resolve } from 'node:path';
+const rename = fs.renameSync;
+fs.renameSync = (from, to) => {
+  if (resolve(to) === ${JSON.stringify(join(f.runDir, 'state.json'))}) process.exit(74);
+  return rename(from, to);
+};`)
+  const interrupted = f.cliWithEnv({ NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(preload).href}`.trim() },
+    'reorder-phases', '--order', 'F2,F1', '--confirmed-by-user')
+  assert.equal(interrupted.status, 74)
+  assert.deepEqual(f.snapshot(), before)
+  f.rejects(/Another renumbering is pending/, 'renumber-tasks', '--map', mapping, '--dry-run')
+  f.rejects(/pending.*original order/, 'reorder-phases', '--dry-run')
+  f.rejects(/pending.*original order/, 'reorder-phases', '--order', 'F1,F2', '--dry-run')
+  assert.deepEqual(f.snapshot(), before)
+  const preview = JSON.parse(f.ok('reorder-phases', '--order', 'F2,F1', '--dry-run').stdout)
+  assert.equal(preview.interrupted.resumable, true)
+  const applied = JSON.parse(f.ok('reorder-phases', '--order', 'F2,F1', '--confirmed-by-user').stdout)
+  assert.equal(applied.applied, true)
+  assert.equal(applied.backup, preview.interrupted.backup)
+  assert.equal(f.state().phaseIdMigrations.length, 1)
+  assert.equal(f.snapshot()[1].trim().split('\n').map(JSON.parse).filter(event => event.type === 'phase_reordered').length, 1)
+})
+
+test('preparação de fases interrompida não retoma após alteração do histórico', t => {
+  const f = fixture(t), preload = join(f.root, 'interrupt-before-phase-state.mjs')
+  writeFileSync(preload, `import fs from 'node:fs';
+import { resolve } from 'node:path';
+const rename = fs.renameSync;
+fs.renameSync = (from, to) => {
+  if (resolve(to) === ${JSON.stringify(join(f.runDir, 'state.json'))}) process.exit(74);
+  return rename(from, to);
+};`)
+  const interrupted = f.cliWithEnv({ NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(preload).href}`.trim() },
+    'reorder-phases', '--order', 'F2,F1', '--confirmed-by-user')
+  assert.equal(interrupted.status, 74)
+  f.ok('note', 'T3', '--text', 'Informação acrescentada antes da retomada')
+  const before = f.snapshot()
+  f.rejects(/cannot resume.*changed/, 'reorder-phases', '--order', 'F2,F1', '--dry-run')
+  assert.deepEqual(f.snapshot(), before)
+})
+
+for (const lang of ['en', 'pt-BR']) test(`renumeração preserva plano e estado quando falta espaço e retoma em ${lang}`, t => {
+  const f = fixture(t), before = f.snapshot(), originalPlan = readFileSync(f.planPath, 'utf8')
+  const preload = join(f.root, 'disk-full-plan.mjs')
+  writeFileSync(preload, `import fs from 'node:fs';
+const write = fs.writeFileSync;
+fs.writeFileSync = (file, ...args) => {
+  if (String(file).includes('-renumbered-') && String(file).endsWith('.tmp')) {
+    write(file, '{"partial":');
+    throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' });
+  }
+  return write(file, ...args);
+};`)
+  const failed = f.cliWithEnv({ PRUMO_LANG: lang, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(preload).href}`.trim() },
+    'renumber-tasks', '--map', mapping, '--confirmed-by-user')
+  assert.equal(failed.status, 1)
+  assert.match(failed.stderr, lang === 'en' ? /Insufficient disk space/ : /Espaço em disco insuficiente/)
+  assert.deepEqual(f.snapshot(), before)
+  assert.equal(readFileSync(f.planPath, 'utf8'), originalPlan)
+  const recovered = JSON.parse(f.ok('renumber-tasks', '--map', mapping, '--confirmed-by-user').stdout)
+  assert.equal(recovered.applied, true)
+  assert.equal(f.state().plan.source, recovered.source)
+})
 
 test('prévia e aplicação confirmam o resultado somente depois da ativação no disco', t => {
   const f = fixture(t), before = f.snapshot()

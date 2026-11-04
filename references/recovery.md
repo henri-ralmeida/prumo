@@ -244,6 +244,19 @@ Validation-only changes can still use `refresh-contract` and fresh review in the
 
 ### Renumerar tarefas preservando a entrega aprovada
 
+Para reorganizar fases com histórico, informe **todas as fases atuais** na ordem desejada.
+O comando renumera as fases conforme essa ordem, preserva tarefas, histórico e aprovações,
+e recusa a mudança enquanto houver trabalho aberto ou dependências incompatíveis.
+Confira o mapa antes de aplicar a escolha confirmada pelo usuário:
+
+```sh
+node $ENGINE reorder-phases --order F1,F3,F2 --dry-run --run <run-name>
+node $ENGINE reorder-phases --order F1,F3,F2 --confirmed-by-user --run <run-name>
+```
+
+O estado, o plano e os eventos anteriores ficam no backup informado pelo comando. Uma prévia
+não grava dados. Se a preparação for interrompida, repita o mesmo comando confirmado para retomá-la.
+
 Use `renumber-tasks` quando a mudança for apenas de identificação: o conteúdo das tarefas,
 as fases, as dependências e os aceites existentes devem continuar representando as mesmas entregas.
 O mapa aceita trocas e ciclos, mas recusa identificadores repetidos, colisões e números reservados

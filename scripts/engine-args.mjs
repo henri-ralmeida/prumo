@@ -7,8 +7,9 @@ const definitions = {
   init: [0, 'plan run cwd', 'force allow-overlap'],
   migrate: [0, '', 'check'],
   'renumber-tasks': [0, 'map', 'dry-run confirmed-by-user'],
+  'reorder-phases': [0, 'order', 'dry-run confirmed-by-user'],
   'sync-plan': [0, 'plan cwd remove reason', 'allow-overlap dry-run confirm-invalidation propose'],
-  status: [0, '', 'verify-install'], ready: [0], graph: [0], runs: [0],
+  status: [0, '', 'verify-install verbose'], ready: [0], graph: [0], runs: [0],
   'show-contract': [1, '', 'diff full'], 'show-check': [1, 'check attempt'],
   authorize: [0, 'scope mode channel', 'confirmed-by-user'],
   'answer-question': [1, 'answer', 'confirmed-by-user'],
@@ -41,6 +42,62 @@ const definitions = {
 }
 
 const dispatchCommands = ['start', 'review', 'unblock', 'begin-discussion', 'begin-phase-discussion', 'plan-task', 'plan-phase', 'finish-phase-discussion', 'finish-phase-planning']
+
+const commandDescriptions = {
+  brief: 'Show a role briefing',
+  'set-role': 'Record model preferences for a role',
+  'pause-run': 'Pause the run without interrupting external processes',
+  'resume-run': 'Resume a paused run',
+  'report-usage': 'Record reported token and tool usage',
+  'verify-provenance': 'Verify the declared numeric provenance',
+  init: 'Create a run from a plan',
+  migrate: 'Inspect or migrate a legacy run',
+  'renumber-tasks': 'Preview or apply an approved task renumbering',
+  'reorder-phases': 'Preview or apply an approved phase reorder and renumbering',
+  'sync-plan': 'Compare or synchronize the approved plan',
+  status: 'Show task states and summaries; use status --verbose for dispatches',
+  ready: 'Show available tasks and next actions',
+  graph: 'Show the full run state, including validations',
+  runs: 'List the workspace runs',
+  'show-contract': 'Show the task contract, notes and decisions',
+  'show-check': 'Show stored validation checks and outputs',
+  authorize: 'Record authorization for a run, phase or tasks',
+  'answer-question': 'Record a confirmed answer to an open question',
+  'begin-phase-discussion': 'Begin a phase discussion',
+  'skip-phase-discussion': 'Record an approved phase discussion waiver',
+  'finish-phase-discussion': 'Finish a phase discussion with its context',
+  'plan-phase': 'Begin planning for a phase',
+  'skip-phase-planning': 'Record an approved phase planning waiver',
+  'finish-phase-planning': 'Record the phase task plans',
+  'begin-discussion': 'Begin a task discussion',
+  'set-agent-limit': 'Set the shared agent limit',
+  'skip-discussion': 'Record an approved task discussion waiver',
+  'finish-discussion': 'Finish a task discussion with its context',
+  'plan-task': 'Begin planning for a task',
+  'skip-planning': 'Record an approved task planning waiver',
+  'finish-planning': 'Record the task plan',
+  start: 'Start an authorized task attempt',
+  progress: 'Report executor progress',
+  review: 'Assign the task to its reviewer',
+  'review-progress': 'Report progress through review criteria',
+  'refresh-contract': 'Refresh an approved validation contract',
+  validate: 'Run checks or record a reviewer verdict',
+  done: 'Complete a task after required validation',
+  fail: 'Record a failed task attempt',
+  retry: 'Open a new attempt for a failed task',
+  block: 'Block a task and optionally record a question',
+  'pause-replanning': 'Pause active work for replanning',
+  unblock: 'Resolve a block and resume the task',
+  'recover-replanning': 'Inspect or recover interrupted replanning',
+  skip: 'Skip a task with a reason',
+  note: 'Record a task note',
+  'activity-start': 'Start an activity interval',
+  'activity-stop': 'Stop an activity interval',
+}
+
+export function engineGeneralHelp() {
+  return Object.keys(definitions).map(command => ({ command, description: commandDescriptions[command] }))
+}
 
 // A ajuda deriva das opções aceitas, para orientar sem executar nem alterar o plano.
 export function engineCommandHelp(command) {

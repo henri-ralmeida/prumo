@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseTaskMapping, renumberTasks, eventLogPath, renumberEventHistory } from '../scripts/task-renumber.mjs'
+import { parseTaskMapping, parsePhaseOrder, renumberTasks, eventLogPath, renumberEventHistory } from '../scripts/task-renumber.mjs'
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -20,6 +20,74 @@ test('mapa aceita ciclos e recusa entradas ambíguas antes de alterar tarefas', 
   assert.deepEqual(parseTaskMapping('T1=T2, T2=T1'), { T1: 'T2', T2: 'T1' })
   for (const value of [undefined, '', 'T1=T1', 'T1=T2,T1=T3', 'T1=T2,', 'T01=T2', 'T1=../../x'])
     assert.throws(() => parseTaskMapping(value))
+})
+
+test('ordem de fases exige todos os identificadores uma vez e remapeia somente referências tipadas', () => {
+  const { state, plan } = fixture()
+  state.plan.phases.push({ id: 'F2', title: 'Outra fase' })
+  state.phaseWorkflows.F2 = { id: 'F2', state: 'pending', discussionAttempts: [], planningAttempts: [] }
+  state.phaseWorkflows.F1.id = 'F1'
+  state.phaseWorkflows.F1.invalidated = [{ scope: 'phase', id: 'F1' }]
+  state.tasks.T1.executionAuthorization = { scope: 'phase:F1', confirmedByUser: true }
+  state.tasks.T1.taskPlan = { openQuestions: [{ decideBy: { beforePhase: 'F2' } }], scope: 'obsoleto' }
+  const selection = parsePhaseOrder('F2,F1', state.plan.phases)
+  assert.deepEqual(selection.mapping, { F2: 'F1', F1: 'F2' })
+  for (const value of [undefined, '', 'F1', 'F1,F1', 'F1,F3']) assert.throws(() => parsePhaseOrder(value, state.plan.phases))
+  const result = renumberTasks(state, plan, {}, { phaseOrder: selection.order, phaseMapping: selection.mapping })
+  assert.equal(result.state.tasks.T1.phase, 'F2')
+  assert.equal(result.state.tasks.T1.executionAuthorization.scope, 'phase:F2')
+  assert.equal(result.state.tasks.T1.taskPlan.openQuestions[0].decideBy.beforePhase, 'F1')
+  assert.equal(result.state.tasks.T1.taskPlan.scope, 'obsoleto')
+  assert.equal(result.state.phaseWorkflows.F2.invalidated[0].id, 'F2')
+  assert.equal(state.tasks.T1.phase, 'F1')
+  assert.throws(() => renumberTasks(state, plan, {}, { phaseMapping: selection.mapping }))
+  assert.throws(() => renumberTasks(state, plan, {}, { phaseOrder: ['F1'], phaseMapping: selection.mapping }))
+  assert.throws(() => renumberTasks(state, { ...plan, phases: [] }, {}, { phaseOrder: selection.order, phaseMapping: selection.mapping }))
+  const event = { phase: 'F1', scope: 'phase:F1', phaseOrder: { previous: ['F1', 'F2'], order: ['F2', 'F1'] }, text: 'F1' }
+  const migrated = renumberEventHistory([event], {}, selection.mapping)[0]
+  assert.equal(migrated.phase, 'F2'); assert.equal(migrated.originalPhase, 'F1')
+  assert.equal(migrated.scope, 'phase:F2')
+  assert.deepEqual(migrated.phaseOrder.order, ['F1', 'F2'])
+  assert.deepEqual(migrated.originalPhaseOrder, event.phaseOrder)
+  assert.equal(migrated.text, 'F1')
+})
+
+test('histórico preserva identificadores desconhecidos e campos que não representam fases', () => {
+  const events = [
+    { scope: 'phase', id: 'F1' },
+    { scope: 'phase', id: 12 },
+    { scope: 'run', id: 'F1' },
+    { phaseOrder: { previous: ['F1', 'F99'], order: ['F2', 'F77'] } },
+  ]
+  const result = renumberEventHistory(events, {}, { F1: 'F2', F2: 'F1' })
+  assert.equal(result[0].id, 'F2')
+  assert.equal(result[1].id, 12)
+  assert.equal(result[2].id, 'F1')
+  assert.deepEqual(result[3].phaseOrder.previous, ['F2', 'F99'])
+  assert.deepEqual(result[3].phaseOrder.order, ['F1', 'F77'])
+})
+
+test('reordenar recusa fases ausentes e mantém execuções sem fluxo coletivo de fase', () => {
+  const missingState = fixture()
+  delete missingState.state.plan.phases
+  assert.throws(() => renumberTasks(missingState.state, missingState.plan, {}, { phaseOrder: ['F1'], phaseMapping: { F1: 'F1' } }), /Phase order/)
+  const missingPlan = fixture()
+  delete missingPlan.plan.phases
+  assert.throws(() => renumberTasks(missingPlan.state, missingPlan.plan, {}, { phaseOrder: ['F1'], phaseMapping: { F1: 'F1' } }), /Synchronize/)
+  const individual = fixture()
+  delete individual.state.phaseWorkflows
+  const result = renumberTasks(individual.state, individual.plan, {}, { phaseOrder: ['F1'], phaseMapping: { F1: 'F1' } })
+  assert.equal(result.state.phaseWorkflows, undefined)
+  assert.equal(result.state.tasks.T1.phase, 'F1')
+  const noPhases = fixture()
+  delete noPhases.state.plan.phases
+  delete noPhases.plan.phases
+  delete noPhases.state.phaseWorkflows
+  for (const task of Object.values(noPhases.state.tasks)) delete task.phase
+  const legacy = renumberTasks(noPhases.state, noPhases.plan, {}, { phaseOrder: [], phaseMapping: {} })
+  assert.deepEqual(legacy.state.plan.phases, [])
+  assert.deepEqual(legacy.plan.phases, [])
+  assert.deepEqual(legacy.state.tasks.T2.deps, ['T1'])
 })
 
 test('permutações preservam conteúdo e transformam somente referências, perguntas e autorizações', () => {

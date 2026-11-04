@@ -72,6 +72,36 @@ function fixture(t) {
   }
 }
 
+test('sync recusa novo identificador usado por alias histórico e preserva inclusão sem colisão', t => {
+  const f = fixture(t)
+  const phases = [{ id: 'F1', title: 'Fase original' }]
+  f.write([{ ...task('T1'), phase: 'F1' }, { ...task('T2'), phase: 'F1' }], phases)
+  const initialized = f.run('init', '--plan', f.planPath, '--run', 'identifiers')
+  assert.equal(initialized.status, 0, initialized.stdout + initialized.stderr)
+  const renumbered = f.run('renumber-tasks', '--map', 'T2=T1a', '--confirmed-by-user')
+  assert.equal(renumbered.status, 0, renumbered.stdout + renumbered.stderr)
+  const state = JSON.parse(f.state()), source = state.plan.source
+  assert.equal(state.taskIdAliases.T2, 'T1a')
+  const activePlan = JSON.parse(readFileSync(source, 'utf8'))
+  const conflicting = { ...activePlan, phases: [...activePlan.phases, { id: 'F2', title: 'Nova fase' }],
+    tasks: [...activePlan.tasks, { ...task('T2'), phase: 'F2', summary: 'Verificar o resultado da nova fase.' }] }
+  writeFileSync(source, JSON.stringify(conflicting))
+  const beforeState = f.state(), eventsPath = join(f.runDir, state.eventLog ?? 'events.ndjson')
+  const beforeEvents = readFileSync(eventsPath, 'utf8')
+  for (const lang of ['en', 'pt-BR']) {
+    const result = f.run('sync-plan', '--plan', source, '--dry-run', '--lang', lang)
+    assert.notEqual(result.status, 0, result.stdout + result.stderr)
+    assert.match(result.stdout + result.stderr, /T2.*alias.*T1a/i)
+    assert.equal(f.state(), beforeState)
+    assert.equal(readFileSync(eventsPath, 'utf8'), beforeEvents)
+  }
+  writeFileSync(source, JSON.stringify({ ...activePlan,
+    tasks: [...activePlan.tasks, { ...task('T1b', ['T1']), phase: 'F1', summary: 'Verificar o resultado complementar.' }] }))
+  const valid = f.run('sync-plan', '--plan', source, '--dry-run')
+  assert.equal(valid.status, 0, valid.stdout + valid.stderr)
+  assert.equal(f.state(), beforeState)
+})
+
 test('sync mantém derivadas na fase original e rejeita nova fase sem modificar estado ou eventos', t => {
   const f = fixture(t)
   const phases = [{ id: 'F1', title: 'Original' }]

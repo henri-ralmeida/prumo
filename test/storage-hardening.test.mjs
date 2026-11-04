@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join, parse, resolve } from 'node:path'
 import {
   findRoot,
   globalGraphRoots,
@@ -182,6 +182,15 @@ test('seleção exige workspace quando não há raiz explícita e preserva alias
   assert.equal(new Set(roots.map(item => item.name)).size, roots.length)
   assert.equal(roots[0].path, selected)
   assert.equal(roots.filter(item => item.name.startsWith('alpha')).length, 3)
+})
+
+test('seleção informa quando não há workspace e quando a central não pode ser lida', t => {
+  const home = temporary(t), central = join(home, 'central'), outside = parse(home).root
+  mkdirSync(central)
+  assert.throws(() => findRoot({ PRUMO_HOME: central }, outside, home), /Available workspaces: -/)
+  const centralFile = join(home, 'central-file')
+  writeFileSync(centralFile, 'não é diretório')
+  assert.throws(() => findRoot({ PRUMO_HOME: centralFile }, outside, home), /Workspaces could not be listed/)
 })
 
 test('preferência de agentes é local e instalações novas continuam com três', t => {

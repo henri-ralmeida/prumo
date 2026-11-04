@@ -21,8 +21,13 @@ export function assertExplicitScope(task, policy) {
   if (policy !== undefined && policy !== 'explicit') throw new Error('scopePolicy must be explicit when present')
   if (policy === 'explicit') {
     if (!['files', 'read-only', 'unknown'].includes(task.writeScope)) throw new Error('explicit scope requires writeScope files, read-only or unknown')
-    if (!Array.isArray(task.touches) || task.touches.some(path => typeof path !== 'string' || !path.trim() || /^(?:[/\\]|[A-Za-z]:)/.test(path) || path.includes('\0') || path.replace(/\\/g, '/').split('/').includes('..')))
-      throw new Error('explicit scope requires safe repository-relative touches: paths are relative to the task project, or the run project directory; for another repository declare task.project with its absolute Git root; touches must not contain .. or absolute paths')
+    if (task.touches === undefined) throw new Error('explicit scope: touches is missing; use [] for read-only or unknown and a nonempty array for files')
+    if (!Array.isArray(task.touches)) throw new Error('explicit scope: touches must be an array')
+    const unsafe = task.touches.findIndex(path => typeof path !== 'string' || !path.trim() || /^(?:[/\\]|[A-Za-z]:)/.test(path) || path.includes('\0') || path.replace(/\\/g, '/').split('/').includes('..'))
+    if (unsafe !== -1) {
+      const value = task.touches[unsafe]
+      throw new Error(`unsafe touch ${typeof value === 'string' ? JSON.stringify(value) : typeof value}; explicit scope requires safe repository-relative touches: paths are relative to the task project, or the run project directory; for another repository declare task.project with its absolute Git root; touches must not contain .. or absolute paths`)
+    }
     if (task.writeScope === 'files' && !task.touches.length) throw new Error('files scope requires nonempty touches')
     if (task.writeScope !== 'files' && task.touches.length) throw new Error('read-only and unknown scope require empty touches')
   }

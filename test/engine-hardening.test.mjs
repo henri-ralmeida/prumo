@@ -434,6 +434,11 @@ test('parser de instalação antiga com opção escalar mantém a pergunta de bl
   })
   assert.equal(missingHelpExport.status, 1, f.output(missingHelpExport))
   assert.match(f.output(missingHelpExport), /installed parser does not support command help/)
+  const missingGeneralHelp = spawnSync(process.execPath, [join(install, 'scripts', 'engine.mjs'), '--help'], {
+    cwd: f.project, env: f.env, encoding: 'utf8', windowsHide: true, timeout: 30000,
+  })
+  assert.equal(missingGeneralHelp.status, 1, f.output(missingGeneralHelp))
+  assert.match(f.output(missingGeneralHelp), /installed parser does not support general help.*no action was executed/)
   assert.deepEqual(f.snapshot(), beforeHelp)
 })
 

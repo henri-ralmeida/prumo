@@ -152,7 +152,12 @@ for (const lang of ['en', 'pt-BR']) test(`reordenação exige dependências coer
   const state = f.state(); state.tasks.B.attempts.push({ n: 1, result: 'failed', endedAt: new Date().toISOString() }); f.save(state)
   f.plan.phases.reverse(); f.plan.tasks[0].deps = []; f.plan.tasks[1].deps = ['A']
   writeFileSync(f.planPath, JSON.stringify(f.plan))
-  f.rejects(/execution history|histórico de execução/, 'sync-plan', '--plan', f.planPath)
+  const historical = f.state(), historicalEvents = f.events()
+  const refused = f.rejects(/execution history|histórico de execução/, 'sync-plan', '--plan', f.planPath)
+  assert.match(refused.stderr, /sync-plan.*renumber-tasks.*(?:do not renumber phases|não renumeram fases)/)
+  assert.match(refused.stderr, /reorder-phases --order/)
+  assert.deepEqual(f.state(), historical)
+  assert.equal(f.events(), historicalEvents)
 })
 
 test('alterar descrição lista fases e tarefas concluídas, mas dispensa fases sem rodadas', t => {

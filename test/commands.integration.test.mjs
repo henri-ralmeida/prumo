@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { spawnSync, spawn } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, parse, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { planInstall, applyInstall } from '../lib/install.mjs'
 
@@ -54,6 +54,220 @@ function fixture(t) {
   }
   return { home, root, env, run, command, ok, init, prepare, state, snapshot, plan, planPath, graphDir, statePath }
 }
+
+for (const lang of ['en', 'pt-BR']) test(`seleção de workspace explica --run e as opções disponíveis em ${lang}`, t => {
+  const f = fixture(t); f.init()
+  const outside = parse(f.home).root
+  mkdirSync(join(f.home, 'second', '.specs', 'graph'), { recursive: true })
+  mkdirSync(join(f.home, 'not-a-workspace'))
+  const missingRoot = { ...f.env, PRUMO_ROOT: '', GRAPH_ROOT: '', PRUMO_LANG: lang }
+  const before = f.snapshot()
+  const missing = spawnSync(process.execPath, [engine, 'show-contract', 'T1', '--full', '--run', 'example'], {
+    env: missingRoot, cwd: outside, encoding: 'utf8', timeout: 20000, windowsHide: true,
+  })
+  assert.equal(missing.status, 1, missing.stderr)
+  assert.match(missing.stderr, /PRUMO_ROOT/)
+  assert.match(missing.stderr, /PRUMO_HOME/)
+  assert.match(missing.stderr, /--run/)
+  assert.match(missing.stderr, /workspace/)
+  assert.match(missing.stderr, /second/)
+  assert.match(missing.stderr, lang === 'en' ? /Available workspaces:/ : /Workspaces disponíveis:/)
+  assert.doesNotMatch(missing.stderr, /not-a-workspace/)
+  assert.deepEqual(f.snapshot(), before)
+  const selected = spawnSync(process.execPath, [engine, 'show-contract', 'T1', '--full', '--run', 'example'], {
+    env: { ...missingRoot, PRUMO_ROOT: f.root }, cwd: outside, encoding: 'utf8', timeout: 20000, windowsHide: true,
+  })
+  assert.equal(selected.status, 0, selected.stderr)
+  assert.equal(JSON.parse(selected.stdout).task, 'T1')
+  mkdirSync(join(f.home, '.local', 'share', 'prumo', 'default-workspace', '.specs', 'graph'), { recursive: true })
+  const defaultHome = spawnSync(process.execPath, [engine, 'show-contract', 'T1', '--run', 'example'], {
+    env: { ...missingRoot, PRUMO_HOME: '' }, cwd: outside, encoding: 'utf8', timeout: 20000, windowsHide: true,
+  })
+  assert.equal(defaultHome.status, 1, defaultHome.stderr)
+  assert.match(defaultHome.stderr, /default-workspace/)
+  assert.doesNotMatch(defaultHome.stderr, /second/)
+})
+
+for (const lang of ['en', 'pt-BR']) test(`skip informa o efeito nas dependências sem liberar outras etapas em ${lang}`, t => {
+  const f = fixture(t), base = f.plan.tasks[0]
+  f.plan.tasks = [
+    { ...base, id: 'T1' }, { ...base, id: 'T2' },
+    { ...base, id: 'T3', deps: ['T1'] }, { ...base, id: 'T4', deps: ['T1', 'T2'] },
+    { ...base, id: 'T5', deps: ['T1'] }, { ...base, id: 'T6', deps: ['T1'] },
+  ]
+  writeFileSync(f.planPath, JSON.stringify(f.plan)); f.init()
+  const legacy = f.state(); legacy.tasks.T6.state = 'done'; writeFileSync(f.statePath, JSON.stringify(legacy))
+  const terminal = f.ok('skip', 'T5', '--reason', 'Entrega dispensada', '--lang', lang)
+  assert.doesNotMatch(terminal.output, /dependents:|dependentes:/i)
+  const result = f.ok('skip', 'T1', '--reason', 'Regra dispensada', '--lang', lang)
+  assert.match(result.output, lang === 'en' ? /T3.*dependencies satisfied/ : /T3.*dependências satisfeitas/)
+  assert.match(result.output, lang === 'en' ? /T4.*waiting on dependencies.*T2/ : /T4.*aguarda dependências.*T2/)
+  assert.match(result.output, lang === 'en' ? /T5.*already skipped/ : /T5.*já está pulada/)
+  assert.match(result.output, lang === 'en' ? /T6.*already completed/ : /T6.*já está concluída/)
+  assert.equal(f.state().tasks.T3.state, 'pending')
+  assert.equal(f.state().tasks.T4.state, 'pending')
+  assert.equal(f.state().tasks.T5.state, 'skipped')
+  const other = f.ok('skip', 'T2', '--reason', 'Outro pré-requisito dispensado', '--lang', lang)
+  assert.match(other.output, lang === 'en' ? /T4.*dependencies satisfied/ : /T4.*dependências satisfeitas/)
+})
+
+for (const lang of ['en', 'pt-BR']) test(`sync identifica fonte e campo de contrato preservado em ${lang}`, t => {
+  const f = fixture(t), base = f.plan.tasks[0]
+  f.plan.tasks = [{ ...base, id: 'T1' }, { ...base, id: 'T2' }]
+  writeFileSync(f.planPath, JSON.stringify(f.plan)); f.init()
+  f.ok('skip', 'T1', '--reason', 'Entrega dispensada')
+  f.plan.tasks[0].deps = ['T2']
+  const candidate = join(f.root, 'candidate.json')
+  writeFileSync(candidate, JSON.stringify(f.plan))
+  const before = f.snapshot()
+  const preview = f.ok('sync-plan', '--plan', candidate, '--dry-run', '--lang', lang)
+  assert.ok(preview.output.includes(JSON.stringify(f.planPath)), preview.output)
+  assert.ok(preview.output.includes(JSON.stringify(candidate)), preview.output)
+  assert.match(preview.output, /T1.*deps/)
+  assert.deepEqual(f.snapshot(), before)
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  const refused = f.ok('sync-plan', '--propose', '--lang', lang)
+  assert.ok(refused.output.includes(JSON.stringify(f.planPath)), refused.output)
+  assert.match(refused.output, /T1.*deps/)
+  assert.equal(f.state().tasks.T1.state, 'skipped')
+  assert.deepEqual(f.state().tasks.T1.deps, [])
+  const legacy = f.state()
+  delete legacy.plan.source
+  writeFileSync(f.statePath, JSON.stringify(legacy))
+  const legacyBefore = f.snapshot()
+  const legacyPreview = f.ok('sync-plan', '--plan', candidate, '--dry-run', '--lang', lang)
+  assert.match(legacyPreview.output, /"-"/)
+  assert.ok(legacyPreview.output.includes(JSON.stringify(candidate)), legacyPreview.output)
+  assert.deepEqual(f.snapshot(), legacyBefore)
+})
+
+for (const lang of ['en', 'pt-BR']) test(`erro de espaço na gravação preserva o estado e orienta a retomada em ${lang}`, t => {
+  const f = fixture(t); f.init()
+  const preload = join(f.root, 'disk-full.mjs')
+  writeFileSync(preload, `import fs from 'node:fs';
+const write = fs.writeFileSync;
+fs.writeFileSync = (file, ...args) => {
+  if (String(file).startsWith(${JSON.stringify(f.statePath)} + '.') && String(file).endsWith('.tmp')) {
+    write(file, '{"partial":');
+    throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' });
+  }
+  return write(file, ...args);
+};`)
+  const before = f.snapshot()
+  const failed = spawnSync(process.execPath, [engine, 'note', 'T1', '--text', 'Resultado registrado', '--lang', lang], {
+    env: { ...f.env, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(preload).href}`.trim() },
+    cwd: f.root, encoding: 'utf8', timeout: 20000, windowsHide: true,
+  })
+  assert.equal(failed.status, 1)
+  assert.match(failed.stderr, lang === 'en' ? /Insufficient disk space/ : /Espaço em disco insuficiente/)
+  assert.ok(failed.stderr.includes(JSON.stringify(f.statePath)), failed.stderr)
+  assert.deepEqual(f.snapshot(), before)
+  f.ok('note', 'T1', '--text', 'Resultado registrado')
+  assert.equal(f.state().tasks.T1.notes.at(-1).text, 'Resultado registrado')
+})
+
+for (const lang of ['en', 'pt-BR']) test(`init distingue touches ausente, inválido e seguro em ${lang}`, t => {
+  const f = fixture(t), task = f.plan.tasks[0]
+  f.plan.scopePolicy = 'explicit'
+  for (const scope of ['read-only', 'unknown']) {
+    task.writeScope = scope
+    delete task.touches
+    writeFileSync(f.planPath, JSON.stringify(f.plan))
+    const missing = f.command('init', '--plan', f.planPath, '--run', scope, '--lang', lang)
+    assert.equal(missing.status, 1)
+    assert.match(missing.output, lang === 'en' ? /task T1:.*touches is missing.*\[\]/ : /tarefa T1:.*touches ausente.*\[\]/)
+    assert.equal(existsSync(join(f.graphDir, scope, 'state.json')), false)
+    task.touches = []
+    writeFileSync(f.planPath, JSON.stringify(f.plan))
+    assert.equal(f.command('init', '--plan', f.planPath, '--run', scope, '--lang', lang).status, 0)
+  }
+  task.writeScope = 'files'; task.touches = null
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  const notArray = f.command('init', '--plan', f.planPath, '--run', 'invalid-type', '--lang', lang)
+  assert.equal(notArray.status, 1)
+  assert.match(notArray.output, lang === 'en' ? /touches must be an array/ : /touches deve ser uma lista/)
+  task.touches = ['../outside']
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  const invalid = f.command('init', '--plan', f.planPath, '--run', 'invalid-path', '--lang', lang)
+  assert.equal(invalid.status, 1)
+  assert.match(invalid.output, lang === 'en' ? /task T1:.*unsafe touch.*\.\.\/outside/ : /tarefa T1:.*touch inseguro.*\.\.\/outside/)
+  assert.equal(existsSync(join(f.graphDir, 'invalid-path', 'state.json')), false)
+})
+
+for (const lang of ['en', 'pt-BR']) test(`init mostra todos os conflitos de recursos em ${lang}`, t => {
+  const f = fixture(t), base = f.plan.tasks[0]
+  f.plan.tasks = [
+    { ...base, id: 'T1', sharedResources: [{ id: 'database-a', access: 'write' }] },
+    { ...base, id: 'T2', sharedResources: [{ id: 'database-a', access: 'read' }] },
+    { ...base, id: 'T3', sharedResources: [{ id: 'database-b', access: 'write' }] },
+    { ...base, id: 'T4', sharedResources: [{ id: 'database-b', access: 'write' }] },
+  ]
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  const rejected = f.command('init', '--plan', f.planPath, '--run', 'example', '--cwd', f.root, '--lang', lang)
+  assert.equal(rejected.status, 1)
+  assert.match(rejected.output, /T1.*T2.*database-a/)
+  assert.match(rejected.output, /T3.*T4.*database-b/)
+  assert.ok(rejected.output.includes(JSON.stringify(f.root)), rejected.output)
+  assert.equal(existsSync(f.statePath), false)
+  const withoutProject = f.command('init', '--plan', f.planPath, '--run', 'example', '--lang', lang)
+  assert.equal(withoutProject.status, 1, withoutProject.output)
+  assert.match(withoutProject.output, /"-".*"-"/)
+  assert.equal(existsSync(f.statePath), false)
+  f.plan.tasks[1].deps = ['T1']; f.plan.tasks[3].deps = ['T3']
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  const accepted = f.command('init', '--plan', f.planPath, '--run', 'example', '--cwd', f.root, '--lang', lang)
+  assert.equal(accepted.status, 0, accepted.output)
+  assert.deepEqual(f.state().tasks.T2.deps, ['T1'])
+  assert.deepEqual(f.state().tasks.T4.deps, ['T3'])
+})
+
+for (const lang of ['en', 'pt-BR']) test(`contrato avisa apenas afirmações de código marcadas sem arquivo e linha em ${lang}`, t => {
+  const f = fixture(t), check = f.plan.tasks[0].validation[0]
+  f.plan.tasks[0].validation = [
+    { ...check, codeClaim: true },
+    { ...check, codeClaim: true, codeReference: { file: 'src/handler.cs', line: 212 } },
+    { ...check },
+  ]
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  const result = f.command('init', '--plan', f.planPath, '--run', 'example', '--lang', lang)
+  assert.equal(result.status, 0, result.output)
+  assert.match(result.output, /T1.*validation #1.*codeReference\.file.*codeReference\.line/)
+  assert.doesNotMatch(result.output, /validation #2.*codeReference/)
+  assert.doesNotMatch(result.output, /validation #3.*codeReference/)
+  assert.equal(f.state().tasks.T1.validation[0].codeClaim, true)
+  assert.deepEqual(f.state().tasks.T1.validation[1].codeReference, { file: 'src/handler.cs', line: 212 })
+})
+
+for (const lang of ['en', 'pt-BR']) test(`status destaca tarefas e ajuda encontra notas e validações em ${lang}`, t => {
+  const f = fixture(t)
+  f.plan.tasks[0].summary = 'Verificar o comportamento aprovado para a entrega. ' + '😀'.repeat(170)
+  writeFileSync(f.planPath, JSON.stringify(f.plan)); f.init(); f.prepare()
+  f.ok('start', 'T1', '--agent', 'executor', '--model', 'model-example')
+  f.ok('note', 'T1', '--text', 'Observação registrada')
+  const before = f.snapshot()
+  const status = f.ok('status', '--lang', lang)
+  assert.match(status.output, lang === 'en' ? /T1\s*\|\s*-\s*\|\s*running\s*\|.*Verificar o comportamento/ : /T1\s*\|\s*-\s*\|\s*em execução\s*\|.*Verificar o comportamento/)
+  assert.match(status.output, /😀…/)
+  assert.doesNotMatch(status.output, /dispatches \(reported\)/)
+  const verbose = f.ok('status', '--verbose', '--lang', lang)
+  assert.match(verbose.output, /task:T1:execution:0 dispatches \(reported\)/)
+  assert.deepEqual(f.snapshot(), before)
+  assert.equal(JSON.parse(f.ok('show-contract', 'T1', '--full').stdout).notes.at(-1).text, 'Observação registrada')
+  const help = spawnSync(process.execPath, [engine, '--help', '--lang', lang], {
+    env: { ...f.env, PRUMO_ROOT: join(f.home, 'missing') }, cwd: f.root, encoding: 'utf8', timeout: 20000, windowsHide: true,
+  })
+  assert.equal(help.status, 0, help.stderr)
+  assert.match(help.stdout, lang === 'en' ? /show-contract[^\n]*notes/i : /show-contract[^\n]*notas/i)
+  assert.match(help.stdout, lang === 'en' ? /graph[^\n]*validations/i : /graph[^\n]*validações/i)
+  assert.match(help.stdout, /show-check/)
+  assert.match(help.stdout, /status --verbose/)
+  const invalidHelp = spawnSync(process.execPath, [engine, '--help', '--unknown'], {
+    env: { ...f.env, PRUMO_ROOT: join(f.home, 'missing') }, cwd: f.root, encoding: 'utf8', timeout: 20000, windowsHide: true,
+  })
+  assert.equal(invalidHelp.status, 1)
+  assert.match(invalidHelp.stderr, /General help accepts only --lang/)
+  assert.deepEqual(f.snapshot(), before)
+})
 
 for (const lang of ['en', 'pt-BR']) test(`ajuda e recusas orientam o revisor sem alterar o plano em ${lang}`, t => {
   const f = fixture(t); f.init(); f.prepare()
@@ -256,7 +470,20 @@ for (const lang of ['en', 'pt-BR']) test(`validacao reprovada distingue evidenci
   f.ok('start', 'T1', '--agent', 'executor')
   f.ok('review', 'T1', '--agent', 'reviewer')
   f.ok('review-progress', 'T1', '--step', '1', '--agent', 'reviewer')
+  const rejection = lang === 'en' ? /Review rejected for T1/ : /Revisão reprovada de T1/
+  for (const command of ['ready', 'status']) assert.doesNotMatch(f.ok(command, '--lang', lang).output, rejection)
+  f.ok('validate', 'T1', '--failed', '--evidence', 'A regra não passou', '--lang', lang)
+  const rejected = f.snapshot()
+  for (const command of ['ready', 'status']) {
+    const output = f.ok(command, '--lang', lang).output
+    assert.match(output, rejection)
+    assert.match(output, /fail T1 --reason/)
+    assert.match(output, /retry T1/)
+    assert.doesNotMatch(output, /retry T1 --confirmed-by-user/)
+    assert.deepEqual(f.snapshot(), rejected)
+  }
   f.ok('validate', 'T1', '--ok', '--summary', 'Verificação anterior', '--evidence', 'Resultado anterior aprovado', '--cwd', f.root)
+  for (const command of ['ready', 'status']) assert.doesNotMatch(f.ok(command, '--lang', lang).output, rejection)
   const before = f.state().tasks.T1
   writeFileSync(join(f.root, 'behavior.cjs'), 'process.exit(1)\n')
   const failed = f.command('validate', 'T1', '--ok', '--summary', 'Observação da falha', '--evidence', 'A regra não passou', '--cwd', f.root, '--lang', lang)
@@ -306,6 +533,11 @@ for (const lang of ['en', 'pt-BR']) test(`validacao reprovada em execucao manual
   const next = lang === 'en' ? /run fail T1 --reason "<reason>" and then retry T1 --confirmed-by-user$/m
     : /execute fail T1 --reason "<motivo>" e depois retry T1 --confirmed-by-user$/m
   assert.match(failed.stdout, next, failed.output)
+  for (const command of ['ready', 'status']) {
+    const output = f.ok(command, '--lang', lang).output
+    assert.match(output, lang === 'en' ? /Review rejected for T1/ : /Revisão reprovada de T1/)
+    assert.match(output, /retry T1 --confirmed-by-user/)
+  }
   assert.equal(f.state().tasks.T1.state, 'reviewing')
 })
 

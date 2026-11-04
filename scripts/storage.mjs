@@ -55,7 +55,15 @@ export function findRoot(env = process.env, cwd = process.cwd(), home = homedir(
     if (existsSync(join(current, '.specs', 'graph'))) return current
     if (dirname(current) === current) break
   }
-  throw new Error(`Select a workspace inside "${central}" with PRUMO_ROOT, or enter an existing legacy workspace`)
+  let workspaces
+  try {
+    workspaces = readdirSync(central, { withFileTypes: true })
+      .filter(entry => entry.isDirectory() && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(entry.name) && existsSync(join(central, entry.name, '.specs', 'graph')))
+      .map(entry => entry.name).sort()
+  } catch { /* A seleção continua recusada mesmo quando o diretório não pode ser listado. */ }
+  const guidance = `Select a workspace inside "${central}" with PRUMO_ROOT, or enter an existing legacy workspace; --run selects a run, not a workspace. PRUMO_HOME selects the storage directory.`
+  if (!workspaces) throw new Error(`${guidance} Workspaces could not be listed`)
+  throw new Error(`${guidance} Available workspaces: ${workspaces.join(', ') || '-'}`)
 }
 
 export function graphRoots(root, central) {

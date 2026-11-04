@@ -71,7 +71,7 @@ import {
 } from 'node:fs'
 import { randomUUID, createHash } from 'node:crypto'
 import { homedir } from 'node:os'
-import { isReadyForReview } from './review-readiness.mjs'
+import { isReadyForReview, isReviewRejected } from './review-readiness.mjs'
 import { assertExplicitScope, scopeConflicts, sameProject, captureScopeBaseline, scopeEvidenceRequirement, verifyTaskScope, externalTouchPaths, validationProjectMismatch } from './task-scope.mjs'
 import { executionReadiness, planQuestionRef, openQuestionRecords, questionResolutionMap, targetHasStarted, overdueQuestions, questionIsOverdue, taskAuthorization, runHasAuthorizationScope, occupancy, isExternalBlock } from './execution-readiness.mjs'
 import { writeAtomicState } from './atomic-state.mjs'
@@ -93,10 +93,10 @@ import {
 } from './sync-plan-audit.mjs'
 import { businessContract, contractDrift, preservedContractDrift, preservesCompletedContract, GLOBAL_PLAN_FIELDS, TASK_CONTRACT_FIELDS } from './contract-drift.mjs'
 import * as engineArgs from './engine-args.mjs'
-const { parseEngineArgs, engineCommandHelp } = engineArgs
+const { parseEngineArgs, engineCommandHelp, engineGeneralHelp } = engineArgs
 import { replanningRecovery } from './replanning-recovery.mjs'
 import { taskIdentifierProblem, phaseIdentifierProblem } from './task-identifiers.mjs'
-import { parseTaskMapping, renumberTasks, renumberBlockers, RenumberError, eventLogPath, renumberEventHistory } from './task-renumber.mjs'
+import { parseTaskMapping, parsePhaseOrder, renumberTasks, renumberBlockers, RenumberError, eventLogPath, renumberEventHistory } from './task-renumber.mjs'
 import { terminalAttemptRepairs, repairTerminalAttempts, attemptsForContext } from './legacy-attempts.mjs'
 import { captureDelivery, checkDelivery, verifyNumericProvenance, assertEvidenceContract, assertReviewedDelivery } from './delivery-evidence.mjs'
 import { assertRolePreferences, recordDispatchMetadata, dispatchOwners, reportedUsageTotals, pauseRun, resumeRun, shellCommand, taskBrief, agentRoles, repeatedPlanQuestions, recordedPlanIdentity } from './run-metadata.mjs'
@@ -106,6 +106,14 @@ import { questionAnswerOrigin, missingExecutionSteps, phaseOrderChange } from '.
 // A ajuda geral também funciona fora de um workspace; consultar opções não grava métricas nem estado.
 const [, , cmd, ...rest] = process.argv
 let args
+if (cmd === '--help') {
+  if (rest.length && (rest.length !== 2 || rest[0] !== '--lang'))
+    die(tr('General help accepts only --lang <en|pt-BR>'))
+  if (!engineGeneralHelp) die(tr('installed parser does not support general help; update Prumo; no action was executed'))
+  log(tr('Engine commands (use <command> --help for options):'))
+  for (const { command, description } of engineGeneralHelp()) log(`  ${command.padEnd(24)} ${tr(description)}`)
+  process.exit(0)
+}
 if (rest.includes('--help')) {
   try { args = parseEngineArgs(cmd, rest) } catch (error) { die(error.message) }
   if (args.help !== true || !engineCommandHelp)
@@ -147,7 +155,7 @@ if (recognizedCommand) {
   const metric = newCommandRecord(cmd)
   process.on('exit', code => {
     try {
-      if (['sync-plan', 'renumber-tasks'].includes(cmd) && args?.['dry-run'] || cmd === 'migrate' && args?.check || args?.help) return
+      if (['sync-plan', 'renumber-tasks', 'reorder-phases'].includes(cmd) && args?.['dry-run'] || cmd === 'migrate' && args?.check || args?.help) return
       const runFlag = rest.lastIndexOf('--run')
       if (runFlag >= 0 && rest[runFlag + 1] === undefined) return
       const requestedRun = args?.run ?? process.env.PRUMO_RUN ?? (runFlag >= 0 ? rest[runFlag + 1] : undefined)
@@ -173,7 +181,7 @@ function reportRenumber(outcome) {
   log(JSON.stringify(outcome, null, 2))
 }
 function die(msg) {
-  if (cmd === 'renumber-tasks' && !renumberReported)
+  if (['renumber-tasks', 'reorder-phases'].includes(cmd) && !renumberReported)
     reportRenumber({ dryRun: args?.['dry-run'] === true, ...renumberOutcome, applied: false, message: msg })
   errorLog(`[prumo] ERROR: ${msg}`)
   process.exit(1)
@@ -239,11 +247,11 @@ function saveState(name, state) {
   const previous = existsSync(join(runDir(name), 'state.json')) ? loadState(name) : { tasks: {} }
   const aliases = state.taskIdAliases ?? {}
   const redispatchTask = cmd === 'unblock' ? Object.hasOwn(aliases, args._[0]) ? aliases[args._[0]] : args._[0] : undefined
-  for (const record of cmd === 'renumber-tasks' ? [] : recordDispatchMetadata(previous, state, args, redispatchTask)) log('[prumo] model dispatch (reported, not verified): ' + JSON.stringify(record))
+  for (const record of ['renumber-tasks', 'reorder-phases'].includes(cmd) ? [] : recordDispatchMetadata(previous, state, args, redispatchTask)) log('[prumo] model dispatch (reported, not verified): ' + JSON.stringify(record))
   closeInactiveActivity(state, state.updatedAt)
   const dir = runDir(name)
   compactDiscoveries(state, dir)
-  writeAtomicState(join(dir, 'state.json'), JSON.stringify(state, null, 2))
+  writeAtomicState(join(dir, 'state.json'), JSON.stringify(state, null, 2), { validateJson: true })
   // Diagnósticos após a gravação precisam do mesmo histórico disponível na próxima leitura.
   hydrateDiscoveries(state, dir)
 }
@@ -538,6 +546,12 @@ function printReviewValidationGuidance(id) {
   log('[prumo] ' + tr('After inspecting the current delivery, use validate {0} --ok --evidence <observations> [--cwd <project>]. Evidence records what the reviewer inspected; no flag or progress counter proves inspection automatically, and validation still enforces the current contract', id))
 }
 
+function reviewRejectionNotice(task) {
+  return tr(taskAuthorization(task)?.mode === 'manual' ?
+    'Review rejected for {0}; to redo the work, run fail {0} --reason "<reason>" and then retry {0} --confirmed-by-user' :
+    'Review rejected for {0}; to redo the work, run fail {0} --reason "<reason>" and then retry {0}', task.id)
+}
+
 function reviewDeliveryMatches(progress, deliveryCheck) {
   return progress.contentFingerprint !== undefined
     ? progress.contentFingerprint === deliveryCheck.contentFingerprint
@@ -750,10 +764,20 @@ function warnPlanTouchPaths(plan, cwd) {
   }
 }
 
+function warnCodeClaim(task, criterion, label) {
+  if (criterion?.codeClaim !== true) return
+  const reference = criterion.codeReference, missing = []
+  if (typeof reference?.file !== 'string' || !reference.file.trim() || reference.file.includes('\0')) missing.push('codeReference.file')
+  if (!Number.isSafeInteger(reference?.line) || reference.line < 1) missing.push('codeReference.line')
+  if (missing.length) log('[prumo] ' + tr('WARNING: task {0} {1} is marked as a code claim; provide {2}. Check the cited behavior independently; a reference alone does not prove it', task.id, label, missing.join(', ')))
+}
+
 function warnValidationProse(plan, historical, cwd) {
   for (const task of plan.tasks) {
-    if (historical.has(task.id) || task.validationMode === 'inspection') continue
-    for (const [index, step] of task.validation.entries()) {
+    if (historical.has(task.id)) continue
+    for (const [index, step] of (Array.isArray(task.validation) ? task.validation : []).entries()) {
+      warnCodeClaim(task, step, `validation #${index + 1}`)
+      if (task.validationMode === 'inspection') continue
       const prose = /^\s*(?:inspecionar|conferir|revisar|verificar|inspect|review|verify|check)\s+(?:o|a|os|as|the|that|if)\s/iu.test(step.run)
       // Só avisa: o comando pode existir apenas no ambiente de execução, então nunca recusa.
       const unresolved = prose ? null : unresolvedValidationCommand(step.run, resolve(cwd ?? process.cwd(), step.cwd ?? '.'))
@@ -775,6 +799,7 @@ function warnTaskPlan(task, plan, state) {
       task.id, JSON.stringify(plan.externalDeliverables)))
   for (let index = 0; index < plan.verification.length; index++) {
     const item = plan.verification[index]
+    warnCodeClaim(task, item, `verification #${index + 1}`)
     for (const resource of new Set(item.requires ?? [])) {
       if (task.unavailable?.includes(resource))
         log('[prumo] ' + tr('planning warning: task {0} verification {1} requires unavailable resource {2}; keep it pending for the reviewer',
@@ -965,7 +990,7 @@ function validatePlan(plan, allowOverlap = false, historical = new Set(), defaul
   for (const t of plan.tasks) {
     if (!t.id || !t.title) die('every task needs id and title')
     try { assertEvidenceContract(t) } catch (error) { die(`task ${t.id}: ${error.message}`) }
-    try { assertExplicitScope(t, historical.has(t.id) ? undefined : plan.scopePolicy) } catch (error) { die(`task ${t.id}: ${error.message}`) }
+    try { assertExplicitScope(t, historical.has(t.id) ? undefined : plan.scopePolicy) } catch (error) { die(tr('task {0}: {1}', t.id, tr(error.message))) }
     safeId(t.id)
     if (ids.has(t.id)) die(`duplicate task id ${t.id}`)
     for (const field of ['summary', 'validationSummary'])
@@ -1010,6 +1035,7 @@ function validatePlan(plan, allowOverlap = false, historical = new Set(), defaul
   }
 
   const byId = Object.fromEntries(plan.tasks.map((t) => [t.id, t]))
+  const conflicts = []
   for (let i = 0; i < plan.tasks.length; i++) {
     for (let j = i + 1; j < plan.tasks.length; j++) {
       const a = plan.tasks[i]
@@ -1017,18 +1043,18 @@ function validatePlan(plan, allowOverlap = false, historical = new Set(), defaul
       if (historical.has(a.id) || historical.has(b.id)) continue
       const shared = scopeConflicts(a, b).resources
       if (shared.length && !allowOverlap && !reaches(byId, a.id, b.id) && !reaches(byId, b.id, a.id))
-        die(`${a.id} and ${b.id} share write resources: ${shared.join(', ')} — add a dep between them (or --allow-overlap)`)
+        conflicts.push(tr('{0} and {1} share write resources: {2} — add a dep between them (or --allow-overlap); projects: {3}, {4}',
+          a.id, b.id, shared.map(resource => JSON.stringify(resource).slice(1, -1)).join(', '),
+          JSON.stringify(a.project ?? defaultProject ?? '-'), JSON.stringify(b.project ?? defaultProject ?? '-')))
       if (!a.touches?.length || !b.touches?.length) continue
       if (reaches(byId, a.id, b.id) || reaches(byId, b.id, a.id)) continue
       const clash = plan.scopePolicy === 'explicit' ? scopeConflicts(a, b, defaultProject).paths[0] :
         sameProject(a, b, defaultProject) && a.touches.find((pa) => b.touches.some((pb) => pathsCollide(pa, pb)))
       if (clash && !allowOverlap)
-        die(
-          `${a.id} and ${b.id} can run in parallel but both touch "${clash}" — ` +
-            `add a dep between them (or --allow-overlap)`,
-        )
+        conflicts.push(tr('{0} and {1} can run in parallel but both touch "{2}" — add a dep between them (or --allow-overlap)', a.id, b.id, clash))
     }
   }
+  if (conflicts.length) die(conflicts.join('\n'))
 }
 
 function historicalTasks(state) {
@@ -1090,12 +1116,20 @@ function printSyncPlanAudit(changes, diagnostics) {
   }
 }
 
+function printPreservedPlanDifferences(changes, storedSource, source) {
+  log('[prumo] ' + tr('Run source plan: {0}; checked plan: {1}', JSON.stringify(storedSource ?? '-'), JSON.stringify(source)))
+  for (const change of changes.filter(item => item.preserved))
+    log('[prumo] ' + tr('Preserved task {0} differs in fields: {1}', displayIdentifier(change.task), change.fields.map(field => field.field).join(', ')))
+}
+
 function readPlan(planPath, state) {
   const source = resolve(planPath)
   const plan = JSON.parse(readFileSync(source, 'utf8'))
   const validationPlan = state ? { ...plan, planningMode: state.plan.planningMode ?? 'task' } : plan
   const historical = historicalTasks(state)
   validatePlan(validationPlan, args['allow-overlap'] === true, historical, projectCwd(state?.plan.cwd))
+  for (const task of plan.tasks) if (state && !Object.hasOwn(state.tasks, task.id) && Object.hasOwn(state.taskIdAliases ?? {}, task.id))
+    die(tr('Task {0} conflicts with historical alias {0} for task {1}; choose a different identifier', task.id, state.taskIdAliases[task.id]))
   for (const task of plan.tasks) if (Object.hasOwn(state?.removedTasks ?? {}, task.id))
     die(tr('Task {0} uses a removed task identifier; keep its history and choose a new identifier', task.id))
   warnValidationProse(plan, historical, projectCwd(state?.plan.cwd))
@@ -2398,10 +2432,43 @@ const commands = {
 
   'renumber-tasks'() {
     try {
+    const phases = cmd === 'reorder-phases'
     const name = runName(), state = loadState(name)
     if (migrationStatus(state).schemaNeeded) die('Migre o estado legado com migrate antes de renumerar; a prévia não altera o estado')
-    if (!args['dry-run'] && args['confirmed-by-user'] !== true) die('renumber-tasks requires --confirmed-by-user')
-    const mapping = parseTaskMapping(args.map)
+    if (!args['dry-run'] && args['confirmed-by-user'] !== true) die(`${cmd} requires --confirmed-by-user`)
+    const receiptPath = join(runDir(name), phases ? 'phase-order-preparation.json' : 'task-id-preparation.json')
+    const otherReceipt = join(runDir(name), phases ? 'task-id-preparation.json' : 'phase-order-preparation.json')
+    if (existsSync(otherReceipt) || lstatSync(otherReceipt, { throwIfNoEntry: false })?.isSymbolicLink())
+      die(tr('Another renumbering is pending; recover it before changing identifiers'))
+    if (lstatSync(receiptPath, { throwIfNoEntry: false })?.isSymbolicLink()) die('A renumeração não aceita diretórios ligados')
+    const pending = existsSync(receiptPath) ? JSON.parse(readFileSync(receiptPath, 'utf8')) : null
+    if (pending && (!/^[a-f0-9-]{36}$/.test(pending.backupId) || typeof pending.beforeDigest !== 'string' ||
+        !pending.mapping || typeof pending.mapping !== 'object' || Array.isArray(pending.mapping) ||
+        phases && (!Array.isArray(pending.order) || pending.order.some(id => typeof id !== 'string'))))
+      die(tr('Invalid renumbering preparation; inspect {0} before retrying', receiptPath))
+    const migrations = phases ? state.phaseIdMigrations : state.taskIdMigrations
+    const activatedRecord = pending && migrations?.find(item => typeof item?.backup === 'string' && basename(item.backup) === pending.backupId)
+    const alreadyActivated = Boolean(activatedRecord)
+    if (phases && pending) {
+      const requestedOrder = typeof args.order === 'string' ? args.order.split(',').map(id => id.trim()) : []
+      if (JSON.stringify(requestedOrder) !== JSON.stringify(pending.order))
+        die(tr('A phase reordering is pending; repeat its original order before starting another'))
+      if (alreadyActivated) {
+        if (!activatedRecord.mapping || typeof activatedRecord.mapping !== 'object' || Array.isArray(activatedRecord.mapping) ||
+            JSON.stringify(activatedRecord.order) !== JSON.stringify(pending.order) ||
+            JSON.stringify(Object.entries(activatedRecord.mapping).sort()) !== JSON.stringify(Object.entries(pending.mapping).sort()))
+          die(tr('Invalid renumbering preparation; inspect {0} before retrying', receiptPath))
+        const interrupted = { backup: join(runDir(name), 'task-id-backups', pending.backupId), activated: true, resumable: false }
+        const result = { dryRun: args['dry-run'] === true, applied: false, alreadyApplied: true, mapping: pending.mapping,
+          order: pending.order, interrupted, backup: interrupted.backup, source: state.plan.source,
+          message: tr('The interrupted renumbering was already activated; the mapping was not applied again') }
+        reportRenumber(result)
+        if (!args['dry-run']) try { rmSync(receiptPath) } catch { /* O recibo mantém a confirmação recuperável. */ }
+        return
+      }
+    }
+    const phaseSelection = phases ? parsePhaseOrder(args.order, state.plan.phases ?? []) : null
+    const mapping = phases ? phaseSelection.mapping : parseTaskMapping(args.map)
     const { plan } = readPlan(state.plan.source, state)
     const drift = contractDrift(state, { plan, preserveCompleted: true })
     const blockers = renumberBlockers(state).map(blocker => {
@@ -2416,28 +2483,38 @@ const commands = {
       ]
       blockers.push(tr('Synchronize the source plan before renumbering tasks: {0}; inspect sync-plan --dry-run; restore missing tasks or explicitly approve eligible removals', differences.join('; ')))
     }
+    if (phases) {
+      const order = phaseSelection.order.map(id => (plan.phases ?? []).find(phase => phase.id === id)).filter(Boolean)
+      const tasks = plan.tasks.map(task => state.tasks[task.id] ? { ...task,
+        phase: state.tasks[task.id].phase, deps: state.tasks[task.id].deps } : task)
+      const change = phaseOrderChange(state, { ...plan, phases: order, tasks })
+      if (change?.conflicts.length) blockers.push(tr('Phase order conflicts with dependencies: {0}; adjust deps explicitly in the candidate plan and repeat sync-plan --dry-run; no dependencies were inferred', change.conflicts.join('; ')))
+    }
     const preview = renumberOutcome = { dryRun: args['dry-run'] === true, applied: false,
       message: tr('Preview; no changes were written'), mapping, tasks: Object.keys(state.tasks).length,
+      ...(phases ? { order: phaseSelection.order } : {}),
       changes: ['state.json', 'plano de origem versionado', 'referências, vínculos e histórico de IDs'],
       blockers,
-      taskChanges: Object.entries(mapping).map(([from, to]) => ({ from, to, title: state.tasks[from]?.title })),
+      ...(phases ? { phaseChanges: Object.entries(mapping).map(([from, to]) => ({ from, to, title: state.plan.phases.find(phase => phase.id === from)?.title })) } :
+        { taskChanges: Object.entries(mapping).map(([from, to]) => ({ from, to, title: state.tasks[from]?.title })) }),
       external: 'Atualize os títulos das tarefas espelhadas nos serviços externos, quando aplicável.' }
+    if (phases && !pending && phaseSelection.order.every((id, index) => state.plan.phases[index]?.id === id && mapping[id] === id))
+      return reportRenumber({ ...preview, blockers: [], alreadyApplied: true,
+        message: tr('The phases already use the requested order and numbering; no changes were written') })
     if (blockers.length) die(tr('Renumbering blocked: {0}', blockers.join('; ')))
-    const receiptPath = join(runDir(name), 'task-id-preparation.json')
-    if (lstatSync(receiptPath, { throwIfNoEntry: false })?.isSymbolicLink()) die('A renumeração não aceita diretórios ligados')
-    const pending = existsSync(receiptPath) ? JSON.parse(readFileSync(receiptPath, 'utf8')) : null
-    if (pending && (!/^[a-f0-9-]{36}$/.test(pending.backupId) || typeof pending.beforeDigest !== 'string' || !pending.mapping))
-      die(tr('Invalid renumbering preparation; inspect {0} before retrying', receiptPath))
     const beforeDigest = createHash('sha256').update(readFileSync(join(runDir(name), 'state.json')))
       .update(readFileSync(state.plan.source)).update(readFileSync(eventsPath(name))).digest('hex')
     const sameMapping = pending && JSON.stringify(Object.entries(pending.mapping).sort()) === JSON.stringify(Object.entries(mapping).sort())
-    const alreadyActivated = pending && state.taskIdMigrations?.some(item => basename(item.backup) === pending.backupId)
     if (pending) preview.interrupted = {
       backup: join(runDir(name), 'task-id-backups', pending.backupId),
       activated: !!alreadyActivated, resumable: !alreadyActivated && sameMapping && pending.beforeDigest === beforeDigest,
     }
+    if (phases && pending && !preview.interrupted.resumable)
+      die(tr('Phase reordering cannot resume because the plan, state or event history changed; inspect the recorded backup'))
+    const migrate = () => renumberTasks(state, plan, phases ? {} : mapping, { contextDigests: taskContextDigests,
+      ...(phases ? { phaseMapping: mapping, phaseOrder: phaseSelection.order } : {}) })
     if (args['dry-run']) {
-      renumberTasks(state, plan, mapping, { contextDigests: taskContextDigests })
+      migrate()
       if (pending) preview.message = tr('Preview; no changes were written. Previous preparation: {0}. Inspect the mapping; repeat with --confirmed-by-user to resume against the current state', preview.interrupted.backup)
       return reportRenumber(preview)
     }
@@ -2446,7 +2523,7 @@ const commands = {
       try { rmSync(receiptPath) } catch { /* Preserve o reconhecimento da ativação se o recibo continuar ocupado. */ }
       return
     }
-    const migrated = renumberTasks(state, plan, mapping, { contextDigests: taskContextDigests })
+    const migrated = migrate()
     // A fonte nova só fica ativa na troca atômica do estado; uma falha anterior conserva o plano antigo.
     const backupRoot = join(runDir(name), 'task-id-backups'), plans = join(GRAPH_DIR, 'plans')
     for (const directory of [backupRoot, plans]) {
@@ -2458,22 +2535,23 @@ const commands = {
     mkdirSync(backup, { recursive: true })
     for (const file of ['mapping.json', 'state.json', 'original-events.ndjson', 'events.ndjson', 'original-plan.json'])
       if (lstatSync(join(backup, file), { throwIfNoEntry: false })?.isSymbolicLink()) die('A renumeração não aceita diretórios ligados')
-    writeAtomicState(receiptPath, JSON.stringify({ backupId: basename(backup), beforeDigest, mapping }))
+    writeAtomicState(receiptPath, JSON.stringify({ backupId: basename(backup), beforeDigest, mapping, ...(phases ? { order: phaseSelection.order } : {}) }))
     preview.preparedBackup = backup
     writeFileSync(join(backup, 'mapping.json'), JSON.stringify(mapping, null, 2))
     copyFileSync(join(runDir(name), 'state.json'), join(backup, 'state.json'))
     const events = readFileSync(eventsPath(name), 'utf8').split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line))
     writeFileSync(join(backup, 'original-events.ndjson'), events.map(event => JSON.stringify(event)).join('\n') + '\n')
-    writeFileSync(join(backup, 'events.ndjson'), renumberEventHistory(events, mapping).map(event => JSON.stringify(event)).join('\n') + '\n')
+    writeFileSync(join(backup, 'events.ndjson'), renumberEventHistory(events, phases ? {} : mapping, phases ? mapping : {}).map(event => JSON.stringify(event)).join('\n') + '\n')
     copyFileSync(state.plan.source, join(backup, 'original-plan.json'))
     const source = join(plans, `${safeRun(name)}-renumbered-${randomUUID()}.plan.json`)
-    writeAtomicState(source, JSON.stringify(migrated.plan, null, 2))
+    writeAtomicState(source, JSON.stringify(migrated.plan, null, 2), { validateJson: true })
     migrated.state.plan.source = source
     migrated.state.eventLog = `task-id-backups/${basename(backup)}/events.ndjson`
-    migrated.state.taskIdMigrations ??= []
-    migrated.state.taskIdMigrations.push({ mapping, backup, at: new Date().toISOString(), confirmedByUser: true })
+    const migrationKey = phases ? 'phaseIdMigrations' : 'taskIdMigrations'
+    migrated.state[migrationKey] ??= []
+    migrated.state[migrationKey].push({ mapping, backup, at: new Date().toISOString(), confirmedByUser: true, ...(phases ? { order: phaseSelection.order } : {}) })
     // A ativação e seu evento ficam no mesmo log preparado, sem uma janela de sucesso sem auditoria.
-    appendFileSync(join(backup, 'events.ndjson'), JSON.stringify({ at: new Date().toISOString(), type: 'task_renumbered', task: null, mapping, backup }) + '\n')
+    appendFileSync(join(backup, 'events.ndjson'), JSON.stringify({ at: new Date().toISOString(), type: phases ? 'phase_reordered' : 'task_renumbered', task: null, mapping, backup }) + '\n')
     saveState(name, migrated.state)
     reportRenumber({ ...preview, applied: true, message: tr('Renumbering applied; state, source plan and event history were activated'), backup, source })
     try { rmSync(receiptPath) } catch { /* O recibo só é removido depois de emitir a confirmação da ativação. */ }
@@ -2486,6 +2564,8 @@ const commands = {
       throw error
     }
   },
+
+  'reorder-phases'() { return commands['renumber-tasks']() },
 
   'sync-plan'() {
     const name = runName()
@@ -2501,7 +2581,7 @@ const commands = {
     const { plan, source } = readPlan(planPath, state)
     const phaseOrder = phaseOrderChange(state, plan)
     if (phaseOrder) {
-      if (phaseOrder.started.length) die(tr('Cannot reorder phases with execution history: {0}; preserve completed work and change only unexecuted phases', phaseOrder.started.join(', ')))
+      if (phaseOrder.started.length) die(tr('Cannot reorder phases with execution history: {0}; sync-plan and renumber-tasks do not renumber phases; preserve completed work and preview reorder-phases --order <phases> --dry-run', phaseOrder.started.join(', ')))
       if (phaseOrder.conflicts.length) die(tr('Phase order conflicts with dependencies: {0}; adjust deps explicitly in the candidate plan and repeat sync-plan --dry-run; no dependencies were inferred', phaseOrder.conflicts.join('; ')))
       log('[prumo] ' + tr('Phase order: {0}; dependencies remain explicit; execution readiness follows deps, not array position', phaseOrder.order.join(' -> ')))
     }
@@ -2602,6 +2682,7 @@ const commands = {
         (item.tasks ?? [item.id]).map(displayIdentifier).join(', ')))
     if (args['dry-run']) {
       printSyncPlanAudit(changes, diagnostics)
+      if (preserved.length) printPreservedPlanDifferences(changes, storedSource, source)
       if (removed.length) log('[prumo] ' + tr('Removal preview: {0}; no tasks or history were changed', removed.join(', ')))
       log('[prumo] ' + tr('sync-plan dry-run: no changes written; added {0}, updated {1}, metadata {2}',
         added.length, updated.length, metadataUpdated.length))
@@ -2642,9 +2723,10 @@ const commands = {
         })
         printSyncPlanAudit(changes, diagnostics)
       }
-      if (preserved.length)
+      if (preserved.length) {
         log('[prumo] ' + tr('no state changes; plan differs for preserved tasks: {0}. Create a follow-up task; do not rewrite completed history.', preserved.map(displayIdentifier).join(', ')))
-      else log(`[prumo] run "${name}" already matches plan (${Object.keys(state.tasks).length} tasks)`)
+        printPreservedPlanDifferences(changes, storedSource, source)
+      } else log(`[prumo] run "${name}" already matches plan (${Object.keys(state.tasks).length} tasks)`)
       return
     }
 
@@ -2763,6 +2845,7 @@ const commands = {
         !state.tasks[id]?.executionAuthorization)),
     })
     printSyncPlanAudit(changes, diagnostics)
+    if (preserved.length) printPreservedPlanDifferences(changes, storedSource, source)
     if (removed.length) log('[prumo] ' + tr('Removed tasks: {0}; complete records and identifiers remain preserved in removal history', removed.join(', ')))
     log(
       `[prumo] run "${name}" synced: +${added.length}, updated ${updated.length}, metadata ${metadataUpdated.length}, ` +
@@ -3004,15 +3087,23 @@ const commands = {
     const state = loadState(name)
     printPlanningRecoveryWarnings(state)
     await printEngineIdentity()
+    const d = derive(state)
+    log(tr('Tasks (id | phase | state | summary)'))
+    for (const task of Object.values(d)) {
+      const summary = typeof task.summary === 'string' ? task.summary.replace(/\s+/gu, ' ').trim() : ''
+      const characters = Array.from(summary)
+      const short = (characters.length > 160 ? characters.slice(0, 160).join('') + '…' : summary).replace(/\|/g, '\\|')
+      console.log(`  | ${displayIdentifier(task.id)} | ${displayIdentifier(task.phase ?? '-')} | ${tr(task.effective)} | ${short || '-'}`)
+    }
+    log(tr('Use show-contract <task> --full for notes, graph for validation records, and show-check <task> for stored checks'))
     if (state.runPause && !state.runPause.endedAt) log('[prumo] RUN PAUSED: ' + JSON.stringify(state.runPause))
     log('[prumo] model preferences (requested; not verified): ' + JSON.stringify(state.plan.rolePreferences ?? {}))
     log('[prumo] reported tokens/tools (not measured): ' + JSON.stringify(reportedUsageTotals(state)))
-    for (const item of dispatchOwners(state)) if (item.owner.modelDispatches?.length && item.role !== 'review') log('[prumo] ' + item.key + ' dispatches (reported): ' + JSON.stringify(item.owner.modelDispatches))
+    if (args.verbose) for (const item of dispatchOwners(state)) if (item.owner.modelDispatches?.length && item.role !== 'review') log('[prumo] ' + item.key + ' dispatches (reported): ' + JSON.stringify(item.owner.modelDispatches))
     printContractDriftWarnings(state)
     printPendingContractConfirmations(state)
     printPlanningRoundProgress(state)
     printQuestionStatus(state)
-    const d = derive(state)
     const p = progress(state)
     const actions = suggestedActionsByTask(state)
     const scoped = runHasAuthorizationScope(state)
@@ -3053,7 +3144,8 @@ const commands = {
       }
       const action = actions.get(t.id) ?? ''
       const block = blockedTaskNotice(state, t)
-      console.log(`  ${t.id.padEnd(width)}${t.previousTaskId ? ` (${t.previousTaskId} → ${t.id})` : ''}  ${tr(t.effective).padEnd(8)}${agent}${attempts}${wait}${manual}${plan}${auth}${reviewLabel}${block ? `  [${block}]` : ''}${action ? `  → ${action}` : ''}`)
+      const rejected = isReviewRejected(t) ? `  [${reviewRejectionNotice(t)}]` : ''
+      console.log(`  ${t.id.padEnd(width)}${t.previousTaskId ? ` (${t.previousTaskId} → ${t.id})` : ''}  ${tr(t.effective).padEnd(8)}${agent}${attempts}${wait}${manual}${plan}${auth}${reviewLabel}${rejected}${block ? `  [${block}]` : ''}${action ? `  → ${action}` : ''}`)
     }
     for (const phase of state.plan.phases) {
       console.log(`\n${phase.id} — ${phase.title}`)
@@ -3116,6 +3208,7 @@ const commands = {
     )
     log(`[prumo] ${occ.planners.length} in planning — ${Math.max(0, occ.cap - occ.busy.length)} agent slots available for planning`)
     if (occ.reviewers.length) log(`[prumo] awaiting review: ${occ.reviewers.map((t) => `${t.id} @${t.reviewer}`).join(', ')}`)
+    for (const task of occ.reviewers.filter(isReviewRejected)) log('[prumo] ' + reviewRejectionNotice(task))
     if (list.some(task => task.effective === 'ready'))
       log('[prumo] ' + tr('Register start successfully before dispatching an executor. If start fails, do not dispatch. Mark activity-start when work begins and activity-stop before waiting or finishing.'))
   },
@@ -4548,6 +4641,15 @@ const commands = {
         tr('phase {0} discussion continues without skipped task {1}; remaining targets: {2}', phaseDiscussion.phase, id, phaseDiscussion.remainingTargets.join(', '))))
     }
     log(`[prumo] ${id} skipped: ${reason}`)
+    for (const dependent of Object.values(state.tasks).filter(task => task.deps?.includes(t.id))) {
+      if (['done', 'skipped'].includes(dependent.state)) {
+        log('[prumo] ' + tr(dependent.state === 'done' ? 'Dependent {0}: already completed' : 'Dependent {0}: already skipped', dependent.id))
+        continue
+      }
+      const waiting = dependent.deps.filter(dep => !['done', 'skipped'].includes(state.tasks[dep]?.state))
+      log('[prumo] ' + (waiting.length ? tr('Dependent {0}: waiting on dependencies {1}', dependent.id, waiting.join(', ')) :
+        tr('Dependent {0}: dependencies satisfied; discussion, planning and authorization may still apply', dependent.id)))
+    }
     announceNewlyEligiblePhases(name, previouslyEligible, state, 'skip')
     printDispatchSuggestions(state)
   },
@@ -4668,8 +4770,14 @@ function assertMigrationCommandAllowed(state, command) {
   if (legacyAttempt && LEGACY_MIGRATION_CONTINUATIONS.has(command)) return
   die('migration is blocked by unsafe in-flight planning; only legacy attempt continuation, read-only commands, sync-plan and note are allowed')
 }
+function atomicWriteFailure(error) {
+  if (error?.code === 'ENOSPC' && error.prumoAtomicFile)
+    die(tr('Insufficient disk space; the original file was not replaced: {0}. Free space and retry.', JSON.stringify(error.prumoAtomicFile)))
+  throw error
+}
+try {
 if (cmd === 'set-agent-limit') agentLimitChange()
-if (!['init', 'runs', 'migrate', 'sync-plan', 'renumber-tasks'].includes(cmd)) {
+if (!['init', 'runs', 'migrate', 'sync-plan', 'renumber-tasks', 'reorder-phases'].includes(cmd)) {
   const name = runName()
   const initialState = loadState(name)
   const aliases = initialState.taskIdAliases ?? {}
@@ -4688,9 +4796,10 @@ if (!['init', 'runs', 'migrate', 'sync-plan', 'renumber-tasks'].includes(cmd)) {
     } else migrateState(name, { quiet: true })
   })
 }
+} catch (error) { atomicWriteFailure(error) }
 const BLOCKED_ACTIONS = new Set(['begin-discussion', 'finish-discussion', 'skip-discussion', 'plan-task', 'finish-planning', 'skip-planning', 'start', 'progress', 'review', 'review-progress', 'validate', 'done', 'fail', 'retry', 'skip', 'activity-start', 'pause-replanning'])
 function runCommand() {
-  if (cmd === 'renumber-tasks') return commands[cmd]()
+  if (['renumber-tasks', 'reorder-phases'].includes(cmd)) return commands[cmd]()
   if (['start', 'review', 'validate', 'done'].includes(cmd)) {
     const state = loadState(runName()), task = state.tasks[args._[0]]
     const phase = state.phaseWorkflows?.[task?.phase]
@@ -4703,6 +4812,8 @@ function runCommand() {
   if (paused && !paused.endedAt && /^(?:begin-|plan-|finish-|skip-|start$|review$|retry$|unblock$|activity-start$|validate$|done$|progress$|review-progress$)/.test(cmd)) die('Run is paused; resume-run explicitly. External harness processes are not interrupted.')
   return commands[cmd]()
 }
-if (cmd === 'migrate' && args.check !== true) withLock(runName(), runCommand)
-else if (READ_ONLY.has(cmd) || cmd === 'validate' || cmd === 'migrate' || cmd === 'sync-plan' && args['dry-run'] || cmd === 'renumber-tasks' && args['dry-run']) await runCommand()
-else withLock(runName(), runCommand)
+try {
+  if (cmd === 'migrate' && args.check !== true) withLock(runName(), runCommand)
+  else if (READ_ONLY.has(cmd) || cmd === 'validate' || cmd === 'migrate' || cmd === 'sync-plan' && args['dry-run'] || ['renumber-tasks', 'reorder-phases'].includes(cmd) && args['dry-run']) await runCommand()
+  else withLock(runName(), runCommand)
+} catch (error) { atomicWriteFailure(error) }

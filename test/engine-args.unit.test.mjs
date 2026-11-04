@@ -1,9 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseEngineArgs, engineCommandHelp } from '../scripts/engine-args.mjs'
+import { parseEngineArgs, engineCommandHelp, engineGeneralHelp } from '../scripts/engine-args.mjs'
 
 // Lista do contrato público, independente da tabela usada pelo parser.
-const commands = ['init', 'migrate', 'sync-plan', 'status', 'ready', 'graph', 'runs', 'show-contract', 'show-check', 'authorize',
+const commands = ['init', 'migrate', 'sync-plan', 'reorder-phases', 'status', 'ready', 'graph', 'runs', 'show-contract', 'show-check', 'authorize',
   'begin-phase-discussion', 'skip-phase-discussion', 'finish-phase-discussion', 'plan-phase', 'skip-phase-planning', 'finish-phase-planning',
   'begin-discussion', 'skip-discussion', 'finish-discussion', 'plan-task', 'skip-planning', 'finish-planning', 'start', 'progress',
   'review', 'review-progress', 'refresh-contract', 'validate', 'done', 'fail', 'retry', 'block', 'unblock', 'skip', 'note',
@@ -59,7 +59,12 @@ test('init preserva a exceção explícita para sobreposição aprovada', () => 
   assert.equal(parseEngineArgs('init', ['--allow-overlap'])['allow-overlap'], true)
 })
 
-for (const command of commands.filter(command => command !== 'sync-plan')) {
+test('status detalhado é somente uma opção de consulta', () => {
+  assert.equal(parseEngineArgs('status', ['--verbose']).verbose, true)
+  assert.throws(() => parseEngineArgs('ready', ['--verbose']), /Unknown option/)
+})
+
+for (const command of commands.filter(command => !['sync-plan', 'reorder-phases'].includes(command))) {
   test(`${command}: --dry-run sem suporte não deve executar gravações reais`, () => {
     assert.throws(() => parseEngineArgs(command, ['--dry-run']), /Unknown option/)
   })
@@ -103,6 +108,10 @@ test('ajuda lista opções reais sem transformar consulta em ação', () => {
   assert.ok(engineCommandHelp('start').flags.includes('--model <value>'))
   assert.throws(() => parseEngineArgs('show', []), /available commands:.*show-contract.*review-progress.*use <command> --help/)
   assert.throws(() => parseEngineArgs('validate', ['T1', '--agent', 'wrong']), /uses the reviewer recorded by review.*manual inspection uses validationMode/)
+  const general = engineGeneralHelp()
+  assert.equal(new Set(general.map(item => item.command)).size, general.length)
+  for (const command of commands) assert.ok(general.some(item => item.command === command))
+  for (const item of general) assert.ok(typeof item.description === 'string' && item.description.trim(), item.command)
 })
 
 

@@ -4,6 +4,7 @@ import { discoveryDigest, taskPlanDigest, phasePlanningContext, planningContext,
 
 const references = new Set(['id', 'task', 'taskId', 'taskIds', 'tasks', 'targets', 'originalTargets', 'activeTargets', 'queuedTargets', 'contextTargets', 'members', 'deps', 'blockedBy', 'planningBlockedBy', 'beforeTask', 'byTask', 'sourceTask', 'freedBy', 'next', 'added', 'updated', 'preserved', 'metadataUpdated', 'revokedAuthorizationTasks', 'deferredToExecutor'])
 const dictionaries = new Set(['tasks', 'workers', 'requiredInputs', 'assignments'])
+const phaseReferences = new Set(['phase', 'phaseId', 'beforePhase'])
 const questionKeys = new Set(['questionRef', 'questionRefs', 'resolvesQuestion', 'ref'])
 const bindingKey = key => /digest|context|scope/i.test(key)
 
@@ -63,16 +64,30 @@ function referenceText(value, key, mapping) {
   return value
 }
 
-export function renumberEventHistory(events, mapping) {
+function phaseReferenceText(value, key, mapping) {
+  const remap = id => Object.hasOwn(mapping, id) ? mapping[id] : id
+  if (phaseReferences.has(key)) return remap(value)
+  if (key === 'scope' && value.startsWith('phase:')) return 'phase:' + remap(value.slice(6))
+  return value
+}
+
+export function renumberEventHistory(events, mapping, phaseMapping = {}) {
+  const remapPhase = id => Object.hasOwn(phaseMapping, id) ? phaseMapping[id] : id
   const visit = (value, key = '') => {
-    if (typeof value === 'string') return referenceText(value, key, mapping)
+    if (typeof value === 'string') return phaseReferenceText(referenceText(value, key, mapping), key, phaseMapping)
     if (Array.isArray(value)) return value.map(item => visit(item, key))
     if (!value || typeof value !== 'object') return value
     return Object.fromEntries(Object.entries(value).map(([name, item]) => [name,
-      visit(item, ['before', 'after'].includes(name) && typeof value.field === 'string' ? value.field : name)]))
+      name === 'id' && value.scope === 'phase' && typeof item === 'string' ? remapPhase(item) :
+        key === 'phaseOrder' && ['previous', 'order'].includes(name) && Array.isArray(item)
+          ? item.map(remapPhase) :
+          visit(item, ['before', 'after'].includes(name) && typeof value.field === 'string' ? value.field : name)]))
   }
   return events.map(event => ({ ...visit(event), ...(event.task && Object.hasOwn(mapping, event.task)
-    ? { originalTask: event.originalTask ?? event.task } : {}) }))
+    ? { originalTask: event.originalTask ?? event.task } : {}),
+    ...(event.phase && Object.hasOwn(phaseMapping, event.phase) && phaseMapping[event.phase] !== event.phase
+      ? { originalPhase: event.originalPhase ?? event.phase } : {}),
+    ...(event.phaseOrder && Object.keys(phaseMapping).length ? { originalPhaseOrder: event.originalPhaseOrder ?? event.phaseOrder } : {}) }))
 }
 
 export function parseTaskMapping(value) {
@@ -88,9 +103,19 @@ export function parseTaskMapping(value) {
   return mapping
 }
 
+export function parsePhaseOrder(value, phases) {
+  requireRenumber(typeof value === 'string', 'Provide --order F1,F2,... using every current phase')
+  const order = value.split(',').map(id => id.trim())
+  const existing = phases.map(phase => phase.id)
+  requireRenumber(order.length === existing.length && new Set(order).size === order.length &&
+    order.every(id => existing.includes(id)), 'Phase order must list every current phase exactly once')
+  return { order, mapping: Object.fromEntries(order.map((id, index) => [id, `F${index + 1}`])) }
+}
+
 // Somente referências tipadas mudam; texto livre e artefatos de origem permanecem históricos.
-export function renumberTasks(original, originalPlan, mapping, { contextDigests = () => [] } = {}) {
+export function renumberTasks(original, originalPlan, mapping, { contextDigests = () => [], phaseMapping = {}, phaseOrder = null } = {}) {
   const remap = id => Object.hasOwn(mapping, id) ? mapping[id] : id
+  const remapPhase = id => Object.hasOwn(phaseMapping, id) ? phaseMapping[id] : id
   const ids = Object.keys(original.tasks)
   for (const [from, to] of Object.entries(mapping)) {
     requireRenumber(ids.includes(from), 'Missing task: {0}', from)
@@ -100,6 +125,14 @@ export function renumberTasks(original, originalPlan, mapping, { contextDigests 
   requireRenumber(new Set(ids.map(remap)).size === ids.length, 'Renumbering cannot merge tasks')
   const planIds = new Set(originalPlan.tasks.map(task => task.id))
   requireRenumber(planIds.size === ids.length && ids.every(id => planIds.has(id)), 'The source plan must contain the same tasks')
+  if (phaseOrder) {
+    const phaseIds = (original.plan.phases ?? []).map(phase => phase.id)
+    requireRenumber(Array.isArray(phaseOrder) && phaseOrder.length === phaseIds.length &&
+      new Set(phaseOrder).size === phaseOrder.length && phaseOrder.every(id => phaseIds.includes(id)) &&
+      phaseOrder.every((id, index) => phaseMapping[id] === `F${index + 1}`) &&
+      Object.keys(phaseMapping).length === phaseIds.length, 'Phase order must list every current phase exactly once')
+    requireRenumber(JSON.stringify(original.plan.phases ?? []) === JSON.stringify(originalPlan.phases ?? []), 'Synchronize the phase definitions before reordering')
+  } else requireRenumber(!Object.keys(phaseMapping).length, 'Phase order must list every current phase exactly once')
   const blockers = renumberBlockers(original)
   if (blockers.length) {
     const error = new RenumberError('Renumbering is blocked by open work')
@@ -107,7 +140,7 @@ export function renumberTasks(original, originalPlan, mapping, { contextDigests 
     throw error
   }
   const pairs = []
-  const text = (value, key) => referenceText(value, key, mapping)
+  const text = (value, key) => phaseReferenceText(referenceText(value, key, mapping), key, phaseMapping)
   const copy = (value, key = '') => {
     if (typeof value === 'string') return text(value, key)
     if (!value || typeof value !== 'object') return value
@@ -115,12 +148,23 @@ export function renumberTasks(original, originalPlan, mapping, { contextDigests 
     pairs.push([value, result])
     for (const name of Object.getOwnPropertyNames(value)) {
       if (Array.isArray(value) && name === 'length') continue
-      const target = dictionaries.has(key) ? remap(name) : name
-      result[target] = copy(value[name], Array.isArray(value) ? key : name)
+      const target = dictionaries.has(key) ? remap(name) : key === 'phaseWorkflows' ? remapPhase(name) : name
+      result[target] = name === 'id' && value.scope === 'phase' && typeof value[name] === 'string'
+        ? remapPhase(value[name]) : copy(value[name], Array.isArray(value) ? key : name)
     }
     return result
   }
   const state = copy(original), plan = copy(originalPlan)
+  if (phaseOrder) {
+    const reorder = phases => phaseOrder.map(id => {
+      const index = phases.findIndex(phase => phase.id === id)
+      requireRenumber(index !== -1, 'Missing phase: {0}', id)
+      return { ...copy(phases[index]), id: remapPhase(id) }
+    })
+    state.plan.phases = reorder(original.plan.phases)
+    plan.phases = reorder(originalPlan.phases)
+    for (const [id, phase] of Object.entries(state.phaseWorkflows ?? {})) phase.id = id
+  }
   // Aliases que voltaram a ser IDs reais não podem selecionar outra entrega por acidente.
   state.taskIdAliases = Object.fromEntries(Object.entries(original.taskIdAliases ?? {})
     .filter(([from]) => !Object.hasOwn(state.tasks, from)).map(([from, to]) => [from, remap(to)]))
@@ -178,7 +222,7 @@ export function renumberTasks(original, originalPlan, mapping, { contextDigests 
       if (/context$/i.test(key) && value.startsWith('[')) {
         // Contextos de fase são tuplas JSON, não texto livre nem comandos.
         const context = JSON.parse(value)
-        after[key] = JSON.stringify([context[0], context[1], context[2], context[3],
+        after[key] = JSON.stringify([context[0], context[1], context[2], remapPhase(context[3]),
           context[4].map(([id, digest]) => [remap(id), digests.get(digest) ?? digest]).sort()])
       } else after[key] = digests.get(value) ?? text(value, key)
     }

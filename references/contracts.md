@@ -56,6 +56,14 @@ Keep these three things distinct, using the existing plan format:
 - **Executable proof:** `run` performs the corresponding check against the current delivery.
   A build proves compilation; writing a behavioral promise beside it does not prove that promise.
 
+Quando um critério afirmar um comportamento do código, marque o item correspondente de
+`validation` ou `verification` com `codeClaim: true` e informe `codeReference` com `file`
+e `line` (número inteiro positivo), por exemplo
+`{"codeClaim": true, "codeReference": {"file": "src/handler.cs", "line": 42}}`.
+O Prumo avisa quando uma marcação não tem arquivo ou linha; itens sem marcação não são
+identificados automaticamente. A referência indica onde conferir a afirmação e não comprova
+sozinha que o comportamento descrito é verdadeiro.
+
 When an approved change replaces a criterion, replace the obsolete criterion rather than
 keeping contradictory requirements active. Do not create `echo` steps to store context,
 historical contracts or instructions. For legitimate inspection, a nonempty prose `validation`

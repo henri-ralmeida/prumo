@@ -7,6 +7,25 @@ import { join } from 'node:path'
 import { fixture, check } from './fixtures/approved-graph.mjs'
 import { validationProjectMismatch } from '../scripts/task-scope.mjs'
 
+for (const lang of ['en', 'pt-BR']) test(`planejamento sinaliza referência ausente somente em critério de código marcado em ${lang}`, t => {
+  const f = fixture(t, { phase: true, lang })
+  f.ok('begin-phase-discussion', 'F1'); f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('plan-phase', 'F1', '--agent', 'planner', '--plan-dir', f.plans)
+  f.artifacts('F1', plan => {
+    plan.verification = [
+      { criterion: 'O tratamento segue o comportamento observado', check: 1, codeClaim: true, codeReference: { file: 'src/handler.cs' } },
+      { criterion: 'O tratamento confere com a origem', check: 1, codeClaim: true, codeReference: { file: 'src/handler.cs', line: 212 } },
+      { criterion: 'A entrega atende ao resultado aprovado', check: 1 },
+    ]
+  })
+  const output = f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  assert.match(output, /T1.*verification #1.*codeReference\.line/)
+  assert.doesNotMatch(output, /verification #1.*codeReference\.file/)
+  assert.doesNotMatch(output, /verification #2.*codeReference/)
+  assert.doesNotMatch(output, /verification #3.*codeReference/)
+  assert.equal(f.state().tasks.T1.taskPlan.verification.length, 3)
+})
+
 test('plan-phase imprime JSON copiavel com vinculo da rodada e entradas pendentes por tarefa', t => {
   const f = fixture(t, { phase: true, tasks: [{ id: 'T1' }, { id: 'T2', deps: ['T1'] }] })
   f.ok('begin-phase-discussion', 'F1')
