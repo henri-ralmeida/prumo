@@ -2,6 +2,11 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.11.12 — 2026-11-05
+
+- Explique qual comando de revisão aceita --agent e aponte o último passo do review-progress para validate --evidence.
+- Mostre uma condição de tempo informativa e opcional por tarefa em ready e status, sem alterar o contrato da tarefa.
+
 ## 2.11.11 — 2026-11-04
 
 - Esclareça o workspace, a seleção da execução e o local de armazenamento; mostre revisões reprovadas e tarefas dependentes liberadas ao pular uma tarefa.

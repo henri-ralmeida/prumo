@@ -1,4 +1,15 @@
 {
+  "2.11.12": {
+    "en": [
+      {
+        "title": "Improved — Review guidance and task timing",
+        "items": [
+          "Explain which review command takes --agent and point the last review-progress step to validate --evidence",
+          "Show an optional informational time condition per task in ready and status, without changing the task contract"
+        ]
+      }
+    ]
+  },
   "2.11.11": {
     "en": [
       {

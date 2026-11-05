@@ -2144,5 +2144,8 @@
   "{0} discussion {1} already closed; execution pauses and authorization are preserved": "Discussão {1} de {0} já encerrada; pausas de execução e autorização foram preservadas",
   "review-progress requires --agent <reviewer>; validate does not accept --agent because it uses the reviewer recorded by review": "review-progress exige --agent <revisor>; validate não aceita --agent porque usa o revisor registrado por review",
   "All criteria were traversed for {0}; record the independent observations with validate {0} --ok|--failed --evidence <observations> (validate takes no --agent)": "Todos os critérios de {0} foram percorridos; registre as observações independentes com validate {0} --ok|--failed --evidence <observações> (validate não recebe --agent)",
-  "time condition": "condição de tempo"
+  "time condition": "condição de tempo",
+  "Improved — Review guidance and task timing": "Melhorado — Orientação de revisão e prazos de tarefas",
+  "Explain which review command takes --agent and point the last review-progress step to validate --evidence": "Explique qual comando de revisão aceita --agent e aponte o último passo do review-progress para validate --evidence",
+  "Show an optional informational time condition per task in ready and status, without changing the task contract": "Mostre uma condição de tempo informativa e opcional por tarefa em ready e status, sem alterar o contrato da tarefa"
 }
