@@ -231,6 +231,7 @@ and a valid validation contract; phase planning refines each task's execution wi
 | `label`         | string                        | —         | Optional business label: 1–3 words, at most 24 characters; display only                      |
 | `summary`       | string                        | —         | Required for new tasks added through `sync-plan`: 1–2 sentences stating the expected result and why it matters; optional in old stored tasks; display only |
 | `validationSummary` | string                     | —         | Optional acceptance sentence for concise task views; it does not replace `validation`       |
+| `timeCondition` | string                        | —         | Optional time condition shown by `ready` and `status` (for example `not before 11/09`); informational, it does not block `start` or `done` |
 | `manualEstimate` | number \| string            | —         | Optional estimate for doing the task by hand: whole minutes (`45`) or `4h`, `4h30`, `90m`, `45min`, `PT4H30M`; stored as whole minutes; metadata only |
 | `phase`         | string                        | —         | Id of a `phases[]` entry; groups the task in status and dashboard swimlanes                   |
 | `deps`          | string[]                      | `[]`      | Task ids that must be `done`/`skipped` first — the ENTIRE scheduling model                    |
@@ -249,7 +250,7 @@ and a valid validation contract; phase planning refines each task's execution wi
 its validation can prove, so `sync-plan` treats it as a contract change and the task needs current planning.
 Repeated resources are normalized to one entry, so listing a resource twice is not reported as drift.
 
-`label`, `summary`, `validationSummary` and `manualEstimate` are metadata. Changing only them through
+`label`, `summary`, `validationSummary`, `timeCondition` and `manualEstimate` are metadata. Changing only them through
 `sync-plan` updates the presentation (`metadataUpdated` in the sync event) without changing the contract or
 invalidating planning. `manualEstimate` is a human estimate for the gains view, never a measurement; the
 state keeps it as whole minutes, and invalid values (zero, negative, fractional or unreadable) are refused.

@@ -671,3 +671,73 @@ syncBuiltinESMExports()
     assert.deepEqual(f.snapshot(), before)
   }
 })
+
+for (const lang of ['en', 'pt-BR']) test(`review-progress informa onde registrar a evidência e quem aceita --agent em ${lang}`, t => {
+  // O revisor só precisa descobrir, sem ler a ajuda de cada comando, que o progresso é contador
+  // e que a evidência da inspeção vai em validate --evidence, comando que não recebe --agent.
+  const f = fixture(t); f.init(); f.prepare()
+  f.ok('start', 'T1', '--agent', 'executor')
+  f.ok('review', 'T1', '--agent', 'reviewer')
+  const reviewHelp = f.command('review-progress', '--help', '--lang', lang).output
+  assert.match(reviewHelp, /validate[^\n]*--evidence/)
+  assert.match(reviewHelp, /validate[^\n]*--agent/)
+  const validateHelp = f.command('validate', '--help', '--lang', lang).output
+  assert.match(validateHelp, /--agent/)
+  const done = f.command('review-progress', 'T1', '--step', '1', '--agent', 'reviewer', '--lang', lang)
+  assert.equal(done.status, 0, done.output)
+  assert.match(done.output, /validate T1 --ok\|--failed --evidence/)
+  assert.doesNotMatch(done.output.split('\n').find(line => /validate T1/.test(line)) ?? '', /--agent/)
+  const before = f.snapshot()
+  const repeated = f.command('review-progress', 'T1', '--step', '1', '--agent', 'reviewer', '--lang', lang)
+  assert.match(repeated.output, /validate T1 --ok\|--failed --evidence/)
+  assert.deepEqual(f.snapshot(), before)
+})
+
+for (const lang of ['en', 'pt-BR']) test(`ready e status mostram a condição de tempo informada no plano em ${lang}`, t => {
+  // Uma tarefa que só pode fechar após um prazo (por exemplo, medição depois de dias em produção)
+  // precisa exibir essa condição ao lado dela; a condição é informativa e não bloqueia nenhuma transição.
+  const f = fixture(t)
+  f.plan.tasks[0].timeCondition = 'não antes de 09/11'
+  writeFileSync(f.planPath, JSON.stringify(f.plan)); f.init(); f.prepare()
+  const ready = f.command('ready', '--lang', lang)
+  assert.equal(ready.status, 0, ready.output)
+  assert.match(ready.output, /T1[^\n]*não antes de 09\/11/)
+  const status = f.command('status', '--lang', lang)
+  assert.equal(status.status, 0, status.output)
+  assert.match(status.output, /T1[^\n]*não antes de 09\/11/)
+  assert.equal(f.state().tasks.T1.timeCondition, 'não antes de 09/11')
+  // Informativa: a tarefa continua iniciável antes da data e a condição some do status ao concluir.
+  f.ok('start', 'T1', '--agent', 'executor'); f.ok('review', 'T1', '--agent', 'reviewer')
+  f.ok('review-progress', 'T1', '--step', '1', '--agent', 'reviewer')
+  f.ok('validate', 'T1', '--ok', '--evidence', 'Comportamento conferido', '--cwd', f.root); f.ok('done', 'T1')
+  const rows = f.command('status', '--lang', lang).output.split(/\r?\n/u).filter(line => /^\s*T1\b/u.test(line))
+  assert.ok(rows.length > 0)
+  assert.doesNotMatch(rows.join(' '), /09\/11/)
+})
+
+test('condição de tempo vazia é recusada e a ausência do campo não altera ready nem status', t => {
+  const invalid = fixture(t)
+  invalid.plan.tasks[0].timeCondition = '   '
+  writeFileSync(invalid.planPath, JSON.stringify(invalid.plan))
+  const refused = invalid.command('init', '--plan', invalid.planPath, '--run', 'example')
+  assert.equal(refused.status, 1)
+  assert.match(refused.output, /timeCondition/)
+  const plain = fixture(t); plain.init(); plain.prepare()
+  assert.doesNotMatch(plain.ok('ready').output, /⏱|time condition/i)
+  assert.doesNotMatch(plain.ok('status').output, /⏱|time condition/i)
+})
+
+test('sync-plan atualiza só a condição de tempo, sem alterar o contrato da tarefa', t => {
+  const f = fixture(t); f.init()
+  const revisionBefore = f.state().tasks.T1.contractRevision
+  f.plan.tasks[0].timeCondition = 'após 3 dias úteis em produção'
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.ok('sync-plan', '--plan', f.planPath)
+  const task = f.state().tasks.T1
+  assert.equal(task.timeCondition, 'após 3 dias úteis em produção')
+  assert.equal(task.contractRevision, revisionBefore)
+  delete f.plan.tasks[0].timeCondition
+  writeFileSync(f.planPath, JSON.stringify(f.plan))
+  f.ok('sync-plan', '--plan', f.planPath)
+  assert.equal(f.state().tasks.T1.timeCondition, undefined)
+})

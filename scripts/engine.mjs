@@ -125,10 +125,12 @@ if (args?.help && !(cmd === 'review-progress' && args._[0])) {
   log(tr('Options: {0}', help.flags.join(' ')))
   if (cmd === 'validate') {
     log(tr('validate uses the reviewer recorded by review; --evidence records independent observations, not a progress counter'))
+    printReviewAgentGuidance()
     log(tr('validate --ok executes the approved validation commands in their configured environment; --failed only records a refusal. Inspect commands and timeouts with show-contract <task> --full'))
   }
   if (cmd === 'review-progress') {
     log(tr('Read the numbered current criteria with show-contract <task>; progress is a reviewer report, not proof of inspection or approval'))
+    printReviewAgentGuidance()
     printReviewValidationGuidance('<task>')
   }
   process.exit(0)
@@ -170,6 +172,7 @@ if (cmd === 'review-progress' && args.help) {
   log(tr('Usage: review-progress [<task>] --help | review-progress <task> --step <1-based index> --agent <reviewer> [--run <name>]'))
   log(tr('Options: {0}', engineCommandHelp(cmd).flags.join(' ')))
   log(tr('Read the numbered current criteria with show-contract <task>; progress is a reviewer report, not proof of inspection or approval'))
+  printReviewAgentGuidance()
   printReviewValidationGuidance(args._[0])
   if (args._[0]) printReviewCriteria(getTask(loadState(runName()), args._[0]))
   process.exit(0)
@@ -544,6 +547,14 @@ function printReviewCriteria(task) {
 
 function printReviewValidationGuidance(id) {
   log('[prumo] ' + tr('After inspecting the current delivery, use validate {0} --ok --evidence <observations> [--cwd <project>]. Evidence records what the reviewer inspected; no flag or progress counter proves inspection automatically, and validation still enforces the current contract', id))
+}
+
+function printReviewAgentGuidance() {
+  log(tr('review-progress requires --agent <reviewer>; validate does not accept --agent because it uses the reviewer recorded by review'))
+}
+
+function printReviewCompletionGuidance(id) {
+  log('[prumo] ' + tr('All criteria were traversed for {0}; record the independent observations with validate {0} --ok|--failed --evidence <observations> (validate takes no --agent)', id))
 }
 
 function reviewRejectionNotice(task) {
@@ -993,7 +1004,7 @@ function validatePlan(plan, allowOverlap = false, historical = new Set(), defaul
     try { assertExplicitScope(t, historical.has(t.id) ? undefined : plan.scopePolicy) } catch (error) { die(tr('task {0}: {1}', t.id, tr(error.message))) }
     safeId(t.id)
     if (ids.has(t.id)) die(`duplicate task id ${t.id}`)
-    for (const field of ['summary', 'validationSummary'])
+    for (const field of ['summary', 'validationSummary', 'timeCondition'])
       if (t[field] !== undefined && (typeof t[field] !== 'string' || !t[field].trim()))
         die(tr('task {0} {1} must be a nonempty string when present', t.id, field))
     if (t.label !== undefined) {
@@ -1186,6 +1197,7 @@ function taskFromPlan(t) {
     label: t.label,
     summary: t.summary,
     validationSummary: t.validationSummary,
+    timeCondition: t.timeCondition,
     manualEstimate: t.manualEstimate === undefined ? undefined : manualEstimateMinutes(t.manualEstimate),
     deps: t.deps ?? [],
     validation: t.validation ?? '',
@@ -2610,7 +2622,7 @@ const commands = {
         continue
       }
       const next = taskFromPlan(planTask)
-      const metadataChanges = ['label', 'summary', 'validationSummary', 'manualEstimate'].filter(
+      const metadataChanges = ['label', 'summary', 'validationSummary', 'timeCondition', 'manualEstimate'].filter(
         field => JSON.stringify(current[field]) !== JSON.stringify(next[field]))
       for (const field of metadataChanges) {
         if (next[field] === undefined) delete current[field]
@@ -2948,7 +2960,7 @@ const commands = {
         task: Object.fromEntries(Object.entries(value.task ?? {}).filter(([field]) => taskFields.has(field))),
       }
     }
-    const display = Object.fromEntries(['label', 'summary', 'validationSummary'].filter(field => task[field] !== undefined).map(field => [field, task[field]]))
+    const display = Object.fromEntries(['label', 'summary', 'validationSummary', 'timeCondition'].filter(field => task[field] !== undefined).map(field => [field, task[field]]))
     console.log(JSON.stringify({ task: id, source, ...(changedAt ? { changedAt } : {}),
       ...(args.full ? { validationChecks: validationContract(task).steps.map((step, index) => ({
         check: index + 1, kind: step.kind ?? 'static', run: step.run, timeoutMs: step.timeoutMs ?? 600000,
@@ -3145,7 +3157,8 @@ const commands = {
       const action = actions.get(t.id) ?? ''
       const block = blockedTaskNotice(state, t)
       const rejected = isReviewRejected(t) ? `  [${reviewRejectionNotice(t)}]` : ''
-      console.log(`  ${t.id.padEnd(width)}${t.previousTaskId ? ` (${t.previousTaskId} → ${t.id})` : ''}  ${tr(t.effective).padEnd(8)}${agent}${attempts}${wait}${manual}${plan}${auth}${reviewLabel}${rejected}${block ? `  [${block}]` : ''}${action ? `  → ${action}` : ''}`)
+      const timing = t.timeCondition && !['done', 'skipped'].includes(t.state) ? `  [${tr('time condition')}: ${t.timeCondition}]` : ''
+      console.log(`  ${t.id.padEnd(width)}${t.previousTaskId ? ` (${t.previousTaskId} → ${t.id})` : ''}  ${tr(t.effective).padEnd(8)}${agent}${attempts}${wait}${manual}${plan}${auth}${reviewLabel}${rejected}${timing}${block ? `  [${block}]` : ''}${action ? `  → ${action}` : ''}`)
     }
     for (const phase of state.plan.phases) {
       console.log(`\n${phase.id} — ${phase.title}`)
@@ -3198,7 +3211,8 @@ const commands = {
       const auth = t.executionAuthorization ? tr('authorized {0}', t.executionAuthorization.mode) :
         tr(scoped ? 'authorization required' : 'no authorization scope recorded')
       const action = actions.get(t.id)
-      console.log(`${t.id}  ${t.title}  [${tr(t.effective)} · ${auth}]  → ${action}`)
+      const timing = t.timeCondition ? `  [${tr('time condition')}: ${t.timeCondition}]` : ''
+      console.log(`${t.id}  ${t.title}  [${tr(t.effective)} · ${auth}]${timing}  → ${action}`)
       if (action?.startsWith(`start ${t.id} `))
         log('[prumo] ' + tr('run before dispatch: node "{0}" {1} --run "{2}"', fileURLToPath(import.meta.url), action, state.run))
     }
@@ -4125,6 +4139,7 @@ const commands = {
     }
     if (step <= progress.traversed) {
       log(`[prumo] ${id} review progress already reports ${progress.traversed}/${progress.total} criteria traversed; no state change; reviewer report is not proof of inspection or approval`)
+      if (progress.traversed === progress.total) printReviewCompletionGuidance(id)
       return
     }
     if (step !== progress.current)
@@ -4137,9 +4152,10 @@ const commands = {
     emit(name, 'task_review_progress', id, { reviewer: agent, attempt: t.attempts.length,
       current: progress.current, total: progress.total, traversed: progress.traversed, basis: progress.basis,
       selfReported: true })
-    if (progress.traversed === progress.total)
+    if (progress.traversed === progress.total) {
       log(`[prumo] ${id} review progress reports ${progress.traversed}/${progress.total} criteria traversed; reviewer report is not proof of inspection or approval`)
-    else log(`[prumo] ${id} review progress reports ${progress.traversed}/${progress.total} criteria traversed; next criterion ${progress.current}/${progress.total}; reviewer report is not proof of inspection`)
+      printReviewCompletionGuidance(id)
+    } else log(`[prumo] ${id} review progress reports ${progress.traversed}/${progress.total} criteria traversed; next criterion ${progress.current}/${progress.total}; reviewer report is not proof of inspection`)
   },
 
   'refresh-contract'() {

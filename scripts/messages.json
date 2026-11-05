@@ -2141,5 +2141,8 @@
   "Record a task note": "Registra uma nota da tarefa",
   "Start an activity interval": "Inicia um intervalo de atividade",
   "Stop an activity interval": "Encerra um intervalo de atividade",
-  "{0} discussion {1} already closed; execution pauses and authorization are preserved": "Discussão {1} de {0} já encerrada; pausas de execução e autorização foram preservadas"
+  "{0} discussion {1} already closed; execution pauses and authorization are preserved": "Discussão {1} de {0} já encerrada; pausas de execução e autorização foram preservadas",
+  "review-progress requires --agent <reviewer>; validate does not accept --agent because it uses the reviewer recorded by review": "review-progress exige --agent <revisor>; validate não aceita --agent porque usa o revisor registrado por review",
+  "All criteria were traversed for {0}; record the independent observations with validate {0} --ok|--failed --evidence <observations> (validate takes no --agent)": "Todos os critérios de {0} foram percorridos; registre as observações independentes com validate {0} --ok|--failed --evidence <observações> (validate não recebe --agent)",
+  "time condition": "condição de tempo"
 }
