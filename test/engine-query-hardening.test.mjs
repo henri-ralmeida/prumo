@@ -58,6 +58,16 @@ function fixture(t, { copy = false } = {}) {
   return { home, root, graph, run, state, plan, source, statePath, packageRoot, save, cli, query, snapshot }
 }
 
+test('consulta de contrato interpreta etapa legada sem tipo como estática sem executar a validação', t => {
+  const f = fixture(t)
+  writeFileSync(join(f.home, 'contrato-pendente.cjs'), "require('node:fs').writeFileSync('executou.txt', 'executado')\n")
+  f.state.tasks.T1.validation = [{ run: 'node contrato-pendente.cjs', expect: 'Conferir o resultado contratado', cwd: f.home }]
+  f.save(f.state)
+  const contract = JSON.parse(f.query(['show-contract', 'T1', '--full']).stdout)
+  assert.deepEqual(contract.validationChecks, [{ check: 1, kind: 'static', run: 'node contrato-pendente.cjs', timeoutMs: 600000 }])
+  assert.equal(existsSync(join(f.home, 'executou.txt')), false)
+})
+
 test('consultas de contrato exibem diferenças atuais e históricas sem reescrever contratos desconhecidos', t => {
   const f = fixture(t)
   const read = (...args) => JSON.parse(f.query(['show-contract', 'T1', ...args]).stdout)
@@ -226,10 +236,12 @@ test('revisão mantém progresso desconhecido para contratos legados e recusa re
     assert.equal(persisted.tasks.T1.state, 'reviewing')
     assert.equal(persisted.tasks.T1.attempts[0].reviewProgress, undefined)
     assert.equal(persisted.unknown.preserve, true)
+    assert.match(f.query(['status']).stdout, /review criteria reported: unknown; no structured criteria/)
   }
   f.state.tasks.T1 = task({ state: 'reviewing', reviewer: 'reviewer', attempts: [],
     validation: [{ kind: 'functional', run: 'node --version', expect: 'Versão disponível' }] })
   f.save(f.state)
+  assert.match(f.query(['status']).stdout, /review criteria reported: 0\/1/)
   f.query(['review-progress', 'T1', '--step', '1', '--agent', 'reviewer'], 1)
   f.state.tasks.T1 = task({ state: 'running', agent: 'executor', attempts: [] }); f.save(f.state)
   f.query(['review', 'T1', '--agent', 'reviewer'], 1)

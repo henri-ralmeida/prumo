@@ -3,10 +3,11 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileS
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import coverage from 'istanbul-lib-coverage'
+import { parse } from 'acorn'
 import { prepareDashboardCoverageSource } from '../test/fixtures/dashboard-vm.mjs'
 
-export function sourceManifest(root) {
-  const sources = {}
+function inspectSources(root) {
+  const sources = {}, contents = {}
   const visit = (directory, prefix) => {
     if (!existsSync(directory)) return
     if (lstatSync(directory).isSymbolicLink()) throw new Error(`Fonte ligado nao e aceito: ${prefix}`)
@@ -15,7 +16,9 @@ export function sourceManifest(root) {
       if (entry.isSymbolicLink()) throw new Error(`Fonte ligado nao e aceito: ${relative}`)
       if (entry.isDirectory()) visit(join(directory, entry.name), relative)
       else if (entry.isFile() && entry.name.endsWith('.mjs') && !entry.name.endsWith('.test.mjs') && !entry.name.endsWith('-smoke.mjs')) {
-        sources[relative] = createHash('sha256').update(readFileSync(join(directory, entry.name), 'utf8').replaceAll('\r\n', '\n')).digest('hex')
+        const source = readFileSync(join(directory, entry.name), 'utf8').replaceAll('\r\n', '\n')
+        sources[relative] = createHash('sha256').update(source).digest('hex')
+        contents[relative] = source
       }
     }
   }
@@ -30,13 +33,62 @@ export function sourceManifest(root) {
     }
     const { source } = prepareDashboardCoverageSource({ root, htmlPath })
     sources['.test-output/coverage-sources/dashboard-inline.mjs'] = createHash('sha256').update(source).digest('hex')
+    contents['.test-output/coverage-sources/dashboard-inline.mjs'] = source
   }
-  return sources
+  return { manifest: sources, contents }
+}
+
+export function sourceManifest(root) { return inspectSources(root).manifest }
+
+export function normalizeV8Branches(counters, source) {
+  source = source.replaceAll('\r\n', '\n')
+  const lines = source.split('\n'), offsets = [0]
+  for (let index = 0; index < lines.length - 1; index++) offsets.push(offsets[index] + lines[index].length + 1)
+  const offset = position => {
+    if (!position || !Number.isSafeInteger(position.line) || !Number.isSafeInteger(position.column)) return -1
+    const line = lines[position.line - 1]
+    return typeof line === 'string' && position.column >= 0 && position.column <= line.length
+      ? offsets[position.line - 1] + position.column : -1
+  }
+  const candidates = []
+  for (const [id, branch] of Object.entries(counters.branchMap)) {
+    if (branch.type !== 'branch' || !Array.isArray(branch.locations) || branch.locations.length !== 1 ||
+        !Array.isArray(counters.b[id]) || counters.b[id].length !== 1) continue
+    const location = branch.locations[0], loc = branch.loc
+    if (location?.start?.line !== loc?.start?.line || location?.start?.column !== loc?.start?.column ||
+        location?.end?.line !== loc?.end?.line || location?.end?.column !== loc?.end?.column) continue
+    const start = offset(loc?.start), end = offset(loc?.end)
+    if (start < 0 || end <= start || source.slice(start, end).trim()) continue
+    candidates.push({ id, start, end })
+  }
+  if (!candidates.length) return counters
+  let ast
+  try { ast = parse(source, { ecmaVersion: 'latest', sourceType: 'module' }) }
+  catch { return counters }
+  const gaps = []
+  const visit = node => {
+    if (node.type === 'TryStatement' && node.handler && node.finalizer && node.handler.body.body.at(-1)?.type === 'ThrowStatement') {
+      const start = node.handler.body.end
+      gaps.push({ start, end: start + source.slice(start, node.finalizer.start).match(/^\s*/)[0].length })
+    }
+    for (const value of Object.values(node)) {
+      if (Array.isArray(value)) { for (const child of value) if (child?.type) visit(child) }
+      else if (value?.type) visit(value)
+    }
+  }
+  visit(ast)
+  // Um catch terminado em throw não pode sair normalmente para esse espaço.
+  // Preserve condições e instruções executáveis, independentemente dos contadores.
+  const omitted = candidates.filter(candidate => gaps.some(gap => candidate.start >= gap.start && candidate.end <= gap.end))
+  if (!omitted.length) return counters
+  const normalized = { ...counters, branchMap: { ...counters.branchMap }, b: { ...counters.b } }
+  for (const { id } of omitted) { delete normalized.branchMap[id]; delete normalized.b[id] }
+  return normalized
 }
 
 export function mergeReports(root, reports) {
   if (!reports.length) throw new Error('Nenhum relatorio de cobertura recebido')
-  const expected = sourceManifest(root)
+  const { manifest: expected, contents } = inspectSources(root)
   if (!Object.keys(expected).length) throw new Error('Nenhum fonte elegivel encontrado')
   const merged = coverage.createCoverageMap({})
   for (const { manifest, data } of reports) {
@@ -48,7 +100,7 @@ export function mergeReports(root, reports) {
       if (!relative) throw new Error(`Fonte fora do escopo elegivel: ${normalized}`)
       if (coverage.createFileCoverage(counters).toSummary().statements.total === 0)
         throw new Error(`Fonte sem instrucoes medidas: ${relative}`)
-      merged.addFileCoverage({ ...counters, path: relative })
+      merged.addFileCoverage({ ...normalizeV8Branches(counters, contents[relative]), path: relative })
     }
   }
   const files = new Set(merged.files())

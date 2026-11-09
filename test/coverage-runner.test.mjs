@@ -45,6 +45,11 @@ function fixture(t) {
   t.after(() => { assert.equal(dirname(root), tmpdir()); rmSync(root, { recursive: true, force: true }) })
   mkdirSync(join(root, 'lib'))
   writeFileSync(join(root, 'lib/app.mjs'), 'export const app = 1\n')
+  const reports = join(root, '.test-output/coverage'), path = join(root, 'lib/app.mjs')
+  const position = { start: { line: 1, column: 0 }, end: { line: 1, column: 20 } }
+  mkdirSync(reports, { recursive: true })
+  writeFileSync(join(reports, 'coverage-final.json'), JSON.stringify({ [path]: { path,
+    statementMap: { 0: position }, fnMap: {}, branchMap: {}, s: { 0: 1 }, f: {}, b: {} } }))
   return root
 }
 
@@ -63,7 +68,19 @@ test('coleta preserva preloads, exige manifesto e propaga falhas dos testes', t 
   const normal = []
   assert.equal(runCoverage({ root, env: {}, run: (...args) => { normal.push(args); return { status: 0 } } }), 0)
   assert.ok(normal[0][1].includes('--test-concurrency=1'))
-  assert.ok(!normal[0][1].includes('--check-coverage=false'))
+  assert.ok(normal[0][1].includes('--check-coverage=false'))
+  assert.equal(JSON.parse(readFileSync(join(root, '.test-output/coverage-merged/coverage-summary.json'), 'utf8')).lines.pct, 100)
+})
+
+test('verificação local conserva falhas e exige medição completa depois dos testes', t => {
+  const root = fixture(t), report = join(root, '.test-output/coverage/coverage-final.json')
+  const data = JSON.parse(readFileSync(report, 'utf8'))
+  Object.values(data)[0].s[0] = 0
+  writeFileSync(report, JSON.stringify(data))
+  assert.equal(runCoverage({ root, env: {}, run: () => ({ status: 0 }) }), 1)
+  assert.equal(runCoverage({ root, env: {}, run: () => ({ status: 7 }) }), 7)
+  writeFileSync(report, '{}')
+  assert.throws(() => runCoverage({ root, env: {}, run: () => ({ status: 0 }) }), /Fonte sem medicao/)
 })
 
 test('coleta recusa concorrencia invalida e conserva erro ou sinal do subprocesso', t => {
@@ -122,7 +139,7 @@ test('lotes preservam falhas e acumulam c8 sem exigir cobertura parcial de cem p
   assert.ok(calls[0][1].includes('--check-coverage=false'))
   assert.ok(!calls[0][1].includes('--clean=false'))
   assert.ok(calls[1][1].includes('--clean=false'))
-  assert.ok(!calls[1][1].includes('--check-coverage=false'))
+  assert.ok(calls[1][1].includes('--check-coverage=false'))
   const failedLast = []
   assert.equal(runCoverage({ root, collect: true, env: { PRUMO_TEST_PARTITIONED: '1' }, run: (...args) => {
     failedLast.push(args); return { status: failedLast.length === 2 ? null : 0 }

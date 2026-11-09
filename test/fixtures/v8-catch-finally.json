@@ -1,0 +1,389 @@
+{
+  "source": "import { lstatSync, realpathSync, openSync, fstatSync, readSync, closeSync, constants } from 'node:fs'\nimport { resolve, posix } from 'node:path'\nimport { spawnSync } from 'node:child_process'\nimport { createHash } from 'node:crypto'\n\nconst canonicalRoot = realpathSync.native\n\nexport function safeRepositoryPath(path) {\n  if (typeof path !== 'string' || !path || /[\\x00-\\x1f]/.test(path) || /^(?:[/\\\\]|[A-Za-z]:)/.test(path) || path.replaceAll('\\\\', '/').split('/').some(part => part === '..' || part === ''))\n    throw new Error('Evidence paths must be safe repository-relative paths')\n  return posix.normalize(path.replaceAll('\\\\', '/'))\n}\n\n// Only Git inventory may contain a terminal directory separator. Contract paths\n// remain strict, and a directory must prove its own Git root before capture.\nexport function gitInventoryPath(value) {\n  return safeRepositoryPath(value.endsWith('/') ? value.slice(0, -1) : value)\n}\n\nexport function evidenceLocation(root, path) {\n  root = canonicalRoot(root)\n  path = safeRepositoryPath(path)\n  let current = root\n  for (const part of path.split('/')) {\n    current = resolve(current, part)\n    if (lstatSync(current).isSymbolicLink()) throw new Error(`Evidence link refused: ${path}`)\n  }\n  return current\n}\n\nexport function scopeFileDigest(root, path, mode) {\n  const absolute = evidenceLocation(root, path), expected = lstatSync(absolute, { bigint: true })\n  if (!expected.isFile()) throw new Error(`Evidence is not a regular file: ${path}`)\n  const fd = openSync(absolute, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))\n  try {\n    const before = fstatSync(fd, { bigint: true }), digest = createHash('sha256'), chunk = Buffer.alloc(64 * 1024)\n    if (!before.isFile() || before.dev !== expected.dev || before.ino !== expected.ino) throw new Error(`Evidence path changed: ${path}`)\n    let bytes = 0, count\n    do {\n      count = readSync(fd, chunk, 0, chunk.length, bytes)\n      bytes += count\n      if (BigInt(bytes) > before.size) throw new Error(`Evidence changed during capture: ${path}`)\n      digest.update(chunk.subarray(0, count))\n    } while (count)\n    const after = fstatSync(fd, { bigint: true }), location = lstatSync(evidenceLocation(root, path), { bigint: true })\n    if (after.size !== before.size || BigInt(bytes) !== before.size || after.mtimeNs !== before.mtimeNs || after.ctimeNs !== before.ctimeNs ||\n        after.dev !== before.dev || after.ino !== before.ino || location.dev !== before.dev || location.ino !== before.ino)\n      throw new Error(`Evidence changed during capture: ${path}`)\n    return digest.update(String(mode)).digest('hex')\n  } catch (error) {\n    if (error.code === 'ENOENT') throw new Error(`Evidence changed during capture: ${path}`)\n    throw error\n  } finally { closeSync(fd) }\n}\n\nexport function gitDirectoryEvidence(root, path, budget = { bytes: 0, files: 0 }) {\n  const directory = evidenceLocation(root, path)\n  const git = (...args) => {\n    const result = spawnSync('git', ['-C', directory, ...args], { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024, timeout: 10000, windowsHide: true })\n    if (result.status !== 0) throw new Error(`Git submodule or nested repository evidence unavailable: ${path}`)\n    return result.stdout\n  }\n  // Windows Git and Node may spell one directory differently (case or 8.3\n  // aliases). Exact filesystem identities prove ownership without trusting text.\n  const reportedRoot = lstatSync(realpathSync(git('rev-parse', '--show-toplevel').trim()), { bigint: true })\n  const expectedRoot = lstatSync(directory, { bigint: true })\n  if (!reportedRoot.isDirectory() || reportedRoot.dev !== expectedRoot.dev || reportedRoot.ino !== expectedRoot.ino)\n    throw new Error(`Git submodule or nested repository must have its own root: ${path}`)\n  evidenceLocation(directory, '.git')\n  const head = git('rev-parse', '--revs-only', 'HEAD').trim() || null\n  // Disable external diff and text conversion: collecting evidence must not run\n  // repository-configured helpers. The index and both diffs cover dirty tracked bytes.\n  const index = git('ls-files', '--stage', '-z')\n  for (const entry of index.split('\\0').filter(Boolean)) {\n    const tracked = safeRepositoryPath(entry.slice(entry.indexOf('\\t') + 1))\n    if (entry.startsWith('160000 ')) throw new Error(`Nested Git links need separate evidence coverage: ${path}/${tracked}`)\n    try { evidenceLocation(directory, tracked) }\n    catch (error) { if (error.code !== 'ENOENT') throw error }\n  }\n  const staged = git('diff', '--cached', '--binary', '--no-ext-diff', '--no-textconv')\n  const working = git('diff', '--binary', '--no-ext-diff', '--no-textconv')\n  const untracked = git('ls-files', '--others', '--exclude-standard', '-z').split('\\0').filter(Boolean)\n  if ((budget.files += untracked.length) > 256) throw new Error('Delivery file count exceeds reading limit')\n  budget.bytes += Buffer.byteLength(index) + Buffer.byteLength(staged) + Buffer.byteLength(working)\n  if (budget.bytes > 8 * 1024 * 1024) throw new Error(`Evidence reading limit: ${path}`)\n  const files = untracked.map(entry => {\n    const relative = safeRepositoryPath(entry)\n    const absolute = evidenceLocation(directory, relative)\n    const expected = lstatSync(absolute, { bigint: true })\n    if (!expected.isFile()) throw new Error(`Nested repository untracked evidence is not a regular file: ${path}/${relative}`)\n    const descriptor = openSync(absolute, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))\n    try {\n      const stat = fstatSync(descriptor, { bigint: true })\n      if (!stat.isFile() || stat.dev !== expected.dev || stat.ino !== expected.ino || realpathSync(absolute) !== absolute)\n        throw new Error(`Evidence path changed: ${path}/${relative}`)\n      const bytes = Buffer.alloc(1024 * 1024 + 1), digest = createHash('sha256')\n      let count = 0, chunk\n      do { chunk = readSync(descriptor, bytes, count, bytes.length - count, count); count += chunk } while (chunk && count < bytes.length)\n      if (count > 1024 * 1024 || (budget.bytes += count) > 8 * 1024 * 1024)\n        throw new Error(`Evidence reading limit: ${path}/${relative}`)\n      digest.update(bytes.subarray(0, count))\n      return { path: relative, digest: digest.digest('hex') }\n    } finally { closeSync(descriptor) }\n  })\n  const digest = createHash('sha256').update(JSON.stringify({ head, index, staged, working, files })).digest('hex')\n  return { path, head, digest, untrackedFiles: files.length,\n    limitation: 'Nested repository index, tracked diffs and untracked file hashes were captured; source text and ignored files require independent inspection.' }\n}\n",
+  "functions": [
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 0,
+          "endOffset": 6755,
+          "count": 1
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "safeRepositoryPath",
+      "ranges": [
+        {
+          "startOffset": 285,
+          "endOffset": 642,
+          "count": 91
+        },
+        {
+          "startOffset": 515,
+          "endOffset": 587,
+          "count": 2
+        },
+        {
+          "startOffset": 587,
+          "endOffset": 641,
+          "count": 89
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 472,
+          "endOffset": 508,
+          "count": 93
+        },
+        {
+          "startOffset": 494,
+          "endOffset": 508,
+          "count": 92
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "gitInventoryPath",
+      "ranges": [
+        {
+          "startOffset": 810,
+          "endOffset": 924,
+          "count": 0
+        }
+      ],
+      "isBlockCoverage": false
+    },
+    {
+      "functionName": "evidenceLocation",
+      "ranges": [
+        {
+          "startOffset": 933,
+          "endOffset": 1251,
+          "count": 77
+        },
+        {
+          "startOffset": 1095,
+          "endOffset": 1232,
+          "count": 78
+        },
+        {
+          "startOffset": 1179,
+          "endOffset": 1228,
+          "count": 0
+        },
+        {
+          "startOffset": 1232,
+          "endOffset": 1250,
+          "count": 76
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "scopeFileDigest",
+      "ranges": [
+        {
+          "startOffset": 1260,
+          "endOffset": 2775,
+          "count": 18
+        },
+        {
+          "startOffset": 1429,
+          "endOffset": 1487,
+          "count": 1
+        },
+        {
+          "startOffset": 1487,
+          "endOffset": 1567,
+          "count": 17
+        },
+        {
+          "startOffset": 1718,
+          "endOffset": 1748,
+          "count": 16
+        },
+        {
+          "startOffset": 1749,
+          "endOffset": 1779,
+          "count": 15
+        },
+        {
+          "startOffset": 1781,
+          "endOffset": 1830,
+          "count": 3
+        },
+        {
+          "startOffset": 1830,
+          "endOffset": 1863,
+          "count": 14
+        },
+        {
+          "startOffset": 1863,
+          "endOffset": 2094,
+          "count": 23
+        },
+        {
+          "startOffset": 1983,
+          "endOffset": 2042,
+          "count": 1
+        },
+        {
+          "startOffset": 2042,
+          "endOffset": 2094,
+          "count": 19
+        },
+        {
+          "startOffset": 2094,
+          "endOffset": 2264,
+          "count": 10
+        },
+        {
+          "startOffset": 2264,
+          "endOffset": 2296,
+          "count": 9
+        },
+        {
+          "startOffset": 2297,
+          "endOffset": 2332,
+          "count": 8
+        },
+        {
+          "startOffset": 2333,
+          "endOffset": 2368,
+          "count": 7
+        },
+        {
+          "startOffset": 2369,
+          "endOffset": 2404,
+          "count": 6
+        },
+        {
+          "startOffset": 2405,
+          "endOffset": 2432,
+          "count": 5
+        },
+        {
+          "startOffset": 2433,
+          "endOffset": 2463,
+          "count": 4
+        },
+        {
+          "startOffset": 2464,
+          "endOffset": 2494,
+          "count": 3
+        },
+        {
+          "startOffset": 2502,
+          "endOffset": 2561,
+          "count": 8
+        },
+        {
+          "startOffset": 2561,
+          "endOffset": 2619,
+          "count": 2
+        },
+        {
+          "startOffset": 2619,
+          "endOffset": 2747,
+          "count": 15
+        },
+        {
+          "startOffset": 2668,
+          "endOffset": 2727,
+          "count": 1
+        },
+        {
+          "startOffset": 2727,
+          "endOffset": 2747,
+          "count": 14
+        },
+        {
+          "startOffset": 2747,
+          "endOffset": 2748,
+          "count": 0
+        },
+        {
+          "startOffset": 2748,
+          "endOffset": 2773,
+          "count": 17
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "gitDirectoryEvidence",
+      "ranges": [
+        {
+          "startOffset": 2784,
+          "endOffset": 6607,
+          "count": 21
+        },
+        {
+          "startOffset": 3592,
+          "endOffset": 3632,
+          "count": 19
+        },
+        {
+          "startOffset": 3633,
+          "endOffset": 3673,
+          "count": 18
+        },
+        {
+          "startOffset": 3679,
+          "endOffset": 3764,
+          "count": 3
+        },
+        {
+          "startOffset": 3764,
+          "endOffset": 3872,
+          "count": 17
+        },
+        {
+          "startOffset": 4148,
+          "endOffset": 4467,
+          "count": 3
+        },
+        {
+          "startOffset": 4264,
+          "endOffset": 4463,
+          "count": 1
+        },
+        {
+          "startOffset": 4467,
+          "endOffset": 4783,
+          "count": 14
+        },
+        {
+          "startOffset": 4783,
+          "endOffset": 4843,
+          "count": 0
+        },
+        {
+          "startOffset": 4843,
+          "endOffset": 4982,
+          "count": 14
+        },
+        {
+          "startOffset": 4982,
+          "endOffset": 5032,
+          "count": 1
+        },
+        {
+          "startOffset": 5032,
+          "endOffset": 6606,
+          "count": 13
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "git",
+      "ranges": [
+        {
+          "startOffset": 2924,
+          "endOffset": 3229,
+          "count": 97
+        },
+        {
+          "startOffset": 3117,
+          "endOffset": 3200,
+          "count": 1
+        },
+        {
+          "startOffset": 3200,
+          "endOffset": 3228,
+          "count": 96
+        }
+      ],
+      "isBlockCoverage": true
+    },
+    {
+      "functionName": "",
+      "ranges": [
+        {
+          "startOffset": 5063,
+          "endOffset": 6265,
+          "count": 11
+        },
+        {
+          "startOffset": 5267,
+          "endOffset": 5365,
+          "count": 1
+        },
+        {
+          "startOffset": 5365,
+          "endOffset": 5455,
+          "count": 9
+        },
+        {
+          "startOffset": 5552,
+          "endOffset": 5580,
+          "count": 8
+        },
+        {
+          "startOffset": 5581,
+          "endOffset": 5609,
+          "count": 7
+        },
+        {
+          "startOffset": 5610,
+          "endOffset": 5648,
+          "count": 6
+        },
+        {
+          "startOffset": 5658,
+          "endOffset": 5719,
+          "count": 4
+        },
+        {
+          "startOffset": 5719,
+          "endOffset": 5837,
+          "count": 5
+        },
+        {
+          "startOffset": 5837,
+          "endOffset": 5928,
+          "count": 19
+        },
+        {
+          "startOffset": 5928,
+          "endOffset": 5942,
+          "count": 5
+        },
+        {
+          "startOffset": 5942,
+          "endOffset": 5965,
+          "count": 14
+        },
+        {
+          "startOffset": 5997,
+          "endOffset": 6041,
+          "count": 5
+        },
+        {
+          "startOffset": 6051,
+          "endOffset": 6113,
+          "count": 1
+        },
+        {
+          "startOffset": 6113,
+          "endOffset": 6228,
+          "count": 4
+        },
+        {
+          "startOffset": 6228,
+          "endOffset": 6261,
+          "count": 9
+        }
+      ],
+      "isBlockCoverage": true
+    }
+  ]
+}

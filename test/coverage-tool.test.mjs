@@ -3,9 +3,9 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { spawnSync } from 'node:child_process'
-import { mergeReports, readReports, runCoverageCommand, sourceManifest } from '../tools/coverage.mjs'
+import { mergeReports, normalizeV8Branches, readReports, runCoverageCommand, sourceManifest } from '../tools/coverage.mjs'
 
 test('merge incremental do c8 conserva contadores e arquivo nunca carregado dos mesmos perfis reais', t => {
   const parent = realpathSync(tmpdir())
@@ -60,6 +60,106 @@ test('merge incremental do c8 conserva contadores e arquivo nunca carregado dos 
   }
   assert.equal(reports[0].summary[join(sources, 'absent.mjs')].lines.pct, 0)
   assert.equal(reports[0].summary[join(sources, 'app.mjs')].branches.pct, 100)
+})
+
+test('consolidação reconhece o intervalo inalcançável de catch e finally registrado pelo V8 sem alterar ramos reais', t => {
+  const root = fixture(t)
+  const captured = JSON.parse(readFileSync(new URL('./fixtures/v8-catch-finally.json', import.meta.url), 'utf8'))
+  const source = join(root, 'lib/nested/app.mjs'), profiles = join(root, 'profiles'), reports = join(root, 'reports')
+  writeFileSync(source, captured.source)
+  mkdirSync(profiles)
+  writeFileSync(join(profiles, 'coverage-captured.json'), JSON.stringify({ result: [{ scriptId: '1',
+    url: pathToFileURL(source).href, functions: captured.functions }] }))
+  const config = join(root, '.c8rc.json')
+  writeFileSync(config, JSON.stringify({ all: true, include: ['lib/nested/app.mjs'], exclude: [], extension: ['.mjs'],
+    reporter: ['json'], 'check-coverage': false, 'temp-directory': profiles, 'reports-dir': reports }))
+  const c8 = fileURLToPath(new URL('../node_modules/c8/bin/c8.js', import.meta.url))
+  const converted = spawnSync(process.execPath, [c8, 'report', '--config', config], { cwd: root,
+    env: { ...process.env, NODE_V8_COVERAGE: join(root, 'report-runtime') }, encoding: 'utf8', windowsHide: true, timeout: 30000 })
+  assert.ifError(converted.error)
+  assert.equal(converted.status, 0, converted.stdout + converted.stderr)
+  const data = JSON.parse(readFileSync(join(reports, 'coverage-final.json'), 'utf8'))
+  const original = structuredClone(data[source])
+  const gap = Object.entries(original.branchMap).find(([, range]) => range.loc.start.line === 53 &&
+    range.loc.start.column === 3 && range.loc.end.line === 53 && range.loc.end.column === 4)?.[0]
+  assert.notEqual(gap, undefined)
+  assert.equal(captured.source.split('\n')[52].slice(3, 4), ' ')
+  assert.deepEqual(original.b[gap], [0])
+  const result = mergeReports(root, [{ manifest: sourceManifest(root), data }]).data['lib/nested/app.mjs']
+  const expected = structuredClone(original)
+  delete expected.branchMap[gap]
+  delete expected.b[gap]
+  assert.deepEqual(result.branchMap, expected.branchMap)
+  assert.deepEqual(result.b, expected.b)
+  assert.deepEqual(result.statementMap, original.statementMap)
+  assert.deepEqual(result.fnMap, original.fnMap)
+  assert.deepEqual(result.s, original.s)
+  assert.deepEqual(result.f, original.f)
+  assert.ok(Object.values(result.b).some(counts => counts.includes(0)), 'ramos executáveis não percorridos continuam sem cobertura')
+  assert.deepEqual(data[source], original, 'a consolidação preserva o relatório bruto capturado')
+})
+
+test('classificação sintática preserva ramos reais e formatos que não podem ser comprovados', () => {
+  const source = action => `export function executar(error) {\n  try { return 1 }\n  catch (error) { ${action} } finally { void error }\n}\n`
+  const sample = (text, marker = ' finally', count = 0) => {
+    const index = text.indexOf(marker)
+    assert.ok(index >= 0)
+    const position = index => {
+      const lines = text.slice(0, index).split(/\r?\n/)
+      return { line: lines.length, column: lines.at(-1).length }
+    }
+    const loc = { start: position(index), end: position(index + 1) }
+    const counters = file('sample.mjs', [1, 0])
+    counters.branchMap.gap = { type: 'branch', line: loc.start.line, loc, locations: [loc] }
+    counters.b.gap = [count]
+    return counters
+  }
+  for (const count of [0, 7]) for (const text of [source('throw error'), source('throw error').replaceAll('\n', '\r\n')]) {
+    const counters = sample(text, ' finally', count), original = structuredClone(counters)
+    const expected = structuredClone(counters)
+    delete expected.branchMap.gap; delete expected.b.gap
+    assert.deepEqual(normalizeV8Branches(counters, text), expected)
+    assert.deepEqual(counters, original)
+  }
+  for (const text of [source(''), source('return error'), source('if (error) throw error'),
+    'export function executar() { try {} finally {} }',
+    'export function executar() { try {} catch (error) { throw error } /*gap*/ }',
+    '// finally\nexport const valores = [,,]\n',
+    'export const texto = "catch (error) { throw error } finally"\n',
+    '?? finally']) {
+    const counters = sample(text, text.includes(' finally') ? ' finally' : ' /*gap*/')
+    assert.strictEqual(normalizeV8Branches(counters, text), counters)
+    assert.deepEqual(counters.b.gap, [0])
+  }
+  const text = source('throw error')
+  const variants = [
+    counters => { delete counters.branchMap.gap.locations },
+    counters => { counters.branchMap.gap.locations.push(counters.branchMap.gap.loc) },
+    counters => { delete counters.b.gap },
+    counters => { counters.b.gap.push(0) },
+    counters => { delete counters.branchMap.gap.loc },
+    counters => { counters.branchMap.gap.locations[0] = undefined },
+    counters => { counters.branchMap.gap.loc = {}; counters.branchMap.gap.locations = [{}] },
+    ...['start', 'end'].flatMap(boundary => ['line', 'column'].map(field => counters => {
+      counters.branchMap.gap.locations = [structuredClone(counters.branchMap.gap.loc)]
+      counters.branchMap.gap.locations[0][boundary][field]++
+    })),
+    counters => { counters.branchMap.gap.locations = [{ start: { line: 1, column: 0 }, end: { line: 1, column: 6 } }] },
+    counters => { counters.branchMap.gap.loc.start = null },
+    counters => { counters.branchMap.gap.loc.start.line = 1.5 },
+    counters => { counters.branchMap.gap.loc.start.column = '0' },
+    counters => { counters.branchMap.gap.loc.start.line = 1000 },
+    counters => { counters.branchMap.gap.loc.start.column = -1 },
+    counters => { counters.branchMap.gap.loc.start.column = 1000 },
+    counters => { counters.branchMap.gap.loc.end = counters.branchMap.gap.loc.start },
+    counters => { counters.branchMap.gap.loc.start = { line: 1, column: 0 }; counters.branchMap.gap.loc.end = { line: 1, column: 6 } },
+    counters => { counters.branchMap.gap.loc.start = { line: 1, column: 0 }; counters.branchMap.gap.loc.end = { line: 1, column: -1 } },
+  ]
+  for (const change of variants) {
+    const counters = sample(text)
+    change(counters)
+    assert.strictEqual(normalizeV8Branches(counters, text), counters)
+  }
 })
 
 test('importar ferramentas sem argumentos não dispara coleta nem instalação', t => {

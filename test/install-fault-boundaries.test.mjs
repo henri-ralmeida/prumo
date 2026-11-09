@@ -15,6 +15,15 @@ function temporary(t) {
   return home
 }
 
+test('raiz padrão do Hermes segue a plataforma e respeita configuração explícita', t => {
+  const home = temporary(t), local = join(home, 'local')
+  const env = { LOCALAPPDATA: local, PRUMO_HOME: join(home, 'data'), GRAPH_FOREMAN_HOME: join(home, 'legacy') }
+  const options = { harness: 'hermes', home, cwd: home, env, lang: 'en' }
+  assert.equal(planInstall(options).config, process.platform === 'win32' ? join(local, 'hermes') : join(home, '.hermes'))
+  const custom = join(home, 'custom-hermes')
+  assert.equal(planInstall({ ...options, env: { ...env, HERMES_HOME: custom } }).config, custom)
+})
+
 test('planejamento na raiz e em subdiretórios respeita destinos temporários e fronteira .git', t => {
   const home = temporary(t), config = join(home, '.claude'), skills = join(config, 'skills')
   const outer = join(home, 'outside'), project = join(outer, 'project'), cwd = join(project, 'src', 'nested')

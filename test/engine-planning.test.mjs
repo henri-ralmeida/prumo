@@ -13,6 +13,23 @@ import { initializeLegacyPlanFixture } from './fixtures/legacy-plan-init.mjs'
 const engine = resolve(dirname(fileURLToPath(import.meta.url)), '../scripts/engine.mjs')
 const validation = [{ kind: 'functional', run: 'node check.cjs', expect: 'delivery behavior passes' }]
 
+test('status reconhece planejamento encerrado com vínculo legado da discussão sem alterar o histórico', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega aprovada' }])
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('plan-phase', 'F1', '--agent', 'planner', '--plan-dir', f.plans)
+  f.writeArtifacts('F1'); f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  const state = f.state(), round = state.phaseWorkflows.F1.planningAttempts.at(-1)
+  assert.equal(typeof round.discussionDigest, 'string')
+  round.discoveryDigest = round.discussionDigest
+  delete round.discussionDigest
+  f.save(state)
+  const events = f.events(), output = f.ok('status').stdout
+  assert.match(output, /phase F1 planning round 1: current/)
+  assert.deepEqual(f.state(), state)
+  assert.equal(f.events(), events)
+})
+
 for (const lang of ['en', 'pt-BR']) test(`discussao da vizinha nao indica replanejamento de execucao valida em ${lang}`, t => {
   const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega aprovada' },
     { id: 'B', phase: 'F1', title: 'Entrega vizinha' }], { lang })

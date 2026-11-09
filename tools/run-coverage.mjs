@@ -11,7 +11,7 @@ const independentDashboardTests = new Set(['test/dashboard-planning.test.mjs', '
 const windowsTestWeights = { 'test/autostart.test.mjs': 127, 'test/engine-planning.test.mjs': 113,
   'test/planning.test.mjs': 109, 'test/install.test.mjs': 95, 'test/authorization-decisions.test.mjs': 75,
   'scripts/validation.test.mjs': 64, 'test/autostart-hardening.test.mjs': 61, 'test/engine-hardening.test.mjs': 56,
-  'test/cli-wrapper.integration.test.mjs': 36, 'test/update.test.mjs': 21, 'test/run-improvements.test.mjs': 25 }
+  'test/cli-wrapper.integration.test.mjs': 36, 'test/update.test.mjs': 21, 'test/run-improvements.test.mjs': 25, 'test/security-audit.test.mjs': 95 }
 
 export function coverageBatches(root, concurrency, partitioned, suite = 'all', shard = { index: 0, count: 1 }) {
   if (!['all', 'regular', 'published'].includes(suite)) throw new Error('Suite de cobertura deve ser all, regular ou published')
@@ -51,7 +51,7 @@ export function runCoverage({ collect = false, root = resolve(dirname(fileURLToP
     // O segundo lote reaproveita os dados do primeiro; o limite vale sobre a suite completa.
     const result = run(process.execPath, [join(root, 'node_modules/c8/bin/c8.js'),
       ...(index > 0 ? ['--clean=false'] : []),
-      ...(collect || index < batches.length - 1 ? ['--check-coverage=false'] : []),
+      '--check-coverage=false',
       process.execPath, '--test', `--test-concurrency=${batch.concurrency}`, ...batch.files], {
       cwd: root, windowsHide: true, stdio: 'inherit',
       env: { ...env, PRUMO_TEST_COVERAGE_FLUSH: '1', NODE_OPTIONS: `${env.NODE_OPTIONS ?? ''} --import="${preload}"`.trim() },
@@ -59,6 +59,11 @@ export function runCoverage({ collect = false, root = resolve(dirname(fileURLToP
     if (result.error) throw result.error
     if (result.signal) throw new Error(`Coleta de cobertura interrompida: ${result.signal}`)
     status ||= result.status ?? 1
+  }
+  // A consolidação confere todos os fontes e os ramos executáveis após classificar os intervalos do V8.
+  if (!collect) {
+    const coverageStatus = runCoverageCommand('merge', join(root, '.test-output/coverage'), root)
+    status ||= coverageStatus
   }
   return status
 }

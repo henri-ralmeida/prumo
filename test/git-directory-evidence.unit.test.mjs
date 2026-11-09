@@ -40,13 +40,17 @@ test('scope fingerprints stream file bytes without changing historical digests a
     syncBuiltinESMExports(); assert.throws(probe, /changed during capture/); restore()
     fs.readSync = () => 0
     syncBuiltinESMExports(); assert.throws(probe, /changed during capture/); restore()
-    fs.readSync = () => { throw new Error('Read denied') }
-    syncBuiltinESMExports(); assert.throws(probe, /Read denied/); restore()
+    const readError = new Error('Read denied')
+    fs.readSync = () => { throw readError }
+    syncBuiltinESMExports(); assert.throws(probe, error => error === readError); restore()
     fs.readSync = () => { throw Object.assign(new Error('Gone'), { code: 'ENOENT' }) }
     syncBuiltinESMExports(); assert.throws(probe, /changed during capture/)
     restore()
-    fs.closeSync = fd => { original.closeSync(fd); throw new Error('Close denied') }
-    syncBuiltinESMExports(); assert.throws(probe, /Close denied/)
+    const closeError = new Error('Close denied')
+    fs.closeSync = fd => { original.closeSync(fd); throw closeError }
+    syncBuiltinESMExports(); assert.throws(probe, error => error === closeError)
+    fs.readSync = () => { throw readError }
+    syncBuiltinESMExports(); assert.throws(probe, error => error === closeError)
   } finally { restore() }
 })
 
