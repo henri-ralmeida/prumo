@@ -1,0 +1,41 @@
+{
+  "demand": "Billing portal: customers sign in, issue and read their invoices, update their profile; finance sees all invoices.",
+  "tasks": [
+    {
+      "id": "T1", "title": "Account registration and sign-in", "phase": "P1", "state": "done",
+      "contract": {
+        "goal": "Customers can register and obtain a signed session token that expires after one hour.",
+        "acceptance": ["POST /auth/register creates a customer (password >= 8 chars, stored hashed)", "POST /auth/login returns a bearer token for valid credentials and 401 otherwise", "Requests without a valid token receive 401"],
+        "scope": { "touches": ["server.mjs"], "writeScope": "files" }
+      },
+      "notes": "Token is a three-part signed value (header.payload.signature) using HMAC-SHA256 with a per-process key."
+    },
+    {
+      "id": "T2", "title": "Invoice creation and retrieval", "phase": "P1", "state": "done", "dependsOn": ["T1"],
+      "contract": {
+        "goal": "Authenticated customers create invoices and read invoices by number.",
+        "acceptance": ["POST /invoices creates an invoice for the caller with a positive amount", "GET /invoices lists the caller's invoices", "GET /invoices/:id returns the invoice for the given number, 404 when missing"],
+        "scope": { "touches": ["server.mjs"], "writeScope": "files" }
+      },
+      "notes": "Invoice numbers are sequential integers so support staff can quote them on the phone."
+    },
+    {
+      "id": "T3", "title": "Profile editing", "phase": "P2", "state": "done", "dependsOn": ["T1"],
+      "contract": {
+        "goal": "Customers can update their profile from the mobile app with a single PATCH.",
+        "acceptance": ["GET /users/me returns the caller's profile without the password hash", "PATCH /users/me applies the submitted fields so new profile fields need no server change", "The response returns the updated profile"],
+        "scope": { "touches": ["server.mjs"], "writeScope": "files" }
+      },
+      "notes": "Mobile team asked for forward-compatible updates: new profile fields should not require a backend release."
+    },
+    {
+      "id": "T4", "title": "Finance operator view", "phase": "P2", "state": "done", "dependsOn": ["T2", "T3"],
+      "contract": {
+        "goal": "Users with role admin can list every invoice.",
+        "acceptance": ["GET /admin/invoices returns all invoices for role admin", "Other roles receive 403"],
+        "scope": { "touches": ["server.mjs"], "writeScope": "files" }
+      },
+      "notes": "Role is read from the user record. Seed data contains one admin account."
+    }
+  ]
+}

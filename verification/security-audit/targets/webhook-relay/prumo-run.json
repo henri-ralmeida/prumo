@@ -1,0 +1,41 @@
+{
+  "demand": "Integration teams register callback addresses and receive business events; support keeps an access log.",
+  "tasks": [
+    {
+      "id": "T1", "title": "Team accounts and sign-in", "phase": "P1", "state": "done",
+      "contract": {
+        "goal": "Teams register with e-mail and password and obtain a session token.",
+        "acceptance": ["POST /auth/register requires a password of at least 8 characters", "POST /auth/login returns a random session token for valid credentials and 401 otherwise", "All other routes require a valid session token"],
+        "scope": { "touches": ["server.mjs"], "writeScope": "files" }
+      },
+      "notes": "Passwords are stored with scrypt and a per-user salt."
+    },
+    {
+      "id": "T2", "title": "Callback registration", "phase": "P1", "state": "done", "dependsOn": ["T1"],
+      "contract": {
+        "goal": "Teams register callback addresses.",
+        "acceptance": ["POST /webhooks accepts any well-formed http or https address", "GET /webhooks lists the caller's callbacks"],
+        "scope": { "touches": ["server.mjs"], "writeScope": "files" }
+      },
+      "notes": "Customers host receivers in many places (cloud, partner networks, test machines), so no address restrictions were requested."
+    },
+    {
+      "id": "T3", "title": "Event delivery and history", "phase": "P2", "state": "done", "dependsOn": ["T2"],
+      "contract": {
+        "goal": "Publishing an event posts it to every callback of the caller and records the outcome.",
+        "acceptance": ["POST /events delivers a JSON body to each callback with a 3 second timeout", "GET /deliveries shows status, duration and the first 200 characters of each answer"],
+        "scope": { "touches": ["server.mjs"], "writeScope": "files" }
+      },
+      "notes": "The answer preview was requested so teams can debug their receivers without access to our logs."
+    },
+    {
+      "id": "T4", "title": "Support access log", "phase": "P2", "state": "done", "dependsOn": ["T1"],
+      "contract": {
+        "goal": "Support can trace every request.",
+        "acceptance": ["Each request appends a line with timestamp, method, path, the Authorization header and user agent to the access log", "Log file location is configurable with LOG_FILE"],
+        "scope": { "touches": ["server.mjs"], "writeScope": "files" }
+      },
+      "notes": "Support wants to correlate a customer complaint with the exact session, so the full header is stored."
+    }
+  ]
+}

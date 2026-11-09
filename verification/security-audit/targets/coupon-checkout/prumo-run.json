@@ -1,0 +1,41 @@
+{
+  "demand": "Shop backend: catalogue search, checkout with limited-use coupons, partner price lists, order lookup.",
+  "tasks": [
+    {
+      "id": "T1", "title": "Catalogue and search", "phase": "P1", "state": "done",
+      "contract": {
+        "goal": "Shoppers find products by typing part of the name.",
+        "acceptance": ["GET /products returns all products ordered by name", "GET /products?q=<text> returns products whose name contains the text"],
+        "scope": { "touches": ["server.mjs"], "writeScope": "files" }
+      },
+      "notes": "Database is SQLite in memory, seeded at start."
+    },
+    {
+      "id": "T2", "title": "Cart checkout", "phase": "P1", "state": "done", "dependsOn": ["T1"],
+      "contract": {
+        "goal": "A cart becomes an order and stock is reduced.",
+        "acceptance": ["POST /checkout validates customer, items and quantities against stock", "Total is the sum of unit price times quantity", "Payment authorisation is awaited before the order is stored"],
+        "scope": { "touches": ["server.mjs"], "writeScope": "files" }
+      },
+      "notes": "Payment authorisation is a stub that takes about 15 ms."
+    },
+    {
+      "id": "T3", "title": "Limited-use coupons", "phase": "P2", "state": "done", "dependsOn": ["T2"],
+      "contract": {
+        "goal": "Coupons give a percentage discount and can be used a limited number of times.",
+        "acceptance": ["A coupon with no uses left is rejected with 422", "Each successful checkout consumes one use", "WELCOME10 has a single use"],
+        "scope": { "touches": ["server.mjs"], "writeScope": "files" }
+      },
+      "notes": "Coupon is checked first, then payment is authorised, then the use is consumed."
+    },
+    {
+      "id": "T4", "title": "Partner storefront prices", "phase": "P2", "state": "done", "dependsOn": ["T2"],
+      "contract": {
+        "goal": "Partner storefronts can send negotiated unit prices per cart line.",
+        "acceptance": ["A cart line may include price in cents which then replaces the catalogue price", "Negative or non-numeric prices are rejected"],
+        "scope": { "touches": ["server.mjs"], "writeScope": "files" }
+      },
+      "notes": "Requested by the partnerships team; the same endpoint serves partners and shoppers."
+    }
+  ]
+}

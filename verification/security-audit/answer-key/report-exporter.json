@@ -1,0 +1,56 @@
+{
+  "target": "report-exporter",
+  "kind": "vulnerable",
+  "vulnerabilities": [
+    {
+      "key": "export-filename-reaches-shell",
+      "cwe": "CWE-78",
+      "cweFamily": ["CWE-77", "CWE-88", "CWE-74", "CWE-94"],
+      "severity": "critical",
+      "acceptedSeverities": ["critical", "high"],
+      "cvss": {
+        "vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+        "score": 9.3,
+        "scoreSource": "calculator"
+      },
+      "chainedWith": ["service-key-committed-in-config"],
+      "location": "server.mjs:25 runConverter",
+      "taskRefs": ["T2", "T3"],
+      "matchHints": ["/exports", "filename", "exec", "shell", "command injection", "os command", "child_process"],
+      "rationale": "T3 builds a shell command line for the T2 converter with the unvalidated filename. The only credential is a fixed key committed in the repository and shared by every environment, so the chained attacker needs no privilege (critical, 9.3); scored alone as an authenticated caller it is high, which is also accepted."
+    },
+    {
+      "key": "download-path-escapes-exports-dir",
+      "cwe": "CWE-22",
+      "cweFamily": ["CWE-23", "CWE-36", "CWE-73", "CWE-610"],
+      "severity": "high",
+      "acceptedSeverities": ["high"],
+      "cvss": {
+        "vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
+        "score": 7.1,
+        "scoreSource": "calculator"
+      },
+      "location": "server.mjs:55 GET /downloads/:name",
+      "taskRefs": ["T4"],
+      "matchHints": ["/downloads", "traversal", "../", "%2e%2e", "%2f", "path"],
+      "rationale": "The decoded name is joined to the exports directory without confirming the result stays inside it."
+    },
+    {
+      "key": "service-key-committed-in-config",
+      "cwe": "CWE-798",
+      "cweFamily": ["CWE-321", "CWE-259", "CWE-540", "CWE-312", "CWE-522", "CWE-200"],
+      "severity": "high",
+      "acceptedSeverities": ["high"],
+      "cvss": {
+        "vector": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:L/VA:N/SC:N/SI:N/SA:N",
+        "score": 8.3,
+        "scoreSource": "calculator"
+      },
+      "location": "config/settings.json:3",
+      "taskRefs": ["T1"],
+      "matchHints": ["settings.json", "apikey", "api key", "api-key", "hardcoded", "hard-coded", "committed", "x-api-key"],
+      "rationale": "The only access credential is a fixed value stored in the versioned configuration file; anyone who can read the repository obtains full access to every report and export in every environment."
+    }
+  ],
+  "acceptable": []
+}

@@ -1,0 +1,55 @@
+{
+  "target": "coupon-checkout",
+  "kind": "vulnerable",
+  "vulnerabilities": [
+    {
+      "key": "search-text-concatenated-into-sql",
+      "cwe": "CWE-89",
+      "cweFamily": ["CWE-564", "CWE-943", "CWE-74"],
+      "severity": "high",
+      "acceptedSeverities": ["high"],
+      "cvss": {
+        "vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
+        "score": 8.7,
+        "scoreSource": "calculator"
+      },
+      "location": "server.mjs:47 GET /products?q=",
+      "taskRefs": ["T1"],
+      "matchHints": ["/products", "q=", "sql", "union", "like", "search"],
+      "rationale": "The q parameter is interpolated into the SQL text; other tables (for example staff) can be read."
+    },
+    {
+      "key": "coupon-use-consumed-after-await",
+      "cwe": "CWE-362",
+      "cweFamily": ["CWE-367", "CWE-364", "CWE-366", "CWE-841", "CWE-799", "CWE-837"],
+      "severity": "medium",
+      "acceptedSeverities": ["medium"],
+      "cvss": {
+        "vector": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:N/VI:L/VA:N/SC:N/SI:N/SA:N",
+        "score": 6.3,
+        "scoreSource": "calculator"
+      },
+      "location": "server.mjs:72-74 POST /checkout",
+      "taskRefs": ["T3", "T2"],
+      "matchHints": ["coupon", "race", "concurrent", "parallel", "toctou", "time-of-check", "welcome10", "uses_left", "single-use", "reuse"],
+      "rationale": "T3 checks uses_left, then T2's payment await yields, and only then decrements; parallel checkouts all pass the check."
+    },
+    {
+      "key": "client-supplied-unit-price-trusted",
+      "cwe": "CWE-602",
+      "cweFamily": ["CWE-472", "CWE-345", "CWE-639", "CWE-840", "CWE-20", "CWE-807", "CWE-915", "CWE-642", "CWE-285", "CWE-284"],
+      "severity": "high",
+      "acceptedSeverities": ["high"],
+      "cvss": {
+        "vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:H/VA:N/SC:N/SI:N/SA:N",
+        "score": 8.7,
+        "scoreSource": "calculator"
+      },
+      "location": "server.mjs:64 POST /checkout",
+      "taskRefs": ["T4", "T2"],
+      "matchHints": ["price", "unit price", "negotiated", "tamper", "client-side", "client supplied", "client-supplied", "free"],
+      "rationale": "T4 lets any caller of the shared endpoint replace the catalogue price (including with zero) because partners and shoppers are not distinguished."
+    }
+  ],
+  "acceptable": []
+}

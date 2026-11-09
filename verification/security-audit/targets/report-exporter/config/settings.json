@@ -1,0 +1,6 @@
+{
+  "service": "report-exporter",
+  "apiKey": "rx-7f3a91c2d84e4b60a5c1e9d27b3f8a46",
+  "retentionDays": 14,
+  "maxRows": 50000
+}

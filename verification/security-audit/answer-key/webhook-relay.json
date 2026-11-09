@@ -1,0 +1,57 @@
+{
+  "target": "webhook-relay",
+  "kind": "vulnerable",
+  "vulnerabilities": [
+    {
+      "key": "callback-address-unrestricted",
+      "cwe": "CWE-918",
+      "cweFamily": ["CWE-441", "CWE-610"],
+      "severity": "high",
+      "acceptedSeverities": ["high"],
+      "cvss": {
+        "vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:L/VI:N/VA:N/SC:H/SI:L/SA:N",
+        "score": 6.3,
+        "scoreSource": "calculator"
+      },
+      "severityFloor": "ssrf-internal",
+      "location": "server.mjs:44 deliver / server.mjs:83 POST /webhooks",
+      "taskRefs": ["T2", "T3"],
+      "matchHints": ["/webhooks", "ssrf", "callback", "169.254", "localhost", "internal", "127.0.0.1", "metadata", "/deliveries"],
+      "rationale": "T2 accepts any http(s) address and T3 fetches it server-side and returns a preview of the answer, reaching local and internal services. The official base score is 6.3 (medium) and environmental requirements do not amplify impact on a subsequent system, so the gate severity high comes from the class floor ssrf-internal: the proof reaches a loopback service and returns its answer."
+    },
+    {
+      "key": "login-without-attempt-limit",
+      "cwe": "CWE-307",
+      "cweFamily": ["CWE-799", "CWE-770", "CWE-287", "CWE-521", "CWE-1390"],
+      "severity": "medium",
+      "acceptedSeverities": ["medium"],
+      "cvss": {
+        "vector": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N",
+        "score": 6.3,
+        "scoreSource": "calculator"
+      },
+      "location": "server.mjs:72 POST /auth/login",
+      "taskRefs": ["T1"],
+      "matchHints": ["/auth/login", "brute", "rate limit", "rate-limit", "throttl", "lockout", "lock out", "password guess", "credential stuffing"],
+      "rationale": "Unlimited password attempts per account and per client."
+    },
+    {
+      "key": "session-token-written-to-log",
+      "cwe": "CWE-532",
+      "cweFamily": ["CWE-312", "CWE-200", "CWE-214", "CWE-779", "CWE-522"],
+      "severity": "high",
+      "acceptedSeverities": ["high"],
+      "cvss": {
+        "vector": "CVSS:4.0/AV:L/AC:L/AT:P/PR:H/UI:N/VC:H/VI:L/VA:N/SC:N/SI:N/SA:N",
+        "score": 5.6,
+        "scoreSource": "calculator"
+      },
+      "severityFloor": "credential-exposure",
+      "location": "server.mjs:37 record",
+      "taskRefs": ["T4", "T1"],
+      "matchHints": ["access.log", "log file", "logs", "logged", "logging", "authorization header", "bearer"],
+      "rationale": "T4 writes the full Authorization header of every request to the access log, exposing live T1 session tokens. The official score is 5.6 (medium) because the readers are staff with host access; applying the class floor literally, a valid reusable session token readable in the log is a credential exposure and keeps the gate at high. Both readings are accepted."
+    }
+  ],
+  "acceptable": []
+}

@@ -1,0 +1,41 @@
+{
+  "demand": "Sales operations can export stored reports to files under a name they choose and download them.",
+  "tasks": [
+    {
+      "id": "T1", "title": "Report catalogue and service key", "phase": "P1", "state": "done",
+      "contract": {
+        "goal": "Expose the stored reports to authorised callers.",
+        "acceptance": ["GET /reports lists report ids found in data/", "Calls without the shared service key from config/settings.json receive 401"],
+        "scope": { "touches": ["server.mjs", "config/settings.json", "data/"], "writeScope": "files" }
+      },
+      "notes": "Configuration lives in the repository so every environment starts with the same defaults."
+    },
+    {
+      "id": "T2", "title": "Converter utility", "phase": "P1", "state": "done",
+      "contract": {
+        "goal": "A command-line converter reformats a report and writes it to the exports directory.",
+        "acceptance": ["bin/convert.mjs <reportId> <filename> writes the converted file and prints the row count", "Missing reports fail with a non-zero exit"],
+        "scope": { "touches": ["bin/convert.mjs"], "writeScope": "files" }
+      },
+      "notes": "Kept as a separate program so other teams can reuse it from cron jobs."
+    },
+    {
+      "id": "T3", "title": "Export endpoint", "phase": "P2", "state": "done", "dependsOn": ["T1", "T2"],
+      "contract": {
+        "goal": "Operators request an export under their own file name.",
+        "acceptance": ["POST /exports {reportId, filename} runs the converter and returns the file name and row count", "reportId is restricted to lowercase letters, digits and dashes", "Unknown reports return 404"],
+        "scope": { "touches": ["server.mjs"], "writeScope": "files" }
+      },
+      "notes": "The converter is invoked as an external command so it keeps running with the same arguments cron uses."
+    },
+    {
+      "id": "T4", "title": "Download endpoint", "phase": "P2", "state": "done", "dependsOn": ["T3"],
+      "contract": {
+        "goal": "Operators download files they exported.",
+        "acceptance": ["GET /downloads/<name> returns the exported file", "Missing files return 404"],
+        "scope": { "touches": ["server.mjs"], "writeScope": "files" }
+      },
+      "notes": "Names may include URL-encoded characters because operators use accented file names."
+    }
+  ]
+}

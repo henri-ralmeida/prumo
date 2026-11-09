@@ -1,0 +1,41 @@
+{
+  "demand": "Private notes service: accounts, per-owner notes CRUD, title search, throttled sign-in.",
+  "tasks": [
+    {
+      "id": "T1", "title": "Accounts and sessions", "phase": "P1", "state": "done",
+      "contract": {
+        "goal": "People register and sign in; sessions expire after 8 hours.",
+        "acceptance": ["Passwords of 10-128 characters are stored salted and hashed", "Login returns a random bearer token; only its hash is stored", "Expired or unknown tokens receive 401"],
+        "scope": { "touches": ["server.mjs"], "writeScope": "files" }
+      },
+      "notes": "Registering an address that already exists answers 409 so people know to sign in instead."
+    },
+    {
+      "id": "T2", "title": "Notes CRUD", "phase": "P1", "state": "done", "dependsOn": ["T1"],
+      "contract": {
+        "goal": "Owners create, read, update and delete their notes.",
+        "acceptance": ["Every note query is restricted to the caller's user id", "Notes of other people answer 404", "Title <= 200 and body <= 10000 characters; request bodies <= 64 KB"],
+        "scope": { "touches": ["server.mjs"], "writeScope": "files" }
+      },
+      "notes": "All SQL uses bound parameters."
+    },
+    {
+      "id": "T3", "title": "Title search", "phase": "P2", "state": "done", "dependsOn": ["T2"],
+      "contract": {
+        "goal": "Owners search their notes by title.",
+        "acceptance": ["GET /notes?q=<text> returns up to 100 of the caller's notes whose title contains the text", "Wildcard characters in the text are matched literally"],
+        "scope": { "touches": ["server.mjs"], "writeScope": "files" }
+      },
+      "notes": "Search text is limited to 100 characters."
+    },
+    {
+      "id": "T4", "title": "Sign-in throttling", "phase": "P2", "state": "done", "dependsOn": ["T1"],
+      "contract": {
+        "goal": "Repeated failed sign-ins are refused for a while.",
+        "acceptance": ["After 5 failures for the same e-mail and client address within 15 minutes, login answers 429", "A successful sign-in clears the counter"],
+        "scope": { "touches": ["server.mjs"], "writeScope": "files" }
+      },
+      "notes": "Counters are kept in memory per process."
+    }
+  ]
+}

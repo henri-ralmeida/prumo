@@ -1,0 +1,55 @@
+{
+  "target": "invoice-api",
+  "kind": "vulnerable",
+  "vulnerabilities": [
+    {
+      "key": "invoice-read-without-owner-check",
+      "cwe": "CWE-639",
+      "cweFamily": ["CWE-285", "CWE-284", "CWE-862", "CWE-863", "CWE-200", "CWE-359"],
+      "severity": "high",
+      "acceptedSeverities": ["high"],
+      "cvss": {
+        "vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
+        "score": 7.1,
+        "scoreSource": "calculator"
+      },
+      "location": "server.mjs:115 GET /invoices/:id",
+      "taskRefs": ["T2"],
+      "matchHints": ["/invoices/", "idor", "bola", "object-level", "object level", "other user", "another user", "ownership", "owner"],
+      "rationale": "Sequential invoice numbers are served to any authenticated caller without comparing the invoice owner."
+    },
+    {
+      "key": "profile-update-assigns-role",
+      "cwe": "CWE-915",
+      "cweFamily": ["CWE-269", "CWE-266", "CWE-250", "CWE-284", "CWE-285", "CWE-862", "CWE-863", "CWE-639"],
+      "severity": "high",
+      "acceptedSeverities": ["high"],
+      "cvss": {
+        "vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+        "score": 8.6,
+        "scoreSource": "calculator"
+      },
+      "location": "server.mjs:123 PATCH /users/me",
+      "taskRefs": ["T3", "T4"],
+      "matchHints": ["/users/me", "mass assignment", "object.assign", "role", "privilege escalation", "admin"],
+      "rationale": "T3 copies every submitted field onto the user record and T4 trusts the stored role for the admin listing, so a self-registered customer promotes themselves. The attacker needs an account (PR:L), so the base score stays below critical."
+    },
+    {
+      "key": "token-accepts-unsigned-header",
+      "cwe": "CWE-347",
+      "cweFamily": ["CWE-345", "CWE-287", "CWE-290", "CWE-303", "CWE-327", "CWE-1270", "CWE-208"],
+      "severity": "critical",
+      "acceptedSeverities": ["critical"],
+      "cvss": {
+        "vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+        "score": 9.3,
+        "scoreSource": "calculator"
+      },
+      "location": "server.mjs:38 readToken",
+      "taskRefs": ["T1"],
+      "matchHints": ["alg", "none", "jwt", "unsigned", "signature", "forge", "forged", "token"],
+      "rationale": "Tokens whose header declares alg none skip signature verification, so identities can be forged; the signature comparison is also not constant time."
+    }
+  ],
+  "acceptable": []
+}

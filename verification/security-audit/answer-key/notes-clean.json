@@ -1,0 +1,27 @@
+{
+  "target": "notes-clean",
+  "kind": "control",
+  "vulnerabilities": [],
+  "acceptable": [
+    {
+      "key": "registration-reveals-existing-email",
+      "cwe": "CWE-204",
+      "cweFamily": ["CWE-203", "CWE-200", "CWE-209"],
+      "maxSeverity": "low",
+      "location": "server.mjs:94 POST /auth/register",
+      "taskRefs": ["T1"],
+      "matchHints": ["/auth/register", "enumerat", "already registered", "409", "existing email", "existing account"],
+      "rationale": "Documented product decision in T1; account enumeration through registration is a legitimate low-severity observation."
+    },
+    {
+      "key": "plain-http-listener",
+      "cwe": "CWE-319",
+      "cweFamily": ["CWE-311", "CWE-523"],
+      "maxSeverity": "info",
+      "location": "server.mjs listener",
+      "taskRefs": [],
+      "matchHints": ["tls", "https", "cleartext", "plain http", "transport"],
+      "rationale": "The service listens on loopback over plain HTTP by design; transport security belongs to a front proxy."
+    }
+  ]
+}
