@@ -63,6 +63,10 @@
  *   node $ENGINE recover-replanning <task> --check|--confirmed-by-user
  *   node $ENGINE skip <task> --reason
  *   node $ENGINE note <task> --text "<text>"
+ *   node $ENGINE audit-enable --confirmed-by-user | audit-skip --reason <text> --confirmed-by-user
+ *   node $ENGINE audit-start --agent <auditor> --environment <local URL> --confirmed-by-user
+ *   node $ENGINE audit-finish --report <report.json> | audit-accept <finding> --reason <text> --confirmed-by-user | audit-status | audit-cvss <vector>
+ *   node $ENGINE audit-fix-plan [--out <file.json>] [--test-command <command>]   (proposes a fix phase for blocking findings; apply it with sync-plan --propose)
  *   node $ENGINE runs
  */
 import {
@@ -100,6 +104,8 @@ import { parseTaskMapping, parsePhaseOrder, renumberTasks, renumberBlockers, Ren
 import { terminalAttemptRepairs, repairTerminalAttempts, attemptsForContext } from './legacy-attempts.mjs'
 import { captureDelivery, checkDelivery, verifyNumericProvenance, assertEvidenceContract, assertReviewedDelivery } from './delivery-evidence.mjs'
 import { assertRolePreferences, recordDispatchMetadata, dispatchOwners, reportedUsageTotals, pauseRun, resumeRun, shellCommand, taskBrief, agentRoles, repeatedPlanQuestions, recordedPlanIdentity } from './run-metadata.mjs'
+import { scoreCvss4 } from './cvss4.mjs'
+import { refusalText, graphClosed, openAuditAttempt, validateAuditReport, securityAuditView, securityBrief, securityFixPlan, SECURITY_FINDING_TAG, markAuditDecisionIfClosed, enableAudit, skipAudit, startAudit, recordAuditReport, acceptFinding, auditActivityTarget, auditNotices, auditGateNotice } from './security-audit.mjs'
 import { newCommandRecord, recordCommand } from './command-metrics.mjs'
 import { questionAnswerOrigin, missingExecutionSteps, phaseOrderChange } from './planning-context.mjs'
 
@@ -132,6 +138,16 @@ if (args?.help && !(cmd === 'review-progress' && args._[0])) {
     log(tr('Read the numbered current criteria with show-contract <task>; progress is a reviewer report, not proof of inspection or approval'))
     printReviewAgentGuidance()
     printReviewValidationGuidance('<task>')
+  }
+  process.exit(0)
+}
+
+// Read-only and offline: scoring a vector needs no workspace, run or state, so it runs before the workspace is resolved.
+if (cmd === 'audit-cvss') {
+  try { args = parseEngineArgs(cmd, rest) } catch (error) { die(error.message) }
+  const vector = args._[0] ?? die(tr('audit-cvss <vector>'))
+  try { console.log(JSON.stringify({ vector, ...scoreCvss4(vector) }, null, 2)) } catch (error) {
+    die(tr('audit-cvss: {0}', refusalText(error, tr)))
   }
   process.exit(0)
 }
@@ -281,6 +297,8 @@ function closeInactiveActivity(state, at) {
     const open = attempt?.activityIntervals?.findLast(interval => !interval.endedAt)
     if (open && (task.state !== (open.role === 'execution' ? 'running' : 'reviewing') || attempt.endedAt)) stopOpenActivity(attempt, at)
   }
+  const lastAudit = state.securityAudit?.attempts?.at(-1)
+  if (lastAudit && !openAuditAttempt(state)) stopOpenActivity(lastAudit, at)
 }
 
 function migrationStatus(state) {
@@ -1610,6 +1628,38 @@ function printQuestionStatus(state) {
   }
 }
 
+/** Runs a pure audit reducer; its refusals are translated here so the module stays free of output. */
+function auditAction(action) {
+  try { return action() } catch (error) { die(refusalText(error, tr)) }
+}
+
+function printSecurityAuditNotice(state) {
+  for (const [message, ...params] of auditNotices(state)) log('[prumo] ' + tr(message, ...params))
+}
+
+function printSecurityAuditGate(state) {
+  const gate = auditGateNotice(state)
+  if (gate) log('[prumo] ' + tr(gate[0], ...gate.slice(1)))
+}
+
+function runActivity(kind, name, id, role, agent) {
+  const state = loadState(name), attempt = auditAction(() => auditActivityTarget(state, id, role, agent))
+  if (kind === 'start') {
+    if (attempt.activityIntervals?.some(interval => !interval.endedAt)) die(tr('{0} already has active work', id))
+    attempt.activityTiming = 'explicit'
+    ;(attempt.activityIntervals ??= []).push({ role, agent, startedAt: new Date().toISOString() })
+    saveState(name, state)
+    emit(name, 'activity_start', id, { scope: 'run', role, agent })
+    return log('[prumo] ' + tr('{0} {1} activity started by {2}', id, role, agent))
+  }
+  const open = attempt.activityIntervals?.findLast(interval => !interval.endedAt)
+  if (!open) die(tr('{0} has no active {1} work by {2}', id, role, agent))
+  open.endedAt = new Date().toISOString(); open.endedBy = cmd
+  saveState(name, state)
+  emit(name, 'activity_stop', id, { scope: 'run', role, agent })
+  log('[prumo] ' + tr('{0} {1} activity stopped by {2}', id, role, agent))
+}
+
 
 
 // Uma execução só restringe o despacho depois que o escopo do usuário foi registrado pelo menos uma vez.
@@ -2700,6 +2750,11 @@ const commands = {
         added.length, updated.length, metadataUpdated.length))
       return
     }
+    // New tasks reopen a closed graph; the running auditor must finish against the delivery it was started for.
+    if (added.length && openAuditAttempt(beforeState) && graphClosed(beforeState)) die(tr('security audit is running; finish it with audit-finish (or record its report) before adding tasks with sync-plan'))
+    // Fix tasks for audit findings enter only as a proposal; the existing proposal gate keeps them unexecuted until the user accepts the contract.
+    const unproposed = added.filter(id => state.tasks[id].tags?.some(tag => SECURITY_FINDING_TAG.test(tag)))
+    if (unproposed.length && !args.propose) die(tr('security fix tasks ({0}) are added only as a proposal for user acceptance; run sync-plan --plan <file.json> --propose', unproposed.map(displayIdentifier).join(', ')))
     const completedPhases = invalidatedWorkflows.filter(item => item.scope === 'phase' && item.workflow === 'discussion' &&
       beforeState.phaseWorkflows[item.id].discussionAttempts.some(round =>
         round.roundId === item.roundId && round.endedAt && round.result === 'discussed'))
@@ -2840,6 +2895,8 @@ const commands = {
       }
     }
     const previouslyEligible = eligibleDiscussionPhases(beforeState)
+    // Removing the last open task closes the graph; a graph that was already closed is not asked retroactively.
+    if (!graphClosed(beforeState)) markAuditDecisionIfClosed(state)
     saveState(name, state)
     for (const id of removed) emit(name, 'task_removed', id, { reason: args.reason.trim(), source })
     emit(name, 'plan_sync', null, {
@@ -2865,11 +2922,15 @@ const commands = {
     )
     announceNewlyEligiblePhases(name, previouslyEligible, state, 'sync-plan')
     printDispatchSuggestions(state)
+    printSecurityAuditNotice(state)
   },
 
   brief() {
-    const state = loadState(runName()), task = getTask(state, args._[0])
-    console.log(JSON.stringify(taskBrief(state, task, args.role, tokens => shellCommand([process.execPath, fileURLToPath(import.meta.url), ...tokens, '--run', state.run])), null, 2))
+    const state = loadState(runName())
+    const brief = tokens => shellCommand([process.execPath, fileURLToPath(import.meta.url), ...tokens, '--run', state.run])
+    if (args.role === 'security') return console.log(JSON.stringify(securityBrief(state, brief), null, 2))
+    const task = getTask(state, args._[0])
+    console.log(JSON.stringify(taskBrief(state, task, args.role, brief), null, 2))
   },
   'set-role'() {
     const name = runName(), state = loadState(name)
@@ -2896,6 +2957,7 @@ const commands = {
     printDispatchSuggestions(state)
   },
   'report-usage'() {
+    if (args.role === 'security') die(tr('security usage is run-level and not supported by report-usage'))
     const name = runName(), state = loadState(name), task = getTask(state, args._[0])
     if (!agentRoles.includes(args.role) || !args.receipt?.trim() || args.receipt.length > 128) die('report-usage requires role and a bounded receipt id')
     const attemptNumber = args.attempt === undefined ? (args.role === 'execution' || args.role === 'review' ? task.attempts.length : task[`${args.role}Attempts`]?.length ?? 0) : positiveIndex(args.attempt, 'report-usage --attempt')
@@ -3116,6 +3178,8 @@ const commands = {
     printPendingContractConfirmations(state)
     printPlanningRoundProgress(state)
     printQuestionStatus(state)
+    printSecurityAuditNotice(state)
+    printSecurityAuditGate(state)
     const p = progress(state)
     const actions = suggestedActionsByTask(state)
     const scoped = runHasAuthorizationScope(state)
@@ -3201,6 +3265,7 @@ const commands = {
     printPendingContractConfirmations(state)
     printPlanningRoundProgress(state)
     printQuestionStatus(state)
+    printSecurityAuditNotice(state)
     const d = derive(state)
     const occ = occupancy(state)
     const list = Object.values(d).filter((t) => ['ready_for_discussion', 'ready_to_plan', 'ready'].includes(t.effective))
@@ -4385,6 +4450,7 @@ const commands = {
     t.state = 'done'
     t.attempts.at(-1).endedAt = new Date().toISOString()
     t.attempts.at(-1).result = 'done'
+    markAuditDecisionIfClosed(state)
     saveState(name, state)
     emit(name, 'task_done', id, { agent: t.agent })
     const unlocked = Object.values(derive(state)).filter(
@@ -4394,6 +4460,7 @@ const commands = {
     announceNewlyEligiblePhases(name, previouslyEligible, state, 'done')
     announceFreedSlot(name, state, id, 'done', slotsBeforeDone)
     printDispatchSuggestions(state)
+    printSecurityAuditNotice(state)
   },
 
   fail() {
@@ -4648,6 +4715,7 @@ const commands = {
       attempt.result = 'skipped'
       attempt.reason = reason
     }
+    markAuditDecisionIfClosed(state)
     saveState(name, state)
     emit(name, 'task_skip', id, { reason })
     if (phaseDiscussion) {
@@ -4668,6 +4736,7 @@ const commands = {
     }
     announceNewlyEligiblePhases(name, previouslyEligible, state, 'skip')
     printDispatchSuggestions(state)
+    printSecurityAuditNotice(state)
   },
 
   note() {
@@ -4690,6 +4759,7 @@ const commands = {
     const scope = args.scope ?? 'task'
     const role = args.role
     const agent = args.agent
+    if (scope === 'run') return runActivity('start', name, id, role, agent)
     if (!['task', 'phase'].includes(scope) || !['discussion', 'planning', 'execution', 'review'].includes(role) ||
         typeof agent !== 'string' || !agent.trim()) die(tr('activity-start needs a valid scope, role and nonempty agent'))
     if (scope === 'phase' && !['discussion', 'planning'].includes(role)) die(tr('phase activity supports discussion or planning only'))
@@ -4724,6 +4794,7 @@ const commands = {
     const scope = args.scope ?? 'task'
     const role = args.role
     const agent = args.agent
+    if (scope === 'run') return runActivity('stop', name, id, role, agent)
     if (!['task', 'phase'].includes(scope) || !['discussion', 'planning', 'execution', 'review'].includes(role) ||
         typeof agent !== 'string' || !agent.trim()) die(tr('activity-stop needs a valid scope, role and nonempty agent'))
     if (scope === 'phase' && !['discussion', 'planning'].includes(role)) die(tr('phase activity supports discussion or planning only'))
@@ -4745,6 +4816,86 @@ const commands = {
     emit(name, 'activity_stop', id, { scope, role, agent })
     log('[prumo] ' + tr('{0} {1} activity stopped by {2}', id, role, agent))
   },
+
+  'audit-enable'() {
+    const name = runName(), state = loadState(name)
+    if (args['confirmed-by-user'] !== true) die(tr('audit-enable requires --confirmed-by-user'))
+    state.securityAudit = auditAction(() => enableAudit(state, new Date().toISOString()))
+    saveState(name, state); emit(name, 'security_audit_enabled', null, {})
+    log('[prumo] ' + tr('security audit pre-authorized for this run'))
+    printSecurityAuditNotice(state)
+  },
+
+  'audit-skip'() {
+    const name = runName(), state = loadState(name)
+    if (args['confirmed-by-user'] !== true) die(tr('audit-skip requires --confirmed-by-user'))
+    const reason = typeof args.reason === 'string' && args.reason.trim() ? args.reason.trim() : die(tr('audit-skip requires --reason <text>'))
+    state.securityAudit = auditAction(() => skipAudit(state, reason, new Date().toISOString()))
+    saveState(name, state); emit(name, 'security_audit_skipped', null, { reason })
+    log('[prumo] ' + tr('security audit skipped: {0}', reason))
+  },
+
+  'audit-start'() {
+    const name = runName(), state = loadState(name)
+    if (args['confirmed-by-user'] !== true) die(tr('audit-start requires --confirmed-by-user'))
+    const agent = typeof args.agent === 'string' && args.agent.trim() ? args.agent.trim() : die(tr('audit-start requires --agent <auditor>'))
+    if (typeof args.environment !== 'string' || !args.environment.trim()) die(tr('audit-start requires --environment <local URL>'))
+    const occ = occupancy(state)
+    const { audit, attempt } = auditAction(() => startAudit(state, { agent, environment: args.environment, at: new Date().toISOString(), dispatchOwners, used: occ.busy.length, cap: occ.cap }))
+    state.securityAudit = audit
+    saveState(name, state)
+    emit(name, 'security_audit_start', null, { agent, environment: attempt.environment, attempt: attempt.n })
+    log('[prumo] ' + tr('security audit {0} started by {1} against {2}', attempt.n, agent, attempt.environment))
+    log('[prumo] ' + tr('Dispatch the auditor with: node "{0}" brief --role security --run "{1}"; mark activity with activity-start security-audit --scope run --role security --agent {2}', fileURLToPath(import.meta.url), state.run, agent))
+  },
+
+  'audit-finish'() {
+    const name = runName(), state = loadState(name), attempt = openAuditAttempt(state)
+    if (!attempt) die(tr('there is no running security audit'))
+    if (typeof args.report !== 'string' || !args.report.trim()) die(tr('audit-finish requires --report <report.json>'))
+    let bytes
+    try { bytes = readFileSync(resolve(args.report)) } catch (error) { die(tr('cannot read the audit report: {0}', error.message)) }
+    let report
+    try { report = JSON.parse(bytes.toString('utf8').replace(/^﻿/, '')) } catch (error) { die(tr('the audit report is not valid JSON: {0}', error.message)) }
+    let findings
+    try { findings = validateAuditReport(report, state, attempt) } catch (error) { die(tr('invalid audit report: {0}', refusalText(error, tr))) }
+    const counts = recordAuditReport(state, attempt, { report, findings, path: resolve(args.report), digest: createHash('sha256').update(bytes).digest('hex'), at: new Date().toISOString() })
+    saveState(name, state)
+    emit(name, 'security_audit_finish', null, { attempt: attempt.n, result: attempt.result, counts, digest: attempt.report.digest })
+    log('[prumo] ' + tr('security audit {0} finished: {1}; findings {2}', attempt.n, attempt.result, JSON.stringify(counts)))
+    printSecurityAuditNotice(state)
+  },
+
+  'audit-accept'() {
+    const name = runName(), state = loadState(name)
+    const id = args._[0] ?? die(tr('audit-accept <finding> --reason <text> --confirmed-by-user'))
+    if (args['confirmed-by-user'] !== true) die(tr('audit-accept requires --confirmed-by-user'))
+    const reason = typeof args.reason === 'string' && args.reason.trim() ? args.reason.trim() : die(tr('audit-accept requires --reason <text>'))
+    const result = auditAction(() => acceptFinding(state, id, reason, new Date().toISOString()))
+    saveState(name, state)
+    emit(name, 'security_audit_accept', null, { finding: id, reason, state: result })
+    log('[prumo] ' + tr('finding {0} accepted; security audit is {1}', id, result))
+  },
+
+  'audit-fix-plan'() {
+    const state = loadState(runName())
+    let plan
+    try { plan = securityFixPlan(state, typeof args['test-command'] === 'string' && args['test-command'].trim() ? args['test-command'].trim() : undefined) } catch (error) {
+      die(tr('audit-fix-plan: {0}', refusalText(error, tr)))
+    }
+    const created = plan.tasks.filter(item => item.securityFinding)
+    const text = JSON.stringify(plan, null, 2)
+    if (typeof args.out !== 'string' || !args.out.trim()) return console.log(text)
+    // wx creates the file or fails, so an existing file is never overwritten and there is no check-then-write race.
+    try { writeFileSync(resolve(args.out), text + String.fromCharCode(10), { flag: 'wx' }) } catch (error) {
+      die(error.code === 'EEXIST' ? tr('audit-fix-plan --out {0} already exists; choose another file', JSON.stringify(args.out)) : tr('audit-fix-plan cannot write {0}: {1}', JSON.stringify(args.out), error.message))
+    }
+    log('[prumo] ' + tr('security fix phase proposed in {0}: {1}; no state was changed. Show it to the user, then run sync-plan --plan {0} --propose and have the user accept the contracts', JSON.stringify(resolve(args.out)), created.map(item => `${item.id} (${item.securityFinding.id})`).join(', ')))
+  },
+
+  'audit-status'() {
+    console.log(JSON.stringify(securityAuditView(loadState(runName())) ?? { state: null }, null, 2))
+  },
 }
 
 if (!cmd || !Object.hasOwn(commands, cmd)) {
@@ -4756,7 +4907,7 @@ if (!cmd || !Object.hasOwn(commands, cmd)) {
    ou o estado anterior ou o próximo, nunca um arquivo meio gravado. Todo o restante
    usa o bloqueio da execução durante toda a leitura-modificação-gravação; validate bloqueia suas atualizações de estado
    separadamente para que a execução de comandos não sobreviva ao curto período do bloqueio. */
-const READ_ONLY = new Set(['brief', 'verify-provenance', 'runs', 'status', 'ready', 'graph', 'show-contract', 'show-check'])
+const READ_ONLY = new Set(['audit-status', 'audit-fix-plan', 'brief', 'verify-provenance', 'runs', 'status', 'ready', 'graph', 'show-contract', 'show-check'])
 const LEGACY_MIGRATION_CONTINUATIONS = new Set([
   'start', 'progress', 'review', 'review-progress', 'validate', 'done', 'fail', 'retry', 'block', 'unblock', 'skip', 'refresh-contract',
   'pause-replanning',
@@ -4797,7 +4948,7 @@ if (!['init', 'runs', 'migrate', 'sync-plan', 'renumber-tasks', 'reorder-phases'
   const name = runName()
   const initialState = loadState(name)
   const aliases = initialState.taskIdAliases ?? {}
-  if (!cmd.includes('phase') && args._[0] && Object.hasOwn(aliases, args._[0])) args._[0] = aliases[args._[0]]
+  if (!cmd.includes('phase') && cmd !== 'audit-accept' && args._[0] && Object.hasOwn(aliases, args._[0])) args._[0] = aliases[args._[0]]
   if (args.scope?.startsWith('tasks:')) args.scope = 'tasks:' + args.scope.slice(6).split(',').map(id => Object.hasOwn(aliases, id) ? aliases[id] : id).join(',')
   const initialMigration = migrationStatus(initialState)
   // Alterar a capacidade não migra identificadores ou planejamento de uma execução legada.
@@ -4825,7 +4976,7 @@ function runCommand() {
   }
   if (BLOCKED_ACTIONS.has(cmd) && args.scope !== 'phase') assertExternalBlockAction(loadState(runName()), args._[0])
   const paused = !['init', 'runs'].includes(cmd) ? loadState(runName()).runPause : null
-  if (paused && !paused.endedAt && /^(?:begin-|plan-|finish-|skip-|start$|review$|retry$|unblock$|activity-start$|validate$|done$|progress$|review-progress$)/.test(cmd)) die('Run is paused; resume-run explicitly. External harness processes are not interrupted.')
+  if (paused && !paused.endedAt && /^(?:begin-|plan-|finish-|skip-|start$|review$|retry$|unblock$|activity-start$|audit-start$|validate$|done$|progress$|review-progress$)/.test(cmd)) die('Run is paused; resume-run explicitly. External harness processes are not interrupted.')
   return commands[cmd]()
 }
 try {

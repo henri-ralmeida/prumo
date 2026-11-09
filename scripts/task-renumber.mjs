@@ -1,8 +1,9 @@
 import { join } from 'node:path'
 import { lstatSync } from 'node:fs'
 import { discoveryDigest, taskPlanDigest, phasePlanningContext, planningContext, executionInputReceipt, hasCurrentTaskPlan, hasCurrentTaskScope } from './validation.mjs'
+import { openAuditAttempt } from './security-audit.mjs'
 
-const references = new Set(['id', 'task', 'taskId', 'taskIds', 'tasks', 'targets', 'originalTargets', 'activeTargets', 'queuedTargets', 'contextTargets', 'members', 'deps', 'blockedBy', 'planningBlockedBy', 'beforeTask', 'byTask', 'sourceTask', 'freedBy', 'next', 'added', 'updated', 'preserved', 'metadataUpdated', 'revokedAuthorizationTasks', 'deferredToExecutor'])
+const references = new Set(['id', 'task', 'taskId', 'taskIds', 'taskRefs', 'tasks', 'targets', 'originalTargets', 'activeTargets', 'queuedTargets', 'contextTargets', 'members', 'deps', 'blockedBy', 'planningBlockedBy', 'beforeTask', 'byTask', 'sourceTask', 'freedBy', 'next', 'added', 'updated', 'preserved', 'metadataUpdated', 'revokedAuthorizationTasks', 'deferredToExecutor'])
 const dictionaries = new Set(['tasks', 'workers', 'requiredInputs', 'assignments'])
 const phaseReferences = new Set(['phase', 'phaseId', 'beforePhase'])
 const questionKeys = new Set(['questionRef', 'questionRefs', 'resolvesQuestion', 'ref'])
@@ -24,6 +25,9 @@ function requireRenumber(condition, message, ...params) {
 // Tentativas antigas continuam históricas; só a tentativa atual de trabalho não terminal pode estar aberta.
 export function renumberBlockers(state) {
   const blockers = []
+  const audit = openAuditAttempt(state)
+  // Os identificadores lidos pelo auditor não podem passar a representar outra entrega antes do relatório.
+  if (audit) blockers.push({ owner: 'security-audit', ownerType: 'run', state: 'running', kind: 'attempt', attempt: audit.n })
   for (const [ownerType, owners] of [['task', state.tasks], ['phase', state.phaseWorkflows]]) {
     for (const [id, owner] of Object.entries(owners ?? {})) {
       const detail = { owner: owner.id ?? id, ownerType, state: owner.state }

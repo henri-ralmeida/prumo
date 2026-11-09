@@ -288,6 +288,10 @@ Mantenha contexto e requisitos substituídos nos documentos aprovados e no hist�
 
 Revisões corretivas retomam na primeira etapa inválida quando as verificações estáticas determinísticas anteriores declaram `cacheable: true` e `cachePaths` relativos seguros. O Prumo reutiliza esses recibos somente enquanto os arquivos declarados permanecem iguais. Verificações funcionais sempre executam novamente.
 
+## Auditoria de segurança (opcional)
+
+Quando todas as tarefas estão `done` ou `skipped`, o Prumo pergunta uma vez se deve executar uma auditoria de segurança ofensiva (Run / Skip / Not now). Um agente independente, que nunca executou, revisou nem planejou tarefas, lê todos os cards, ataca a entrega somente em ambiente local e registra um relatório. Achados `critical` e `high` bloqueiam a execução até você aceitar cada um com justificativa ou a correção ser feita e reauditada. Veja [security-audit.md](references/security-audit.md).
+
 ## Idiomas e compatibilidade
 
 O idioma inicial segue a região configurada no sistema, com inglês como fallback. Use `--lang en|pt-BR` ou `PRUMO_LANG` para uma escolha explícita. O dashboard segue a preferência salva na instalação e não tem seletor de idioma. Interface, mensagens e documentação têm inglês e PT-BR; instruções internas ficam em inglês e orientam responder no idioma do usuário. Identificadores, contratos, comandos e saídas dos processos não são traduzidos.

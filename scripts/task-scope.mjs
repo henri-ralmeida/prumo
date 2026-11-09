@@ -15,6 +15,8 @@ export function insideTouches(path, touches) {
   const candidate = scopePath(path)
   return touches.some(value => { const prefix = scopePath(value); return prefix === '' || candidate === prefix || candidate.startsWith(prefix + '/') })
 }
+/** A touch is a repository-relative path: no empty value, NUL, drive letter, leading separator or parent segment. */
+export const isSafeTouch = path => typeof path === 'string' && Boolean(path.trim()) && !/^(?:[/\\]|[A-Za-z]:)/.test(path) && !path.includes('\0') && !path.replace(/\\/g, '/').split('/').includes('..')
 export function assertExplicitScope(task, policy) {
   if (task.project !== undefined && (typeof task.project !== 'string' || !isAbsolute(task.project) || task.project.includes('\0')))
     throw new Error('task project must be an absolute Git repository root')
@@ -23,7 +25,7 @@ export function assertExplicitScope(task, policy) {
     if (!['files', 'read-only', 'unknown'].includes(task.writeScope)) throw new Error('explicit scope requires writeScope files, read-only or unknown')
     if (task.touches === undefined) throw new Error('explicit scope: touches is missing; use [] for read-only or unknown and a nonempty array for files')
     if (!Array.isArray(task.touches)) throw new Error('explicit scope: touches must be an array')
-    const unsafe = task.touches.findIndex(path => typeof path !== 'string' || !path.trim() || /^(?:[/\\]|[A-Za-z]:)/.test(path) || path.includes('\0') || path.replace(/\\/g, '/').split('/').includes('..'))
+    const unsafe = task.touches.findIndex(path => !isSafeTouch(path))
     if (unsafe !== -1) {
       const value = task.touches[unsafe]
       throw new Error(`unsafe touch ${typeof value === 'string' ? JSON.stringify(value) : typeof value}; explicit scope requires safe repository-relative touches: paths are relative to the task project, or the run project directory; for another repository declare task.project with its absolute Git root; touches must not contain .. or absolute paths`)

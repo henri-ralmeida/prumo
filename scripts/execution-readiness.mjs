@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { personalAgentLimit } from './storage.mjs'
 import { hasCurrentTaskPlan, usesCurrentPlanning } from './validation.mjs'
 import { scopeConflicts } from './task-scope.mjs'
+import { openAuditAttempt } from './security-audit.mjs'
 
 const digestValue = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 
@@ -152,6 +153,8 @@ export function occupancy(state) {
   })
   const phasePlanners = phaseAgents.filter(agent => agent.state === 'planning')
   const phaseDiscussers = phaseAgents.filter(agent => agent.state === 'discussing')
+  const audit = openAuditAttempt(state)
+  const auditors = audit ? [{ id: '@security-audit', state: 'auditing', agent: audit.agent }] : []
   const cap = state.plan.maxAgents ?? personalAgentLimit()
   return {
     executors,
@@ -159,7 +162,8 @@ export function occupancy(state) {
     planners: [...planners, ...phasePlanners],
     phasePlanners,
     discussers: [...discussers, ...phaseDiscussers],
-    busy: [...executors, ...reviewers, ...planners, ...discussers, ...phaseAgents],
+    auditors,
+    busy: [...executors, ...reviewers, ...planners, ...discussers, ...phaseAgents, ...auditors],
     maxExec: cap,
     cap,
   }

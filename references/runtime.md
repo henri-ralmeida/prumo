@@ -977,6 +977,13 @@ Resolve `scripts/engine.mjs` from the installed skill. Add `--run <name>` to sel
 | `unblock <task> --reviewer <name>` | Takes a paused active attempt directly to review |
 | `skip <task> --reason <text>` | Skips once by a nonempty explicit decision; an active attempt ends as skipped without a fabricated receipt |
 | `note <task> --text <text>` | Appends a note to history |
+| `audit-enable --confirmed-by-user` / `audit-skip --reason <text> --confirmed-by-user` | Pre-authorizes or skips the run-level security audit |
+| `audit-start --agent <auditor> --environment <local URL> --confirmed-by-user` | Starts an audit attempt; refused unless the graph is closed, the auditor is independent, a slot is free, the host is local and the run is not paused |
+| `audit-finish --report <report.json>` | Validates the report, stores its SHA-256 digest; `critical`/`high` makes the audit `blocked` |
+| `audit-accept <finding> --reason <text> --confirmed-by-user` | Accepts one blocking finding; the last acceptance makes the audit `done` |
+| `audit-fix-plan [--out <file.json>] [--test-command <command>]` | Read-only: builds a complete plan for `sync-plan` with one new phase and one task per blocking, unaccepted finding of the last finished audit (next free `T`/`F` numbers, no state change, refuses an existing `--out`, refuses when nothing is left to fix or the tasks exist; needs `--test-command` when no finished task has a functional validation to reuse). Apply with `sync-plan --propose`; plain `sync-plan` refuses these tasks |
+| `audit-cvss <vector>` | Read-only and offline, needs no run: prints `{ vector, score, severity, nomenclature }` for a CVSS v4.0 vector (the auditor uses it while scoring) |
+| `audit-status` | Read-only JSON view of the audit; each `critical`/`high` finding carries `resolution` (`accepted`, `fix-task` or `fix-skipped` with `fixTask`, or `open`), `previousBlocking` lists the last finished attempt's blocking findings while a new attempt runs, and `gate` is true while the demand must not be declared closed |
 | `refresh-contract <task> --plan <approved-file>` | Updates only validation, validationMode and inspectionReason |
 | `sync-plan --plan <approved-file> [--cwd <project>]` | Adds tasks and reconciles the allowed changes; uses the recorded project directory unless explicitly replaced |
 
@@ -1127,6 +1134,16 @@ fabricates attempts, and stored contracts, authorization, dependencies and histo
 | Explicit resume | `resume-run` | Keeps history/attempts and applies current agent limits on subsequent dispatch. Does not implicitly restart measured activity. |
 | Reported usage | `report-usage T1 --role execution --attempt 1 --receipt id --tokens 100 --tools 3` | Optional nonnegative integer counts on an attempt/worker. Same receipt is idempotent, conflicting reports refused. Summed by task/run without validate/done duplication; no financial cost or independent measurement claim. Specify phase round attempt explicitly for workers. |
 | Check query | `show-check T1 [--attempt K] [--check N]` | No check lists attempts/checks with exact commands. Without attempt, a selected check uses the latest recorded execution attempt, never an older validation fallback. Missing current receipts and invalid indices explain available choices. Full receipt output is preserved. |
+
+### Security audit
+
+Optional `state.securityAudit` (absent in runs that never closed their graph after this feature). Methodology and report schema: [security-audit.md](security-audit.md). Severity is the final CVSS v4.0 score band (CVSS-BE only with card evidence, else CVSS-B), lifted to `high` only by a proven class floor. The engine calculates the score offline from `cvss.vector` (and `cvss.environmental.vector`), refuses a reported `score` that differs, ignores `scoreSource` and stores `cvss.computedScore`; `audit-cvss "<vector>"` prints the score, severity and nomenclature without a run.
+
+- `state`: `enabled`, `awaiting-decision`, `skipped`, `running`, `blocked`, `done`. `pending-recheck` is **derived** (stored `blocked` while the graph is open) and never stored.
+- `attempts[]`: `n`, `agent`, `environment` (normalized local origin), `startedAt`, `confirmedByUser`, `taskIds` snapshot, `reportSchema` (`2` for attempts started by this version; absent in older attempts, which keep the previous report format), `endedAt`, `result` (`done`/`blocked`), `report` (`path`, `digest` SHA-256 of the file bytes, `summary`, `environment`, `findings`, optional `tools` and `revalidates`), `acceptances[]`, `activityIntervals[]` (role `security`), `modelDispatches`.
+- The closing `done`/`skip` writes `awaiting-decision`; a legacy run that already finished is not asked retroactively. A `done` audit followed by new tasks asks again when the graph closes.
+- Fix tasks carry the tag `security-finding:<attempt n>:<finding id>` (a contract tag, so it survives `sync-plan` and `renumber-tasks`); the task contract has no free-form field, so evidence, reproduction and remediation stay in `attempts[].report.findings`.
+- `security` is a valid `set-role` role. `report-usage` does not accept it; `--scope run` is only for `activity-start`/`activity-stop` with id `security-audit`.
 
 ### Delivery identifiers
 

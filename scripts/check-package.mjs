@@ -23,7 +23,7 @@ assert.equal(releaseBaseline.source, `npm registry tarball @henri-ralmeida/prumo
 assert.match(releaseBaseline.integrity, /^sha512-[A-Za-z0-9+/]+={0,2}$/)
 assertReleaseContentVersion(pkg.version, releaseBaseline, packageContentManifest(root))
 // Workflow rules share one source; PO First retains its localized installation template.
-const stepReferences = ['contracts', 'discussion', 'dispatch', 'planning', 'recovery', 'review']
+const stepReferences = ['contracts', 'discussion', 'dispatch', 'planning', 'recovery', 'review', 'security-audit', 'security-audit-playbook']
 const instructionReferences = ['po-first', 'runtime', 'harnesses', ...stepReferences]
 for (const file of ['SKILL.md', 'README.md', 'README.pt-BR.md', 'CHANGELOG.md', 'LICENSE', ...instructionReferences.map(name => `references/${name}.md`)]) assert.ok(existsSync(join(root, file)), file)
 assert.ok(readdirSync(join(root, 'references')).every(name => !name.endsWith('.pt-BR.md') || name === 'po-first.pt-BR.md'), 'only the PO First installation template is localized')

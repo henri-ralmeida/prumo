@@ -1,4 +1,5 @@
-export const agentRoles = ['discussion', 'planning', 'execution', 'review']
+import { openAuditAttempt } from './security-audit.mjs'
+export const agentRoles = ['discussion', 'planning', 'execution', 'review', 'security']
 /** Literal overlap is an advisory: it cannot decide whether the question is semantically settled. */
 export function repeatedPlanQuestions(task, plan, phaseDiscovery) {
   const normalize = text => typeof text === 'string' ? text.trim().replace(/\s+/gu, ' ').toLocaleLowerCase('en-US') : ''
@@ -32,6 +33,7 @@ export function dispatchOwners(state) {
       })
     }
   }
+  ;(state.securityAudit?.attempts ?? []).forEach((attempt, index) => owners.push({ key: `run:security:${index}`, task: null, role: 'security', owner: attempt, agent: attempt.agent, startedAt: attempt.startedAt }))
   return owners
 }
 export function recordDispatchMetadata(before, state, reported = {}, redispatchTask) {
@@ -92,6 +94,8 @@ export function pauseRun(state, reason, until, at) {
       for (const interval of owner.activityIntervals ?? []) if (interval.role === role && !interval.endedAt) { interval.endedAt = at; interval.closedBy = 'run-pause' }
     }
   }
+  // The auditor's open interval is paused like any other role's.
+  for (const interval of openAuditAttempt(state)?.activityIntervals ?? []) if (!interval.endedAt) { interval.endedAt = at; interval.closedBy = 'run-pause' }
   // Invalidates in-flight validation without rewriting states, attempts or phase queues.
   for (const task of Object.values(state.tasks)) if (['running', 'reviewing'].includes(task.state)) task.stateRevision = (task.stateRevision ?? 0) + 1
 }

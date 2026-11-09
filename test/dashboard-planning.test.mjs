@@ -6358,3 +6358,67 @@ test('fases encerradas ignoram atividade antiga sem alterar historico nem outra 
     assert.match(ui.nodes.get('#lanes').innerHTML, new RegExp('lane-state ' + (workflow === 'discussing' ? 'discussion' : 'planning')))
   }
 })
+
+test('resultados mostram o cartão da auditoria de segurança com escape e sem alterar o restante', () => {
+  const ui = dashboard('pt-BR')
+  const base = { run: 'auditoria', plan: {}, tasks: {}, derived: {} }
+  ui.run('STATE = input; EVENTS_COMPLETE = true; renderResults(input)', { input: base })
+  assert.doesNotMatch(ui.nodes.get('#results').innerHTML, /security-audit/)
+  const finding = (id, severity, extra = {}) => ({ id, severity, title: `Título ${id} <img src=x onerror=alert(1)>`, cwe: 'CWE-639', taskRefs: ['T1'], ...extra })
+  const counts = { critical: 0, high: 1, medium: 0, low: 0, info: 0 }
+  for (const [state, findings] of [['awaiting-decision', []], ['blocked', [finding('F1', 'high')]], ['done', [finding('F1', 'high', { accepted: true })]]]) {
+    const view = { state, stored: state, graphClosed: true, attempts: [{ n: 1 }], counts, blocking: state === 'blocked' ? ['F1'] : [], findings }
+    ui.run('STATE = input; renderResults(input)', { input: { ...base, securityAuditView: view } })
+    const html = ui.nodes.get('#results').innerHTML
+    assert.match(html, /class="gcard security-audit"/)
+    assert.match(html, /Auditoria de segurança/)
+    assert.match(html, /Parallel gain|Ganho/i)
+    if (findings.length) assert.match(html, /Título F1 &lt;img src=x onerror=alert\(1\)&gt;/)
+    assert.doesNotMatch(html, /<img src=x/)
+  }
+  assert.match(ui.nodes.get('#results').innerHTML, /Aceito/)
+})
+
+test('cartão distribuído preserva relatórios antigos, notas calculadas e revalidação mesmo com campos ausentes', () => {
+  const ui = dashboard('pt-BR')
+  const render = input => ui.run('renderSecurityAuditPanel(input, tr, esc)', { input })
+  assert.match(render({ state: 'desconhecido' }), /desconhecido/)
+  const base = { id: 'F1', severity: 'high', title: 'Dado protegido', cwe: 'CWE-639' }
+  const findings = [
+    { ...base, resolution: 'fix-task', fixTask: 'T2', cvss: { score: 7.1, environmental: { score: 8.1 } } },
+    { ...base, id: 'F2', resolution: 'fix-skipped', fixTask: 'T3', cvss: { computedScore: 6.3, score: 0, environmental: { computedScore: 8.3, score: 0 } }, severityFloor: { class: 'ssrf-internal' } },
+    { ...base, id: 'F3', status: 'open', cvss: { vector: 'sem nota' }, severityFloor: {} },
+    { ...base, id: 'F4', status: 'accepted' },
+    { ...base, id: 'F5', accepted: true },
+  ]
+  const html = render({ state: 'running', previousBlocking: findings })
+  assert.match(html, /Achados da auditoria anterior em revalidação/)
+  assert.match(html, /CVSS-B 7\.1 · CVSS-BE 8\.1/)
+  assert.match(html, /CVSS-B 6\.3 · CVSS-BE 8\.3 · Piso: ssrf-internal/)
+  assert.match(html, /Tarefa de correção T2/)
+  assert.match(html, /Tarefa de correção T3 pulada/)
+  assert.match(html, /Em aberto/)
+  assert.match(html, /Aceito/)
+  assert.match(render({ state: 'running' }), /Auditoria de segurança/)
+})
+
+test('a auditoria pendente aparece no resumo lateral e na lista de execuções sem tirar o plano de no prumo', () => {
+  const ui = dashboard('pt-BR')
+  const base = { run: 'auditoria', plan: {}, tasks: { T1: task('T1', 'done') }, derived: { T1: { effective: 'done' } } }
+  ui.render(base)
+  assert.doesNotMatch(ui.nodes.get('#counts').innerHTML, /security-audit/)
+  for (const [state, label] of [['blocked', 'Bloqueado'], ['pending-recheck', 'Reverificação pendente'], ['running', 'em andamento'], ['awaiting-decision', 'Aguardando decisão'], ['enabled', 'Pré-autorizada'], ['desconhecido', 'desconhecido']]) {
+    ui.render({ ...base, securityAuditView: { state, gate: true } })
+    assert.match(ui.nodes.get('#counts').innerHTML, new RegExp(`data-state="security-audit"[^>]*><span class="count-label">Auditoria de segurança</span> <b>${label}</b>`), state)
+  }
+  ui.render({ ...base, securityAuditView: { state: 'done', gate: false } })
+  assert.doesNotMatch(ui.nodes.get('#counts').innerHTML, /security-audit/)
+  const catalog = { currentRoot: 'root', current: 'gated', runs: [
+    { root: 'root', run: 'gated', plan: 'Plano auditado', taskCount: 2, doneCount: 2, complete: true, auditGate: true },
+    { root: 'root', run: 'clean', plan: 'Plano limpo', taskCount: 2, doneCount: 2, complete: true, auditGate: false }] }
+  ui.run('updateRunSelect(catalog)', { catalog })
+  const options = ui.nodes.get('#runOptions').innerHTML
+  assert.match(options, /2 de 2 tarefas no prumo · auditoria de segurança pendente/)
+  assert.equal((options.match(/auditoria de segurança pendente/g) ?? []).length, 2, 'rotulo acessivel e texto visivel somente da execucao com portao aberto')
+  assert.match(options, /no prumo<i aria-hidden="true"/)
+})

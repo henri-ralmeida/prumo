@@ -211,3 +211,35 @@ export function renderManualCoordination(gain, tr, fmtMs, esc) {
     ${gain.commandsComplete ? '' : `<p class="gline gain-note">${esc(tr('Partial dispatch history: unrecorded dispatches are excluded from the estimate.'))}</p>`}
   </section>`
 }
+
+/** Renders the run-level security audit card; empty when the run has no audit block and tolerant of a partial view. */
+export function renderSecurityAuditPanel(view, tr, esc) {
+  if (!view) return ''
+  const states = { enabled: 'Pre-authorized', 'awaiting-decision': 'Awaiting decision', skipped: 'Audit skipped', running: 'Running', blocked: 'Blocked', 'pending-recheck': 'Pending re-check', done: 'Done' }
+  const severities = ['critical', 'high', 'medium', 'low', 'info']
+  const findings = view.findings ?? [], previous = view.state === 'running' ? view.previousBlocking ?? [] : []
+  const chips = severities.map(severity => `<span class="sev sev-${severity}">${esc(tr(severity))} · ${esc(view.counts?.[severity] ?? 0)}</span>`).join('')
+  const accepted = findings.filter(finding => finding.accepted).length
+  const resolution = finding => {
+    const kind = finding.resolution ?? finding.status
+    return kind === 'fix-task' ? tr('Fix task {0}', finding.fixTask) : kind === 'fix-skipped' ? tr('Fix task {0} skipped', finding.fixTask) : kind === 'open' ? tr('Open') : finding.accepted || kind === 'accepted' ? tr('Accepted') : '-'
+  }
+  // The original CVSS score stays visible next to the final one (BE) and the class floor that lifted the severity, so the gate is explainable; every part is optional.
+  const score = finding => {
+    const cvss = finding.cvss, parts = []
+    // The engine's calculated scores come first; reports recorded before the calculator only carry the auditor's score.
+    const base = cvss?.computedScore ?? cvss?.score, environmental = cvss?.environmental?.computedScore ?? cvss?.environmental?.score
+    if (typeof base === 'number') parts.push(`CVSS-B ${base}`)
+    if (typeof environmental === 'number') parts.push(`CVSS-BE ${environmental}`)
+    if (finding.severityFloor?.class) parts.push(tr('Floor: {0}', finding.severityFloor.class))
+    return parts.length ? `<br><small class="cvss">${esc(parts.join(' · '))}</small>` : ''
+  }
+  const table = list => list.length ? `<table><thead><tr><th>${esc(tr('Finding'))}</th><th>${esc(tr('Severity'))}</th><th>${esc(tr('Title'))}</th><th>CWE</th><th>${esc(tr('Tasks'))}</th><th>${esc(tr('Risk'))}</th></tr></thead><tbody>${list.map(finding => `<tr><td>${esc(finding.id)}</td><td>${esc(tr(finding.severity))}${score(finding)}</td><td>${esc(finding.title)}</td><td>${esc(finding.cwe)}</td><td>${esc((finding.taskRefs ?? []).join(', '))}</td><td>${esc(resolution(finding))}</td></tr>`).join('')}</tbody></table>` : ''
+  return `<section class="gcard security-audit" id="securityAuditPanel" aria-labelledby="securityAuditTitle">
+    <div class="gh"><b id="securityAuditTitle">${esc(tr('Security audit'))}</b><span>${esc(tr(states[view.state] ?? view.state))}</span></div>
+    <div class="sev-chips">${chips}</div>
+    <p class="gline gain-note">${esc(tr('Attempts: {0}; blocking findings: {1}; accepted: {2}', (view.attempts ?? []).length, (view.blocking ?? []).length, accepted))}</p>
+    ${previous.length ? `<p class="gline gain-note">${esc(tr('Findings from the previous audit being revalidated'))}</p>${table(previous)}` : ''}
+    ${table(findings)}
+  </section>`
+}

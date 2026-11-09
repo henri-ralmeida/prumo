@@ -120,6 +120,8 @@ the PO before naming an owner.
 | [contracts.md](references/contracts.md) | Writing, translating or adapting `validation`; checking the plan's behavioral checks before the first dispatch |
 | [review.md](references/review.md) | `reviewing` or a validation receipt exists; `validate`/`done`; a verdict failed or the task is `failed` |
 | [recovery.md](references/recovery.md) | `blocked`; a user decision is needed; the plan changed after `init`; resuming or migrating an existing/legacy run |
+| [security-audit.md](references/security-audit.md) | `status`/`done`/`skip` announce a pending security audit decision, or an audit is `running`/`blocked` |
+| [security-audit-playbook.md](references/security-audit-playbook.md) | A security audit is `running`: the WSTG roadmap, API Top 10, CWE priority order and specialist lenses for the vulnerability analysis |
 | [runtime.md](references/runtime.md) | Exact plan/task-plan/discovery schemas, CLI flags, effective states, dashboard |
 
 Workflow instructions have one maintained English source for every harness and locale. Respond in the user's
@@ -351,6 +353,7 @@ at its first `activity-start`; `activityLegacy: true` indicates that earlier wor
 | `reviewing` with an approved validation | Close the task | `done` | review.md |
 | `failed` | Unchanged contract: reuse the plan. Changed contract: sync first | `fail --reason`, `retry`, `sync-plan` | review.md |
 | `blocked` | Present the recorded question; resume with the answer | `block --question --option`, `unblock [--answer\|--reviewer]` | recovery.md |
+| every task `done`/`skipped`, audit announced | Ask the user Run / Skip / Not now (Not now writes nothing); a blocked audit needs a decision per `critical`/`high` finding | `audit-start --agent --environment --confirmed-by-user`, `audit-skip`, `audit-accept` | security-audit.md |
 | plan edited after approval | Synchronize before any new round, then run `begin-*` again (it supersedes the stale round); show the diff and get acceptance. `refresh-contract` only for a validation-only change to active work | `sync-plan`, `show-contract --diff`, `refresh-contract` | recovery.md |
 
 Task-scoped (legacy) runs use `begin-discussion`, `finish-discussion`, `plan-task` and `finish-planning`
@@ -429,6 +432,12 @@ State the tested operating conditions and exactly what they prove, then identify
 that remains unverified. Completed tasks, passing commands and test counts are not a general guarantee of
 the whole workflow. Preserve completed history and human approvals; an evidence gap informs the current
 verdict or an explicit follow-up and never silently reopens a completed task.
+
+When `status` announces a pending security audit decision, ask the user **Run / Skip / Not now**; Not now records nothing and the notice repeats.
+`audit-enable --confirmed-by-user` pre-authorizes it. The auditor must be independent of every executor, reviewer and planner and runs
+only on a local environment ([security-audit.md](references/security-audit.md)). For each `critical`/`high` finding, present it and ask whether to
+fix it or accept the risk with a justification. Run `audit-fix-plan --out <file.json>` for the fixes, show the proposed phase and apply it with `sync-plan --propose` only after the user agrees; re-audit with `audit-start` once the fix tasks close.
+The run stays complete, but never tell the user the demand is closed while the audit is `blocked`, `pending-recheck`, `running`, `awaiting-decision` or pre-authorized and not yet run: `status` prints SECURITY AUDIT GATE OPEN until it is done or skipped.
 
 Then point the dev at the dashboard's **results** tab (`r`): wall clock vs agent time, the
 planning/build/verify split, the critical path against the wall clock, and which tasks were reviewed

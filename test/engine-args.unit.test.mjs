@@ -7,7 +7,7 @@ const commands = ['init', 'migrate', 'sync-plan', 'reorder-phases', 'status', 'r
   'begin-phase-discussion', 'skip-phase-discussion', 'finish-phase-discussion', 'plan-phase', 'skip-phase-planning', 'finish-phase-planning',
   'begin-discussion', 'skip-discussion', 'finish-discussion', 'plan-task', 'skip-planning', 'finish-planning', 'start', 'progress',
   'review', 'review-progress', 'refresh-contract', 'validate', 'done', 'fail', 'retry', 'block', 'unblock', 'skip', 'note',
-  'pause-replanning', 'set-agent-limit']
+  'pause-replanning', 'set-agent-limit', 'audit-enable', 'audit-skip', 'audit-start', 'audit-finish', 'audit-accept', 'audit-status', 'audit-fix-plan', 'audit-cvss']
 
 test('reaproveitamento explícito é limitado ao fechamento do planejamento de fase', () => {
   assert.deepEqual(parseEngineArgs('finish-phase-planning', ['F1', '--plan-dir', 'plans', '--reuse-unchanged-plans']),
@@ -42,6 +42,7 @@ const stringOptions = {
   start: ['agent', 'executor'], progress: ['agent', 'step'], review: ['agent'], 'review-progress': ['agent', 'step'],
   'refresh-contract': ['plan'], validate: ['evidence', 'summary', 'cwd', 'tail'], fail: ['reason'],
   block: ['reason', 'question', 'option'], unblock: ['answer', 'reviewer'], skip: ['reason'], note: ['text'],
+  'audit-skip': ['reason'], 'audit-start': ['agent', 'environment'], 'audit-finish': ['report'], 'audit-accept': ['reason'], 'audit-fix-plan': ['out', 'test-command'],
   'skip-phase-discussion': ['reason'], 'skip-phase-planning': ['reason'], 'skip-discussion': ['reason'], 'skip-planning': ['reason'],
 }
 for (const [command, options] of Object.entries(stringOptions)) for (const flag of options) {

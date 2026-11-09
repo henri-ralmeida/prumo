@@ -39,9 +39,12 @@ const definitions = {
   'recover-replanning': [1, '', 'check confirmed-by-user'],
   skip: [1, 'reason'], note: [1, 'text'],
   'activity-start': [1, 'scope role agent'], 'activity-stop': [1, 'scope role agent'],
+  'audit-enable': [0, '', 'confirmed-by-user'], 'audit-skip': [0, 'reason', 'confirmed-by-user'],
+  'audit-start': [0, 'agent environment', 'confirmed-by-user'], 'audit-finish': [0, 'report'],
+  'audit-accept': [1, 'reason', 'confirmed-by-user'], 'audit-status': [0], 'audit-cvss': [1], 'audit-fix-plan': [0, 'out test-command'],
 }
 
-const dispatchCommands = ['start', 'review', 'unblock', 'begin-discussion', 'begin-phase-discussion', 'plan-task', 'plan-phase', 'finish-phase-discussion', 'finish-phase-planning']
+const dispatchCommands = ['start', 'review', 'unblock', 'begin-discussion', 'begin-phase-discussion', 'plan-task', 'plan-phase', 'finish-phase-discussion', 'finish-phase-planning', 'audit-start']
 
 const commandDescriptions = {
   brief: 'Show a role briefing',
@@ -93,6 +96,14 @@ const commandDescriptions = {
   note: 'Record a task note',
   'activity-start': 'Start an activity interval',
   'activity-stop': 'Stop an activity interval',
+  'audit-enable': 'Pre-authorize the run-level security audit',
+  'audit-skip': 'Record the user decision to skip the security audit',
+  'audit-start': 'Start the security audit with an independent auditor on a local environment',
+  'audit-finish': 'Record the security audit report',
+  'audit-accept': 'Accept a blocking finding with a justification',
+  'audit-status': 'Show the security audit state and findings',
+  'audit-cvss': 'Calculate the CVSS v4.0 score of a vector offline',
+  'audit-fix-plan': 'Propose a fix phase with one task per blocking security finding',
 }
 
 export function engineGeneralHelp() {
@@ -106,7 +117,7 @@ export function engineCommandHelp(command) {
     ...strings.split(/\s+/).filter(Boolean).map(flag => `--${flag} <value>`),
     ...booleans.split(/\s+/).filter(flag => flag && flag !== 'help' && flag !== 'force').map(flag => `--${flag}`),
     ...(dispatchCommands.includes(command) ? ['--model <value>', '--effort <value>'] : [])]
-  return { usage: `${command}${positionals ? command === 'answer-question' ? ' <ref>' : ' [<task-or-phase>]' : ''} [options]`, flags }
+  return { usage: `${command}${positionals ? command === 'answer-question' ? ' <ref>' : command === 'audit-accept' ? ' <finding>' : ' [<task-or-phase>]' : ''} [options]`, flags }
 }
 
 // Argumentos inválidos são recusados antes de qualquer gravação, para que erros de

@@ -528,6 +528,15 @@ test('dashboard selects legacy and central data without writes or translation of
     'trabalho pendente mantem o plano em andamento')
   assert.equal(refreshed.find(run => run.run === 'almost-demo')?.activity, 'working')
   assert.equal(refreshed.find(run => run.run === 'almost-demo')?.activityState, 'ready')
+  // O cartão da auditoria de segurança vem do estado, sem alterar a semântica de execução concluída.
+  const auditedFile = join(graph, 'skipped-demo', 'state.json'), audited = JSON.parse(readFileSync(auditedFile, 'utf8'))
+  assert.equal((await (await get('/api/state?root=work&run=skipped-demo')).json()).securityAuditView, null)
+  writeFileSync(auditedFile, JSON.stringify({ ...audited, securityAudit: { state: 'awaiting-decision', announcedAt: '2026-01-01T00:00:00.000Z' } }))
+  const auditView = (await (await get('/api/state?root=work&run=skipped-demo')).json()).securityAuditView
+  assert.equal(auditView.state, 'awaiting-decision'); assert.equal(auditView.graphClosed, true)
+  const auditedRun = (await (await get('/api/runs')).json()).runs.find(run => run.run === 'skipped-demo')
+  assert.equal(auditedRun?.complete, true); assert.equal(auditedRun?.auditGate, true, 'a pending audit decision keeps the gate open without changing complete')
+  assert.equal(refreshed.find(run => run.run === 'almost-demo')?.auditGate, false)
   const selected = await (await get('/api/state?root=work&run=demo')).json()
   assert.equal(selected.tasks.T1.title, 'done')
   assert.equal(selected.derived.T1.effective, 'blocked')

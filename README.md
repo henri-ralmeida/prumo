@@ -266,6 +266,10 @@ Local Claude Code, Kiro, Codex, DSH, Antigravity, OpenCode and Grok Build sessio
 
 Scripts are under `scripts/` beside the installed skill. Resolve paths from that skill, not from the project directory. See the [engine reference](references/runtime.md) for commands, contracts and states.
 
+## Security audit (optional)
+
+When every task is `done` or `skipped`, Prumo asks once whether to run an offensive security audit (Run / Skip / Not now). An independent agent that never executed, reviewed or planned any task reads every card, attacks the delivered work only on a local environment and records a report. `critical` and `high` findings block the run until you accept each one with a reason or the work is fixed and re-audited. See [security-audit.md](references/security-audit.md).
+
 ## What approval means
 
 A functional change needs an executable step marked `kind: "functional"`. Lint, build, type checks and prose alone are insufficient. The engine executes approved commands and records output, exit code, working directory and timeout; the reviewer judges whether that evidence establishes the requested behavior.

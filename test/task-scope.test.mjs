@@ -3,11 +3,11 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync, rmSync, mkdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import fs from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
 import { messages, createTranslator } from '../scripts/i18n.mjs'
-import { assertExplicitScope, scopePath, insideTouches, scopeConflicts, sameProject, captureScopeBaseline, scopeEvidenceRequirement, verifyTaskScope } from '../scripts/task-scope.mjs'
+import { assertExplicitScope, isSafeTouch, scopePath, insideTouches, scopeConflicts, sameProject, captureScopeBaseline, scopeEvidenceRequirement, verifyTaskScope } from '../scripts/task-scope.mjs'
 
 function engineFixture(t, tasks, extra = {}, lang = 'en') {
   const home = mkdtempSync(join(tmpdir(), 'prumo-scope-engine-'))
@@ -306,6 +306,37 @@ test('contratos explícitos exigem escopo seguro e mantêm contratos históricos
   } finally { Object.defineProperty(process, 'platform', platform) }
 })
 
+test('repositório aninhado criado ou removido durante a entrega exige evidência independente', t => {
+  const base = fs.realpathSync.native(tmpdir()), cwd = mkdtempSync(join(base, 'prumo-scope-new-nested-'))
+  t.after(() => { assert.equal(dirname(fs.realpathSync.native(cwd)), base); rmSync(cwd, { recursive: true, force: true }) })
+  const git = (directory, ...args) => {
+    const result = spawnSync('git', ['-C', directory, ...args], { encoding: 'utf8' })
+    assert.equal(result.status, 0, result.stderr)
+  }
+  git(cwd, 'init')
+  const baseline = captureScopeBaseline(cwd)
+  assert.equal(baseline.method, 'git')
+  assert.equal(baseline.nestedRepositories, undefined)
+  const nested = join(cwd, 'nested')
+  mkdirSync(nested); git(nested, 'init'); writeFileSync(join(nested, 'delivery.txt'), 'entrega')
+  const task = { agent: 'executor', writeScope: 'files', touches: ['nested'] }
+  assert.match(scopeEvidenceRequirement(task, baseline), /Nested repositories/)
+  assert.throws(() => verifyTaskScope(task, baseline), /Nested repositories.*independent/)
+  const evidence = { agent: 'reviewer', evidence: 'Raiz Git e inventário de nested inspecionados separadamente' }
+  assert.throws(() => verifyTaskScope(task, baseline, { ...evidence, agent: task.agent }), /independent/)
+  const result = verifyTaskScope(task, baseline, evidence)
+  assert.deepEqual(result.paths, ['nested'])
+  assert.deepEqual(result.independentEvidence, evidence)
+  const nestedBaseline = captureScopeBaseline(cwd)
+  assert.equal(dirname(fs.realpathSync.native(nested)), cwd)
+  rmSync(nested, { recursive: true, force: true })
+  assert.throws(() => verifyTaskScope(task, nestedBaseline), /Nested repositories.*independent/)
+  const removedEvidence = { ...evidence, evidence: 'Remoção de nested conferida contra o inventário inicial' }
+  const removed = verifyTaskScope(task, nestedBaseline, removedEvidence)
+  assert.deepEqual(removed.paths, ['nested'])
+  assert.deepEqual(removed.independentEvidence, removedEvidence)
+})
+
 test('nomes especiais de arquivos continuam visíveis na conferência do escopo', t => {
   const cwd = mkdtempSync(join(tmpdir(), 'prumo-scope-proto-'))
   t.after(() => rmSync(cwd, { recursive: true, force: true }))
@@ -446,4 +477,10 @@ test('motor mantém paralelismo disjunto com revisão de atribuição e rejeita 
   assert.ok(graph.derived.T3.executionReadiness.reasons.some(reason => reason.code === 'scope_unknown'))
   ok('fail', 'T2', '--reason', 'Correção necessária'); ok('retry', 'T2'); ok('start', 'T2', '--agent', 'second-retry')
   assert.deepEqual(state().tasks.T2.attempts.at(-1).concurrentScopes, [])
+})
+
+test('isSafeTouch accepts repository-relative paths and refuses each unsafe shape on its own', () => {
+  for (const value of ['src', 'a/b.txt', 'a\\b', '.']) assert.equal(isSafeTouch(value), true, value)
+  // One refusal per operand of the rule, so each branch is exercised: type, empty, absolute or drive, NUL byte and parent segment.
+  for (const value of [7, ' ', '/abs', '\\abs', 'C:/win', 'a\0b', '../x', 'a\\..\\b']) assert.equal(isSafeTouch(value), false, String(value))
 })

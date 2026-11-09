@@ -405,3 +405,51 @@ test('coordenação manual estima 3 min fixos por comando, separada da economia 
   const hostile = (key, ...values) => key === 'Manual coordination estimate' ? '<script>bad()</script>' : localizer('en')(key, ...values)
   assert.doesNotMatch(renderManualCoordination(gain, hostile, fmtMs, esc), /<script>bad/)
 })
+
+test('cartão da auditoria de segurança é vazio sem auditoria e traduz estados em en e pt-BR', async () => {
+  const { renderSecurityAuditPanel } = await import('../scripts/dashboard-gains.mjs')
+  assert.equal(renderSecurityAuditPanel(null, localizer('en'), esc), '')
+  const counts = { critical: 1, high: 0, medium: 0, low: 0, info: 0 }
+  const view = (state, findings = []) => ({ state, counts, blocking: [], findings, attempts: [] })
+  const finding = { id: 'F<1>', severity: 'critical', title: '"quoted" & <b>', cwe: 'CWE-78', taskRefs: ['T1', 'T2'] }
+  for (const [state, en, pt] of [['enabled', 'Pre-authorized', 'Pré-autorizada'], ['awaiting-decision', 'Awaiting decision', 'Aguardando decisão'], ['skipped', 'Audit skipped', 'Auditoria pulada'], ['running', 'Running', 'em andamento'], ['blocked', 'Blocked', 'Bloqueado'], ['pending-recheck', 'Pending re-check', 'Reverificação pendente'], ['done', 'Done', 'Concluída']]) {
+    assert.match(renderSecurityAuditPanel(view(state), localizer('en'), esc), new RegExp(`<span>${en}</span>`))
+    assert.match(renderSecurityAuditPanel(view(state), localizer('pt-BR'), esc), new RegExp(`<span>${pt}</span>`))
+  }
+  const html = renderSecurityAuditPanel(view('blocked', [finding, { ...finding, id: 'F2', severity: 'high', accepted: true, taskRefs: [] }]), localizer('en'), esc)
+  assert.match(html, /F&lt;1&gt;/); assert.match(html, /&quot;quoted&quot; &amp; &lt;b&gt;/); assert.match(html, /T1, T2/); assert.match(html, /Accepted/)
+  assert.doesNotMatch(html, /<b>/)
+  const resolved = renderSecurityAuditPanel(view('blocked', [{ ...finding, resolution: 'fix-task', fixTask: 'T9<' }, { ...finding, id: 'F3', resolution: 'open' }, { ...finding, id: 'F4', severity: 'low' }]), localizer('en'), esc)
+  assert.match(resolved, /Fix task T9&lt;/); assert.match(resolved, /<td>Open<\/td>/); assert.match(resolved, /<td>-<\/td>/)
+  assert.match(renderSecurityAuditPanel(view('blocked', [{ ...finding, resolution: 'open' }]), localizer('pt-BR'), esc), /Em aberto/)
+  assert.match(renderSecurityAuditPanel(view('blocked', [{ ...finding, resolution: 'fix-task', fixTask: 'T9' }]), localizer('pt-BR'), esc), /Tarefa de correção T9/)
+  assert.match(renderSecurityAuditPanel(view('done'), localizer('en'), esc), /Attempts: 0; blocking findings: 0; accepted: 0/)
+})
+
+test('cartão da auditoria de segurança tolera uma view parcial e rotula os achados anteriores durante a nova tentativa', async () => {
+  const { renderSecurityAuditPanel } = await import('../scripts/dashboard-gains.mjs')
+  const partial = renderSecurityAuditPanel({ state: 'sem-rotulo' }, localizer('en'), esc)
+  assert.match(partial, /<span>sem-rotulo<\/span>/); assert.match(partial, /critical · 0/); assert.match(partial, /Attempts: 0; blocking findings: 0; accepted: 0/)
+  assert.doesNotMatch(partial, /<table>/)
+  const noRefs = renderSecurityAuditPanel({ state: 'blocked', findings: [{ id: 'F1', severity: 'high', title: 'Sem tarefas', cwe: 'CWE-1' }] }, localizer('en'), esc)
+  assert.match(noRefs, /<td>Sem tarefas<\/td><td>CWE-1<\/td><td><\/td>/)
+  const previous = [{ id: 'F1', severity: 'high', title: 'IDOR', cwe: 'CWE-639', taskRefs: ['T1'], status: 'open' }, { id: 'F2', severity: 'critical', title: 'RCE', cwe: 'CWE-78', taskRefs: [], status: 'fix-skipped', fixTask: 'T9' }, { id: 'F3', severity: 'high', title: 'XSS', cwe: 'CWE-79', status: 'accepted' }]
+  const running = renderSecurityAuditPanel({ state: 'running', counts: {}, findings: [], attempts: [{ n: 2 }], blocking: [], previousBlocking: previous }, localizer('pt-BR'), esc)
+  assert.match(running, /Achados da auditoria anterior em revalidação/); assert.match(running, /Tarefa de correção T9 pulada/); assert.match(running, /Em aberto/); assert.match(running, /Aceito/)
+  assert.doesNotMatch(renderSecurityAuditPanel({ state: 'blocked', previousBlocking: previous }, localizer('en'), esc), /previous audit/, 'only a running audit shows the previous findings')
+  assert.doesNotMatch(renderSecurityAuditPanel({ state: 'running' }, localizer('en'), esc), /previous audit/)
+})
+
+test('cartão da auditoria de segurança mostra a nota CVSS original, a nota final (BE) e o piso, e tolera achados sem pontuação', async () => {
+  const { renderSecurityAuditPanel } = await import('../scripts/dashboard-gains.mjs')
+  const base = { id: 'F1', severity: 'high', title: 'SSRF', cwe: 'CWE-918', taskRefs: ['T2'] }
+  const panel = (findings, lang = 'en') => renderSecurityAuditPanel({ state: 'blocked', findings }, localizer(lang), esc)
+  const cvss = { version: '4.0', vector: 'CVSS:4.0/AV:N', score: 6.3, scoreSource: 'calculator' }
+  const floored = panel([{ ...base, cvss, severityFloor: { class: 'ssrf-internal', evidence: 'x' } }])
+  assert.match(floored, /<td>high<br><small class="cvss">CVSS-B 6\.3 · Floor: ssrf-internal<\/small><\/td>/)
+  assert.match(panel([{ ...base, cvss, severityFloor: { class: 'ssrf-internal', evidence: 'x' } }], 'pt-BR'), /CVSS-B 6\.3 · Piso: ssrf-internal/)
+  assert.match(panel([{ ...base, cvss: { ...cvss, score: 7.4, environmental: { vector: 'v', score: 8.1 } } }]), /CVSS-B 7\.4 · CVSS-BE 8\.1<\/small>/)
+  assert.doesNotMatch(panel([base]), /cvss|CVSS/, 'a finding without a score shows only the severity')
+  assert.doesNotMatch(panel([{ ...base, cvss: { vector: 'v' }, severityFloor: {} }]), /CVSS|Floor/, 'malformed scoring data is ignored instead of breaking the card')
+  assert.doesNotMatch(panel([{ ...base, cvss: { ...cvss, score: 6.3 }, severityFloor: { class: '<b>x</b>' } }]), /<b>x/, 'values are escaped')
+})

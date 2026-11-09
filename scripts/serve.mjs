@@ -17,6 +17,7 @@ import { join, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readCommandMetrics } from './command-metrics.mjs'
 import { isReviewRejected } from './review-readiness.mjs'
+import { securityAuditView, graphClosed } from './security-audit.mjs'
 import { executionReadiness, isExternalBlock, occupancy } from './execution-readiness.mjs'
 import { dashboardUpdate } from './dashboard-update.mjs'
 import { releaseHistory } from '../lib/release-notes.mjs'
@@ -188,8 +189,9 @@ function runProgress(state) {
     effective.filter(status => !['done', 'skipped'].includes(status)).every(status => status === 'waiting') ? 'idle' : null
   // Complete = todas as tarefas encerradas (done ou ignoradas por decisão do usuário) e pelo menos uma done:
   // a mesma regra do cabeçalho do dashboard e do cartão de ganhos.
+  // O portão da auditoria de segurança não altera complete: ele só avisa que a demanda ainda não está encerrada.
   return { taskCount: tasks.length, doneCount: done, skippedCount: skipped,
-    complete: done > 0 && done + skipped === tasks.length, activity, activityState }
+    complete: graphClosed(state), auditGate: securityAuditView(state)?.gate === true, activity, activityState }
 }
 
 function catalog() {
@@ -563,7 +565,7 @@ const server = createServer((req, res) => {
     if (!existsSync(p)) return json(res, 404, { error: tr(`run "${run}" not found`) })
     const state = hydrateDiscoveries(JSON.parse(readFileSync(p, 'utf8')), dirname(p))
     const usage = occupancy(state)
-    return json(res, 200, { ...state, derived: derive(state), agentUsage: { used: usage.busy.length, maxAgents: usage.cap },
+    return json(res, 200, { ...state, derived: derive(state), securityAuditView: securityAuditView(state), agentUsage: { used: usage.busy.length, maxAgents: usage.cap },
       agentControlToken: AGENT_CONTROL_TOKEN, commandMetrics: readCommandMetrics(join(selected.graphDir, run)) })
   }
 

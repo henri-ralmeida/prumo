@@ -4,13 +4,14 @@ import { createServer } from 'node:net'
 import { copyFileSync, cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { spawnSync } from 'node:child_process'
 import { installationBundle, bundleIdentity } from '../scripts/installation-bundle.mjs'
 import { packageContentManifest, packageDistributionFiles } from '../scripts/package-content.mjs'
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const rootFiles = ['package.json', 'SKILL.md', 'README.md', 'README.pt-BR.md', 'CHANGELOG.md', 'LICENSE']
-const bundleScripts = ['messages.json', 'region.mjs', 'i18n.mjs', 'storage.mjs', 'atomic-state.mjs', 'discovery-history.mjs', 'legacy-attempts.mjs', 'validation.mjs', 'task-renumber.mjs', 'task-scope.mjs', 'delivery-evidence.mjs', 'run-metadata.mjs', 'recorded-timing.mjs', 'execution-readiness.mjs', 'contract-drift.mjs', 'sync-plan-audit.mjs', 'task-identifiers.mjs', 'dashboard-diagnostics.mjs', 'dashboard-service.mjs', 'dashboard-supervisor.mjs', 'dashboard-update.mjs', 'dashboard.html', 'installation-bundle.mjs', 'engine-args.mjs', 'command-metrics.mjs', 'review-readiness.mjs', 'engine.mjs', 'serve-args.mjs', 'serve.mjs']
+const bundleScripts = ['messages.json', 'region.mjs', 'i18n.mjs', 'storage.mjs', 'atomic-state.mjs', 'discovery-history.mjs', 'legacy-attempts.mjs', 'validation.mjs', 'task-renumber.mjs', 'task-scope.mjs', 'delivery-evidence.mjs', 'run-metadata.mjs', 'security-audit.mjs', 'cvss4.mjs', 'recorded-timing.mjs', 'execution-readiness.mjs', 'contract-drift.mjs', 'sync-plan-audit.mjs', 'task-identifiers.mjs', 'dashboard-diagnostics.mjs', 'dashboard-service.mjs', 'dashboard-supervisor.mjs', 'dashboard-update.mjs', 'dashboard.html', 'installation-bundle.mjs', 'engine-args.mjs', 'command-metrics.mjs', 'review-readiness.mjs', 'engine.mjs', 'serve-args.mjs', 'serve.mjs']
 
 function fixture(t, prefix) {
   const root = mkdtempSync(join(resolve(tmpdir()), prefix))
@@ -43,6 +44,22 @@ function bundleFixture(t) {
   }
   return root
 }
+
+test('atualização mantém o CLI carregável quando o consumidor passa a usar os módulos de auditoria', t => {
+  const root = fixture(t, 'prumo-audit-upgrade-')
+  cpSync(join(repository, 'scripts'), join(root, 'scripts'), { recursive: true })
+  for (const name of ['security-audit.mjs', 'cvss4.mjs']) rmSync(join(root, 'scripts', name))
+  writeFileSync(join(root, 'scripts', 'run-metadata.mjs'), "export const agentRoles = ['execution']\n")
+  for (const [name, bytes] of installationBundle('en')) {
+    mkdirSync(dirname(join(root, name)), { recursive: true })
+    writeFileSync(join(root, name), bytes)
+    if (name !== join('scripts', 'run-metadata.mjs')) continue
+    const source = `import { agentRoles } from ${JSON.stringify(pathToFileURL(join(root, name)).href)}; if (!agentRoles.includes('security')) process.exit(1)`
+    const loaded = spawnSync(process.execPath, ['--input-type=module', '-e', source], { encoding: 'utf8', windowsHide: true, timeout: 15000 })
+    assert.ifError(loaded.error)
+    assert.equal(loaded.status, 0, loaded.stdout + loaded.stderr)
+  }
+})
 
 test('manifesto de conteúdo inclui somente arquivos distribuídos e hashes verificáveis', t => {
   const names = packageDistributionFiles(repository)
