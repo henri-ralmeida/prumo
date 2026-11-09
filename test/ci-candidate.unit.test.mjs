@@ -12,7 +12,7 @@ import { runCiPublished } from '../.github/scripts/run-ci-published.mjs'
 function fixture(t) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'prumo ci & candidato-')))
   t.after(() => rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
-  writeFileSync(join(root, 'package.json'), JSON.stringify({ name: '@example/prumo', version: '3.0.0' }))
+  writeFileSync(join(root, 'package.json'), JSON.stringify({ name: '@example/prumo', version: '3.0.0', files: ['lib/'] }))
   for (const directory of ['lib', 'scripts', 'test']) mkdirSync(join(root, directory))
   writeFileSync(join(root, 'lib/source.mjs'), 'export const preserved = true\n')
   const archive = join(root, '.test-output/ci-candidate/example-prumo-3.0.0.tgz')
@@ -87,7 +87,17 @@ test('empacotamento real preserva caminhos com espaços e metacaracteres sem exe
   const f = fixture(t)
   const env = { ...process.env, HOME: f.root, USERPROFILE: f.root, npm_config_cache: join(f.root, 'cache'), npm_config_userconfig: join(f.root, 'npmrc'), GITHUB_SHA: 'revision' }
   delete env.GITHUB_OUTPUT
-  const manifest = prepareCandidate({ root: f.root, env })
+  let files
+  const manifest = prepareCandidate({ root: f.root, env, run(executable, args, options) {
+    const result = spawnSync(executable, args, options)
+    if (result.status === 0) {
+      const output = JSON.parse(result.stdout)
+      const packed = Array.isArray(output) ? output[0] : Object.values(output)[0]
+      files = packed.files.map(file => file.path)
+    }
+    return result
+  } })
+  assert.deepEqual(files.sort(), ['lib/source.mjs', 'package.json'], 'O cenário deve empacotar somente as fontes, sem ler o arquivo de saída ou logs que mudam durante a própria operação')
   assert.equal(sharedCandidate(f.root, { ...env, PRUMO_CI_CANDIDATE_MANIFEST: f.env.PRUMO_CI_CANDIDATE_MANIFEST, PRUMO_CI_CANDIDATE_SHA256: manifest.sha256 }), f.archive)
 })
 

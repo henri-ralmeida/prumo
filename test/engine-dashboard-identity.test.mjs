@@ -1,10 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, cpSync, appendFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, copyFileSync, appendFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { installationBundle, contentId, engineDashboardMismatch, registeredDashboardIdentity } from '../scripts/installation-bundle.mjs'
+import { packageDistributionFiles } from '../scripts/package-content.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 function fixture(t) {
@@ -35,8 +36,12 @@ test('comparação usa bytes atuais e aceita ambos os idiomas sem depender da ve
   assert.equal(mismatch.dashboardContentId, 'outdated')
   assert.equal(mismatch.engineContentId, contentId('en'))
   const copy = join(f.home, 'package')
-  cpSync(root, copy, { recursive: true, filter: path => !/[\\/](?:\.git|node_modules|\.test-output)(?:[\\/]|$)/.test(path) })
+  for (const name of packageDistributionFiles(root)) {
+    mkdirSync(dirname(join(copy, name)), { recursive: true })
+    copyFileSync(join(root, name), join(copy, name))
+  }
   const before = contentId('en', { packageRoot: copy })
+  assert.equal(before, contentId('en'))
   appendFileSync(join(copy, 'scripts/engine.mjs'), '\n// Alteração local do motor.\n')
   assert.ok(engineDashboardMismatch(copy, before))
 })
