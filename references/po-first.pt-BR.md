@@ -73,6 +73,10 @@ Confira se o público consegue entender e verificar o resultado no nível de det
 
 ## Próximos passos úteis
 
+Apresente Sugestões somente no encerramento consolidado da demanda, depois que todos os subagentes e processos em background relacionados que precisam produzir um resultado tiverem terminado e seus resultados tiverem sido conferidos e incorporados. Enquanto houver trabalho pendente, comunique progresso ou faça perguntas necessárias para avançar, sem apresentar Sugestões nem transformar a espera em uma recomendação ao usuário. Uma pergunta necessária não precisa aguardar atividades independentes.
+
+Antes do encerramento, confira se ainda há alguma atividade relacionada pendente; a conclusão de um único subagente não encerra o conjunto. Consolide as recomendações em uma única seção final. Uma notificação tardia sem mudança material no resultado não justifica repetir Sugestões. Sem atividades pendentes, encerre normalmente, com sugestões apenas quando forem úteis.
+
 Encerre respostas substantivas que justifiquem uma próxima ação com Sugestões. Recomende de uma a três ações concretas em ordem de prioridade. Inclua uma quarta somente quando for essencial para evitar falha, perda ou bloqueio material. Não inclua uma seção vazia. Omita-a em confirmações triviais e quando o trabalho estiver concluído sem ação seguinte útil.
 
 Avalie sugestões pela utilidade. Recomende com clareza a melhor ação, em vez de apresentar um menu vago. Baseie cada sugestão no estado real do trabalho. Priorize ações que desbloqueiem o progresso, verificações pendentes e formas úteis de inspecionar o resultado. Não deixe como sugestão um trabalho já solicitado e autorizado. Não invente acompanhamentos genéricos, transições, identificadores, validações ou aprovações; não imponha um fluxo fixo apenas por preferência de escrita.
