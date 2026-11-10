@@ -1,4 +1,18 @@
 {
+  "2.12.1": {
+    "en": [
+      {
+        "title": "Improved — Security audits and workflow clarity",
+        "items": [
+          "Add optional independent security audits and remediation phases with CVSS-based findings and explicit limits for unavailable safe evidence",
+          "Show the selected run, state location and approved phase discovery in task contracts; use the task project in reviewer guidance",
+          "Require independent scope evidence when validating empty measured scopes in another Git repository, while preserving legacy attempts",
+          "Warn without blocking when parallel tasks share a validation project, and consolidate PO First suggestions after related background work finishes",
+          "Avoid redundant coverage instrumentation in historical upgrade tests while preserving every published version, platform combination and 100% coverage requirement"
+        ]
+      }
+    ]
+  },
   "2.11.12": {
     "en": [
       {

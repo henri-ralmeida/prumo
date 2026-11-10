@@ -2,6 +2,14 @@
 
 Historical tag and commit corrections are documented in [Release history recovery](references/release-recovery.md).
 
+## 2.12.1 — 2026-11-10
+
+- Adicione auditorias independentes de segurança e fases de correção opcionais, com achados classificados por CVSS e limitações explícitas quando não houver evidência segura disponível.
+- Mostre a execução selecionada, o local do estado e a descoberta aprovada da fase nos contratos; use o projeto da tarefa nas instruções ao revisor.
+- Exija evidência independente de escopo ao validar escopos medidos vazios em outro repositório Git, preservando tentativas legadas.
+- Avise sem bloquear quando tarefas paralelas compartilham o projeto de validação e consolide as sugestões do PO First após o término das atividades relacionadas em segundo plano.
+- Evite instrumentação redundante de cobertura nos testes de atualização histórica, preservando todas as versões publicadas, combinações de plataformas e a exigência de cobertura de 100%.
+
 ## 2.11.12 — 2026-11-05
 
 - Explique qual comando de revisão aceita --agent e aponte o último passo do review-progress para validate --evidence.
