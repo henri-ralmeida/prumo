@@ -1,4 +1,5 @@
 {
+  "Validation check {0}/{1} directory: {2}": "Diretório da verificação {0}/{1}: {2}",
   "Independent audit": "Auditoria independente",
   "Optional audit": "Auditoria opcional",
   "Show the Ethical hacker beside the Orchestrator with its audit status, an accessible explanation and a dedicated entity in the guide": "Mostre o Hacker ético ao lado do Orquestrador, com o estado da auditoria, explicação acessível e uma entidade própria no guia",

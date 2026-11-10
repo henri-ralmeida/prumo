@@ -602,6 +602,7 @@ export async function runValidation(task, cwd, previousReceipt = null, onCheck =
   const checks = []
   const directories = validationDirectories(task, cwd)
   for (const [index, step] of contract.steps.entries()) {
+    log('[prumo] ' + tr('Validation check {0}/{1} directory: {2}', index + 1, contract.steps.length, directories[index]))
     const revision = step.cacheable && !step.requiresEnv?.length ? workspaceRevision(directories[index], step.cachePaths) : null
     const prior = previousReceipt?.checks?.[index]
     const current = task.validations?.at(-1)
