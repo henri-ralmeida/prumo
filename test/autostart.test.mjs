@@ -32,6 +32,22 @@ test('readiness never reserves the startup port and protects occupied or uncerta
   }
 })
 
+test('prontidão aguarda entre tentativas limitadas sem assumir controle de uma porta ocupada', async t => {
+  let probes = 0
+  const f = fixture(t, 'win32', {
+    fetch: async () => { probes++; throw new Error('Identidade temporariamente indisponível') },
+    portAvailable: async () => false,
+    delay: undefined,
+    readinessInterval: 5,
+  })
+  const start = performance.now()
+  const result = await dashboardHealth(f.options)
+  assert.equal(result.state, 'conflict')
+  assert.equal(probes, 3)
+  assert.ok(performance.now() - start >= 5)
+  assert.deepEqual(f.calls, [])
+})
+
 function fixture(t, platform, extra = {}) {
   const home = mkdtempSync(join(tmpdir(), 'prumo autostart-'))
   t.after(() => {
