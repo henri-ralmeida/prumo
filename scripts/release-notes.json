@@ -4,6 +4,7 @@
       {
         "title": "Improved — Security audits and workflow clarity",
         "items": [
+          "Show the Ethical hacker beside the Orchestrator with its audit status, an accessible explanation and a dedicated entity in the guide",
           "Add optional independent security audits and remediation phases with CVSS-based findings and explicit limits for unavailable safe evidence",
           "Show the selected run, state location and approved phase discovery in task contracts; use the task project in reviewer guidance",
           "Require independent scope evidence when validating empty measured scopes in another Git repository, while preserving legacy attempts",

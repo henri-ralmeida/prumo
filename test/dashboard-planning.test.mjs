@@ -11,6 +11,48 @@ const html = readFileSync(new URL('../scripts/dashboard.html', import.meta.url),
 const canonicalScript = extractDashboardScript(html)
 const releaseCatalog = JSON.parse(readFileSync(new URL('../scripts/release-notes.json', import.meta.url), 'utf8'))
 
+test('hacker ético permanece visível sem auditoria e distingue estados reais nos dois idiomas', () => {
+  for (const lang of ['en', 'pt-BR']) {
+    const ui = dashboard(lang)
+    const state = { run: 'security-help', plan: {}, tasks: {} }
+    ui.render(state)
+    assert.equal(ui.nodes.get('#securitySub').textContent, lang === 'en' ? 'Optional audit' : 'Auditoria opcional')
+    const hacker = ui.nodes.get('#securityNode')
+    assert.ok(parseFloat(hacker.style.left) > parseFloat(ui.nodes.get('#orchNode').style.left))
+    assert.equal(hacker.classList.contains('live'), false)
+    for (const audit of ['awaiting-decision', 'enabled', 'running', 'blocked', 'pending-recheck', 'done', 'skipped', 'unexpected']) {
+      state.securityAuditView = { state: audit, attempts: [{ agent: '<auditor>' }] }
+      ui.render(state)
+      assert.equal(hacker.classList.contains('live'), audit === 'running')
+      assert.equal(ui.nodes.get('#securityStatus').textContent, ui.nodes.get('#securitySub').textContent)
+      assert.equal(ui.nodes.get('#securityAgent').textContent, '<auditor>')
+    }
+    ui.run('syncSecurityCard({ state: "enabled" }); syncSecurityCard(null)')
+    assert.equal(ui.nodes.get('#securityAgent').textContent, lang === 'en' ? 'Not assigned' : 'Não atribuído')
+    const dialog = ui.run("document.querySelector('#securityDialog')")
+    let opens = 0, prevented = 0
+    dialog.showModal = () => { opens++; dialog.open = true }
+    ui.run('openSecurity(); openSecurity()')
+    assert.equal(opens, 1)
+    for (const key of ['Enter', ' ', 'Escape']) {
+      dialog.open = false
+      ui.run('securityKey(event)', { event: { key, preventDefault() { prevented++ } } })
+    }
+    assert.equal(opens, 3); assert.equal(prevented, 2)
+    const viewport = ui.nodes.get('#viewport')
+    viewport.getBoundingClientRect = () => ({ width: 768, height: 900 })
+    ui.run('VIEW.y = 0; freezeHub()')
+    assert.equal(ui.nodes.get('#hub').classList.contains('compact'), true)
+    viewport.getBoundingClientRect = () => ({ width: 1365, height: 900 })
+    ui.run('freezeHub()')
+    assert.equal(ui.nodes.get('#hub').classList.contains('compact'), false)
+  }
+  assert.match(html, /id="securityNode"[^>]*tabindex="0"[^>]*aria-controls="securityDialog"/)
+  assert.match(html, /id="securityDialog"[^>]*aria-labelledby="securityTitle"/)
+  assert.match(html, /overload tests are prohibited/)
+  assert.match(html, /does not replace the reviewer/)
+})
+
 test('títulos dos vínculos seguem Jornada e os filtros locais são removidos', () => {
   const declarations = selector => Object.fromEntries(html.match(new RegExp(selector + ' \\{([^}]+)\\}'))[1]
     .split(';').filter(part => part.includes(':')).map(part => part.trim().split(/:\s*/)))
@@ -3299,15 +3341,15 @@ test('the hub (orchestrator and roles) stays inside the viewport while the board
     ui.render(graphState(120, 6))
     const hubTop = ui.run('HUB_TOP')
     ui.run('VIEW.y = 0; applyView()')
-    assert.equal(ui.nodes.get('#hub').style.transform, '', 'at the top the hub sits in its natural place')
+    assert.equal(ui.nodes.get('#hub').style.transform, width === 30 ? 'translate(0px, 0px)' : '', 'o cabeçalho começa no topo da área visível')
     assert.equal(ui.nodes.get('#hub').classList.contains('stuck'), false)
     ui.run(`VIEW.y = -${hubTop + 12}; applyView()`)
-    assert.equal(ui.nodes.get('#hub').style.transform, 'translateY(12px)', 'no jump: the hub moves by the distance past its padding')
+    assert.equal(ui.nodes.get('#hub').style.transform, width === 30 ? 'translate(0px, 12px)' : 'translateY(12px)', 'o cabeçalho acompanha a distância além do espaçamento, sem saltar')
     for (const scrolled of [-600, -1500, -100000]) {
       ui.run(`VIEW.y = ${scrolled}; applyView()`)
       const y = ui.run('VIEW.y')
       assert.ok(y < -hubTop, `the fixture scrolls (VIEW.y = ${y})`)
-      const offset = Number(ui.nodes.get('#hub').style.transform.match(/translateY\((\d+(?:\.\d+)?)px\)/)?.[1])
+      const offset = Number(ui.nodes.get('#hub').style.transform.match(/(?:translateY\(|translate\([^,]+, )(\d+(?:\.\d+)?)px\)/)?.[1])
       const shadeTopOnScreen = y + offset + hubTop
       assert.equal(shadeTopOnScreen, 0, 'the pinned shade starts at the top edge of the graph area')
       const orchTopOnScreen = y + offset + ui.run('PAD')
@@ -3315,7 +3357,7 @@ test('the hub (orchestrator and roles) stays inside the viewport while the board
       assert.equal(ui.nodes.get('#hub').classList.contains('stuck'), true)
     }
     ui.run('VIEW.y = 0; applyView()')
-    assert.equal(ui.nodes.get('#hub').style.transform, '', 'scrolling back returns it to its place')
+    assert.equal(ui.nodes.get('#hub').style.transform, width === 30 ? 'translate(0px, 0px)' : '', 'voltar ao topo restaura a posição')
   }
   // As linhas da moldura se movem com o hub; a linha de base e o prumo permanecem com as fases
   const ui = dashboard('en', 1110)
@@ -3346,7 +3388,7 @@ test('on a phone the pinned hub folds into a compact strip fixed to the visible 
   ui.render(graphState(120, 6))
   const hub = ui.nodes.get('#hub')
   ui.run('VIEW.y = 0; VIEW.x = -140; applyView()')
-  assert.equal(hub.classList.contains('compact'), false, 'at the top the hub keeps its full layout')
+  assert.equal(hub.classList.contains('compact'), true, 'os cinco papéis já cabem na primeira renderização estreita')
   ui.run('VIEW.y = -900; VIEW.x = -140; applyView()')
   const x = ui.run('VIEW.x'), y = ui.run('VIEW.y'), hubTop = ui.run('HUB_TOP')
   assert.equal(hub.classList.contains('compact'), true)
@@ -3355,10 +3397,13 @@ test('on a phone the pinned hub folds into a compact strip fixed to the visible 
   assert.equal(x + Number(dx), 0, 'the horizontal pan is cancelled: the strip starts at the left edge of the graph area')
   assert.equal(y + Number(dy) + hubTop, 0, 'and at its top edge')
   ui.run('VIEW.y = 0; applyView()')
+  assert.equal(hub.classList.contains('compact'), true)
+  ui.nodes.get('#viewport').getBoundingClientRect = () => ({ width: 1110, height: 700 })
+  ui.run('applyView()')
   assert.equal(hub.classList.contains('compact'), false)
   assert.equal(hub.style.transform, '')
   assert.match(html, /#hub\.compact svg#hubPaths \{ display: none; \}/)
-  assert.match(html, /#hub\.compact \{ --hub-col: calc\(\(100vw - 48px\) \/ 2\); \}/, 'two columns, 32px left for the sidebar toggle')
+  assert.match(html, /#hub\.compact \{ --hub-col: calc\(\(var\(--hub-width\) - 48px\) \/ 2\); \}/, 'as colunas usam a largura disponível do grafo e reservam espaço para a lateral')
 })
 
 test('the hub stays hidden until the layout has placed its roles', () => {
@@ -4799,7 +4844,7 @@ test('onboarding inline abre, percorre um papel e fecha o guia', async () => {
     }
   }
   const ids = ['#guideTitle', '#guideDescription', '#guideCount', '#guideStepTitle', '#guideAnnouncement', '#guidePrevious', '#guideNext', '#guideSkip', '#guideIntroPanel', '#guideMockRoles', '#guideExamplePanel', '#guideGainPanel', '#guideCommandPanel']
-  const children = new Map(ids.map(id => [id, makeNode()])), roles = ['orchestrator', 'planner', 'executor', 'reviewer'].map(role => {
+  const children = new Map(ids.map(id => [id, makeNode()])), roles = ['orchestrator', 'planner', 'executor', 'reviewer', 'security'].map(role => {
     const node = makeNode(); node.dataset.guideRole = role; return node
   })
   children.get('#guideMockRoles').querySelectorAll = () => roles
@@ -4874,7 +4919,7 @@ test('onboarding inline abre, percorre um papel e fecha o guia', async () => {
   const finishOnboarding = ui.run('createPrumoOnboarding(input)', { input })
   finishOnboarding.open()
   assert.equal(root.hidden, false)
-  for (let step = 0; step < 13; step += 1) children.get('#guideNext').emit('click')
+  for (let step = 0; step < 14; step += 1) children.get('#guideNext').emit('click')
   assert.equal(children.get('#guideTitle').textContent, 'Start here')
   assert.equal(children.get('#guideNext').textContent, 'finish guide')
   assert.equal(root.hidden, false)
@@ -4904,7 +4949,7 @@ test('onboarding inline abre, percorre um papel e fecha o guia', async () => {
   window.cancelAnimationFrame = () => {}
   const queuedOnboarding = ui.run('createPrumoOnboarding(input)', { input })
   queuedOnboarding.open()
-  for (let step = 0; step < 5; step += 1) children.get('#guideNext').emit('click')
+  for (let step = 0; step < 6; step += 1) children.get('#guideNext').emit('click')
   pendingFrames.shift()?.()
   children.get('#guideNext').emit('click')
   children.get('#guidePrevious').emit('click')
@@ -4924,7 +4969,7 @@ test('onboarding inline abre, percorre um papel e fecha o guia', async () => {
   await new Promise(resolve => setImmediate(resolve))
   document.exitFullscreen = () => { throw new Error('saída bloqueada') }
   queuedOnboarding.open()
-  for (let step = 0; step < 5; step += 1) children.get('#guideNext').emit('click')
+  for (let step = 0; step < 6; step += 1) children.get('#guideNext').emit('click')
   const pendingBeforeClose = pendingFrames.shift()
   assert.equal(typeof pendingBeforeClose, 'function')
   queuedOnboarding.close()

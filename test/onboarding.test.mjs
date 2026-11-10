@@ -27,7 +27,7 @@ function harness({ saved = false, search = '', summary = () => null, launcherBot
   launcher.getBoundingClientRect = () => ({ bottom: launcherBottom })
   invite.style = {}
   const demos = [], stops = []
-  const roles = ['orchestrator','planner','executor','reviewer'].map(guideRole => new Node({guideRole}))
+  const roles = ['orchestrator','planner','executor','reviewer','security'].map(guideRole => new Node({guideRole}))
   const guideRoles = el('#guideMockRoles')
   guideRoles.querySelectorAll = rolesMissing ? () => null : () => roles
   root.querySelector = key => el(key)
@@ -115,7 +115,7 @@ test('cinco frentes mostram apenas a superficie correspondente e controles minus
   assert.equal(ui.el('#guideExamplePanel').hidden, true)
   ui.roles[2].click()
   assert.equal(ui.el('#guideTitle').textContent, 'The executor')
-  ui.el('#guideNext').click(); ui.el('#guideNext').click()
+  ui.el('#guideNext').click(); ui.el('#guideNext').click(); ui.el('#guideNext').click()
   ui.flushFrame()
   assert.match(ui.el('#guideCount').textContent, /Step 3 of 5/)
   assert.equal(ui.el('#guideStepTitle').textContent, 'Dashboard')
@@ -147,7 +147,7 @@ test('cinco frentes mostram apenas a superficie correspondente e controles minus
 test('navegacao rapida aplica apenas o ultimo destino e cancela ao fechar', () => {
   const ui = harness()
   ui.launcher.click()
-  for (let i = 0; i < 5; i++) ui.el('#guideNext').click()
+  for (let i = 0; i < 6; i++) ui.el('#guideNext').click()
   assert.equal(ui.demos.length, 0)
   ui.flushFrame()
   assert.deepEqual(ui.demos, [{ mode: 'board', target: 'board' }])
@@ -196,7 +196,7 @@ test('onboarding tolera dependencias opcionais ausentes e callbacks de demo obso
 
   const stale = harness({ cancelFrames: false, rolesMissing: true, invitationMissing: true, storageThrows: true, searchThrows: true, noLocation: true })
   stale.launcher.click()
-  for (let step = 0; step < 5; step += 1) stale.el('#guideNext').click()
+  for (let step = 0; step < 6; step += 1) stale.el('#guideNext').click()
   stale.api.close()
   stale.flushFrame()
   stale.window.listeners.get('resize')?.()
@@ -207,7 +207,7 @@ test('onboarding tolera dependencias opcionais ausentes e callbacks de demo obso
 
   const duplicate = harness()
   duplicate.launcher.click()
-  for (let step = 0; step < 5; step += 1) duplicate.el('#guideNext').click()
+  for (let step = 0; step < 6; step += 1) duplicate.el('#guideNext').click()
   duplicate.flushFrame()
   duplicate.el('#guideNext').click()
   duplicate.el('#guidePrevious').click()
@@ -363,7 +363,7 @@ test('teclado, fullscreen e encerramento percorrem as saídas do onboarding', as
 
   const finish = harness()
   finish.launcher.click()
-  for (let step = 0; step < 14; step += 1) finish.el('#guideNext').click()
+  for (let step = 0; step < 15; step += 1) finish.el('#guideNext').click()
   assert.equal(finish.root.hidden, true)
   finish.api.close()
   await Promise.resolve()
@@ -371,7 +371,7 @@ test('teclado, fullscreen e encerramento percorrem as saídas do onboarding', as
 
   const previousDemo = harness()
   previousDemo.launcher.click()
-  for (let step = 0; step < 5; step += 1) previousDemo.el('#guideNext').click()
+  for (let step = 0; step < 6; step += 1) previousDemo.el('#guideNext').click()
   previousDemo.el('#guidePrevious').click()
 
   const delayed = harness()
@@ -401,9 +401,9 @@ test('guia reutiliza as interfaces reais, documenta os dez ambientes e oferece f
   const html = readFileSync(new URL('../scripts/dashboard.html', import.meta.url),'utf8')
   const section = html.match(/<section id="onboarding"[\s\S]*?<\/section>\s*(?=<div id="results")/)?.[0]
   assert.ok(section)
-  assert.equal((section.match(/data-guide-role=/g)??[]).length,4)
-  assert.equal((section.match(/class="ric"/g)??[]).length,4)
-  for (const id of ['orchNode', 'planNode', 'execNode', 'revNode']) {
+  assert.equal((section.match(/data-guide-role=/g)??[]).length,5)
+  assert.equal((section.match(/class="ric"/g)??[]).length,5)
+  for (const id of ['orchNode', 'securityNode', 'planNode', 'execNode', 'revNode']) {
     const svg = html.match(new RegExp('<div id="' + id + '"[^>]*>(<svg[\\s\\S]*?</svg>)'))?.[1]
     assert.ok(svg && section.includes(svg), `o guia conserva o SVG real de ${id}`)
   }
@@ -456,7 +456,7 @@ test('abrir documentação mantém o guia na etapa atual após sair da tela chei
   const ui = harness()
   ui.launcher.click()
   await Promise.resolve()
-  for (let step = 0; step < 13; step += 1) ui.el('#guideNext').click()
+  for (let step = 0; step < 14; step += 1) ui.el('#guideNext').click()
   assert.equal(ui.el('#guideCommandPanel').hidden, false)
   const title = ui.el('#guideTitle').textContent
   const count = ui.el('#guideCount').textContent
@@ -485,7 +485,7 @@ test('abrir documentação mantém o guia na etapa atual após sair da tela chei
   ui.launcher.click()
   ui.el('#guideNext').click()
   assert.doesNotMatch(ui.el('#guideDescription').textContent, /default is 3/)
-  ui.roles[3].click()
+  ui.roles[4].click()
   ui.el('#guideNext').click()
   ui.el('#guideNext').click()
   ui.flushFrame()

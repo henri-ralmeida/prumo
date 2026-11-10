@@ -71,6 +71,7 @@ export function createPrumoOnboarding({ root, launcher, document, window, transl
       { title: 'The planner', description: 'The Planner records the approved plan as tasks.', target: 'planner' },
       { title: 'The executor', description: 'The Executor works on authorized tasks and records evidence.', target: 'executor' },
       { title: 'The reviewer', description: 'The Reviewer independently checks the result.', target: 'reviewer' },
+      { title: 'The ethical hacker', description: 'The Ethical hacker is an optional independent security auditor. After delivery and your confirmation, it tests locally, records reproducible findings and points to fixes. It does not replace the Reviewer. Click its shield beside the Orchestrator for details; inspect findings in Results.', target: 'security' },
     ] },
     { title: 'Explore this dashboard', heading: 'Dashboard', demos: [
       { title: 'Phases and tasks', description: 'Phases organize the plan. Task IDs identify the work; their colors show the current state. Click a phase or a task.', target: 'board' },

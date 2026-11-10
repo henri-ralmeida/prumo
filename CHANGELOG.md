@@ -4,6 +4,7 @@ Historical tag and commit corrections are documented in [Release history recover
 
 ## 2.12.1 — 2026-11-10
 
+- Mostre o Hacker ético ao lado do Orquestrador, com o estado da auditoria, explicação acessível e uma entidade própria no guia.
 - Adicione auditorias independentes de segurança e fases de correção opcionais, com achados classificados por CVSS e limitações explícitas quando não houver evidência segura disponível.
 - Mostre a execução selecionada, o local do estado e a descoberta aprovada da fase nos contratos; use o projeto da tarefa nas instruções ao revisor.
 - Exija evidência independente de escopo ao validar escopos medidos vazios em outro repositório Git, preservando tentativas legadas.

@@ -9,7 +9,7 @@ import { isReadyForReview, isReviewRejected } from './review-readiness.mjs'
 
 export function dashboardWithCatalog(html) {
   // O guia compartilha a identidade das entidades; alterar o SVG real atualiza a demonstracao.
-  const roles = { orchNode: ['orchestrator', 'Coordinates the approved plan'], planNode: ['planner', 'Turns scope into tasks'], execNode: ['executor', 'Implements and records evidence'], revNode: ['reviewer', 'Verifies independently'] }
+  const roles = { orchNode: ['orchestrator', 'Coordinates the approved plan'], securityNode: ['security', 'Independent audit'], planNode: ['planner', 'Turns scope into tasks'], execNode: ['executor', 'Implements and records evidence'], revNode: ['reviewer', 'Verifies independently'] }
   const guideRoles = Object.entries(roles).map(([id, [role, description]]) => {
     const source = html.match(new RegExp('<div id="' + id + '" class="role"[\\s\\S]*?<i class="obar"></i></div>'))?.[0]
     if (!source) throw new Error(`Entidade do dashboard ausente: ${id}`)
