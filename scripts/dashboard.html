@@ -660,10 +660,10 @@ SOFTWARE. -->
   @media (max-width: 420px) { #updateDialog { padding: 24px 20px; } }
 
   /* ---- painel direito: somente estado e eventos; os detalhes da tarefa ficam no modal. */
-  aside { display: flex; flex-direction: column; gap: 14px; border-left: 1px solid var(--line); background: var(--panel);
+  aside { display: flex; flex-direction: column; gap: 14px; border-left: 0; background: var(--panel);
           padding: 22px 20px; min-height: 0; overflow-x: hidden; overflow-y: auto; scrollbar-gutter: stable; }
   #sidebarToggle { position: absolute; z-index: 12; right: 360px; top: 12px; width: 24px; height: 34px;
-                   padding: 0; margin: 0; border-radius: 8px 0 0 8px; background: var(--panel); }
+                   display: grid; place-items: center; padding: 0; margin: 0; border-right: 0; border-radius: 8px 0 0 8px; background: var(--panel); }
   #sidebarToggle .control-chevron { transform: rotate(-90deg); }
   #sidebarToggle[aria-expanded="false"] .control-chevron { transform: rotate(90deg); }
   main.sidebar-collapsed #sidebarToggle { right: 0; }
