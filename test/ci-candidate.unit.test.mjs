@@ -37,9 +37,21 @@ test('um candidato verificado serve vários consumidores sem reempacotar ou apag
   assert.match(readFileSync(join(f.root, 'outputs'), 'utf8'), new RegExp(`sha256=${f.manifest.sha256}`))
   assert.equal(sharedCandidate(f.root, {}), undefined)
   const calls = []
-  assert.equal(runCiPublished({ root: f.root, env: f.env, run(executable, args) { calls.push(args); return { status: 7 } } }), 7)
+  assert.equal(runCiPublished({ root: f.root, env: { ...f.env, NODE_V8_COVERAGE: 'trace', PRUMO_TEST_COVERAGE_FLUSH: '1' }, run(executable, args, options) {
+    calls.push(args)
+    assert.equal(options.env.NODE_V8_COVERAGE, undefined)
+    assert.equal(options.env.PRUMO_TEST_COVERAGE_FLUSH, undefined)
+    assert.equal(options.env.PRUMO_CI_CANDIDATE_SHA256, f.env.PRUMO_CI_CANDIDATE_SHA256)
+    assert.equal(args[0], '--test')
+    assert.ok(args.includes('test/upgrade-from-previous.test.mjs'))
+    return { status: 7 }
+  } }), 7)
   assert.equal(calls.length, 1)
-  assert.ok(calls[0].includes('--reporter=json') && calls[0].includes('--reporter=json-summary'))
+  assert.ok(!calls[0].some(arg => /c8|reporter/.test(arg)))
+  assert.equal(runCiPublished({ root: f.root, env: f.env, run: () => ({ status: 0 }) }), 0)
+  assert.equal(runCiPublished({ root: f.root, env: f.env, run: () => ({ status: null }) }), 1)
+  assert.throws(() => runCiPublished({ root: f.root, env: f.env, run: () => ({ error: new Error('indisponível') }) }), /indisponível/)
+  assert.throws(() => runCiPublished({ root: f.root, env: f.env, run: () => ({ signal: 'SIGTERM' }) }), /interrompida/)
   assert.equal(calls[0].at(-1), 'test/upgrade-from-previous.test.mjs')
   assert.equal(readFileSync(f.archive, 'utf8'), 'pacote imutável')
 })

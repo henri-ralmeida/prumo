@@ -3,6 +3,9 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ (github.event_name == 'push' || github.event_name == 'pull_request') && (github.event.pull_request.number || github.ref) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
 permissions:
   contents: read
 jobs:
@@ -19,6 +22,13 @@ jobs:
         with:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
+      - id: bun-cache
+        shell: bash
+        run: printf 'path=%s\n' "$(bun pm cache)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.bun-cache.outputs.path }}
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
       - run: bun install --frozen-lockfile --ignore-scripts
       - id: plan
         run: node .github/scripts/ci-plan.mjs
@@ -51,6 +61,13 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - uses: oven-sh/setup-bun@v2
+      - id: bun-cache
+        shell: bash
+        run: printf 'path=%s\n' "$(bun pm cache)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.bun-cache.outputs.path }}
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
       - run: bun install --frozen-lockfile --ignore-scripts
       # Cada grupo preserva o inventario completo em conjunto com os demais runners.
       - run: node .github/scripts/run-ci-batch.mjs
@@ -95,6 +112,13 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - uses: oven-sh/setup-bun@v2
+      - id: bun-cache
+        shell: bash
+        run: printf 'path=%s\n' "$(bun pm cache)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.bun-cache.outputs.path }}
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
       - run: bun install --frozen-lockfile --ignore-scripts
       - uses: actions/download-artifact@v7
         with:
@@ -114,15 +138,6 @@ jobs:
         if: always()
         shell: pwsh
         run: ./.github/scripts/published-update-summary.ps1 -ResultsPath ".test-output/published-update-results.json"
-      - uses: actions/upload-artifact@v6
-        if: always()
-        with:
-          name: coverage-published-${{ matrix.os }}-node-${{ matrix.node }}-${{ matrix.label }}
-          path: |
-            .test-output/coverage/coverage-final.json
-            .test-output/coverage/coverage-summary.json
-            .test-output/coverage/source-manifest.json
-          if-no-files-found: error
       - uses: actions/upload-artifact@v6
         if: always()
         with:
@@ -156,6 +171,13 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - uses: oven-sh/setup-bun@v2
+      - id: bun-cache
+        shell: bash
+        run: printf 'path=%s\n' "$(bun pm cache)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.bun-cache.outputs.path }}
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
       - run: bun install --frozen-lockfile --ignore-scripts
       - uses: actions/download-artifact@v7
         with:
@@ -182,6 +204,13 @@ jobs:
         with:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
+      - id: bun-cache
+        shell: bash
+        run: printf 'path=%s\n' "$(bun pm cache)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.bun-cache.outputs.path }}
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
       - run: bun install --frozen-lockfile --ignore-scripts
       - uses: actions/download-artifact@v7
         with:
