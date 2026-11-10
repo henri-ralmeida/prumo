@@ -10,6 +10,10 @@ auditor, each precise enough to become a fix task. The test roadmap (WSTG catego
 specialist lenses) is in [security-audit-playbook.md](security-audit-playbook.md); read it when you reach
 the vulnerability analysis phase.
 
+The dashboard and interactive guide place the ethical hacker beside the orchestrator, directly above
+the reviewer. Its gray, solid connection indicates inactivity. Only a running audit uses its highlight
+color and a dashed, animated connection, so activity remains distinguishable from availability.
+
 ## Contents
 
 - [Rules of engagement](#rules-of-engagement)

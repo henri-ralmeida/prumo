@@ -382,15 +382,15 @@ SOFTWARE. -->
   #hub.compact svg#hubPaths { display: none; }
   .compact-security-connection { display: none; }
   #hub.compact .compact-security-connection { display: block; position: absolute; left: calc(8px + var(--hub-col)); top: calc(var(--hub-top) + 28px); width: 8px; height: 2px; overflow: visible; }
-  .compact-security-connection path { fill: none; stroke: var(--faint); stroke-width: 1.5; stroke-dasharray: 3 6; }
-  #hub:has(#securityNode.live) .compact-security-connection path { stroke: #6ed3b1; animation: flow9 .7s linear infinite; }
+  .compact-security-connection path { fill: none; stroke: var(--faint); stroke-width: 1.5; }
+  #hub:has(#securityNode.live) .compact-security-connection path { stroke: #6ed3b1; stroke-dasharray: 3 6; animation: flow9 .7s linear infinite; }
   #hub.compact .hub-shade { height: 152px !important; }
   #hub.compact .role, #hub.compact #orchNode { width: var(--hub-col) !important; height: 40px !important; padding: 6px 10px;
                                                gap: 8px; border-radius: 10px; }
   #hub.compact #orchNode { left: 8px !important; top: calc(var(--hub-top) + 8px) !important; }
   #hub.compact :is(#execNode, .role-executor) { left: calc(16px + var(--hub-col)) !important; top: calc(var(--hub-top) + 56px) !important; }
   #hub.compact :is(#planNode, .role-planner) { left: 8px !important; top: calc(var(--hub-top) + 56px) !important; }
-  #hub.compact :is(#revNode, .role-reviewer) { left: 8px !important; top: calc(var(--hub-top) + 104px) !important; }
+  #hub.compact :is(#revNode, .role-reviewer) { left: calc(16px + var(--hub-col)) !important; top: calc(var(--hub-top) + 104px) !important; }
   #hub.compact #securityNode { left: calc(16px + var(--hub-col)) !important; top: calc(var(--hub-top) + 8px) !important; }
   #hub.compact .role .ric, #hub.compact #orchNode .ric { width: 18px; height: 18px; }
   #hub.compact .role .oh, #hub.compact #orchNode .oh { font-size: 12px; }
@@ -1206,8 +1206,8 @@ SOFTWARE. -->
   .guide-role-connections { position: absolute; top: calc(88 * var(--guide-unit)); left: 0; width: 100%; height: calc(38 * var(--guide-unit)); overflow: visible; pointer-events: none; }
   .guide-role-connections path { fill: none; stroke-width: 1.5; }
   .guide-security-connection { position: absolute; left: calc(50% + 130 * var(--guide-unit)); top: calc(44 * var(--guide-unit)); width: calc(16 * var(--guide-unit)); height: 2px; overflow: visible; pointer-events: none; }
-  .guide-security-connection path { fill: none; stroke: var(--faint); stroke-width: 1.5; stroke-dasharray: 3 6; }
-  #guideMockRoles:has([data-guide-role="security"][aria-pressed="true"]) .guide-security-connection path { stroke: #6ed3b1; animation: flow9 .7s linear infinite; }
+  .guide-security-connection path { fill: none; stroke: var(--faint); stroke-width: 1.5; }
+  #guideMockRoles:has([data-guide-role="security"][aria-pressed="true"]) .guide-security-connection path { stroke: #6ed3b1; stroke-dasharray: 3 6; animation: flow9 .7s linear infinite; }
   @media(max-width:700px) { .guide-security-connection { display: none; } }
   .guide-role-connections .s-flow { stroke-width: 2.5; stroke-dasharray: 3 6; stroke-linecap: round; animation: flow9 .7s linear infinite; opacity: 0; }
   #guideMockRoles:has([aria-pressed="true"]) .guide-role-connections [data-role="orchestrator"],
@@ -3752,7 +3752,6 @@ function render(s, events = []) {
   const place = (node, x, y) => { node.style.left = `${x}px`; node.style.top = `${y}px` }
   const on = $('#orchNode')
   place(on, ox, oy)
-  place($('#securityNode'), ox + ORCH_W + 24, oy + 2)
   syncSecurityCard(s.securityAuditView)
   $('#hub').classList.add('placed')
   on.classList.toggle('live', busy > 0)
@@ -3765,6 +3764,7 @@ function render(s, events = []) {
   syncOrchestratorCard()
   const ocy = oy + ORCH_H
   const roleX = { plan: cx - ROLE_W * 1.5 - ROLE_GAP, exec: cx - ROLE_W / 2, rev: cx + ROLE_W / 2 + ROLE_GAP }
+  place($('#securityNode'), roleX.rev, oy + 2)
   const roleCx = (key) => roleX[key] + ROLE_W / 2
   const pn = $('#planNode'), xn = $('#execNode'), rn = $('#revNode')
   place(pn, roleX.plan, ROLES_Y); place(xn, roleX.exec, ROLES_Y); place(rn, roleX.rev, ROLES_Y)
@@ -3828,7 +3828,7 @@ function render(s, events = []) {
       : `H ${x + (x < cx ? 4 : -4)} Q ${x} ${busY} ${x} ${busY + 4} V ${ROLES_Y}`
   }
   const hubHtml = [
-    `<path class="s-security${s.securityAuditView?.state === 'running' ? ' s-flow' : ''}" data-connection="security" stroke="${s.securityAuditView?.state === 'running' ? '#6ed3b1' : 'var(--faint)'}" stroke-dasharray="3 6" d="M ${ox + ORCH_W} ${oy + ORCH_H / 2} H ${ox + ORCH_W + 24}"/>`,
+    `<path class="s-security${s.securityAuditView?.state === 'running' ? ' s-flow' : ''}" data-connection="security" stroke="${s.securityAuditView?.state === 'running' ? '#6ed3b1' : 'var(--faint)'}" stroke-dasharray="${s.securityAuditView?.state === 'running' ? '3 6' : 'none'}" d="M ${ox + ORCH_W} ${oy + ORCH_H / 2} H ${roleX.rev}"/>`,
     `<path class="s-frame" data-connection="orchestrator" style="stroke:#6a5222" d="M ${cx} ${ocy} V ${busY}"/>`,
     ...(Object.values(live).some(Boolean) ? [`<path class="s-flow" data-role="orchestrator" style="stroke:var(--accent)" d="M ${cx} ${ocy} V ${busY}"/>`] : []),
     ...Object.keys(live).map((key) => `<path class="s-frame" data-connection="${key}" style="stroke:${track[key]}" d="M ${cx} ${busY} ${branch(key)}"/>`),

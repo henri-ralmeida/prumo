@@ -19,6 +19,7 @@ test('hacker ético permanece visível sem auditoria e distingue estados reais n
     assert.equal(ui.nodes.get('#securitySub').textContent, lang === 'en' ? 'idle' : 'inativo')
     const hacker = ui.nodes.get('#securityNode')
     assert.ok(parseFloat(hacker.style.left) > parseFloat(ui.nodes.get('#orchNode').style.left))
+    assert.equal(hacker.style.left, ui.nodes.get('#revNode').style.left)
     assert.equal(hacker.classList.contains('live'), false)
     for (const audit of ['awaiting-decision', 'enabled', 'running', 'blocked', 'pending-recheck', 'done', 'skipped', 'unexpected']) {
       state.securityAuditView = { state: audit, attempts: [{ agent: '<auditor>' }] }
@@ -26,7 +27,7 @@ test('hacker ético permanece visível sem auditoria e distingue estados reais n
       assert.equal(hacker.classList.contains('live'), audit === 'running')
       const connection = ui.nodes.get('#hubPaths').innerHTML.match(/<path[^>]*data-connection="security"[^>]*>/)?.[0]
       assert.ok(connection)
-      assert.match(connection, /stroke-dasharray="3 6"/)
+      assert.ok(connection.includes(`stroke-dasharray="${audit === 'running' ? '3 6' : 'none'}"`))
       assert.equal(connection.includes(' s-flow'), audit === 'running')
       assert.equal(connection.includes('stroke="#6ed3b1"'), audit === 'running')
       assert.equal(ui.nodes.get('#securityStatus').textContent, ui.nodes.get('#securitySub').textContent)
