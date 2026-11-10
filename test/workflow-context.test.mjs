@@ -86,6 +86,31 @@ test('aprovação em outro repositório exige revisão independente mesmo em con
   f.ok('done', 'T1')
 })
 
+test('validação entre repositórios mantém inspeção independente sem baseline Git na tentativa legada', t => {
+  const f = fixture(t, { git: true, tasks: [{ id: 'T1', writeScope: 'files', touches: ['out.txt'] }] })
+  const other = join(f.home, 'other'); mkdirSync(other)
+  assert.equal(spawnSync('git', ['init', other], { windowsHide: true }).status, 0)
+  writeFileSync(join(other, 'check.cjs'), "require('node:assert/strict').equal(1, 1)\n")
+  f.plan.scopePolicy = 'explicit'
+  f.plan.tasks[0].validation = [{ ...f.plan.tasks[0].validation[0], cwd: other }]
+  f.writePlan(); f.ok('sync-plan', '--plan', f.source)
+  f.skipTaskPlan(); f.ok('authorize', '--scope', 'tasks:T1', '--confirmed-by-user')
+  f.ok('start', 'T1', '--agent', 'executor')
+  const legacy = f.state()
+  delete legacy.tasks.T1.attempts.at(-1).scopeBaseline
+  f.importState(legacy)
+  f.ok('review', 'T1', '--agent', 'reviewer')
+  const before = f.state(), events = f.events()
+  f.rejects(/--scope-evidence/, 'validate', 'T1', '--ok', '--evidence', 'Relato sem inspeção de escopo')
+  assert.deepEqual(f.state(), before); assert.equal(f.events(), events)
+  f.ok('validate', 'T1', '--ok', '--evidence', 'Entrega inspecionada', '--scope-evidence', 'Revisor conferiu os caminhos e a atribuição no outro repositório')
+  const scope = f.state().tasks.T1.validations.at(-1).scopeCheck
+  assert.equal(scope.method, 'independent-review')
+  assert.equal(scope.agent, 'reviewer')
+  assert.match(scope.evidence, /caminhos e a atribuição/)
+  f.ok('done', 'T1')
+})
+
 test('validação legada reconfere a evidência quando o comando deixa o escopo aprovado vazio', t => {
   const f = fixture(t, { git: true, tasks: [{ id: 'T1', writeScope: 'files', touches: ['out.txt'] }] })
   const file = join(f.project, 'out.txt'), other = join(f.home, 'other')
