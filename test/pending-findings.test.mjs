@@ -102,7 +102,7 @@ for (const legacy of [false, true]) test(`sincronizacao preserva confirmacoes pe
   assert.deepEqual(f.state().phaseWorkflows.F1.discussionAttempts.at(-1).confirmsContract.map(item => item.task), expected)
 })
 
-for (const [lang, explicitProject] of [['en', true], ['pt-BR', false]]) test(`validate e done avisam projeto divergente sem recusar em ${lang}, projeto explicito ${explicitProject}`, t => {
+for (const [lang, explicitProject] of [['en', true], ['pt-BR', false]]) test(`validate e done exigem evidência independente para projeto divergente sem escopo em ${lang}, projeto explicito ${explicitProject}`, t => {
   const f = fixture(t, { git: true, lang, tasks: [{ id: 'T1', writeScope: 'files', touches: ['out.txt'] }] })
   if (explicitProject) f.plan.tasks[0].project = f.project
   f.plan.scopePolicy = 'explicit'; f.writePlan(); f.ok('sync-plan', '--plan', f.source)
@@ -124,14 +124,25 @@ for (const [lang, explicitProject] of [['en', true], ['pt-BR', false]]) test(`va
   f.ok('start', 'T1', '--agent', 'executor')
   writeFileSync(join(other, 'out.txt'), 'Entrega em outro repositorio\n')
   f.ok('review', 'T1', '--agent', 'reviewer')
-  const output = f.ok('validate', 'T1', '--ok', '--cwd', other, '--evidence', 'Verificacao funcional executada em outro projeto')
+  const before = f.state(), events = f.events()
+  f.rejects(/--scope-evidence/, 'validate', 'T1', '--ok', '--cwd', other, '--evidence', 'Relato sem conferir o outro repositorio')
+  assert.deepEqual(f.state(), before)
+  assert.equal(f.events(), events)
+  const output = f.ok('validate', 'T1', '--ok', '--cwd', other, '--evidence', 'Verificacao funcional executada em outro projeto',
+    '--scope-evidence', 'Revisor conferiu out.txt no outro repositorio e sua atribuicao')
   assert.match(output, lang === 'en' ? /WARNING:.*different Git repositor/ : /AVISO:.*repositórios Git diferentes/)
   const receipt = f.state().tasks.T1.validations.at(-1)
   assert.deepEqual(receipt.scopeCheck.paths, [])
   assert.equal(receipt.validationProjectMismatches[0].validationCwd, other)
   const historical = f.state()
   delete historical.tasks.T1.validations.at(-1).validationProjectMismatches
+  delete historical.tasks.T1.validations.at(-1).validationProjectEvidence
   f.importState(historical)
+  const historicalEvents = f.events()
+  f.rejects(/--scope-evidence/, 'done', 'T1')
+  assert.deepEqual(f.state(), historical)
+  assert.equal(f.events(), historicalEvents)
+  f.ok('validate', 'T1', '--ok', '--cwd', other, '--evidence', 'Entrega reinspecionada pelo revisor', '--scope-evidence', 'out.txt do outro repositorio conferido novamente')
   assert.match(f.ok('done', 'T1'), lang === 'en' ? /different Git repositor/ : /repositórios Git diferentes/)
   assert.equal(f.state().tasks.T1.state, 'done')
 })

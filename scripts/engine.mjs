@@ -1606,6 +1606,29 @@ function printValidationProjectWarning(mismatch) {
     mismatch.validationCwd, mismatch.project, mismatch.validationProject))
 }
 
+function validationProjectEvidence(task, mismatches, paths, evidence) {
+  if (!mismatches.length || paths.length) return undefined
+  // Sem arquivos medidos no projeto aprovado, só a inspeção independente cobre o outro repositório.
+  if (!evidence?.evidence?.trim() || !task.reviewer || evidence.agent !== task.reviewer || task.reviewer === task.agent)
+    throw new Error(tr('Task {0} has empty scope paths and validation in another Git repository; validate again with independent reviewer --scope-evidence identifying inspected paths and attribution; nothing was approved', task.id))
+  return evidence
+}
+
+function printSharedValidationWarnings(state, derived) {
+  if (occupancy(state).maxExec < 2) return
+  const tasks = Object.values(derived).filter(task => ['ready', 'running', 'reviewing'].includes(task.effective))
+  const roots = task => [...new Set((Array.isArray(task.validation) ? task.validation : [])
+    .map(step => step?.cwd ?? task.project ?? state.plan.cwd).filter(cwd => typeof cwd === 'string' && cwd.trim()))]
+  for (let i = 0; i < tasks.length; i++) for (let j = i + 1; j < tasks.length; j++) {
+    const a = tasks[i], b = tasks[j]
+    for (const directory of roots(a)) {
+      if (!roots(b).some(other => sameProject({ project: directory }, { project: other }))) continue
+      // Caminhos de escrita disjuntos não isolam os arquivos usados pela compilação e pelos testes.
+      log('[prumo] ' + tr('Tasks {0} and {1} share validation project {2}; parallel edits may affect build or tests. Coordinate validation or use isolated checkouts; this warning does not block execution', a.id, b.id, directory))
+    }
+  }
+}
+
 function assertPhaseTargetsPaused(targets) {
   const active = targets.find(task => ['running', 'reviewing'].includes(task.state))
   if (active) die(tr('{0} is {1} and needs updated planning; use pause-replanning {0} --reason <reason>, then the task discussion and planning flow. The current attempt and plan were preserved', active.id, active.state))
@@ -2990,7 +3013,7 @@ const commands = {
 
   'show-contract'() {
     const id = args._[0] ?? die('show-contract <task> [--diff]')
-    const state = loadState(runName())
+    const name = runName(), state = loadState(name)
     const task = getTask(state, id)
     const history = task.contractHistory?.at(-1)
     const drift = contractDrift(state)
@@ -3023,7 +3046,10 @@ const commands = {
       }
     }
     const display = Object.fromEntries(['label', 'summary', 'validationSummary', 'timeCondition'].filter(field => task[field] !== undefined).map(field => [field, task[field]]))
-    console.log(JSON.stringify({ task: id, source, ...(changedAt ? { changedAt } : {}),
+    const phase = Object.hasOwn(state.phaseWorkflows ?? {}, task.phase) ? state.phaseWorkflows[task.phase] : null
+    console.log(JSON.stringify({ task: id, run: name, statePath: join(runDir(name), 'state.json'),
+      phaseContext: phase ? { phase: task.phase, discovery: phase.discovery ?? null } : null,
+      source, ...(changedAt ? { changedAt } : {}),
       ...(args.full ? { validationChecks: validationContract(task).steps.map((step, index) => ({
         check: index + 1, kind: step.kind ?? 'static', run: step.run, timeoutMs: step.timeoutMs ?? 600000,
       })) } : {}),
@@ -3267,6 +3293,7 @@ const commands = {
     printQuestionStatus(state)
     printSecurityAuditNotice(state)
     const d = derive(state)
+    printSharedValidationWarnings(state, d)
     const occ = occupancy(state)
     const list = Object.values(d).filter((t) => ['ready_for_discussion', 'ready_to_plan', 'ready'].includes(t.effective))
     const slots = executionSlots(state)
@@ -4316,6 +4343,13 @@ const commands = {
           assertValidationEnvironment(t)
           validationProjectMismatches = [...new Set(validationDirectories(t, args.cwd))]
             .map(cwd => validationProjectMismatch(t, state.plan.cwd, cwd)).filter(Boolean)
+          if (validationProjectMismatches.length) {
+            const evidence = { agent: by === 'review' ? t.reviewer : null, evidence: args['scope-evidence'] }
+            const paths = state.plan.scopePolicy === 'explicit' || externalTouchPaths(t).length
+              ? verifyTaskScope(t, t.attempts.at(-1)?.scopeBaseline, evidence, t.attempts.at(-1)?.concurrentScopes).paths ?? []
+              : t.touches ?? []
+            validationProjectEvidence(t, validationProjectMismatches, paths, evidence)
+          }
         } catch (error) { die(error.message) }
       }
       // Invalide qualquer aprovação anterior antes de executar comandos, inclusive em caso de interrupção.
@@ -4359,6 +4393,9 @@ const commands = {
         assertValidation(snapshot, { ...result, evidence: args.evidence })
         if (snapshot.explicitScopeRequired) result.scopeCheck = verifyTaskScope(snapshot, snapshot.attempts.at(-1)?.scopeBaseline,
           snapshot.state === 'reviewing' && snapshot.reviewer ? { evidence: args['scope-evidence'], agent: snapshot.reviewer } : undefined, snapshot.attempts.at(-1)?.concurrentScopes)
+        result.validationProjectEvidence = validationProjectEvidence(snapshot, result.validationProjectMismatches,
+          result.scopeCheck?.paths ?? snapshot.touches ?? [],
+          { agent: snapshot.state === 'reviewing' ? snapshot.reviewer : null, evidence: args['scope-evidence'] })
       } catch (e) { error = e.message }
     }
     withLock(name, () => {
@@ -4446,6 +4483,8 @@ const commands = {
     const slotsBeforeDone = executionSlots(state)
     const mismatches = last.validationProjectMismatches ?? [...new Set(last.checks.map(check => check.cwd))]
       .map(cwd => validationProjectMismatch(t, state.plan.cwd, cwd)).filter(Boolean)
+    try { validationProjectEvidence(t, mismatches, last.scopeCheck?.paths ?? t.touches ?? [], last.validationProjectEvidence) }
+    catch (error) { die(error.message) }
     for (const mismatch of mismatches) printValidationProjectWarning(mismatch)
     t.state = 'done'
     t.attempts.at(-1).endedAt = new Date().toISOString()

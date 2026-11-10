@@ -642,6 +642,22 @@ test('worker informa prévia de ativação ou reinício e preserva checkpoint qu
   assert.ok(existsSync(checkpoint), 'a recuperação não remove o checkpoint que mudou de tipo')
 })
 
+test('worker _update recusa parada negada sem alterar a instalação nem criar checkpoint', t => {
+  const f = detectedClaude(t, 'prumo-cli-stop-refused-')
+  installHarness(f, 'claude')
+  const settings = join(f.home, '.claude/settings.json'), skill = join(f.home, '.claude/skills/prumo/SKILL.md')
+  const before = [readFileSync(settings, 'utf8'), readFileSync(skill, 'utf8')]
+  const response = runCli(f.home, ['_update'], {
+    ...dashboardDouble({ enabled: true, process: 'running' }, { ok: true, process: 'running' }),
+    PRUMO_TEST_STOP_RESULT: JSON.stringify({ ok: false, error: 'serviço negado' }),
+    PRUMO_UPDATE_REQUEST: JSON.stringify({ dryRun: false, cwd: f.project, projects: [], updateCli: false }),
+  }, f.project)
+  assert.equal(response.status, 1, response.output)
+  assert.match(response.stderr, /Dashboard restart failed: serviço negado/)
+  assert.deepEqual([readFileSync(settings, 'utf8'), readFileSync(skill, 'utf8')], before)
+  assert.equal(existsSync(join(f.home, '.local/share/prumo/update-pending.json')), false)
+})
+
 test('install preserva progresso TTY com e sem métodos de limpeza e respeita NO_COLOR', t => {
   const f = detectedClaude(t, 'prumo-cli-tty-progress-')
   disableDashboard(f.home)

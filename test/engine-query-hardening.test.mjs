@@ -64,6 +64,8 @@ test('consulta de contrato interpreta etapa legada sem tipo como estática sem e
   f.state.tasks.T1.validation = [{ run: 'node contrato-pendente.cjs', expect: 'Conferir o resultado contratado', cwd: f.home }]
   f.save(f.state)
   const contract = JSON.parse(f.query(['show-contract', 'T1', '--full']).stdout)
+  assert.equal(contract.run, 'query')
+  assert.equal(contract.statePath, f.statePath)
   assert.deepEqual(contract.validationChecks, [{ check: 1, kind: 'static', run: 'node contrato-pendente.cjs', timeoutMs: 600000 }])
   assert.equal(existsSync(join(f.home, 'executou.txt')), false)
 })

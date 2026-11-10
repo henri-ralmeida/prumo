@@ -16,7 +16,7 @@ export const restartDashboard = async () => result;
 import { appendFileSync } from 'node:fs';
 export const stopDashboardForUpdate = async () => {
   if (process.env.PRUMO_TEST_STOP_LOG) appendFileSync(process.env.PRUMO_TEST_STOP_LOG, 'stop\\n');
-  return { ok: true, stopped: status.process === 'running' };
+  return process.env.PRUMO_TEST_STOP_RESULT ? JSON.parse(process.env.PRUMO_TEST_STOP_RESULT) : { ok: true, stopped: status.process === 'running' };
 };
 export const readDashboardEvents = () => [];
 export const runDashboardForeground = () => 0;

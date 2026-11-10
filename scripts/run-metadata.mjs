@@ -118,7 +118,7 @@ export function taskBrief(state, task, role, command) {
   return {
     role, run: state.run, task: task.id, state: task.state, runPause: state.runPause ?? null,
     context: { name: state.plan.name, description: state.plan.description },
-    contract: Object.fromEntries(['title', 'deps', 'touches', 'writeScope', 'sharedResources', 'unavailable', 'validation', 'validationMode', 'inspectionReason', 'textRules', 'deliveries', 'numericProvenance'].filter(key => task[key] !== undefined).map(key => [key, task[key]])),
+    contract: Object.fromEntries(['title', 'project', 'deps', 'touches', 'writeScope', 'sharedResources', 'unavailable', 'validation', 'validationMode', 'inspectionReason', 'textRules', 'deliveries', 'numericProvenance'].filter(key => task[key] !== undefined).map(key => [key, task[key]])),
     taskPlan: task.taskPlan ?? null, planIdentity: recordedPlanIdentity(task), planningSkips: task.planningSkips ?? [], discussionSkips: task.discussionSkips ?? [],
     discovery: task.discovery ?? null,
     phaseContext: phase ? { phase: task.phase, discovery: phase.discovery ?? null, discussionSkips: phase.discussionSkips ?? [], planningSkips: phase.planningSkips ?? [] } : null,
@@ -132,6 +132,6 @@ export function taskBrief(state, task, role, command) {
     planningAndDiscussionDispatches: dispatchOwners(state).filter(item => item.task === task.id && ['discussion', 'planning'].includes(item.role)).flatMap(item => item.owner.modelDispatches ?? []),
     modelDispatches: attempt?.modelDispatches ?? [], modelNotice: 'Preferences and dispatch values are reported; the engine does not call or verify models.',
     rules: ['Keep internal identifiers out of new product text; apply approved literal patterns and specific exceptions.', 'Inspect the current delivery and validate every applicable criterion independently; previous receipts are historical evidence, not a new reviewer verdict.', 'Check sources, exact locations, declared values and calculation rules for numeric summaries. Dependency receipts do not prove counts.'],
-    commands: [command(['show-contract', task.id]), command(['show-check', task.id]), ...(role === 'reviewer' ? [command(['validate', task.id, '--ok', '--evidence', '<independent observations>', ...(state.plan.cwd ? ['--cwd', state.plan.cwd] : [])])] : [])],
+    commands: [command(['show-contract', task.id]), command(['show-check', task.id]), ...(role === 'reviewer' ? [command(['validate', task.id, '--ok', '--evidence', '<independent observations>', ...(task.project ?? state.plan.cwd ? ['--cwd', task.project ?? state.plan.cwd] : [])])] : [])],
   }
 }
