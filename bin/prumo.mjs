@@ -202,6 +202,8 @@ try {
       }
       if (result.legacy) print(t('Previous dashboard still running on port {0}; run prumo update or prumo dashboard enable to move it to port {1}', LEGACY_DASHBOARD_PORT, result.port))
       if (result.origin || result.path) print(t('origin: {0}; path: {1}', result.origin ?? t('unknown'), result.path ?? t('unknown')))
+      if (result.preservedDashboard) print(t('Dashboard on port {0} belongs to another environment and was preserved; origin: {1}; path: {2}',
+        result.preservedDashboard.port, result.preservedDashboard.origin ?? t('unknown'), result.preservedDashboard.path))
       if (action === 'enable' && result.registered && result.process === 'running') {
         const { reports } = registeredReports({ projects: values.project ?? [] })
         for (const report of reports) {

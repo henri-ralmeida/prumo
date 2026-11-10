@@ -840,6 +840,7 @@ function warnTaskPlan(task, plan, state) {
 /* Identifica o código que está de fato em execução. O instalador grava .prumo-install.json ao lado de
    scripts/; uma cópia do código-fonte tem package.json ali. A infraestrutura de testes só é informada
    quando o marcador a registra, nunca inferida. */
+let dashboardDiagnostic
 async function printEngineIdentity() {
   const engineFile = fileURLToPath(import.meta.url)
   const skillDir = dirname(dirname(engineFile))
@@ -868,7 +869,7 @@ async function printEngineIdentity() {
       installedVersion, marker.contentId ?? tr('content identifier missing')))
   try {
     const { engineDashboardMismatch, registeredDashboardIdentity } = await import('./installation-bundle.mjs')
-    const mismatch = engineDashboardMismatch(skillDir, await registeredDashboardIdentity({ home: homedir() }))
+    const mismatch = engineDashboardMismatch(skillDir, await registeredDashboardIdentity({ home: homedir(), diagnostic: dashboardDiagnostic }))
     if (mismatch) log('[prumo] ' + tr('WARNING: engine content {0} differs from dashboard content {1}; run prumo update',
       mismatch.engineContentId, mismatch.dashboardContentId))
   } catch { /* Cópias incompletas não comprovam divergência de conteúdo. */ }
@@ -1165,7 +1166,7 @@ function readPlan(planPath, state) {
   const identifierTasks = state ? plan.tasks.map(task => ['done', 'skipped'].includes(state.tasks[task.id]?.state)
     ? { ...task, deps: state.tasks[task.id].deps } : task) : plan.tasks
   const identifierProblem = taskIdentifierProblem(identifierTasks, state ? [...Object.keys(state.tasks), ...Object.keys(state.removedTasks ?? {})] : undefined, state?.tasks,
-    { phases: plan.phases ?? [], existingPhases: (state?.plan.phases ?? []).map(phase => phase.id) })
+    { phases: plan.phases ?? [], existingPhases: (state?.plan.phases ?? []).map(phase => phase.id), reservedIds: Object.keys(state?.taskIdAliases ?? {}) })
   if (identifierProblem) die(tr(identifierProblem.message, ...identifierProblem.values))
   const phaseProblem = phaseIdentifierProblem(plan.phases ?? [], (state?.plan.phases ?? []).map(phase => phase.id))
   if (phaseProblem) die(tr(phaseProblem.message, ...phaseProblem.values))
@@ -2308,6 +2309,16 @@ function currentTaskDiscussionDecision(state, task) {
     kind: 'discussed', id: round.roundId, digest: task.discovery.digest,
   }
   return skipped ? { kind: 'skipped', id: skipped.decisionId, digest: skipped.digest } : null
+}
+
+function assertIndividualSkipAllowed(state, task) {
+  if (state.plan.planningMode !== 'phase') return
+  const phase = state.phaseWorkflows?.[task.phase]
+  if (phase?.contractConfirmationRequired && (!phase.contractConfirmationRequired.tasks || phase.contractConfirmationRequired.tasks.includes(task.id)))
+    die(tr('{0} requires the pending contract confirmation before an individual skip', task.id))
+  if (task.individualPlanning) return
+  if ([phase?.discussionAttempts?.at(-1), phase?.planningAttempts?.at(-1)].some(round => round && !round.endedAt && round.targets.includes(task.id)))
+    die(tr('{0} belongs to an active phase round; finish or block its assigned work before choosing an individual skip', task.id))
 }
 
 function explicitSkipDecision(scope) {
@@ -3822,8 +3833,8 @@ const commands = {
     const name = runName()
     const id = args._[0] ?? die('skip-discussion <task> --reason <text> --confirmed-by-user')
     const state = loadState(name)
-    if (state.plan.planningMode === 'phase' && !state.tasks[id]?.individualPlanning) die('this run uses phase planning; use skip-phase-discussion')
     const task = getTask(state, id)
+    assertIndividualSkipAllowed(state, task)
     const blockedBy = task.deps.filter(dep => !['done', 'skipped'].includes(state.tasks[dep]?.state))
     if (blockedBy.length) die(id + ' still waiting on: ' + blockedBy.join(', '))
     if (task.contractConfirmationRequired || individualPhaseConfirmation(state, task))
@@ -3837,10 +3848,11 @@ const commands = {
       context: planningContext(state, task), contextSnapshot: taskContextSnapshot(state, task) }
     task.discussionSkips ??= []
     task.discussionSkips.push(decision)
+    if (state.plan.planningMode === 'phase') task.individualPlanning = true
     saveState(name, state)
     emit(name, 'task_discussion_skipped', id, { decisionId: decision.decisionId,
       reason: decision.reason, confirmedByUser: true })
-    log(`[prumo] ${id} discussion skipped by explicit user choice; ready for the planning decision`)
+    log('[prumo] ' + tr('{0} discussion skipped by explicit user choice; ready for the planning decision', id))
   },
 
   'finish-discussion'() {
@@ -3997,8 +4009,8 @@ const commands = {
     const name = runName()
     const id = args._[0] ?? die('skip-planning <task> --reason <text> --confirmed-by-user')
     const state = loadState(name)
-    if (state.plan.planningMode === 'phase' && !state.tasks[id]?.individualPlanning) die('this run uses phase planning; use skip-phase-planning')
     const task = getTask(state, id)
+    assertIndividualSkipAllowed(state, task)
     if (!['pending', 'failed'].includes(task.state)) die(`${id} must be pending or failed to skip planning`)
     if (!usesCurrentPlanning(state, task)) die(`${id} is a legacy task without current planning gates`)
     if (task.contractConfirmationRequired || individualPhaseConfirmation(state, task))
@@ -4010,12 +4022,13 @@ const commands = {
       contextSnapshot: taskContextSnapshot(state, task) }
     task.planningSkips ??= []
     task.planningSkips.push(decision)
+    if (state.plan.planningMode === 'phase') task.individualPlanning = true
     delete task.retryPlan
     task.state = 'pending'
     saveState(name, state)
     emit(name, 'task_planning_skipped', id, { decisionId: decision.decisionId,
       reason: decision.reason, confirmedByUser: true })
-    log(`[prumo] ${id} planning skipped by explicit user choice; ready to execute when dependencies allow`)
+    log('[prumo] ' + tr('{0} planning skipped by explicit user choice; ready to execute when dependencies allow', id))
   },
 
   'finish-planning'() {
@@ -4580,6 +4593,27 @@ const commands = {
     if (reuse && !planningSkipped) log('[prumo] reused recorded plan: ' + JSON.stringify(recordedPlanIdentity(t)))
   },
 
+  'discard-plan'() {
+    const name = runName(), id = args._[0], state = loadState(name), task = getTask(state, id)
+    if (!['pending', 'failed', 'blocked'].includes(task.state) || ['running', 'reviewing'].includes(task.stateBeforeBlock))
+      die(tr('{0} has active or terminal execution; use the existing execution recovery flow instead of discarding its plan', id))
+    if (!task.taskPlan) die(tr('{0} has no task plan to discard', id))
+    const phase = state.phaseWorkflows?.[task.phase]
+    if ([phase?.discussionAttempts?.at(-1), phase?.planningAttempts?.at(-1)].some(round => round && !round.endedAt && round.targets.includes(id)))
+      die(tr('{0} has assigned work; use block to preserve its active return path', id))
+    const decision = { ...explicitSkipDecision('discard-plan'), decision: 'discarded', plan: task.taskPlan,
+      planningSkipId: task.planningSkips?.at(-1)?.decisionId ?? null }
+    task.planningDiscardHistory ??= []
+    task.planningDiscardHistory.push(decision)
+    delete task.taskPlan
+    delete task.validationRefreshPlanning
+    saveState(name, state)
+    emit(name, 'task_plan_discarded', id, { reason: decision.reason, decisionId: decision.decisionId, confirmedByUser: true })
+    log('[prumo] ' + tr('Plan discarded for {0}; recorded history was preserved and new planning is required', id))
+  },
+
+  defer() { return commands.block() },
+
   block() {
     const name = runName()
     const id = args._[0] ?? die('block <task> --reason "<text>"')
@@ -4593,6 +4627,12 @@ const commands = {
     if (options && question === undefined && !t.blockQuestion)
       die(tr('block --option requires --question'))
     if (['done', 'skipped'].includes(t.state)) die('completed tasks cannot be paused')
+    if (cmd === 'defer') {
+      if (!['pending', 'failed', 'blocked'].includes(t.state) || ['running', 'reviewing', 'planning', 'discussing'].includes(t.stateBeforeBlock))
+        die(tr('{0} has assigned work; use block to preserve its active return path', id))
+      if (typeof args.reason !== 'string' || !args.reason.trim()) die('defer needs --reason <text>')
+      if (state.plan.planningMode === 'phase') t.phaseDeferred ??= { individualPlanning: t.individualPlanning === true }
+    }
     const alreadyBlocked = t.state === 'blocked'
     if (cmd === 'pause-replanning' && (!t.planningRequired || !['running', 'reviewing'].includes(t.stateBeforeBlock ?? t.state) || t.blockQuestion))
       die('pause-replanning requires an active attempt needing a revised plan, without an external question')
@@ -4613,7 +4653,7 @@ const commands = {
     saveState(name, state)
     emit(name, alreadyBlocked ? 'task_block_updated' : 'task_block', id, { reason: args.reason ?? '', blockKind: t.blockKind,
       ...(t.blockQuestion ? { question: t.blockQuestion } : {}), ...(t.blockOptions ? { options: t.blockOptions } : {}) })
-    log(`[prumo] ${id} blocked: ${args.reason ?? ''}`)
+    log(cmd === 'defer' ? '[prumo] ' + tr('{0} deferred; other eligible phase tasks can continue planning', id) : `[prumo] ${id} blocked: ${args.reason ?? ''}`)
   },
 
   'pause-replanning'() { commands.block() },
@@ -4704,6 +4744,10 @@ const commands = {
     }
     if (state.plan.scopePolicy === 'explicit' && (target === 'running' || target === 'reviewing')) t.attempts.at(-1).concurrentScopes = recordConcurrentScopes(state, t, true)
     t.state = target
+    if (t.phaseDeferred) {
+      t.individualPlanning = t.phaseDeferred.individualPlanning
+      delete t.phaseDeferred
+    }
     t.blockHistory ??= []
     t.blockHistory.push({ reason: t.blockReason ?? '', ...(t.blockQuestion ? { question: t.blockQuestion } : {}),
       ...(answer !== undefined ? { answer } : {}), at: new Date().toISOString() })
@@ -5015,10 +5059,25 @@ function runCommand() {
   }
   if (BLOCKED_ACTIONS.has(cmd) && args.scope !== 'phase') assertExternalBlockAction(loadState(runName()), args._[0])
   const paused = !['init', 'runs'].includes(cmd) ? loadState(runName()).runPause : null
-  if (paused && !paused.endedAt && /^(?:begin-|plan-|finish-|skip-|start$|review$|retry$|unblock$|activity-start$|audit-start$|validate$|done$|progress$|review-progress$)/.test(cmd)) die('Run is paused; resume-run explicitly. External harness processes are not interrupted.')
+  if (paused && !paused.endedAt && /^(?:begin-|plan-|finish-|skip-|discard-plan$|defer$|start$|review$|retry$|unblock$|activity-start$|audit-start$|validate$|done$|progress$|review-progress$)/.test(cmd)) die('Run is paused; resume-run explicitly. External harness processes are not interrupted.')
   return commands[cmd]()
 }
 try {
+  if (['status', 'start'].includes(cmd)) {
+    try {
+      const { registeredDashboardDiagnostics } = await import('./installation-bundle.mjs')
+      dashboardDiagnostic = await registeredDashboardDiagnostics({ home: homedir() })
+      if (dashboardDiagnostic && !dashboardDiagnostic.available)
+        log('[prumo] ' + tr('WARNING: dashboard health or run catalog on port {0} is unavailable; execution can continue. Inspect prumo dashboard status before changing any process.', dashboardDiagnostic.port))
+      let version
+      const root = dirname(dirname(fileURLToPath(import.meta.url)))
+      try { version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version } catch {
+        try { version = JSON.parse(readFileSync(join(root, '.prumo-install.json'), 'utf8')).version } catch { /* versão desconhecida */ }
+      }
+      if (version && dashboardDiagnostic?.version && version !== dashboardDiagnostic.version)
+        log('[prumo] ' + tr('WARNING: engine version {0} differs from dashboard version {1}; inspect prumo dashboard status and update the managed installation.', version, dashboardDiagnostic.version))
+    } catch { /* Uma cópia incompleta não deve bloquear o motor por falha do diagnóstico. */ }
+  }
   if (cmd === 'migrate' && args.check !== true) withLock(runName(), runCommand)
   else if (READ_ONLY.has(cmd) || cmd === 'validate' || cmd === 'migrate' || cmd === 'sync-plan' && args['dry-run'] || ['renumber-tasks', 'reorder-phases'].includes(cmd) && args['dry-run']) await runCommand()
   else withLock(runName(), runCommand)

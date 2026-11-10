@@ -720,7 +720,7 @@ test('aceite individual reconcilia somente sua pendência de fase sem retomar ex
 
 test('discussão individual recusa aceite ausente, de outra tarefa, digest ou rodada', t => {
   const f = individualConfirmationFixture(t)
-  f.rejects(/fresh answered contract confirmation/, 'skip-discussion', 'A', '--reason', 'Sem aceite', '--confirmed-by-user')
+  f.rejects(/pending contract confirmation/, 'skip-discussion', 'A', '--reason', 'Sem aceite', '--confirmed-by-user')
   f.ok('begin-discussion', 'A')
   const path = individualAcceptance(f), valid = JSON.parse(readFileSync(path, 'utf8'))
   for (const mutate of [

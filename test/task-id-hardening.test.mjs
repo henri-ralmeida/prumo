@@ -267,6 +267,14 @@ test('fases anexadas aceitam próximos números sem permitir números novos em f
     { phases: [{ id: 'F1' }, { id: 'F3' }, { id: 'F2' }], existingPhases: ['F1', 'F2'] }))
 })
 
+test('fase anexada pula apenas números reservados por aliases, inclusive entre tarefas novas', () => {
+  const existing = { T13: { ...task('T13'), phase: 'F1' } }
+  const options = { phases: [{ id: 'F1' }, { id: 'F2' }], existingPhases: ['F1'], reservedIds: ['T14', 'T16', 'T99'] }
+  const inspect = ids => taskIdentifierProblem([...Object.values(existing), ...ids.map(id => ({ ...task(id), phase: 'F2' }))], ['T13'], existing, options)
+  assert.equal(inspect(['T15', 'T17']), null)
+  assert.ok(inspect(['T18']))
+})
+
 test('fase legada já usada não vira fase nova por ausência no catálogo de fases', () => {
   const existing = { T9: { ...task('T9'), phase: 'F1' } }
   const options = { phases: [{ id: 'F1' }, { id: 'F2' }], existingPhases: [] }

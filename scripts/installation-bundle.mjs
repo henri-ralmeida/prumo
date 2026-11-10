@@ -65,12 +65,38 @@ export function engineDashboardMismatch(engineRoot, dashboardContentId) {
   } catch { return null }
 }
 
-export async function registeredDashboardIdentity({ home, fetch = globalThis.fetch }) {
+export async function registeredDashboardDiagnostics({ home, fetch = globalThis.fetch, timeout = 300 }) {
+  let preference
+  try { preference = JSON.parse(readFileSync(join(home, '.local', 'share', 'prumo', 'dashboard.json'), 'utf8')) }
+  catch { return null }
+  if (preference.enabled !== true || typeof preference.script !== 'string' || !isAbsolute(preference.script)) return null
+  const controller = new AbortController(), replies = {}
+  let timer
+  // Um catálogo travado não pode impedir consultas nem execução; todos os endpoints compartilham o mesmo prazo.
+  const deadline = new Promise(resolve => { timer = setTimeout(() => { controller.abort(); resolve() }, timeout) })
+  await Promise.race([deadline, Promise.all(['health', 'about', 'runs'].map(async endpoint => {
+    try {
+      const response = await fetch(`http://127.0.0.1:${DEFAULT_DASHBOARD_PORT}/api/${endpoint}`, { signal: controller.signal })
+      if (response.ok) replies[endpoint] = await response.json()
+    } catch { /* Falhas de observabilidade são avisos, nunca bloqueios do motor. */ }
+  }))])
+  clearTimeout(timer)
+  const health = replies.health
+  const trusted = health?.product === 'prumo' && health.mode === 'global' && health.readOnly === true
+  return { available: trusted && Array.isArray(replies.runs), version: trusted ? health.version ?? null : null,
+    about: trusted && replies.about?.product === 'prumo' ? replies.about : null, port: DEFAULT_DASHBOARD_PORT }
+}
+
+export async function registeredDashboardIdentity({ home, fetch = globalThis.fetch, diagnostic }) {
   let preference
   try { preference = JSON.parse(readFileSync(join(home, '.local', 'share', 'prumo', 'dashboard.json'), 'utf8')) }
   catch { return null }
   if (preference.enabled !== true || typeof preference.script !== 'string' || !isAbsolute(preference.script)) return null
   try {
+    if (diagnostic !== undefined) {
+      if (typeof diagnostic?.about?.contentId === 'string') return diagnostic.about.contentId
+      throw new Error('Diagnóstico sem identidade disponível')
+    }
     const response = await fetch(`http://127.0.0.1:${DEFAULT_DASHBOARD_PORT}/api/health`, { signal: AbortSignal.timeout(1200) })
     const health = response.ok ? await response.json() : null
     if (health?.product !== 'prumo' || health.mode !== 'global' || health.readOnly !== true) return null

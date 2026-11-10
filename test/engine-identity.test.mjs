@@ -10,6 +10,25 @@ import { installationBundle, packageIdentity } from '../scripts/installation-bun
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const version = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')).version
 
+for (const lang of ['en', 'pt-BR']) test(`status e start avisam sobre catálogo travado sem impedir trabalho em ${lang}`, t => {
+  const w = workspace(t), engine = join(packageRoot, 'scripts/engine.mjs')
+  w.env.PRUMO_LANG = lang
+  w.run(engine, 'init', '--plan', w.planPath, '--run', 'identity-01')
+  const preference = join(w.home, '.local/share/prumo/dashboard.json')
+  mkdirSync(dirname(preference), { recursive: true })
+  writeFileSync(preference, JSON.stringify({ enabled: true, script: join(packageRoot, 'scripts/serve.mjs') }))
+  const preload = join(w.home, 'catalog-unavailable.mjs')
+  writeFileSync(preload, `globalThis.fetch = async url => String(url).endsWith('/runs') ? new Promise(() => {}) : ({ok:true,json:async()=>({product:'prumo',mode:'global',readOnly:true,version:'0.0.1'})})`)
+  w.env.NODE_OPTIONS = (process.env.NODE_OPTIONS ?? '') + ' --import=' + pathToFileURL(preload).href
+  const output = w.run(engine, 'status')
+  assert.match(output, lang === 'en' ? /catalog.*unavailable.*execution can continue/ : /catálogo.*indisponível.*execução pode continuar/)
+  assert.match(output, lang === 'en' ? /version.*differs from dashboard version/ : /versão.*difere da versão/)
+  w.run(engine, 'skip-discussion', 'T1', '--reason', 'Escolha explícita', '--confirmed-by-user')
+  w.run(engine, 'skip-planning', 'T1', '--reason', 'Contrato suficiente', '--confirmed-by-user')
+  w.run(engine, 'authorize', '--scope', 'tasks:T1', '--confirmed-by-user')
+  assert.match(w.run(engine, 'start', 'T1', '--agent', 'executor'), lang === 'en' ? /catalog.*unavailable/ : /catálogo.*indisponível/)
+})
+
 function workspace(t) {
   const home = mkdtempSync(join(tmpdir(), 'prumo-identity-'))
   t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }))

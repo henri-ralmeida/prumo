@@ -80,6 +80,15 @@ export const readDashboardEvents = () => result('logs').events
     const r = run([], { ...base, code })
     assert.equal(r.status, code, r.output); assert.deepEqual(r.actions, ['foreground'])
   })
+  for (const lang of ['en', 'pt-BR']) await t.test(`outro ambiente preservado é identificado sem recomendar encerramento em ${lang}`, () => {
+    for (const origin of ['repository', undefined]) {
+      const r = run(['enable'], { ...base, preservedDashboard: { port: 4950, origin, path: '/outro/ambiente' } }, false, lang)
+      assert.equal(r.status, 0, r.output)
+      assert.match(r.stdout, lang === 'en' ? /another environment and was preserved/ : /outro ambiente e foi preservado/)
+      assert.match(r.stdout, /4950.*\/outro\/ambiente/)
+      assert.doesNotMatch(r.stdout, /kill|Stop process|encerre|Stop the/)
+    }
+  })
   for (const events of [[], [{ at: '2026-01-01T00:00:00Z', event: 'listening', pid: 4321 }]]) {
     await t.test(`logs mostra ${events.length} registro(s)`, () => {
       const r = run(['logs'], { ...base, events })

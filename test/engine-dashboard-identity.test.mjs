@@ -4,10 +4,42 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, copyFileSync, appendFile
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { installationBundle, contentId, engineDashboardMismatch, registeredDashboardIdentity } from '../scripts/installation-bundle.mjs'
+import { installationBundle, contentId, engineDashboardMismatch, registeredDashboardIdentity, registeredDashboardDiagnostics } from '../scripts/installation-bundle.mjs'
 import { packageDistributionFiles } from '../scripts/package-content.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
+test('cache do diagnóstico preserva identidade textual e fallback sem novas consultas de rede', async t => {
+  const f = fixture(t)
+  f.save({ enabled: true, script: join(root, 'scripts/serve.mjs') })
+  const fetch = () => { throw new Error('O diagnóstico já consultou os endpoints') }
+  for (const diagnostic of [null, {}, { about: { contentId: 12 } }, { about: { contentId: '' } }, { about: { contentId: 'known' } }]) {
+    const value = diagnostic?.about?.contentId
+    assert.equal(await registeredDashboardIdentity({ home: f.home, fetch, diagnostic }), typeof value === 'string' ? value : contentId('en'))
+  }
+})
+test('diagnóstico verifica catálogo e versão com prazo único sem exigir dashboard configurado', async t => {
+  const f = fixture(t)
+  const unexpected = () => { throw new Error('Não deve consultar rede sem registro habilitado') }
+  assert.equal(await registeredDashboardDiagnostics({ home: f.home, fetch: unexpected }), null)
+  f.save({ enabled: false }); assert.equal(await registeredDashboardDiagnostics({ home: f.home, fetch: unexpected }), null)
+  f.save({ enabled: true, script: 'relative' }); assert.equal(await registeredDashboardDiagnostics({ home: f.home, fetch: unexpected }), null)
+  f.save({ enabled: true, script: join(root, 'scripts/serve.mjs') })
+  const health = { product: 'prumo', mode: 'global', readOnly: true, version: '2.0.0' }
+  for (const mode of ['healthy', 'catalog', 'foreign', 'http', 'invalid', 'timeout']) {
+    const start = performance.now(), signals = new Set()
+    const result = await registeredDashboardDiagnostics({ home: f.home, timeout: 20, fetch: async (url, { signal }) => {
+      signals.add(signal)
+      if (mode === 'timeout') return new Promise(() => {})
+      if (mode === 'invalid') throw new Error('Resposta inválida')
+      if (url.endsWith('/runs') && mode === 'catalog') return new Promise(() => {})
+      return { ok: mode !== 'http', json: async () => url.endsWith('/runs') ? [] : mode === 'foreign' ? { product: 'outro' } : health }
+    } })
+    assert.equal(result.available, mode === 'healthy')
+    assert.equal(result.version, ['healthy', 'catalog'].includes(mode) ? '2.0.0' : null)
+    assert.equal(signals.size, 1)
+    assert.ok(performance.now() - start < 1000, 'o catálogo não pode bloquear o comando')
+  }
+})
 function fixture(t) {
   const home = mkdtempSync(join(tmpdir(), 'prumo-dashboard-identity-'))
   t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 3 }))

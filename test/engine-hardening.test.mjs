@@ -1972,14 +1972,20 @@ test('comandos de tarefa orientam o planejamento de fase sem alterar os contrato
   f.save(state)
   const before = f.snapshot()
   for (const args of [
-    ['begin-discussion', 'T1'], ['skip-discussion', 'T1'],
+    ['begin-discussion', 'T1'],
     ['finish-discussion', 'T1', '--context', f.planPath],
-    ['plan-task', 'T1', '--agent', 'planejador'], ['skip-planning', 'T1'],
+    ['plan-task', 'T1', '--agent', 'planejador'],
     ['finish-planning', 'T1', '--plan', f.planPath],
   ]) {
     const result = f.cli(...args)
     assert.equal(result.status, 1, f.output(result))
     assert.match(f.output(result), /uses phase planning/)
+    assert.deepEqual(f.snapshot(), before)
+  }
+  for (const [command, expected] of [['skip-discussion', /needs --reason/], ['skip-planning', /needs a completed discussion/]]) {
+    const result = f.cli(command, 'T1')
+    assert.equal(result.status, 1, f.output(result))
+    assert.match(f.output(result), expected)
     assert.deepEqual(f.snapshot(), before)
   }
 })

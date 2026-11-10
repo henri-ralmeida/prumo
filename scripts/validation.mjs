@@ -380,6 +380,7 @@ export function usesCurrentPlanning(state, task) {
 export function currentPlanningSkip(state, task) {
   const decision = task.planningSkips?.at(-1)
   if (decision?.decision !== 'skipped' || decision.confirmedByUser !== true) return null
+  if (task.planningDiscardHistory?.some(discard => discard.planningSkipId === decision.decisionId)) return null
   const refresh = task.validationRefreshPlanning
   return decision.scope === phasePlanningContext(state, task) ||
     refresh?.planningSkipId === decision.decisionId && refresh.planScope === decision.scope &&

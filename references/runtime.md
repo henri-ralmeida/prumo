@@ -518,6 +518,22 @@ from its engine label alone. Record corrections in notes, preserving historical 
 
 ### Pause and resume
 
+In phase mode, individual `skip-discussion` and `skip-planning` decisions apply only to the selected
+task, moving it to the individual workflow. They require an explicit user choice and reason; other tasks
+keep their phase discussion and planning requirements. Finish or block assigned phase work before
+changing that task's route. Pending contract confirmations still apply.
+
+Use `defer <task> --reason <text>` when a pending task depends on external work but the other phase
+plans can proceed. It excludes that task from the current wave, preserving the round history and the
+other plans. After `unblock`, the task returns to its recorded planning route: phase planning remains
+phase planning, and an existing individual route remains individual. Already planned tasks keep their
+plans. Active task work must use `block` instead, so its return path remains explicit.
+
+Use `discard-plan <task> --reason <text> --confirmed-by-user` only after the user explicitly chooses
+to replace a pending, failed or externally blocked task's plan. The discarded plan and decision remain
+in history; execution requires new planning. Other tasks' plans and approvals remain unchanged.
+Active or completed execution cannot discard a plan through this command.
+
 `block` is always an **external** pause and stores the current phase with `blockKind: "external"`.
 That includes blocks carrying a question or options. Blocking an already blocked task updates the reason
 and keeps the original phase. Completed/skipped tasks cannot be paused. An external block removes the task
@@ -957,6 +973,8 @@ Resolve `scripts/engine.mjs` from the installed skill. Add `--run <name>` to sel
 | `finish-discussion <task> --context <discovery.json>` | Validates the current round's answers and releases planning |
 | `plan-task <task> --agent <name> [--context <file>] [--accept-premature-work]` | Records the planner after the discussion closed |
 | `skip-planning <task> --reason <text> --confirmed-by-user` | Records the explicit choice to skip task planning |
+| `defer <task> --reason <text>` | Excludes an externally waiting task from the current planning wave until explicit unblock |
+| `discard-plan <task> --reason <text> --confirmed-by-user` | Preserves the discarded plan in history and requires new planning only for that task |
 | `finish-planning <task> --plan <artifact.json>` | Checks and records the task plan; releases execution unless a preserved pause remains |
 | `answer-question <ref> --answer "..." --confirmed-by-user` | Records the user's answer to a recorded `user-now` question without reopening discussion; refuses missing or previously answered questions and preserves task execution authorization |
 | `set-agent-limit --max <N> --actor <name> --confirmed-by-user` | Records a user-approved shared per-run agent limit and its actor/time in `agentLimitHistory` |

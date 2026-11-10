@@ -16,6 +16,23 @@ import { DASHBOARD_ALIAS_HOST, DEFAULT_DASHBOARD_PORT, LEGACY_DASHBOARD_PORT, pa
 const LEGACY_PID = 4242
 const NEW_PID = 5151
 
+for (const action of [enableDashboard, restartDashboard]) test(`${action.name} preserva dashboard de outro ambiente e libera a porta atual`, async t => {
+  const w = world(t, 'win32', 'windows-startup')
+  const originalFetch = w.options.fetch
+  w.options.fetch = async (url, init) => {
+    if (String(url).includes(':4950/') && String(url).endsWith('/about')) return {
+      ok: true, json: async () => ({ product: 'prumo', version: '2.12.1', origin: 'repository', path: join(w.home, 'outro ambiente') }),
+    }
+    return originalFetch(url, init)
+  }
+  const result = await action(w.options)
+  assert.equal(result.ok, true)
+  assert.equal(w.state.legacyRunning, true)
+  assert.deepEqual(w.state.killed, [])
+  assert.equal(result.preservedDashboard.path, join(w.home, 'outro ambiente'))
+  assert.equal(result.process, 'running')
+})
+
 test('dashboard aceita controle por Host prumo.localhost e recusa nomes semelhantes', { timeout: 30000 }, async t => {
   let server, closed
   t.after(async () => { if (server?.exitCode === null) server.kill(); await closed })
@@ -84,7 +101,7 @@ function world(t, platform, mechanism, extra = {}) {
       const [, port, path] = String(url).match(/:(\d+)(\/api\/\w+)$/)
       const prumo = version => ({ ok: true, json: async () => path === '/api/health'
         ? { product: 'prumo', mode: 'global', readOnly: true, version, pid: version === '2.10.0' ? NEW_PID : LEGACY_PID }
-        : { product: 'prumo', version, origin: 'global', contentId: version === '2.10.0' ? 'content-new' : 'content-old', path: home } })
+        : { product: 'prumo', version, origin: 'global', contentId: version === '2.10.0' ? 'content-new' : 'content-old', path: dirname(dirname(script)) } })
       if (Number(port) === LEGACY_DASHBOARD_PORT) {
         if (state.legacy === 'alien') return { ok: true, json: async () => ({ product: 'other' }) }
         if (state.legacyRunning) return prumo('2.9.0')

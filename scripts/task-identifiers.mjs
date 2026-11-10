@@ -2,7 +2,7 @@ const taskId = /^T(\d+)([a-z]?)$/i
 const problem = (message, ...values) => ({ message, values })
 
 // O plano inicial fixa os números; ampliações vinculadas preservam esses números e o histórico.
-export function taskIdentifierProblem(tasks, existingIds, existingTasks, { phases = [], existingPhases = [] } = {}) {
+export function taskIdentifierProblem(tasks, existingIds, existingTasks, { phases = [], existingPhases = [], reservedIds = [] } = {}) {
   const numbered = tasks.filter(task => /^t\d/i.test(task.id))
   if (existingIds === undefined) {
     if (numbered.length && numbered.length !== tasks.length)
@@ -46,7 +46,9 @@ export function taskIdentifierProblem(tasks, existingIds, existingTasks, { phase
   const newNumbers = added.filter(task => /^T[1-9]\d*$/.test(task.id) && appendedPhases.has(task.phase))
     .sort((a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1)))
   let nextNumber = Math.max(0, ...existingIds.filter(id => /^T\d+[a-z]?$/i.test(id)).map(id => Number(taskId.exec(id)[1]))) + 1
+  const reserved = new Set(reservedIds)
   for (const task of newNumbers) {
+    while (reserved.has('T' + nextNumber)) nextNumber++
     if (task.id !== 'T' + nextNumber) return problem('New task {0} in an appended phase must use the next number T{1}; existing identifiers are preserved', task.id, nextNumber)
     nextNumber++
   }

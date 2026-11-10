@@ -21,7 +21,7 @@ export function fixture(t, { tasks = [{ id: 'T1' }], phase = false, git = false,
       validation: [check], ...(phase ? { phase: 'F1' } : {}), ...task })) }
   const writePlan = () => writeFileSync(source, JSON.stringify(plan))
   writePlan()
-  const env = { ...process.env, PRUMO_ROOT: root, PRUMO_HOME: home, PRUMO_LANG: lang }
+  const env = { ...process.env, HOME: home, USERPROFILE: home, PRUMO_ROOT: root, PRUMO_HOME: home, PRUMO_LANG: lang }
   const cli = (...args) => spawnSync(process.execPath, [engine, ...args, '--run', 'audit'],
     { cwd: project, env, encoding: 'utf8', windowsHide: true })
   const ok = (...args) => { const r = cli(...args); assert.equal(r.status, 0, r.stdout + r.stderr); return r.stdout }
