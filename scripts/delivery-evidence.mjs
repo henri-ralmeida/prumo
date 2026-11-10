@@ -6,7 +6,7 @@ import { isUtf8 } from 'node:buffer'
 import { insideTouches, externalTouchPaths } from './task-scope.mjs'
 import { safeRepositoryPath, gitInventoryPath, evidenceLocation, gitDirectoryEvidence } from './git-directory-evidence.mjs'
 
-const MAX_FILE = 1024 * 1024, MAX_TOTAL = 8 * MAX_FILE, MAX_FILES = 256
+const MAX_FILE = 1024 * 1024, MAX_TOTAL = 8 * MAX_FILE
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 export const safeEvidencePath = safeRepositoryPath
 export function assertEvidenceContract(task) {
@@ -110,7 +110,6 @@ function deliveryFiles(task, cwd) {
       if (stat.isDirectory()) {
         for (const entry of readdirSync(absolute)) walk(path === '.' ? entry : path + '/' + entry)
       } else paths.push(path)
-      if (paths.length > MAX_FILES) throw new Error('Delivery file count exceeds reading limit')
     }
     for (const path of touches) walk(path.replace(/[\\/]+$/, ''))
     return [...new Set([...paths, ...(task.deliveries ?? [])])].sort()
@@ -131,8 +130,7 @@ export function captureDelivery(task, cwd, content = false, declaredOnly = false
     return { files: {}, limitation: 'Project cwd unknown; identifier content check unavailable.' }
   }
   const paths = [...new Set((declaredOnly ? task.deliveries ?? [] : deliveryFiles(task, cwd)).map(declaredOnly ? safeEvidencePath : gitInventoryPath))]
-  if (paths.length > MAX_FILES) throw new Error('Delivery file count exceeds reading limit')
-  const budget = { bytes: 0, files: paths.length }, files = Object.create(null), nestedRepositories = []
+  const budget = { bytes: 0 }, files = Object.create(null), nestedRepositories = []
   for (const path of paths) {
     try {
       if (lstatSync(evidenceLocation(cwd, path)).isDirectory()) {

@@ -100,7 +100,7 @@ test('nested evidence refuses unsafe links, ordinary directories and bounded rea
   assert.throws(() => gitDirectoryEvidence(f.cwd, 'out/vendor'), /reading limit/)
   fs.unlinkSync(join(f.cwd, 'out/vendor/large.bin'))
   assert.throws(() => gitDirectoryEvidence(f.cwd, 'out/vendor', { bytes: 8 * 1024 * 1024, files: 0 }), /reading limit/)
-  assert.throws(() => gitDirectoryEvidence(f.cwd, 'out/vendor', { bytes: 0, files: 257 }), /file count/)
+  assert.ok(gitDirectoryEvidence(f.cwd, 'out/vendor', { bytes: 0, files: 257 }).digest)
 })
 test('large binary evidence reaches independent review and refuses stale completion without losing the attempt', t => {
   const f = fixture(t)
@@ -764,7 +764,7 @@ test('non-Git projects inspect only approved files and enforce file/traversal/to
   f.task.touches = ['.']; assert.ok(Object.hasOwn(captureDelivery(f.task, f.cwd).files, 'private.txt'))
   f.task.touches = ['out']
   for (let index = 0; index < 257; index++) f.write(`out/file-${index}`, '')
-  assert.throws(() => captureDelivery(f.task, f.cwd), /file count/)
+  assert.equal(Object.keys(captureDelivery(f.task, f.cwd).files).length, 258)
   rmSync(join(f.cwd, 'out'), { recursive: true }); mkdirSync(join(f.cwd, 'out'))
   for (let index = 0; index < 4097; index++) mkdirSync(join(f.cwd, 'out', `directory-${index}`))
   assert.throws(() => captureDelivery(f.task, f.cwd), /traversal/)
@@ -1008,7 +1008,7 @@ test('declared ignored deliveries, phase identifiers and run names obey the same
   assert.deepEqual(Object.keys(captureDelivery({ touches: ['out'] }, f.cwd, false, true).files), [])
   f.task.deliveries = undefined; f.task.textRules = undefined
   for (let index = 0; index < 257; index++) f.write(`out/file-${index}`, '')
-  assert.throws(() => captureDelivery(f.task, f.cwd), /file count/)
+  assert.equal(Object.keys(captureDelivery(f.task, f.cwd).files).length, 257)
 })
 test('historical review handoff retains measured intervals and missing interval arrays without multiplying work', () => {
   const make = intervals => ({ plan: {}, tasks: { T1: { state: 'reviewing', attempts: [{ agent: 'author', reviewer: 'first', startedAt: at(0), reviewStartedAt: at(2), ...(intervals === undefined ? {} : { activityIntervals: intervals }) }] } } })

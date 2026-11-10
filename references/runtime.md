@@ -1177,7 +1177,7 @@ Patterns/exceptions are bounded to 64; literal strings to 128 characters. Except
 one path, line and identifier; line 0 means filename. All declared paths must be inside touches.
 These are contract fields, updated through approved sync-plan and existing gates.
 Links and linked parents are refused. Binary content is omitted with a recorded limitation.
-Reading limits: 256 files, 1 MiB per file, 8 MiB total. Errors contain path/line, never source content.
+Os arquivos aprovados são capturados um a um, sem limite fixo por quantidade. Permanecem os limites de leitura de 1 MiB por arquivo de texto e 8 MiB no total. Erros informam caminho e linha, sem expor o conteúdo da fonte.
 Without Git, traversal stays under approved touches and visits at most 4096 entries.
 Legacy attempts without a baseline check only explicitly recorded deliveries and report that
 limitation. Missing file scope/cwd never invents a baseline. validate/done check freshness again.

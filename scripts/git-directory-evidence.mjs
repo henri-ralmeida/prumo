@@ -80,7 +80,6 @@ export function gitDirectoryEvidence(root, path, budget = { bytes: 0, files: 0 }
   const staged = git('diff', '--cached', '--binary', '--no-ext-diff', '--no-textconv')
   const working = git('diff', '--binary', '--no-ext-diff', '--no-textconv')
   const untracked = git('ls-files', '--others', '--exclude-standard', '-z').split('\0').filter(Boolean)
-  if ((budget.files += untracked.length) > 256) throw new Error('Delivery file count exceeds reading limit')
   budget.bytes += Buffer.byteLength(index) + Buffer.byteLength(staged) + Buffer.byteLength(working)
   if (budget.bytes > 8 * 1024 * 1024) throw new Error(`Evidence reading limit: ${path}`)
   const files = untracked.map(entry => {
