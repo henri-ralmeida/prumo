@@ -171,7 +171,7 @@ test('sync audit warns when a phased task gains functional checks before discuss
   }).preDiscussionFunctionalContracts, [], 'unchanged functional count must not warn')
 })
 
-test('sync-plan warns but still applies functional checks added before phase discussion', (t) => {
+for (const count of [1, 2]) test(`sync-plan informa ${count} verificações novas sem bloquear a discussão da fase`, (t) => {
   const home = mkdtempSync(join(tmpdir(), 'prumo-sync-discussion-warning-'))
   t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }))
   const root = join(home, 'workspace')
@@ -201,22 +201,23 @@ test('sync-plan warns but still applies functional checks added before phase dis
   task.validation = [
     { ...check, run: 'node test-a.mjs', expect: 'case A passes' },
     { ...check, run: 'node test-b.mjs', expect: 'case B passes' },
-  ]
+  ].slice(0, count)
   writeFileSync(planPath, JSON.stringify(changedPlan))
   const synced = run('sync-plan', '--plan', planPath)
   assert.equal(synced.status, 0, synced.stdout + synced.stderr)
-  assert.match(synced.stdout + synced.stderr,
-    /T1 is ready_for_discussion, but validation now has 2 functional checks \(new indices 1, 2\); is this planning\?/)
+  assert.match(synced.stdout + synced.stderr, count === 1
+    ? /T1 is ready_for_discussion, but validation now has 1 functional check \(new index 1\); is this planning\?/
+    : /T1 is ready_for_discussion, but validation now has 2 functional checks \(new indices 1, 2\); is this planning\?/)
 
   const statePath = join(root, '.specs', 'graph', 'warning', 'state.json')
   const state = JSON.parse(readFileSync(statePath, 'utf8'))
-  assert.equal(state.tasks.T1.validation.length, 2, 'warning must not block synchronization')
+  assert.equal(state.tasks.T1.validation.length, count, 'O aviso não impede sincronizar o contrato antes da discussão.')
   const events = readFileSync(join(root, '.specs', 'graph', 'warning', 'events.ndjson'), 'utf8')
     .trim().split('\n').map(JSON.parse)
   const event = events.find(item => item.type === 'plan_sync')
   assert.deepEqual(event.diagnostics.preDiscussionFunctionalContracts, [{
-    task: 'T1', effective: 'ready_for_discussion', count: 2, added: 2,
-    indices: [1, 2], severity: 'warning',
+    task: 'T1', effective: 'ready_for_discussion', count, added: count,
+    indices: Array.from({ length: count }, (_, index) => index + 1), severity: 'warning',
   }])
 })
 

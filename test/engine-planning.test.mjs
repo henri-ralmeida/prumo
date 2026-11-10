@@ -13,6 +13,32 @@ import { initializeLegacyPlanFixture } from './fixtures/legacy-plan-init.mjs'
 const engine = resolve(dirname(fileURLToPath(import.meta.url)), '../scripts/engine.mjs')
 const validation = [{ kind: 'functional', run: 'node check.cjs', expect: 'delivery behavior passes' }]
 
+test('planejamento aberto com vínculo legado conclui sem perder a discussão aprovada', t => {
+  const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega aprovada' }])
+  f.ok('begin-phase-discussion', 'F1')
+  f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))
+  f.ok('plan-phase', 'F1', '--agent', 'planner', '--plan-dir', f.plans)
+  f.writeArtifacts('F1')
+  const state = f.state(), round = state.phaseWorkflows.F1.planningAttempts.at(-1)
+  const digest = round.discussionDigest
+  round.discoveryDigest = digest
+  delete round.discussionDigest
+  delete round.discussionDecision
+  f.save(state)
+  const events = f.events()
+  assert.match(f.ok('status').stdout, /phase F1 planning round 1: current/)
+  assert.deepEqual(f.state(), state)
+  assert.equal(f.events(), events)
+  f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
+  const completed = f.state()
+  assert.equal(completed.tasks.A.taskPlan.phaseDecision, 'discussed')
+  assert.equal(completed.tasks.A.taskPlan.phaseDecisionDigest, digest)
+  assert.equal(completed.tasks.A.taskPlan.phaseDiscoveryDigest, digest)
+  assert.equal(completed.phaseWorkflows.F1.planningAttempts.at(-1).result, 'planned')
+  assert.deepEqual(completed.phaseWorkflows.F1.discussionAttempts, state.phaseWorkflows.F1.discussionAttempts)
+  assert.equal(completed.tasks.A.attempts.length, 0)
+})
+
 test('status reconhece planejamento encerrado com vínculo legado da discussão sem alterar o histórico', t => {
   const f = phaseFixture(t, [{ id: 'A', phase: 'F1', title: 'Entrega aprovada' }])
   f.ok('begin-phase-discussion', 'F1')
