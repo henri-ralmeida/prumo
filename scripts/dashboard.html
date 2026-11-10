@@ -314,7 +314,9 @@ SOFTWARE. -->
   :is(#revNode, .role-reviewer) { --role: var(--review); --role-bg: #0d1822; --role-line: #24587a; --role-track: #12293a; }
   :is(#securityNode, .role-security) { --role: #6ed3b1; --role-bg: #10221d; --role-line: #327c64; --role-track: #163c30; }
   #securityNode { cursor: pointer; }
-  #securityNode .ric, .role-security .ric { color: var(--role); }
+  #securityNode:not(.live), .role-security:not([aria-pressed="true"]) { --role: var(--faint); }
+  .role-security[aria-pressed="true"] { background: var(--role-bg); border-color: var(--role-line); }
+  .role-security[aria-pressed="true"] .ric { color: var(--role); }
   #securityDialog { margin: auto; width: min(520px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 24px; border: 1px solid #327c64; border-radius: 14px; color: var(--text); background: var(--card); }
   #securityDialog::backdrop { background: #0009; }
   #securityDialog h2 { margin: 0 0 14px; font: 700 24px/1.2 var(--font-display); }
@@ -328,11 +330,13 @@ SOFTWARE. -->
   .role .ric .f { fill: currentColor; stroke: none; }
   .role .rt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .role .oh { display: flex; align-items: center; gap: 6px; font: 600 14px/1.15 var(--font-display); color: var(--text); }
-  .role .oh [data-i18n] { text-transform: capitalize; }
+  .role .oh [data-i18n] { text-transform: lowercase; }
   #orchNode .oh { font-weight: 800; font-size: 16px; letter-spacing: -.02em; }
   .role .rn { font: 700 10px/1.3 var(--font-mono); color: var(--bg); background: var(--role); border-radius: 4px; padding: 0 5px; }
   .role .rn:empty { display: none; }
-  .role .os { font-size: 10px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .role .os { font-size: 10px; color: var(--dim); text-transform: lowercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  :is(#orchestratorDialog, #securityDialog) h2 { padding-right: 36px; }
+  .role-dialog-close { position: absolute; top: 16px; right: 16px; margin: 0; }
   .role .obeat { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--waiting);
                  transition: background-color .3s var(--ease); }
   .role .obar, .node .nbar, .par .rbar { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; overflow: hidden; }
@@ -376,6 +380,10 @@ SOFTWARE. -->
   /* Em telas pequenas, a estrutura fixa vira uma grade 2×2 na área visível. freezeHub cancela o deslocamento horizontal; cada papel conserva ícone, nome e estado. Os 32px à direita ficam reservados ao controle da lateral. */
   #hub.compact { --hub-col: calc((var(--hub-width) - 48px) / 2); }
   #hub.compact svg#hubPaths { display: none; }
+  .compact-security-connection { display: none; }
+  #hub.compact .compact-security-connection { display: block; position: absolute; left: calc(8px + var(--hub-col)); top: calc(var(--hub-top) + 28px); width: 8px; height: 2px; overflow: visible; }
+  .compact-security-connection path { fill: none; stroke: var(--faint); stroke-width: 1.5; stroke-dasharray: 3 6; }
+  #hub:has(#securityNode.live) .compact-security-connection path { stroke: #6ed3b1; animation: flow9 .7s linear infinite; }
   #hub.compact .hub-shade { height: 152px !important; }
   #hub.compact .role, #hub.compact #orchNode { width: var(--hub-col) !important; height: 40px !important; padding: 6px 10px;
                                                gap: 8px; border-radius: 10px; }
@@ -816,12 +824,12 @@ SOFTWARE. -->
   #pop .ptools .st { flex: 0 1 auto; min-width: 0; max-width: min(220px, 40vw); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #pop .ptools h2, #pop .ptools .picon { flex: none; }
   #pop .ptools .grow { flex: 1; }
-  #pop .picon { width: 28px; height: 28px; display: grid; place-items: center; background: none;
+  :is(#pop, #orchestratorDialog, #securityDialog) .picon { width: 28px; height: 28px; display: grid; place-items: center; padding: 0; margin: 0; background: none;
                 border: 1px solid var(--line); border-radius: 8px; color: var(--dim); cursor: pointer;
                 transition: color .15s, border-color .15s, background-color .15s; }
-  #pop .picon:hover { color: var(--text); border-color: color-mix(in srgb, var(--text) 30%, var(--line)); }
-  #pop .picon:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-  #pop .picon path { stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+  :is(#pop, #orchestratorDialog, #securityDialog) .picon:hover { color: var(--text); border-color: color-mix(in srgb, var(--text) 30%, var(--line)); }
+  :is(#pop, #orchestratorDialog, #securityDialog) .picon:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  :is(#pop, #orchestratorDialog, #securityDialog) .picon path { stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
   #pop .picon .i-shut, #pop.expanded .picon .i-open { display: none; }
   #pop.expanded .picon .i-shut { display: inline; }
   /* A troca de conteúdo usa uma breve transição somente ao mudar de modo, nunca a cada consulta. */
@@ -1152,7 +1160,8 @@ SOFTWARE. -->
   .guide-brand-filters feFlood { flood-color: var(--text); }
   .guide-handoff { margin: 28px 0 !important; font: 500 20px/1.5 var(--font-display); }
   #onboarding [data-i18n], #guideInvitation [data-i18n] { text-transform: none; }
-  #guideMockRoles .oh [data-i18n] { text-transform: capitalize; }
+  #guideMockRoles .oh [data-i18n] { text-transform: lowercase; }
+  #guideMockRoles .os { text-transform: lowercase; }
   #onboarding.presenting .guide-controls button { pointer-events: auto; box-shadow: 0 3px 12px #0004; }
   #onboarding.presenting #guidePrevious { background: transparent; }
   @media(max-width:1100px) { .guide-harness-grid { grid-template-columns: repeat(3,minmax(0,1fr)); } }
@@ -1196,6 +1205,10 @@ SOFTWARE. -->
   #guideMockRoles { position: relative; }
   .guide-role-connections { position: absolute; top: calc(88 * var(--guide-unit)); left: 0; width: 100%; height: calc(38 * var(--guide-unit)); overflow: visible; pointer-events: none; }
   .guide-role-connections path { fill: none; stroke-width: 1.5; }
+  .guide-security-connection { position: absolute; left: calc(50% + 130 * var(--guide-unit)); top: calc(44 * var(--guide-unit)); width: calc(16 * var(--guide-unit)); height: 2px; overflow: visible; pointer-events: none; }
+  .guide-security-connection path { fill: none; stroke: var(--faint); stroke-width: 1.5; stroke-dasharray: 3 6; }
+  #guideMockRoles:has([data-guide-role="security"][aria-pressed="true"]) .guide-security-connection path { stroke: #6ed3b1; animation: flow9 .7s linear infinite; }
+  @media(max-width:700px) { .guide-security-connection { display: none; } }
   .guide-role-connections .s-flow { stroke-width: 2.5; stroke-dasharray: 3 6; stroke-linecap: round; animation: flow9 .7s linear infinite; opacity: 0; }
   #guideMockRoles:has([aria-pressed="true"]) .guide-role-connections [data-role="orchestrator"],
   #guideMockRoles:has([data-guide-role="orchestrator"][aria-pressed="true"]) .guide-role-connections .s-flow,
@@ -1278,8 +1291,9 @@ SOFTWARE. -->
     <div id="hub">
       <div class="hub-shade" aria-hidden="true"></div>
       <svg id="hubPaths" aria-hidden="true"></svg>
+      <svg class="compact-security-connection" viewBox="0 0 8 2" aria-hidden="true"><path d="M0 1H8"/></svg>
       <div id="orchNode" class="role" role="button" tabindex="0" onclick="openOrchestrator()" onkeydown="orchestratorKey(event)" aria-haspopup="dialog" aria-controls="orchestratorDialog" data-prumo-guide-anchor="role-orchestrator"><svg class="ric" viewBox="0 0 30 30" aria-hidden="true"><circle cx="15" cy="7" r="4"/><path d="M15 11v5M6 24v-4h18v4M15 16v8"/><circle class="f" cx="6" cy="26" r="2"/><circle class="f" cx="15" cy="26" r="2"/><circle class="f" cx="24" cy="26" r="2"/></svg><span class="rt"><span class="oh"><span data-i18n="orchestrator">orchestrator</span></span><span class="os" id="orchSub"><span data-i18n="idle">idle</span></span></span><span class="obeat"></span><i class="obar"></i></div>
-      <div id="securityNode" class="role" role="button" tabindex="0" onclick="openSecurity()" onkeydown="securityKey(event)" aria-haspopup="dialog" aria-controls="securityDialog" data-prumo-guide-anchor="role-security"><svg class="ric" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 4-4 7-8 9-4-2-8-5-8-9V6zM8 12l3 3 5-6"/></svg><span class="rt"><span class="oh"><span data-i18n="Ethical hacker">Ethical hacker</span></span><span class="os" id="securitySub"><span data-i18n="Optional · after delivery">Optional · after delivery</span></span></span><span class="obeat"></span><i class="obar"></i></div>
+      <div id="securityNode" class="role" role="button" tabindex="0" onclick="openSecurity()" onkeydown="securityKey(event)" aria-haspopup="dialog" aria-controls="securityDialog" data-prumo-guide-anchor="role-security"><svg class="ric" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 4-4 7-8 9-4-2-8-5-8-9V6zM8 12l3 3 5-6"/></svg><span class="rt"><span class="oh"><span data-i18n="Ethical hacker">Ethical hacker</span></span><span class="os" id="securitySub"><span data-i18n="idle">idle</span></span></span><span class="obeat"></span><i class="obar"></i></div>
       <div id="planNode" class="role" data-prumo-guide-anchor="role-planner"><svg class="ric" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h10M4 19h6"/><circle cx="18" cy="17" r="3"/></svg><span class="rt"><span class="oh"><span data-i18n="planner">planner</span></span><span class="os" id="planSub"><span data-i18n="idle">idle</span></span></span><span class="obeat"></span><i class="obar"></i></div>
       <div id="execNode" class="role" data-prumo-guide-anchor="role-executor"><svg class="ric" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3L5 14h6l-1 7 8-11h-6z"/></svg><span class="rt"><span class="oh"><span data-i18n="executor">executor</span><b class="rn" id="execCount"></b></span><span class="os" id="execSub"><span data-i18n="idle">idle</span></span></span><span class="obeat"></span><i class="obar"></i></div>
       <div id="revNode" class="role" data-prumo-guide-anchor="role-reviewer"><svg class="ric" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M7.5 10.5l2 2 3.5-4M15.5 15.5L20 20"/></svg><span class="rt"><span class="oh"><span data-i18n="reviewer">reviewer</span></span><span class="os" id="revSub"><span data-i18n="idle">idle</span></span></span><span class="obeat"></span><i class="obar"></i></div>
@@ -1320,7 +1334,7 @@ SOFTWARE. -->
   <h2 id="orchestratorTitle" data-i18n="Your main AI chat">Your main AI chat</h2>
   <p data-i18n="The orchestrator is your main chat with the AI. Here you discuss what needs to be done, clarify questions and define tasks and next steps. It coordinates the work and delegates activities to planning, execution and review agents. Questions and decisions that need your input return to this chat.">The orchestrator is your main chat with the AI. Here you discuss what needs to be done, clarify questions and define tasks and next steps. It coordinates the work and delegates activities to planning, execution and review agents. Questions and decisions that need your input return to this chat.</p>
   <strong id="orchestratorStatus" role="status" aria-live="polite"></strong>
-  <form method="dialog"><button type="submit" data-i18n="Close">Close</button></form>
+  <form method="dialog" class="role-dialog-close"><button type="submit" class="picon" aria-label="Close" data-i18n-aria="Close"><svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M3 3l6 6M9 3L3 9"/></svg></button></form>
 </dialog>
 <dialog id="securityDialog" aria-labelledby="securityTitle">
   <h2 id="securityTitle" data-i18n="Ethical hacker">Ethical hacker</h2>
@@ -1329,7 +1343,7 @@ SOFTWARE. -->
   <p data-i18n="Open Results to inspect the audit findings, accepted risks and fixes. Blocking findings require a correction or your explicit risk acceptance before the demand can close.">Open Results to inspect the audit findings, accepted risks and fixes. Blocking findings require a correction or your explicit risk acceptance before the demand can close.</p>
   <strong id="securityStatus" role="status" aria-live="polite"></strong>
   <p><span data-i18n="Auditor">Auditor</span>: <span id="securityAgent"></span></p>
-  <form method="dialog"><button type="submit" data-i18n="Close">Close</button></form>
+  <form method="dialog" class="role-dialog-close"><button type="submit" class="picon" aria-label="Close" data-i18n-aria="Close"><svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M3 3l6 6M9 3L3 9"/></svg></button></form>
 </dialog>
 <dialog id="changelogDialog" aria-labelledby="changelogTitle">
   <header><h2 id="changelogTitle" data-i18n="Changelog">Changelog</h2><form method="dialog"><button type="submit" data-i18n="Close">Close</button></form></header>
@@ -1358,7 +1372,7 @@ SOFTWARE. -->
     <p data-i18n="Approve the plan. Follow the work. Verify the result.">Approve the plan. Follow the work. Verify the result.</p>
     <div class="guide-purpose"><p data-i18n="Dependencies tell each agent what can start.">Dependencies tell each agent what can start.</p><p data-i18n="Independent review protects the completion gate.">Independent review protects the completion gate.</p><p data-i18n="The dashboard makes progress and measured gains visible.">The dashboard makes progress and measured gains visible.</p></div>
   </section>
-  <section id="guideMockRoles" class="guide-entities" hidden><svg class="guide-role-connections" viewBox="0 0 732 38" preserveAspectRatio="none" aria-hidden="true"><path style="stroke:#6a5222" d="M366 0V19"/><path class="s-flow" data-role="orchestrator" style="stroke:var(--accent)" d="M366 0V19"/><path style="stroke:#241d3d" d="M366 19H110V38"/><path class="s-flow" data-role="plan" style="stroke:var(--planning)" d="M366 19H110V38"/><path style="stroke:#34200f" d="M366 19V38"/><path class="s-flow" data-role="exec" style="stroke:var(--running)" d="M366 19V38"/><path style="stroke:#12293a" d="M366 19H622V38"/><path class="s-flow" data-role="rev" style="stroke:var(--review)" d="M366 19H622V38"/></svg><button type="button" class="role guide-role role-orchestrator live" data-guide-role="orchestrator" aria-pressed="false"><svg class="ric" viewBox="0 0 30 30" aria-hidden="true"><circle cx="15" cy="7" r="4"/><path d="M15 11v5M6 24v-4h18v4M15 16v8"/><circle class="f" cx="6" cy="26" r="2"/><circle class="f" cx="15" cy="26" r="2"/><circle class="f" cx="24" cy="26" r="2"/></svg><span class="rt"><span class="oh"><span data-i18n="orchestrator">orchestrator</span></span><span class="os" data-i18n="Coordinates the approved plan">Coordinates the approved plan</span></span></span><span class="obeat"></span><i class="obar"></i></button><button type="button" class="role guide-role role-security live" data-guide-role="security" aria-pressed="false"><svg class="ric" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 4-4 7-8 9-4-2-8-5-8-9V6zM8 12l3 3 5-6"/></svg><span class="rt"><span class="oh"><span data-i18n="Ethical hacker">Ethical hacker</span></span><span class="os" data-i18n="Independent audit">Independent audit</span></span></span><span class="obeat"></span><i class="obar"></i></button><button type="button" class="role guide-role role-planner live" data-guide-role="planner" aria-pressed="false"><svg class="ric" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h10M4 19h6"/><circle cx="18" cy="17" r="3"/></svg><span class="rt"><span class="oh"><span data-i18n="planner">planner</span></span><span class="os" data-i18n="Turns scope into tasks">Turns scope into tasks</span></span></span><span class="obeat"></span><i class="obar"></i></button><button type="button" class="role guide-role role-executor live" data-guide-role="executor" aria-pressed="false"><svg class="ric" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3L5 14h6l-1 7 8-11h-6z"/></svg><span class="rt"><span class="oh"><span data-i18n="executor">executor</span><b class="rn"></b></span><span class="os" data-i18n="Implements and records evidence">Implements and records evidence</span></span></span><span class="obeat"></span><i class="obar"></i></button><button type="button" class="role guide-role role-reviewer live" data-guide-role="reviewer" aria-pressed="false"><svg class="ric" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M7.5 10.5l2 2 3.5-4M15.5 15.5L20 20"/></svg><span class="rt"><span class="oh"><span data-i18n="reviewer">reviewer</span></span><span class="os" data-i18n="Verifies independently">Verifies independently</span></span></span><span class="obeat"></span><i class="obar"></i></button></section>
+  <section id="guideMockRoles" class="guide-entities" hidden><svg class="guide-role-connections" viewBox="0 0 732 38" preserveAspectRatio="none" aria-hidden="true"><path style="stroke:#6a5222" d="M366 0V19"/><path class="s-flow" data-role="orchestrator" style="stroke:var(--accent)" d="M366 0V19"/><path style="stroke:#241d3d" d="M366 19H110V38"/><path class="s-flow" data-role="plan" style="stroke:var(--planning)" d="M366 19H110V38"/><path style="stroke:#34200f" d="M366 19V38"/><path class="s-flow" data-role="exec" style="stroke:var(--running)" d="M366 19V38"/><path style="stroke:#12293a" d="M366 19H622V38"/><path class="s-flow" data-role="rev" style="stroke:var(--review)" d="M366 19H622V38"/></svg><svg class="guide-security-connection" viewBox="0 0 16 2" aria-hidden="true"><path d="M0 1H16"/></svg><button type="button" class="role guide-role role-orchestrator live" data-guide-role="orchestrator" aria-pressed="false"><svg class="ric" viewBox="0 0 30 30" aria-hidden="true"><circle cx="15" cy="7" r="4"/><path d="M15 11v5M6 24v-4h18v4M15 16v8"/><circle class="f" cx="6" cy="26" r="2"/><circle class="f" cx="15" cy="26" r="2"/><circle class="f" cx="24" cy="26" r="2"/></svg><span class="rt"><span class="oh"><span data-i18n="orchestrator">orchestrator</span></span><span class="os" data-i18n="Coordinates the approved plan">Coordinates the approved plan</span></span></span><span class="obeat"></span><i class="obar"></i></button><button type="button" class="role guide-role role-security" data-guide-role="security" aria-pressed="false"><svg class="ric" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 4-4 7-8 9-4-2-8-5-8-9V6zM8 12l3 3 5-6"/></svg><span class="rt"><span class="oh"><span data-i18n="Ethical hacker">Ethical hacker</span></span><span class="os" data-i18n="Independent audit">Independent audit</span></span></span><span class="obeat"></span><i class="obar"></i></button><button type="button" class="role guide-role role-planner live" data-guide-role="planner" aria-pressed="false"><svg class="ric" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h10M4 19h6"/><circle cx="18" cy="17" r="3"/></svg><span class="rt"><span class="oh"><span data-i18n="planner">planner</span></span><span class="os" data-i18n="Turns scope into tasks">Turns scope into tasks</span></span></span><span class="obeat"></span><i class="obar"></i></button><button type="button" class="role guide-role role-executor live" data-guide-role="executor" aria-pressed="false"><svg class="ric" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3L5 14h6l-1 7 8-11h-6z"/></svg><span class="rt"><span class="oh"><span data-i18n="executor">executor</span><b class="rn"></b></span><span class="os" data-i18n="Implements and records evidence">Implements and records evidence</span></span></span><span class="obeat"></span><i class="obar"></i></button><button type="button" class="role guide-role role-reviewer live" data-guide-role="reviewer" aria-pressed="false"><svg class="ric" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M7.5 10.5l2 2 3.5-4M15.5 15.5L20 20"/></svg><span class="rt"><span class="oh"><span data-i18n="reviewer">reviewer</span></span><span class="os" data-i18n="Verifies independently">Verifies independently</span></span></span><span class="obeat"></span><i class="obar"></i></button></section>
   <section id="guideExamplePanel" class="guide-preview" hidden><p class="guide-loading" role="status" hidden></p><iframe id="guideBoardFrame" title="Practice dashboard" data-i18n-title="Practice dashboard"></iframe></section>
   <section id="guideGainPanel" class="guide-preview" hidden><p class="guide-loading" role="status" hidden></p><iframe id="guideResultsFrame" title="Practice results" data-i18n-title="Practice results"></iframe></section>
   <section id="guideCommandPanel" class="guide-harnesses" hidden>
@@ -3814,6 +3828,7 @@ function render(s, events = []) {
       : `H ${x + (x < cx ? 4 : -4)} Q ${x} ${busY} ${x} ${busY + 4} V ${ROLES_Y}`
   }
   const hubHtml = [
+    `<path class="s-security${s.securityAuditView?.state === 'running' ? ' s-flow' : ''}" data-connection="security" stroke="${s.securityAuditView?.state === 'running' ? '#6ed3b1' : 'var(--faint)'}" stroke-dasharray="3 6" d="M ${ox + ORCH_W} ${oy + ORCH_H / 2} H ${ox + ORCH_W + 24}"/>`,
     `<path class="s-frame" data-connection="orchestrator" style="stroke:#6a5222" d="M ${cx} ${ocy} V ${busY}"/>`,
     ...(Object.values(live).some(Boolean) ? [`<path class="s-flow" data-role="orchestrator" style="stroke:var(--accent)" d="M ${cx} ${ocy} V ${busY}"/>`] : []),
     ...Object.keys(live).map((key) => `<path class="s-frame" data-connection="${key}" style="stroke:${track[key]}" d="M ${cx} ${busY} ${branch(key)}"/>`),
@@ -4538,7 +4553,7 @@ function animateNavigation(target = null) {
 
 function syncSecurityCard(view) {
   const state = view?.state ?? 'optional'
-  const labels = { optional: 'Optional audit', 'awaiting-decision': 'Awaiting your decision', enabled: 'Scheduled after delivery', running: 'Auditing locally', blocked: 'Findings require a decision', 'pending-recheck': 'Awaiting re-audit', done: 'Audit completed', skipped: 'Audit skipped' }
+  const labels = { optional: 'idle', 'awaiting-decision': 'Awaiting your decision', enabled: 'Scheduled after delivery', running: 'Auditing locally', blocked: 'Findings require a decision', 'pending-recheck': 'Awaiting re-audit', done: 'Audit completed', skipped: 'Audit skipped' }
   const label = tr(labels[state] ?? 'Unknown')
   setText('#securitySub', label)
   $('#securityNode').title = label

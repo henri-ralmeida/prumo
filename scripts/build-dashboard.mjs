@@ -13,7 +13,7 @@ export function dashboardWithCatalog(html) {
   const guideRoles = Object.entries(roles).map(([id, [role, description]]) => {
     const source = html.match(new RegExp('<div id="' + id + '" class="role"[\\s\\S]*?<i class="obar"></i></div>'))?.[0]
     if (!source) throw new Error(`Entidade do dashboard ausente: ${id}`)
-    return source.replace(/^<div[^>]*>/, `<button type="button" class="role guide-role role-${role} live" data-guide-role="${role}" aria-pressed="false">`)
+    return source.replace(/^<div[^>]*>/, `<button type="button" class="role guide-role role-${role}${role === 'security' ? '' : ' live'}" data-guide-role="${role}" aria-pressed="false">`)
       .replace('</div>', '</button>').replace(/ id="[^"]*"/g, '')
       .replace(/<span class="os"[^>]*>[\s\S]*?<\/span><\/span>/, `<span class="os" data-i18n="${description}">${description}</span></span>`)
   }).join('')
@@ -33,7 +33,7 @@ export function dashboardWithCatalog(html) {
     .replace(/\/\*PRUMO_I18N_START\*\/[\s\S]*?\/\*PRUMO_I18N_END\*\//, () => block)
     .replace(/\/\*PRUMO_GAIN_HELPERS_START\*\/[\s\S]*?\/\*PRUMO_GAIN_HELPERS_END\*\//, () => helpers)
     .replace(/\/\*PRUMO_GUIDE_START\*\/[\s\S]*?\/\*PRUMO_GUIDE_END\*\//, () => guide)
-    .replace(/(<section id="guideMockRoles"[^>]*>)[\s\S]*?<\/section>/, (_match, opening) => opening + guideConnections + guideRoles + '</section>')
+    .replace(/(<section id="guideMockRoles"[^>]*>)[\s\S]*?<\/section>/, (_match, opening) => opening + guideConnections + '<svg class="guide-security-connection" viewBox="0 0 16 2" aria-hidden="true"><path d="M0 1H16"/></svg>' + guideRoles + '</section>')
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

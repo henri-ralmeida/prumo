@@ -16,7 +16,7 @@ test('hacker ético permanece visível sem auditoria e distingue estados reais n
     const ui = dashboard(lang)
     const state = { run: 'security-help', plan: {}, tasks: {} }
     ui.render(state)
-    assert.equal(ui.nodes.get('#securitySub').textContent, lang === 'en' ? 'Optional audit' : 'Auditoria opcional')
+    assert.equal(ui.nodes.get('#securitySub').textContent, lang === 'en' ? 'idle' : 'inativo')
     const hacker = ui.nodes.get('#securityNode')
     assert.ok(parseFloat(hacker.style.left) > parseFloat(ui.nodes.get('#orchNode').style.left))
     assert.equal(hacker.classList.contains('live'), false)
@@ -24,6 +24,11 @@ test('hacker ético permanece visível sem auditoria e distingue estados reais n
       state.securityAuditView = { state: audit, attempts: [{ agent: '<auditor>' }] }
       ui.render(state)
       assert.equal(hacker.classList.contains('live'), audit === 'running')
+      const connection = ui.nodes.get('#hubPaths').innerHTML.match(/<path[^>]*data-connection="security"[^>]*>/)?.[0]
+      assert.ok(connection)
+      assert.match(connection, /stroke-dasharray="3 6"/)
+      assert.equal(connection.includes(' s-flow'), audit === 'running')
+      assert.equal(connection.includes('stroke="#6ed3b1"'), audit === 'running')
       assert.equal(ui.nodes.get('#securityStatus').textContent, ui.nodes.get('#securitySub').textContent)
       assert.equal(ui.nodes.get('#securityAgent').textContent, '<auditor>')
     }
