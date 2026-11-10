@@ -8,7 +8,7 @@ const definitions = {
   migrate: [0, '', 'check'],
   'renumber-tasks': [0, 'map', 'dry-run confirmed-by-user'],
   'reorder-phases': [0, 'order', 'dry-run confirmed-by-user'],
-  'sync-plan': [0, 'plan cwd remove reason', 'allow-overlap dry-run confirm-invalidation propose'],
+  'sync-plan': [0, 'plan cwd remove reason complete-audit', 'allow-overlap dry-run confirm-invalidation propose confirmed-by-user'],
   status: [0, '', 'verify-install verbose'], ready: [0], graph: [0], runs: [0],
   'show-contract': [1, '', 'diff full'], 'show-check': [1, 'check attempt'],
   authorize: [0, 'scope mode channel', 'confirmed-by-user'],
@@ -43,8 +43,9 @@ const definitions = {
   'recover-replanning': [1, '', 'check confirmed-by-user'],
   skip: [1, 'reason'], note: [1, 'text'],
   'activity-start': [1, 'scope role agent'], 'activity-stop': [1, 'scope role agent'],
+  'audit-propose': [0, 'environment out'],
   'audit-enable': [0, '', 'confirmed-by-user'], 'audit-skip': [0, 'reason', 'confirmed-by-user'],
-  'audit-start': [0, 'agent environment', 'confirmed-by-user'], 'audit-finish': [0, 'report'],
+  'audit-start': [0, 'agent environment contract', 'confirmed-by-user'], 'audit-finish': [0, 'report'],
   'audit-accept': [1, 'reason', 'confirmed-by-user'], 'audit-status': [0], 'audit-cvss': [1], 'audit-fix-plan': [0, 'out test-command'],
 }
 
@@ -104,6 +105,7 @@ const commandDescriptions = {
   note: 'Record a task note',
   'activity-start': 'Start an activity interval',
   'activity-stop': 'Stop an activity interval',
+  'audit-propose': 'Prepare the optional independent audit contract without creating tasks',
   'audit-enable': 'Pre-authorize the run-level security audit',
   'audit-skip': 'Record the user decision to skip the security audit',
   'audit-start': 'Start the security audit with an independent auditor on a local environment',

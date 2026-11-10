@@ -124,6 +124,9 @@ test('cinco frentes mostram apenas a superficie correspondente e controles minus
   assert.deepEqual(ui.demos.at(-1), {mode:'board',target:'board'})
   for(let i=0;i<5;i++) ui.el('#guideNext').click()
   ui.flushFrame()
+  assert.deepEqual(ui.demos.at(-1), {mode:'security',target:'security'})
+  ui.el('#guideNext').click()
+  ui.flushFrame()
   assert.match(ui.el('#guideCount').textContent, /Step 4 of 5/)
   assert.equal(ui.el('#guideStepTitle').textContent, 'Results')
   assert.equal(ui.el('#guideExamplePanel').hidden, true)
@@ -168,7 +171,7 @@ test('quadros reutilizam a pagina carregada, focam o destino final e ignoram loa
   const makeFrame = () => ({ dataset: {}, src: '', onload: null, removed: 0,
     removeAttribute(name) { if (name === 'src') { this.src = ''; this.removed++ } },
     contentWindow: { prumoGuideDemo: { focus(target) { this.calls.push(target) }, calls: [] } } })
-  const frames = { board: makeFrame(), results: makeFrame() }
+  const frames = { board: makeFrame(), results: makeFrame(), security: makeFrame() }
   const states = []
   const controller = createGuideDemoFrameController(frames, (mode, state) => states.push([mode, state]))
   controller.show('board', 'board')
@@ -182,13 +185,18 @@ test('quadros reutilizam a pagina carregada, focam o destino final e ignoram loa
   assert.deepEqual(frames.board.contentWindow.prumoGuideDemo.calls, ['filters', 'card'])
   assert.equal(frames.board.removed, 0)
   assert.equal(frames.results.src, '?guide-demo=results')
+  controller.show('security', 'security')
+  assert.equal(frames.security.src, '?guide-demo=security')
+  frames.security.onload()
+  assert.deepEqual(frames.security.contentWindow.prumoGuideDemo.calls, ['security'])
   const lateLoad = frames.results.onload
   controller.stop({ dispose: true })
   lateLoad()
   assert.equal(frames.results.contentWindow.prumoGuideDemo.calls.length, 0)
   assert.equal(frames.board.src, '')
   assert.equal(frames.results.src, '')
-  assert.deepEqual(states.at(-1), ['results', 'idle'])
+  assert.equal(frames.security.src, '')
+  assert.deepEqual(states.at(-1), ['security', 'idle'])
 })
 
 test('onboarding tolera dependencias opcionais ausentes e callbacks de demo obsoletos', () => {
@@ -363,7 +371,7 @@ test('teclado, fullscreen e encerramento percorrem as saídas do onboarding', as
 
   const finish = harness()
   finish.launcher.click()
-  for (let step = 0; step < 15; step += 1) finish.el('#guideNext').click()
+  for (let step = 0; step < 16; step += 1) finish.el('#guideNext').click()
   assert.equal(finish.root.hidden, true)
   finish.api.close()
   await Promise.resolve()
@@ -442,12 +450,13 @@ test('guia dimensiona conteúdo pela largura e altura sem fixar a escala nem cor
   assert.match(html, /#onboarding.presenting \.guide-entities \{ grid-template-columns: minmax\(0, 260px\)/)
 })
 
-test('guia preserva saída amarela do orquestrador e ramificações nas cores dos três papéis', () => {
+test('guia usa ligações contínuas nas cores dos papéis sem saída amarela adicional', () => {
   const html = readFileSync(new URL('../scripts/dashboard.html', import.meta.url), 'utf8')
   const connections = html.match(/<svg class="guide-role-connections"[\s\S]*?<\/svg>/)?.[0]
   assert.ok(connections)
   assert.match(connections, /aria-hidden="true"/)
-  assert.match(connections, /data-role="orchestrator" style="stroke:var\(--accent\)" d="M366 0V19"/)
+  assert.doesNotMatch(connections, /data-role="orchestrator"/)
+  assert.equal((connections.match(/class="s-flow"[^>]+d="M366 0V19/g) ?? []).length, 3)
   for (const role of ['plan', 'exec', 'rev']) assert.ok(connections.includes('data-role="' + role + '"'))
   assert.match(html, /@media \(max-width: 700px\) \{ \.guide-role-connections \{ display: none;/)
 })
@@ -456,7 +465,7 @@ test('abrir documentação mantém o guia na etapa atual após sair da tela chei
   const ui = harness()
   ui.launcher.click()
   await Promise.resolve()
-  for (let step = 0; step < 14; step += 1) ui.el('#guideNext').click()
+  for (let step = 0; step < 15; step += 1) ui.el('#guideNext').click()
   assert.equal(ui.el('#guideCommandPanel').hidden, false)
   const title = ui.el('#guideTitle').textContent
   const count = ui.el('#guideCount').textContent

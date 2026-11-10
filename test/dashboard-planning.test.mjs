@@ -11,6 +11,81 @@ const html = readFileSync(new URL('../scripts/dashboard.html', import.meta.url),
 const canonicalScript = extractDashboardScript(html)
 const releaseCatalog = JSON.parse(readFileSync(new URL('../scripts/release-notes.json', import.meta.url), 'utf8'))
 
+test('auditoria independente abre painel sem criar cards nem filtros de tarefas', () => {
+  const ui = dashboard('pt-BR'), state = createGuideDemoData('security')
+  ui.render(state)
+  const before = ui.run('JSON.stringify(STATE)')
+  assert.doesNotMatch(ui.nodes.get('#nodes').innerHTML, /security-audit/)
+  assert.equal(ui.run('Object.keys(STATE.tasks).length'), 13)
+  assert.equal(ui.filterOptions.length, 17)
+  const dialog = ui.nodes.get('#securityBoard') ?? (ui.run("$('#securityBoard')"), ui.nodes.get('#securityBoard'))
+  dialog.showModal = () => { dialog.open = true }; dialog.close = () => { dialog.open = false }
+  ui.run('openSecurityPanel()')
+  assert.equal(dialog.open, true)
+  assert.notEqual(ui.nodes.get('#viewport').hidden, true)
+  assert.match(ui.nodes.get('#securityCards').innerHTML, /auditor-2|Em revalidação/)
+  const refreshed = structuredClone(state)
+  refreshed.securityAuditView.findings = [{ id: 'F-NOVO', title: 'Novo achado registrado', severity: 'low', cwe: 'CWE-20', taskRefs: ['T1'], resolution: 'open' }]
+  ui.render(refreshed)
+  assert.match(ui.nodes.get('#securityCards').innerHTML, /Novo achado registrado/, 'O painel aberto acompanha os novos registros')
+  ui.render(state)
+  ui.run("jumpTo('T1')")
+  assert.equal(dialog.open, false)
+  assert.equal(ui.run('POP.id'), 'T1')
+  assert.equal(ui.run('JSON.stringify(STATE)'), before)
+  ui.run("showRunLoading('outra-execucao')")
+  assert.equal(ui.nodes.get('#securityCards').innerHTML, '')
+})
+
+test('preferências antigas de auditoria voltam ao filtro geral sem ocultar tarefas', () => {
+  for (const value of ['security', 'ready_for_audit', 'auditing', 'audited']) {
+    const ui = dashboard('pt-BR', 1000, new Map(), { state: null, urls: [] }, {
+      localStorage: { getItem: key => key === 'graphFilter' ? value : null, setItem() {} },
+    })
+    ui.render(createGuideDemoData('board'))
+    assert.equal(ui.run('FILTER'), 'all')
+    assert.ok(ui.cards.every(card => !card.classList.contains('filtered-out')))
+    assert.equal(ui.nodes.get('#filterCount').textContent, '14/14')
+  }
+})
+
+test('guia da auditoria abre os resultados independentes após concluir todas as entregas', () => {
+  const ui = dashboard('pt-BR', 1000, new Map(), { state: null, urls: [] }, { full: true, guideDemo: 'security' })
+  assert.equal(ui.run('FILTER'), 'all')
+  assert.ok(ui.run('Object.values(STATE.tasks).every(task => task.state === "done")'))
+  const dialog = ui.nodes.get('#securityBoard') ?? (ui.run("$('#securityBoard')"), ui.nodes.get('#securityBoard'))
+  dialog.showModal = () => { dialog.open = true }
+  ui.run("window.prumoGuideDemo.focus('security')")
+  assert.equal(dialog.open, true)
+  assert.match(ui.nodes.get('#securityCards').innerHTML, /auditor-2/)
+})
+
+test('carregamento atrasado de outro quadro não esconde a demonstração de segurança', () => {
+  const ui = dashboard('en', 1000, new Map(), { state: null, urls: [] }, { full: true })
+  ui.run("showGuideDemo('board', 'board'); showGuideDemo('security', 'security'); $('#guideBoardFrame').onload()")
+  const panel = ui.nodes.get('#guideExamplePanel')
+  assert.equal(panel.dataset.guideMode, 'security')
+  assert.equal(panel.dataset.guideState, 'loading')
+  ui.run("$('#guideSecurityFrame').contentWindow = { prumoGuideDemo: { focus() {}, pause() {} } }; $('#guideSecurityFrame').onload()")
+  assert.equal(panel.dataset.guideState, 'ready')
+  assert.equal(ui.nodes.get('#guideBoardFrame').hidden, true)
+  assert.equal(ui.nodes.get('#guideSecurityFrame').hidden, false)
+  ui.run('stopGuideDemos({ dispose: true })')
+  assert.equal(ui.nodes.get('#guideSecurityFrame').onload, null)
+})
+
+test('painéis das entidades fecham somente em clique fora de seus limites', () => {
+  const ui = dashboard('pt-BR')
+  let closed = 0
+  const dialog = { getBoundingClientRect: () => ({ left: 10, right: 100, top: 20, bottom: 200 }), close: () => { closed++ } }
+  for (const [x, y, child] of [[50, 50, false], [10, 20, false], [100, 200, false], [0, 0, true]])
+    ui.run('closeRoleDialogOutside(input)', { input: { currentTarget: dialog, target: child ? {} : dialog, clientX: x, clientY: y } })
+  assert.equal(closed, 0)
+  for (const [x, y] of [[9, 50], [101, 50], [50, 19], [50, 201]])
+    ui.run('closeRoleDialogOutside(input)', { input: { currentTarget: dialog, target: dialog, clientX: x, clientY: y } })
+  assert.equal(closed, 4)
+})
+
 test('refazer etapas mantém pareceres históricos sem mostrar aprovação atual nem concluir tentativa cancelada', () => {
   for (const lang of ['en', 'pt-BR']) {
     const ui = dashboard(lang)
@@ -746,7 +821,7 @@ test('energia tracejada percorre conexão contínua apenas nos papéis ativos', 
     assert.doesNotMatch(markup, /pathLength=/)
   }
   const base = ui.nodes.get('#hubPaths').innerHTML
-  assert.match(base, /data-role="orchestrator" style="stroke:var\(--accent\)"/)
+  assert.doesNotMatch(base, /data-role="orchestrator"/)
   assert.match(base, /data-connection="orchestrator" style="stroke:#6a5222"/)
   for (const [role, color] of [['plan', '#241d3d'], ['exec', '#34200f'], ['rev', '#12293a']]) {
     assert.ok(base.includes('class="s-frame" data-connection="' + role + '" style="stroke:' + color + '"'))
@@ -4653,6 +4728,7 @@ test('boot do guia inline usa o dashboard real e seus alvos de filtro e card', (
   assert.match(ui.nodes.get('#popBody').innerHTML, /✓ Prumo/)
   const calls = []
   const child = { contentWindow: { prumoGuideDemo: { pause(value) { calls.push(value) } } } }
+  ui.nodes.get('#guideBoardFrame').contentWindow = child.contentWindow
   const panel = ui.nodes.get('#guideExamplePanel')
   const loading = { hidden: true, textContent: '' }
   panel.querySelector = selector => selector === 'iframe' ? child : loading
@@ -4967,7 +5043,7 @@ test('onboarding inline abre, percorre um papel e fecha o guia', async () => {
   const finishOnboarding = ui.run('createPrumoOnboarding(input)', { input })
   finishOnboarding.open()
   assert.equal(root.hidden, false)
-  for (let step = 0; step < 14; step += 1) children.get('#guideNext').emit('click')
+  for (let step = 0; step < 15; step += 1) children.get('#guideNext').emit('click')
   assert.equal(children.get('#guideTitle').textContent, 'Start here')
   assert.equal(children.get('#guideNext').textContent, 'finish guide')
   assert.equal(root.hidden, false)

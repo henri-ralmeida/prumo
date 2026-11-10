@@ -452,7 +452,7 @@ test('update informa ausência e reparo enquanto worker preserva checkpoint em f
   const marker = join(f.home, '.claude/skills/prumo/.prumo-install.json')
   const request = { dryRun: false, cwd: f.project, projects: [], updateCli: true }
   for (const failure of ['install', 'removed']) {
-    const update = updateDouble(failure === 'install' ? { PRUMO_TEST_UPDATE_FAILURE: failure } : { PRUMO_TEST_MARKER_REMOVED: marker })
+    const update = updateDouble({ PRUMO_TEST_GLOBAL_CURRENT: '0', ...(failure === 'install' ? { PRUMO_TEST_UPDATE_FAILURE: failure } : { PRUMO_TEST_MARKER_REMOVED: marker }) })
     const dashboard = dashboardDouble({ enabled: true, process: 'running' }, { ok: true })
     const response = runCli(f.home, ['_update'], { ...update, ...dashboard, NODE_OPTIONS: `${update.NODE_OPTIONS} ${dashboard.NODE_OPTIONS}`,
       PRUMO_UPDATE_REQUEST: JSON.stringify(request) }, f.project)
@@ -635,27 +635,66 @@ test('worker informa prévia de ativação ou reinício e preserva checkpoint qu
   const checkpoint = join(home, '.local/share/prumo/update-pending.json')
   rmSync(checkpoint)
   mkdirSync(checkpoint)
+  const stops = join(home, 'checkpoint-stop.log')
   const failed = runCli(home, ['_update'], { ...dashboardDouble({ enabled: true, process: 'running' }, { ok: false, process: 'stopped' }),
+    PRUMO_TEST_STOP_LOG: stops,
     PRUMO_UPDATE_REQUEST: JSON.stringify({ ...request, dryRun: false }) })
   assert.notEqual(failed.status, 0)
-  assert.match(failed.stderr, /Dashboard restart failed/)
+  assert.match(failed.stderr, /EISDIR|EPERM|EACCES|EEXIST/)
+  assert.equal(existsSync(stops), false, 'Falha na preparação não deve parar o dashboard')
   assert.ok(existsSync(checkpoint), 'a recuperação não remove o checkpoint que mudou de tipo')
 })
 
-test('worker _update recusa parada negada sem alterar a instalação nem criar checkpoint', t => {
+test('worker _update recusa parada negada preservando arquivos e retomada', t => {
   const f = detectedClaude(t, 'prumo-cli-stop-refused-')
   installHarness(f, 'claude')
   const settings = join(f.home, '.claude/settings.json'), skill = join(f.home, '.claude/skills/prumo/SKILL.md')
   const before = [readFileSync(settings, 'utf8'), readFileSync(skill, 'utf8')]
+  const update = updateDouble({ PRUMO_TEST_GLOBAL_CURRENT: '0' })
+  const dashboard = dashboardDouble({ enabled: true, process: 'running' }, { ok: true, process: 'running' })
   const response = runCli(f.home, ['_update'], {
-    ...dashboardDouble({ enabled: true, process: 'running' }, { ok: true, process: 'running' }),
+    ...update, ...dashboard, NODE_OPTIONS: `${update.NODE_OPTIONS} ${dashboard.NODE_OPTIONS}`,
     PRUMO_TEST_STOP_RESULT: JSON.stringify({ ok: false, error: 'serviço negado' }),
-    PRUMO_UPDATE_REQUEST: JSON.stringify({ dryRun: false, cwd: f.project, projects: [], updateCli: false }),
+    PRUMO_UPDATE_REQUEST: JSON.stringify({ dryRun: false, cwd: f.project, projects: [], updateCli: true }),
   }, f.project)
   assert.equal(response.status, 1, response.output)
   assert.match(response.stderr, /Dashboard restart failed: serviço negado/)
   assert.deepEqual([readFileSync(settings, 'utf8'), readFileSync(skill, 'utf8')], before)
-  assert.equal(existsSync(join(f.home, '.local/share/prumo/update-pending.json')), false)
+  const checkpoint = JSON.parse(readFileSync(join(f.home, '.local/share/prumo/update-pending.json'), 'utf8'))
+  assert.equal(checkpoint.toVersion, packageVersion, 'A troca não realizada permanece registrada para retomada')
+})
+
+test('worker recupera dashboard antes de atualizar o ambiente e após falhas tratáveis', async t => {
+  for (const scenario of ['success', 'global', 'restore', 'restore-state']) await t.test(scenario, t => {
+    const f = detectedHome(t, 'prumo-cli-update-availability-', ['kiro'])
+    installHarness(f, 'kiro')
+    const marker = join(f.home, '.kiro/skills/prumo/.prumo-install.json')
+    const log = join(f.home, 'stages.log')
+    const update = updateDouble({ PRUMO_TEST_GLOBAL_CURRENT: '0', PRUMO_TEST_UPDATE_STAGE_LOG: log,
+      PRUMO_TEST_OBSERVE_MARKER: marker, PRUMO_TEST_UPDATE_FAILURE: scenario === 'global' ? 'install' : '',
+      PRUMO_TEST_RECONCILE_FAILURE: scenario.startsWith('restore') ? '1' : '',
+      ...(scenario === 'restore-state' ? { PRUMO_TEST_GLOBAL_STATE: JSON.stringify({ running: false, version: null, packageRoot: null }),
+        PRUMO_TEST_RECONCILE_STATUS: JSON.stringify({ process: 'stopped' }) } : {}) })
+    const dashboard = dashboardDouble({ enabled: true, process: 'running' }, { ok: true, process: 'running' })
+    const response = runCli(f.home, ['_update'], { ...update, ...dashboard,
+      NODE_OPTIONS: `${update.NODE_OPTIONS} ${dashboard.NODE_OPTIONS}`, PRUMO_TEST_STOP_LOG: log,
+      PRUMO_UPDATE_REQUEST: JSON.stringify({ dryRun: false, cwd: f.project, projects: [], updateCli: true, lang: 'pt-BR' }),
+    }, f.project)
+    const stages = readFileSync(log, 'utf8').trim().split('\n')
+    assert.deepEqual(stages.slice(0, 3), ['stop', 'global', 'reconcile:en'])
+    if (scenario === 'success') {
+      assert.equal(response.status, 0, response.output)
+      assert.deepEqual(stages, ['stop', 'global', 'reconcile:en', 'reconcile:pt-BR'])
+      assert.equal(JSON.parse(readFileSync(marker, 'utf8')).lang, 'pt-BR')
+      assert.equal(existsSync(join(f.home, '.local/share/prumo/update-pending.json')), false)
+    } else {
+      assert.notEqual(response.status, 0, response.output)
+      assert.match(response.stderr, scenario === 'global' ? /instalação global negada/ : scenario === 'restore-state' ? /stopped/ : /recuperação negada/)
+      assert.equal(JSON.parse(readFileSync(marker, 'utf8')).lang, 'en')
+      assert.equal(existsSync(join(f.home, '.local/share/prumo/update-pending.json')), true)
+      assert.doesNotMatch(response.stdout, /prumo updated successfully/)
+    }
+  })
 })
 
 test('install preserva progresso TTY com e sem métodos de limpeza e respeita NO_COLOR', t => {
@@ -715,13 +754,13 @@ test('worker _update preserva o fluxo local quando updateCli está desabilitado'
   assert.match(preview.output, /Dashboard remains disabled by user preference/)
 })
 
-test('worker _update para o dashboard antigo na 4950 antes de atualizar, e só nesse caso quando o atual está parado', t => {
+test('worker _update mantém o dashboard disponível durante atualização apenas dos ambientes', t => {
   const f = detectedClaude(t, 'prumo-cli-worker-legacy-dashboard-')
   installHarness(f, 'claude')
   const request = { dryRun: false, cwd: f.project, projects: [], updateCli: false, sourceVersion: packageVersion, globalVersion: null }
   const stops = join(f.home, 'stops.log')
-  for (const [status, expected] of [[{ enabled: true, process: 'stopped', legacy: true }, 1], [{ enabled: true, process: 'stopped', legacy: false }, 0],
-    [{ enabled: true, process: 'running' }, 1]]) {
+  for (const [status, expected] of [[{ enabled: true, process: 'stopped', legacy: true }, 0], [{ enabled: true, process: 'stopped', legacy: false }, 0],
+    [{ enabled: true, process: 'running' }, 0]]) {
     rmSync(stops, { force: true })
     const response = runCli(f.home, ['_update'], { ...dashboardDouble(status, { ok: true }), PRUMO_TEST_STOP_LOG: stops,
       PRUMO_UPDATE_REQUEST: JSON.stringify(request) }, f.project)
@@ -817,6 +856,20 @@ test('CLI exibe versão e ajuda e recusa Node incompatível antes de alterar arq
   assert.equal(unsupported.status, 1, unsupported.output)
   assert.match(unsupported.stderr, /requires Node.js 22 or newer/)
   assert.equal(existsSync(join(home, '.local', 'share', 'prumo')), false)
+})
+
+test('dashboard status não atribui saída histórica a serviço ativo, lento ou sem resposta', t => {
+  const home = temporaryHome(t, 'prumo-cli-dashboard-status-history-')
+  for (const process of ['running', 'unresponsive', 'conflict', 'stopped']) {
+    const response = runCli(home, ['dashboard', 'status'], {
+      ...dashboardDouble({ process, enabled: true, registered: true, slow: process === 'running', responseMs: 2400 }),
+      PRUMO_TEST_DASHBOARD_EVENTS: JSON.stringify([{ event: 'process-exit', at: '2026-11-05T15:30:00Z', code: 1 }]),
+    })
+    assert.equal(response.status, 0, response.output)
+    if (process === 'stopped') assert.match(response.stdout, /Dashboard crashed/)
+    else assert.doesNotMatch(response.stdout, /Dashboard crashed/)
+    if (process === 'running') assert.match(response.stdout, /responded slowly \(2400 ms\)/)
+  }
 })
 
 test('dashboard logs mantém detalhes e valores ausentes sem escrever no log', t => {

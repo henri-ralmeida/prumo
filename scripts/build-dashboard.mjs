@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import { createTranslator, messages } from './i18n.mjs'
-import { taskManualEstimateMinutes, commandMetricsForRun, calculateGain, renderGainPanel, renderManualCoordination, renderSecurityAuditPanel } from './dashboard-gains.mjs'
+import { taskManualEstimateMinutes, commandMetricsForRun, calculateGain, renderGainPanel, renderManualCoordination, renderSecurityAuditPanel, renderSecurityAuditCards } from './dashboard-gains.mjs'
 import { createPrumoOnboarding, createGuideDemoFrameController } from './onboarding.mjs'
 import { createGuideDemoData } from './dashboard-guide-demo.mjs'
 import { recordedAgentTiming } from './recorded-timing.mjs'
@@ -9,7 +9,7 @@ import { isReadyForReview, isReviewRejected } from './review-readiness.mjs'
 
 export function dashboardWithCatalog(html) {
   // O guia compartilha a identidade das entidades; alterar o SVG real atualiza a demonstracao.
-  const roles = { orchNode: ['orchestrator', 'Coordinates the approved plan'], securityNode: ['security', 'Independent audit'], planNode: ['planner', 'Turns scope into tasks'], execNode: ['executor', 'Implements and records evidence'], revNode: ['reviewer', 'Verifies independently'] }
+  const roles = { orchNode: ['orchestrator', 'Coordinates the approved plan'], securityNode: ['security', 'Auditing locally'], planNode: ['planner', 'Turns scope into tasks'], execNode: ['executor', 'Implements and records evidence'], revNode: ['reviewer', 'Verifies independently'] }
   const guideRoles = Object.entries(roles).map(([id, [role, description]]) => {
     const source = html.match(new RegExp('<div id="' + id + '" class="role"[\\s\\S]*?<i class="obar"></i></div>'))?.[0]
     if (!source) throw new Error(`Entidade do dashboard ausente: ${id}`)
@@ -18,16 +18,16 @@ export function dashboardWithCatalog(html) {
       .replace(/<span class="os"[^>]*>[\s\S]*?<\/span><\/span>/, `<span class="os" data-i18n="${description}">${description}</span></span>`)
   }).join('')
   const guideConnections = '<svg class="guide-role-connections" viewBox="0 0 732 38" preserveAspectRatio="none" aria-hidden="true">' +
-    '<path style="stroke:#6a5222" d="M366 0V19"/><path class="s-flow" data-role="orchestrator" style="stroke:var(--accent)" d="M366 0V19"/>' +
+    '<path style="stroke:var(--faint)" d="M366 0V19"/>' +
     [['plan', '#241d3d', 'var(--planning)', 'M366 19H110V38'], ['exec', '#34200f', 'var(--running)', 'M366 19V38'], ['rev', '#12293a', 'var(--review)', 'M366 19H622V38']]
-      .map(([role, track, colour, path]) => '<path style="stroke:' + track + '" d="' + path + '"/><path class="s-flow" data-role="' + role + '" style="stroke:' + colour + '" d="' + path + '"/>').join('') + '</svg>'
+      .map(([role, track, colour, path]) => '<path style="stroke:' + track + '" d="' + path + '"/><path class="s-flow" data-role="' + role + '" style="stroke:' + colour + '" d="' + path.replace('M366 19', 'M366 0V19') + '"/>').join('') + '</svg>'
   const block = '/*PRUMO_I18N_START*/\nconst PRUMO_MESSAGES = ' + JSON.stringify(messages) + '\n' + createTranslator.toString() + '\n/*PRUMO_I18N_END*/'
   const guide = '/*PRUMO_GUIDE_START*/\n' + createGuideDemoData.toString() + '\n' + createGuideDemoFrameController.toString() + '\n' + createPrumoOnboarding.toString() + '\n/*PRUMO_GUIDE_END*/'
   if (!html.includes('/*PRUMO_I18N_START*/')) throw new Error('Dashboard translation marker missing')
   if (!html.includes('/*PRUMO_GAIN_HELPERS_START*/')) throw new Error('Dashboard gain-helper marker missing')
   if (!html.includes('/*PRUMO_GUIDE_START*/')) throw new Error('Dashboard onboarding marker missing')
   const helpers = '/*PRUMO_GAIN_HELPERS_START*/\n' +
-    [recordedAgentTiming, isReadyForReview, isReviewRejected, taskManualEstimateMinutes, commandMetricsForRun, calculateGain, renderGainPanel, renderManualCoordination, renderSecurityAuditPanel].map(fn => fn.toString()).join('\n\n') +
+    [recordedAgentTiming, isReadyForReview, isReviewRejected, taskManualEstimateMinutes, commandMetricsForRun, calculateGain, renderGainPanel, renderManualCoordination, renderSecurityAuditPanel, renderSecurityAuditCards].map(fn => fn.toString()).join('\n\n') +
     '\n/*PRUMO_GAIN_HELPERS_END*/'
   return html
     .replace(/\/\*PRUMO_I18N_START\*\/[\s\S]*?\/\*PRUMO_I18N_END\*\//, () => block)

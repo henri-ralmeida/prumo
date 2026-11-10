@@ -1,9 +1,11 @@
 # Security audit (ethical hacker)
 
-A run-level, opt-in offensive audit. It runs once, after every task is `done` or `skipped`. One independent
-auditor reads every task card, attacks the delivered work in a **local** environment, proves each finding with
-a proof of concept and records a report. `critical` and `high` findings block the run until the user accepts
-each one or the work is fixed and re-audited. The auditor is never the executor, reviewer or planner of any task.
+An opt-in offensive audit after every delivery task is `done` or `skipped`. The demand remains **DONE**
+while the independent auditor tests delivered business behavior locally and records proven findings.
+The audit has its own contract, attempts and results panel; it never creates task cards or task filters.
+Only correction tasks chosen by the user after the report finishes enter the same graph and reactivate
+delivery. Those tasks follow ordinary planning, execution and independent review. The auditor is never
+the executor, reviewer or planner of a delivery task.
 
 The goal is not a list of weaknesses. It is a short set of **proven** findings, each scored the same way by any
 auditor, each precise enough to become a fix task. The test roadmap (WSTG categories, API Top 10, CWE order,
@@ -13,6 +15,12 @@ the vulnerability analysis phase.
 The dashboard and interactive guide place the ethical hacker beside the orchestrator, directly above
 the reviewer. Its gray, solid connection indicates inactivity. Only a running audit uses its highlight
 color and a dashed, animated connection, so activity remains distinguishable from availability.
+
+Click **Ethical hacker** beside the Orchestrator, then **Audit overview**, to inspect recorded attempts,
+findings, evidence, reproduction and remediation on the same page. Close the panel to return to the graph.
+The task filters apply only to delivery and correction tasks. The guide demonstrates the independent audit
+with disposable data; its connection is inactive while another entity is being demonstrated. Active
+connections start at the Orchestrator using the color of the role being served, without an extra yellow segment.
 
 ## Contents
 
@@ -296,12 +304,36 @@ No secrets, tokens or personal data anywhere in the report. Use placeholders suc
 
 ## Lifecycle
 
-1. When the last task closes, `done`/`skip`/`status`/`ready` ask the orchestrator to put **Run / Skip / Not now** to the user. `audit-enable --confirmed-by-user` pre-authorizes the audit; `audit-skip --reason <text> --confirmed-by-user` records a skip. Not now writes nothing.
-2. `audit-start --agent <auditor> --environment <local URL> --confirmed-by-user`: refused unless every task is terminal, the agent never executed, reviewed or planned a task, a slot is free, the host is local and the run is not paused. It records `reportSchema: 2` and the task ids audited.
-3. The auditor marks its work with `activity-start security-audit --scope run --role security --agent <name>` and closes it with `activity-stop security-audit --scope run --role security --agent <name>` (same flags). Only the auditor of the running attempt can open or close intervals.
-4. `audit-finish --report <report.json>`: validates the report against the schema of the attempt and stores its SHA-256 digest. Refusals name the finding index and the field (in the language of the command). Only `medium` or lower finishes as `done`; `critical` or `high` finishes as `blocked`. The engine calculates the score from the vector and blocking follows `severity`, which must match that score's band (or a valid floor).
-5. A blocked audit is presented to the user finding by finding, with its CVSS score (and BE when present), the floor label when applied and `severityRationale`: **Fix** or **Accept the risk** (`audit-accept <finding> --reason <text> --confirmed-by-user`; the last acceptance finishes the audit as `done`). Medium, low and info findings never become tasks.
-   For the findings to fix, run `audit-fix-plan [--out <file.json>] [--test-command <command>]` (read-only; refuses when no blocking, unaccepted finding is left or the fix tasks already exist; without `--out` it prints the plan; `--test-command` is needed when no functional validation command can be derived from the plan). It builds a complete plan with one new phase, `Security fixes (audit #N)`, holding one task per finding, with the next free task numbers. Show the phase to the user, then apply it with `sync-plan --plan <file.json> --propose`: a plain `sync-plan` is refused for these tasks, and the proposal keeps them unexecuted until the user accepts each contract. Each task is tagged `security-finding:<audit>:<finding id>`, the link used by `audit-status` and the dashboard (`accepted`, `fix-task`, `fix-skipped` or `open`); the plan file also carries the score, floor, rationale, location and WSTG ids in an advisory `securityFinding` field that `sync-plan` ignores. Findings that cite the same files get a dependency between their tasks.
-6. When every fix task is closed the graph closes and the audit still shows `blocked`: the notice asks for `audit-start` again, a new independent attempt that revalidates the fixes. If the findings are gone it finishes as `done`; otherwise repeat step 5 for the new attempt.
-7. Reopened tasks make a blocked audit `pending-recheck` (derived, not stored); close the graph, then `audit-start` again. Work added after a `done` audit asks the Run / Skip / Not now question again.
-8. `audit-status` prints the current state and findings, with each blocking finding's resolution and `previousBlocking`, without changing anything.
+1. Closing all delivery tasks completes the demand. Explain the optional audit and prepare
+   `audit-propose --environment <local URL> --out <contract.json>`. This writes only the proposal file,
+   never task state. Review and present its full business context, every source contract, scenarios,
+   local environment and safety policy. Tailor scenarios to the approved demand without inventing rules.
+2. After the user accepts that contract, start with `audit-start --contract <contract.json> --agent
+   <auditor> --environment <accepted local URL> --confirmed-by-user`. The graph must be closed, the auditor
+   independent, a slot free and the run unpaused. The contract is persisted and included in `brief --role
+   security`. No task card or task filter is created. Mark activity with `activity-start security-audit
+   --scope run --role security --agent <name>` and close it with `activity-stop` using the same flags.
+3. `audit-finish --report <report.json>` validates and records the report and digest. Findings retain their
+   scores and critical/high classification, but the delivery remains DONE. Do not create correction tasks
+   while the auditor is still working. Open **Audit overview** for evidence and recorded findings.
+4. Present the finished findings in the main chat and ask whether to create corrections in the same graph.
+   `audit-fix-plan --out <fixes.json>` proposes one task per unaccepted finding, including medium/low/info,
+   with source scope and regression criteria. It does not change state. Keep only corrections the user
+   chooses, show their contracts and apply `sync-plan --plan <fixes.json> --propose --complete-audit
+   <attempt number> --confirmed-by-user`. The attempt number binds the decision to the finished report.
+   New task creation and the correction decision are recorded together. Only this new work reactivates
+   the demand; tasks use the existing filters and normal planning, execution, authorization and independent
+   review controls. Record the approval already given through the usual commands without asking twice.
+5. If the user declines corrections, keep the report. `audit-skip --reason <text> --confirmed-by-user`
+   records the decision without adding tasks or implicitly accepting risks. Explicit risk acceptance still
+   uses `audit-accept <finding> --reason <text> --confirmed-by-user` for critical/high findings.
+6. `audit-status`, `graph` and `brief --role security` expose the persisted audit evidence. Once all chosen
+   corrections finish, delivery is DONE again. Another audit remains optional.
+
+### Historical compatibility
+
+Existing audits without the advisory flag retain their recorded behavior: critical/high findings gate
+closure until explicit acceptance or a successful re-audit. Their fix-plan contains only blocking findings
+and uses `sync-plan --propose`. Reopened work derives `pending-recheck`; re-audits must revalidate previous
+unaccepted blocking findings. Never rewrite historical reports or silently remove their existing gates.
+New audit offers and accepted independent contracts use the delivery-independent flow above.

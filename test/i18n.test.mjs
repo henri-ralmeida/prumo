@@ -127,6 +127,9 @@ test('dashboard embeds the current translator and remains valid JavaScript', () 
   const html = readFileSync(new URL('../scripts/dashboard.html', import.meta.url), 'utf8')
   const rebuilt = dashboardWithCatalog(html)
   assert.equal(rebuilt, html)
+  const guide = rebuilt.match(/<section id="guideMockRoles"[^>]*>([\s\S]*?)<\/section>/)[1]
+  assert.match(guide, /class="role guide-role role-security"/)
+  assert.match(guide, /data-i18n="Auditing locally">Auditing locally/)
   const embeddedMessages = JSON.parse(rebuilt.match(/const PRUMO_MESSAGES = ([^\r\n]+)/)[1])
   for (const [lang, expected] of [['en', 'reviewer rejected T5'], ['pt-BR', 'revisor reprovou T5']]) {
     assert.equal(createTranslator(embeddedMessages, lang)('{0} rejected {1}', lang === 'en' ? 'reviewer' : 'revisor', 'T5'), expected)

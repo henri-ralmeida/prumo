@@ -354,7 +354,7 @@ at its first `activity-start`; `activityLegacy: true` indicates that earlier wor
 | `reviewing` with an approved validation | Close the task | `done` | review.md |
 | `failed` | Unchanged contract: reuse the plan. Changed contract: sync first | `fail --reason`, `retry`, `sync-plan` | review.md |
 | `blocked` | Present the recorded question; resume with the answer | `block --question --option`, `unblock [--answer\|--reviewer]` | recovery.md |
-| every task `done`/`skipped`, audit announced | Ask the user Run / Skip / Not now (Not now writes nothing); a blocked audit needs a decision per `critical`/`high` finding | `audit-start --agent --environment --confirmed-by-user`, `audit-skip`, `audit-accept` | security-audit.md |
+| every delivery task `done`/`skipped`, audit announced | Delivery is DONE; show the independent audit contract before acceptance; no audit task is created | `audit-propose`, then `audit-start --contract --agent --environment --confirmed-by-user` | security-audit.md |
 | plan edited after approval | Synchronize before any new round, then run `begin-*` again (it supersedes the stale round); show the diff and get acceptance. `refresh-contract` only for a validation-only change to active work | `sync-plan`, `show-contract --diff`, `refresh-contract` | recovery.md |
 
 Task-scoped (legacy) runs use `begin-discussion`, `finish-discussion`, `plan-task` and `finish-planning`
@@ -434,11 +434,23 @@ that remains unverified. Completed tasks, passing commands and test counts are n
 the whole workflow. Preserve completed history and human approvals; an evidence gap informs the current
 verdict or an explicit follow-up and never silently reopens a completed task.
 
-When `status` announces a pending security audit decision, ask the user **Run / Skip / Not now**; Not now records nothing and the notice repeats.
-`audit-enable --confirmed-by-user` pre-authorizes it. The auditor must be independent of every executor, reviewer and planner and runs
-only on a local environment ([security-audit.md](references/security-audit.md)). For each `critical`/`high` finding, present it and ask whether to
-fix it or accept the risk with a justification. Run `audit-fix-plan --out <file.json>` for the fixes, show the proposed phase and apply it with `sync-plan --propose` only after the user agrees; re-audit with `audit-start` once the fix tasks close.
-The run stays complete, but never tell the user the demand is closed while the audit is `blocked`, `pending-recheck`, `running`, `awaiting-decision` or pre-authorized and not yet run: `status` prints SECURITY AUDIT GATE OPEN until it is done or skipped.
+After all delivery tasks finish, the demand is **DONE**. Offer an optional independent security audit,
+explain its value and prepare `audit-propose --environment <local URL> --out <contract.json>`.
+Read and show the complete contract, including the demand, every delivered business contract, test
+scenarios, local environment and safety policy. Tailor scenarios only to approved business behavior.
+One acceptance authorizes `audit-start --contract <contract.json> --agent <independent auditor>
+--environment <accepted local URL> --confirmed-by-user`; the flag records the consent already received.
+The audit is independent of task cards and task filters. It does not add a numbered task or reopen
+delivery. Never create corrections before `audit-finish --report <report.json>` succeeds.
+Present the finished findings in the main chat and ask whether to create correction tasks in this graph.
+Only after acceptance, prepare `audit-fix-plan --out <fixes.json>` and apply the chosen correction
+contracts with `sync-plan --plan <fixes.json> --propose --complete-audit <attempt> --confirmed-by-user`.
+Only these tasks reactivate the demand; they follow the normal planning, execution, authorization and
+independent review controls until everything is DONE again. Record existing consent through the usual
+commands without asking for the same approval again. If the user declines corrections, keep the findings;
+`audit-skip --reason <text> --confirmed-by-user` records that decision without implicitly accepting risks.
+Historical audits without the advisory flag retain their existing gates and re-audit requirements.
+See [security-audit.md](references/security-audit.md) for safety, scoring and compatibility.
 
 Then point the dev at the dashboard's **results** tab (`r`): wall clock vs agent time, the
 planning/build/verify split, the critical path against the wall clock, and which tasks were reviewed

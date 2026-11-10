@@ -105,7 +105,7 @@ import { terminalAttemptRepairs, repairTerminalAttempts, attemptsForContext } fr
 import { captureDelivery, checkDelivery, verifyNumericProvenance, assertEvidenceContract, assertReviewedDelivery } from './delivery-evidence.mjs'
 import { assertRolePreferences, recordDispatchMetadata, dispatchOwners, reportedUsageTotals, pauseRun, resumeRun, shellCommand, taskBrief, agentRoles, repeatedPlanQuestions, recordedPlanIdentity } from './run-metadata.mjs'
 import { scoreCvss4 } from './cvss4.mjs'
-import { refusalText, graphClosed, openAuditAttempt, validateAuditReport, securityAuditView, securityBrief, securityFixPlan, SECURITY_FINDING_TAG, markAuditDecisionIfClosed, enableAudit, skipAudit, startAudit, recordAuditReport, acceptFinding, auditActivityTarget, auditNotices, auditGateNotice } from './security-audit.mjs'
+import { refusalText, proposeAuditContract, completeAuditCorrections, graphClosed, openAuditAttempt, validateAuditReport, securityAuditView, securityBrief, securityFixPlan, SECURITY_FINDING_TAG, markAuditDecisionIfClosed, enableAudit, skipAudit, startAudit, recordAuditReport, acceptFinding, auditActivityTarget, auditNotices, auditGateNotice } from './security-audit.mjs'
 import { newCommandRecord, recordCommand } from './command-metrics.mjs'
 import { questionAnswerOrigin, missingExecutionSteps, phaseOrderChange } from './planning-context.mjs'
 
@@ -2947,6 +2947,10 @@ const commands = {
           invalidated: invalidatedWorkflows.filter(item => item.scope === 'task' && item.task === id) }
       }
     }
+    if (args['complete-audit']) {
+      if (!args.propose) die(tr('Audit corrections must be proposed for the normal planning and independent review flow'))
+      auditAction(() => completeAuditCorrections(state, beforeState, added, { attempt: args['complete-audit'], confirmedByUser: args['confirmed-by-user'] === true }))
+    } else if (unproposed.length && beforeState.securityAudit?.advisory) die(tr('Creating audit corrections requires --complete-audit <attempt> --confirmed-by-user'))
     const previouslyEligible = eligibleDiscussionPhases(beforeState)
     // Removing the last open task closes the graph; a graph that was already closed is not asked retroactively.
     if (!graphClosed(beforeState)) markAuditDecisionIfClosed(state)
@@ -4980,6 +4984,15 @@ const commands = {
     log('[prumo] ' + tr('{0} {1} activity stopped by {2}', id, role, agent))
   },
 
+  'audit-propose'() {
+    const state = loadState(runName())
+    const contract = auditAction(() => proposeAuditContract(state, args.environment))
+    const text = JSON.stringify(contract, null, 2) + '\n'
+    if (!args.out) return console.log(text.trimEnd())
+    try { writeFileSync(resolve(args.out), text, { flag: 'wx' }) } catch (error) { die(error.message) }
+    log('[prumo] ' + resolve(args.out))
+  },
+
   'audit-enable'() {
     const name = runName(), state = loadState(name)
     if (args['confirmed-by-user'] !== true) die(tr('audit-enable requires --confirmed-by-user'))
@@ -4994,8 +5007,9 @@ const commands = {
     if (args['confirmed-by-user'] !== true) die(tr('audit-skip requires --confirmed-by-user'))
     const reason = typeof args.reason === 'string' && args.reason.trim() ? args.reason.trim() : die(tr('audit-skip requires --reason <text>'))
     state.securityAudit = auditAction(() => skipAudit(state, reason, new Date().toISOString()))
-    saveState(name, state); emit(name, 'security_audit_skipped', null, { reason })
-    log('[prumo] ' + tr('security audit skipped: {0}', reason))
+    const declined = state.securityAudit.correctionDecision?.choice === 'no-corrections'
+    saveState(name, state); emit(name, 'security_audit_skipped', null, { reason, ...(declined ? { decision: state.securityAudit.correctionDecision } : {}) })
+    log('[prumo] ' + tr(declined ? 'security audit completed without correction tasks: {0}' : 'security audit skipped: {0}', reason))
   },
 
   'audit-start'() {
@@ -5003,8 +5017,13 @@ const commands = {
     if (args['confirmed-by-user'] !== true) die(tr('audit-start requires --confirmed-by-user'))
     const agent = typeof args.agent === 'string' && args.agent.trim() ? args.agent.trim() : die(tr('audit-start requires --agent <auditor>'))
     if (typeof args.environment !== 'string' || !args.environment.trim()) die(tr('audit-start requires --environment <local URL>'))
+    let contract
+    if (args.contract !== undefined) {
+      try { contract = JSON.parse(readFileSync(resolve(args.contract), 'utf8').replace(/^\uFEFF/, '')) } catch (error) { die(error.message) }
+      if (!contract || typeof contract !== 'object' || Array.isArray(contract)) die(tr('Invalid audit contract'))
+    }
     const occ = occupancy(state)
-    const { audit, attempt } = auditAction(() => startAudit(state, { agent, environment: args.environment, at: new Date().toISOString(), dispatchOwners, used: occ.busy.length, cap: occ.cap }))
+    const { audit, attempt } = auditAction(() => startAudit(state, { agent, environment: args.environment, contract, at: new Date().toISOString(), dispatchOwners, used: occ.busy.length, cap: occ.cap }))
     state.securityAudit = audit
     saveState(name, state)
     emit(name, 'security_audit_start', null, { agent, environment: attempt.environment, attempt: attempt.n })
@@ -5070,7 +5089,7 @@ if (!cmd || !Object.hasOwn(commands, cmd)) {
    ou o estado anterior ou o próximo, nunca um arquivo meio gravado. Todo o restante
    usa o bloqueio da execução durante toda a leitura-modificação-gravação; validate bloqueia suas atualizações de estado
    separadamente para que a execução de comandos não sobreviva ao curto período do bloqueio. */
-const READ_ONLY = new Set(['audit-status', 'audit-fix-plan', 'brief', 'verify-provenance', 'runs', 'status', 'ready', 'graph', 'show-contract', 'show-check'])
+const READ_ONLY = new Set(['audit-propose', 'audit-status', 'audit-fix-plan', 'brief', 'verify-provenance', 'runs', 'status', 'ready', 'graph', 'show-contract', 'show-check'])
 const LEGACY_MIGRATION_CONTINUATIONS = new Set([
   'start', 'progress', 'review', 'review-progress', 'validate', 'done', 'fail', 'retry', 'block', 'unblock', 'skip', 'refresh-contract',
   'pause-replanning',

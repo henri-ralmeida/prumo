@@ -1,5 +1,6 @@
 // O guia usa apenas um plano em memoria; os mesmos renderizadores recebem dados ficticios.
 export function createGuideDemoData(mode = 'board') {
+  const completed = mode === 'results' || mode === 'security'
   const at = minutes => new Date(Date.UTC(2026, 0, 1, 9) + minutes * 60_000).toISOString()
   const states = ['done', 'done', 'ready_for_discussion', 'discussing', 'ready_to_plan', 'planning', 'ready', 'running', 'reviewing', 'waiting', 'blocked', 'failed', 'skipped']
   const titles = ['orders schema', 'API contracts', 'Scope agreement', 'Checkout discussion', 'Implementation plan', 'Payment planning', 'feature flags', 'payment service', 'event queue', 'end-to-end tests', 'gradual rollout', 'gateway webhooks', 'Legacy integration']
@@ -13,10 +14,10 @@ export function createGuideDemoData(mode = 'board') {
       attempt.result = 'running'
     }
     if (mode === 'board' && state === 'failed') attempt.result = 'failed'
-    return [id, { id, title: titles[i], state: mode === 'results' ? 'done' : state, phase: `F${i < 4 ? 1 : i < 9 ? 2 : 3}`, deps: i > 1 ? ['T1'] : [],
+    return [id, { id, title: titles[i], state: completed ? 'done' : state, phase: `F${i < 4 ? 1 : i < 9 ? 2 : 3}`, deps: i > 1 ? ['T1'] : [],
       summary: 'The task records its scope, dependencies and validation evidence.', validationSummary: 'The Reviewer verifies the result before completion.', validation: 'echo validation', notes: [],
-      attempts: mode === 'results' || ['done', 'running', 'reviewing', 'failed'].includes(state) ? [attempt] : [],
-      validations: mode === 'results' || state === 'done' ? [{ by: 'review', ok: true, at: at(base + 20), summary: 'Reviewed and approved.', agent: attempt.reviewer }] : [],
+      attempts: completed || ['done', 'running', 'reviewing', 'failed'].includes(state) ? [attempt] : [],
+      validations: completed || state === 'done' ? [{ by: 'review', ok: true, at: at(base + 20), summary: 'Reviewed and approved.', agent: attempt.reviewer }] : [],
       planningAttempts: [{ n: 1, agent: `planner-${i % 3 + 1}`, startedAt: at(base), endedAt: at(base + 5), activityTiming: 'explicit', activityIntervals: [{ role: 'planning', startedAt: at(base), endedAt: at(base + 5) }] }],
       discussionAttempts: (mode === 'results' && i === 0) || (mode === 'board' && state === 'discussing') ? [{ n: 1, agent: 'orchestrator', startedAt: at(-5), endedAt: at(0), activityTiming: 'explicit', activityIntervals: [{ role: 'discussion', startedAt: at(-5), endedAt: at(0) }] }] : [],
       blockReason: state === 'blocked' ? 'awaiting your decision' : '', blockQuestion: state === 'blocked' ? 'Approve the gradual rollout?' : '', skipReason: state === 'skipped' ? 'This integration is outside the approved scope.' : '',
@@ -25,6 +26,11 @@ export function createGuideDemoData(mode = 'board') {
   if (mode === 'board') tasks.T14 = { id: 'T14', title: 'Review handoff', state: 'running', phase: 'F3', deps: ['T2'], agent: 'executor-1', summary: 'Execution is complete; the independent Reviewer is next.', validation: 'echo validation', notes: [], validations: [], planningAttempts: [], attempts: [{ n: 1, agent: 'executor-1', startedAt: at(120), activityTiming: 'explicit', activityIntervals: [{ role: 'execution', agent: 'executor-1', startedAt: at(120), endedAt: at(130) }] }] }
   const derived = Object.fromEntries(Object.values(tasks).map(task => [task.id, { effective: task.state }]))
   return { run: 'checkout', createdAt: at(0), plan: { name: 'Checkout', description: 'An approved checkout plan.', maxParallel: 3, phases: [{ id: 'F1', title: 'Scope and contracts' }, { id: 'F2', title: 'Implementation and review' }, { id: 'F3', title: 'Validation and release' }] }, tasks, derived,
+    ...(mode === 'security' ? { securityAuditView: { state: 'running', graphClosed: true, gate: false, advisory: true,
+      attempts: [{ n: 1, agent: 'auditor-1', environment: 'http://localhost:3000', startedAt: at(150), endedAt: at(160), result: 'blocked' },
+        { n: 2, agent: 'auditor-2', environment: 'http://localhost:3000', startedAt: at(175), endedAt: null, result: null }],
+      findings: [], counts: {}, blocking: [], previousBlocking: [{ id: 'SEC-1', severity: 'medium', title: 'Input validation', cwe: 'CWE-20', taskRefs: ['T1'], status: 'fix-task', fixTask: 'T1' }],
+    } } : {}),
     events: mode === 'board' ? [{type:'run_init',at:at(0)}, {type:'phase_planning',phase:'F2',at:at(10)}, {type:'task_check',task:'T1',by:'review',status:'started',at:at(15),current:5,total:6}, {type:'task_check',task:'T1',by:'review',status:'passed',at:at(20),current:5,total:6}, {type:'task_note',task:'T14',at:at(130),text:'T1 → T14 · F3'}] : [],
     commandMetrics: { total: 39, complete: true, byCommand: { 'plan-task': 13, start: 13, review: 13 } },
   }

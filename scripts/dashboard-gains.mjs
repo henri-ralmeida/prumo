@@ -213,6 +213,52 @@ export function renderManualCoordination(gain, tr, fmtMs, esc) {
 }
 
 /** Renders the run-level security audit card; empty when the run has no audit block and tolerant of a partial view. */
+export function renderSecurityAuditCards(view, tr, esc, locale) {
+  // Tentativas e achados registrados tornam a auditoria visível sem estimar progresso de testes não relatados.
+  const attempts = view?.attempts ?? []
+  const findings = view?.findings ?? []
+  const previous = view?.state === 'running' ? view.previousBlocking ?? [] : []
+  const emptyStates = { enabled: 'Scheduled after delivery', 'awaiting-decision': 'Awaiting your decision', skipped: 'Audit skipped',
+    running: 'The audit is running. Findings appear when the auditor submits its report.', done: 'No findings recorded.',
+    blocked: 'Findings require a decision', 'pending-recheck': 'Awaiting re-audit' }
+  const empty = emptyStates[view?.state] ?? (view && view.state !== 'optional' ? 'unknown' : 'No security audit has started. Ask the orchestrator to enable it after delivery.')
+  if (!attempts.length && !findings.length && !previous.length) return `<p class="security-empty">${esc(tr(empty))}</p>`
+  const time = value => value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString(locale) : tr('Not recorded')
+  const states = { done: 'Audit completed', blocked: 'Findings require a decision', failed: 'Failed', cancelled: 'Cancelled by user' }
+  const attemptCards = attempts.map((attempt, index) => {
+    const running = view.state === 'running' && index === attempts.length - 1 && !attempt.endedAt
+    const label = running ? 'Auditing locally' : states[attempt.result] ?? 'Unknown'
+    return `<article class="security-card security-attempt${running ? ' is-running' : ''}" data-audit-attempt="${esc(attempt.n ?? index + 1)}">
+      <div class="security-card-heading"><span>${esc(tr('Audit attempt {0}', attempt.n ?? index + 1))}</span><span class="security-state">${esc(tr(label))}</span></div>
+      <h4>${esc(attempt.agent ?? tr('Not assigned'))}</h4>
+      <dl><dt>${esc(tr('Environment'))}</dt><dd>${esc(attempt.environment ?? tr('Not recorded'))}</dd>
+      <dt>${esc(tr('Started'))}</dt><dd>${esc(time(attempt.startedAt))}</dd>
+      ${attempt.endedAt ? `<dt>${esc(tr('Finished'))}</dt><dd>${esc(time(attempt.endedAt))}</dd>` : ''}</dl>
+    </article>`
+  }).join('')
+  const findingCard = (finding, revalidating) => {
+    const severity = ['critical', 'high', 'medium', 'low', 'info'].includes(finding.severity) ? finding.severity : 'info'
+    const kind = finding.resolution ?? finding.status
+    const resolution = finding.accepted || kind === 'accepted' ? tr('Accepted') : revalidating ? tr('Being revalidated')
+      : kind === 'fix-skipped' ? tr('Fix task {0} skipped', finding.fixTask) : finding.fixTask ? tr('Fix task {0}', finding.fixTask) : tr('Open')
+    const details = [['Evidence', finding.evidence], ['Reproduction', finding.reproduction], ['Remediation', finding.remediation]]
+      .filter(([, text]) => typeof text === 'string' && text.trim())
+      .map(([label, text]) => `<dt>${esc(tr(label))}</dt><dd>${esc(text)}</dd>`).join('')
+    const scores = [['CVSS-B', finding.cvss?.computedScore ?? finding.cvss?.score], ['CVSS-BE', finding.cvss?.environmental?.computedScore ?? finding.cvss?.environmental?.score]]
+      .filter(([, value]) => typeof value === 'number').map(([label, value]) => `${label} ${value}`).join(' · ')
+    return `<article class="security-card security-finding" data-audit-finding="${esc(finding.id)}">
+      <div class="security-card-heading"><span>${esc(finding.id)}</span><span class="sev sev-${severity}">${esc(tr(severity))}</span></div>
+      <h4>${esc(finding.title)}</h4><p class="security-resolution">${esc(resolution)}</p>
+      <p class="security-finding-meta">${esc(finding.cwe ?? tr('Not recorded'))}${scores ? ` · ${esc(scores)}` : ''}${finding.severityFloor?.class ? ` · ${esc(tr('Floor: {0}', finding.severityFloor.class))}` : ''}${finding.taskRefs?.length ? ` · ${esc(finding.taskRefs.join(', '))}` : ''}</p>
+      ${details ? `<details><summary>${esc(tr('Finding details'))}</summary><dl>${details}</dl></details>` : ''}
+      ${finding.fixTask ? `<button type="button" class="lbtn task-ref" onclick="jumpTo(${esc(JSON.stringify(finding.fixTask))})">${esc(tr('Open fix task'))}</button>` : ''}
+    </article>`
+  }
+  const findingCards = findings.map(finding => findingCard(finding, false)).join('') + previous.map(finding => findingCard(finding, true)).join('')
+  return `<section class="security-card-section"><h3>${esc(tr('Audit attempts'))}</h3>${attempts.length ? `<div class="security-card-grid">${attemptCards}</div>` : `<p class="security-empty">${esc(tr('Not recorded'))}</p>`}</section>
+    <section class="security-card-section"><h3>${esc(tr('Recorded findings'))}</h3>${findingCards ? `<div class="security-card-grid">${findingCards}</div>` : `<p class="security-empty">${esc(tr(view.state === 'running' ? empty : 'No findings recorded.'))}</p>`}</section>`
+}
+
 export function renderSecurityAuditPanel(view, tr, esc) {
   if (!view) return ''
   const states = { enabled: 'Pre-authorized', 'awaiting-decision': 'Awaiting decision', skipped: 'Audit skipped', running: 'Running', blocked: 'Blocked', 'pending-recheck': 'Pending re-check', done: 'Done' }

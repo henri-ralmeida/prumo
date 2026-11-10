@@ -33,8 +33,14 @@ A local npm install is inert. Use `prumo install --all` after disabled npm scrip
 every registered Claude Code, Kiro, Codex, DSH, Antigravity, OpenCode and Grok Build installation. It compares managed contents, resumes a pending
 activation and never downgrades a global CLI newer than npm `latest`. A damaged marker is recovered only
 for its exact registered harness/path and only from a byte-verified Prumo backup.
-Installation and update restart the dashboard when it is enabled, so it serves the installed version, and
-preserve an explicit disable. They never restart agents. The global dashboard reads the run and offers only
+Updates skip package replacement when version, managed files and the requested language already match.
+Real language changes and damaged files still require an update. Package preparation and isolated
+verification keep the dashboard available; only the actual global package replacement requires a stop.
+The enabled dashboard is recovered immediately after replacement, or after a recoverable failure restores
+the previous package, before further environment changes or error reporting. A current running dashboard
+is not restarted again. Installation and update preserve an explicit disable and never restart agents.
+
+The global dashboard reads the run and offers only
 the explicit user-confirmed agent-limit control; only an explicit orchestrator call to `sync-plan` reconciles
 an approved plan.
 
@@ -823,6 +829,11 @@ are moved back by `prumo update`, `prumo dashboard enable` or the dashboard repa
 and the dashboard on 4950 is stopped only when it answers as Prumo and its command line proves it is the managed
 process; an unrelated listener on 4950 is left alone.
 
+Health and package-identity requests allow up to three seconds each. A valid slow response is reported
+as running with its observed response time. An occupied port without a verifiable response is reported
+as unresponsive, separately from a stopped service and a confirmed non-Prumo listener. Unknown ownership
+never authorizes process termination; consult `prumo dashboard logs` and retry the diagnostic.
+
 The startup launcher recreates the dashboard after an unexpected exit (a nonzero code or a signal other than
 SIGTERM, SIGINT, SIGHUP or SIGBREAK). The wait doubles from 1 s up to 30 s, at most 5 restarts are made within 10 minutes,
 and each restart is recorded in `prumo dashboard logs` (`restart-scheduled`, `process-restart`, `restart-limit`). It does
@@ -1018,8 +1029,10 @@ Resolve `scripts/engine.mjs` from the installed skill. Add `--run <name>` to sel
 | `unblock <task> --reviewer <name>` | Takes a paused active attempt directly to review |
 | `skip <task> --reason <text>` | Skips once by a nonempty explicit decision; an active attempt ends as skipped without a fabricated receipt |
 | `note <task> --text <text>` | Appends a note to history |
+| `sync-plan --plan <fixes.json> --propose --complete-audit <attempt> --confirmed-by-user` | Create chosen correction tasks only after the finished report and user approval; follow normal planning and independent review |
+| `audit-propose --environment <local URL> [--out <file>]` | Prepare the full business audit contract without creating task cards |
 | `audit-enable --confirmed-by-user` / `audit-skip --reason <text> --confirmed-by-user` | Pre-authorizes or skips the run-level security audit |
-| `audit-start --agent <auditor> --environment <local URL> --confirmed-by-user` | Starts an audit attempt; refused unless the graph is closed, the auditor is independent, a slot is free, the host is local and the run is not paused |
+| `audit-start --agent <auditor> --environment <local URL> [--contract <file>] --confirmed-by-user` | Starts an audit attempt; refused unless the graph is closed, the auditor is independent, a slot is free, the host is local and the run is not paused |
 | `audit-finish --report <report.json>` | Validates the report, stores its SHA-256 digest; `critical`/`high` makes the audit `blocked` |
 | `audit-accept <finding> --reason <text> --confirmed-by-user` | Accepts one blocking finding; the last acceptance makes the audit `done` |
 | `audit-fix-plan [--out <file.json>] [--test-command <command>]` | Read-only: builds a complete plan for `sync-plan` with one new phase and one task per blocking, unaccepted finding of the last finished audit (next free `T`/`F` numbers, no state change, refuses an existing `--out`, refuses when nothing is left to fix or the tasks exist; needs `--test-command` when no finished task has a functional validation to reuse). Apply with `sync-plan --propose`; plain `sync-plan` refuses these tasks |

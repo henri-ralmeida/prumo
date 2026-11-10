@@ -81,6 +81,33 @@ function fixture(t, prefix = 'prumo-update-hardening-', base = realpathSync(tmpd
   return { home, external, globalRoot, target, temporaryRoot, env, calls, runSync }
 }
 
+test('a preparação do pacote mantém o dashboard ativo até a troca global', async t => {
+  const f = fixture(t, 'prumo-update-availability-'), events = []
+  let stopped = false
+  const runSync = (_command, _args, options) => ({ status: 0, stdout: simulatedNpmRoot(f, options), stderr: '' })
+  const run = (_command, args, options) => {
+    if (args.includes('pack')) {
+      assert.equal(stopped, false, 'Empacotar não deve interromper o dashboard')
+      events.push('pack')
+      writeFileSync(join(options.cwd, 'prumo.tgz'), 'pacote isolado')
+    } else {
+      const global = options.env.npm_config_prefix === f.env.npm_config_prefix
+      assert.equal(stopped, global, 'Somente a troca global exige a parada prévia')
+      events.push(global ? 'global' : 'isolado')
+      const destination = join(simulatedNpmRoot(f, options), '@henri-ralmeida', 'prumo')
+      rmSync(destination, { recursive: true, force: true })
+      copyDistributedPackage(repository, destination)
+    }
+    return child(0)
+  }
+  await updateGlobalCliFromPackage(repository, {
+    env: f.env, temporaryRoot: f.temporaryRoot, runSync, run,
+    beforeInstall: async () => { events.push('parar'); stopped = true },
+  })
+  assert.deepEqual(events, ['pack', 'isolado', 'parar', 'global'])
+  assert.deepEqual(readdirSync(f.temporaryRoot), [])
+})
+
 test('update recusa pacote global ligado antes de executar npm', async t => {
   const f = fixture(t)
   writeFileSync(join(f.external, 'old-package.txt'), 'fora do pacote')

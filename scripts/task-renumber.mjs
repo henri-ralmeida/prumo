@@ -237,5 +237,9 @@ export function renumberTasks(original, originalPlan, mapping, { contextDigests 
     requireRenumber(hasCurrentTaskScope(state, after) === hasCurrentTaskScope(original, before), 'The accepted task scope changed: {0}', id)
     if (remap(id) !== id) after.previousTaskId = id
   }
+  // O contrato aceito permanece como evidência original; aliases resolvem os novos identificadores.
+  if (original.securityAudit?.contract) state.securityAudit.contract = structuredClone(original.securityAudit.contract)
+  for (const [index, attempt] of (original.securityAudit?.attempts ?? []).entries())
+    if (attempt.contract) state.securityAudit.attempts[index].contract = structuredClone(attempt.contract)
   return { state, plan }
 }

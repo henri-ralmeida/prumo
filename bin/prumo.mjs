@@ -191,8 +191,9 @@ try {
       const result = action === 'enable' ? await enableDashboard() : action === 'disable' ? await disableDashboard() : await dashboardStatus()
       print(t('Dashboard: {0}; {1}; {2}', t(result.process), t(result.registered ? 'registered' : 'not registered'), t(result.enabled ? 'enabled' : result.disabled ? 'disabled' : 'not configured')))
       print(t('version: {0}; content: {1}; port: {2}; URL: {3}', result.version ?? version, result.contentId ?? t('unknown'), result.port, result.url))
+      if (result.slow) print(t('Dashboard responded slowly ({0} ms); the service is running', result.responseMs))
       if (action !== 'disable') printAliasHint()
-      if (action === 'status' && !result.disabled && result.process !== 'running') {
+      if (action === 'status' && !result.disabled && result.process === 'stopped') {
         const exit = lastDashboardExit(readDashboardEvents({ limit: 200 }))
         if (exit) {
           const when = new Date(exit.at)
@@ -247,9 +248,12 @@ try {
         process.exitCode = 2
       } })
       const checkpoint = join(homedir(), '.local/share/prumo/update-pending.json')
-      const stopped = request.dryRun || dashboardBefore.process === 'stopped' && !dashboardBefore.legacy
-        ? { ok: true, stopped: false } : await stopDashboardForUpdate({ packageRoot: previousGlobal.packageRoot ?? packageRoot })
-      if (!stopped.ok) throw new Error(t('Dashboard restart failed: {0}', t(stopped.error)))
+      let stopped = { ok: true, stopped: false }
+      const stopForGlobalUpdate = async () => {
+        if (dashboardBefore.process === 'stopped' && !dashboardBefore.legacy) return
+        stopped = await stopDashboardForUpdate({ packageRoot: previousGlobal.packageRoot ?? packageRoot })
+        if (!stopped.ok) throw new Error(t('Dashboard restart failed: {0}', t(stopped.error)))
+      }
       let dashboardRestored = false
       try {
         try { previousVersions.push(...JSON.parse(readFileSync(checkpoint, 'utf8')).fromVersions) } catch { /* nenhuma atualização pendente */ }
@@ -268,10 +272,16 @@ try {
         progress.finish()
         if (request.updateCli) {
           if (request.dryRun) print(t('would update the cli'))
-          else {
+          else if (!globalCliContentCurrent(packageRoot, previousGlobal.packageRoot, request.lang ?? lang)) {
             progress.start(t('updating the cli'), t('CLI updated'))
             try {
-              await updateGlobalCliFromPackage(packageRoot, { lang: request.lang ?? lang })
+              await updateGlobalCliFromPackage(packageRoot, { lang: request.lang ?? lang, beforeInstall: stopForGlobalUpdate })
+              if (stopped.stopped) {
+                const globalPackage = globalCliState(packageRoot).packageRoot ?? packageRoot
+                const restored = await reconcileDashboardUpdate({ before: dashboardBefore, lang: request.lang, dashboardOptions: { packageRoot: globalPackage } })
+                if (!restored.ok) throw new Error(t('Dashboard restart failed: {0}', t(restored.status.error ?? restored.status.process)))
+                dashboardRestored = true
+              }
               progress.finish()
             } catch (error) {
               throw new Error(`Global Prumo CLI update failed: ${error.message}`, { cause: error })
@@ -313,7 +323,7 @@ try {
         progress.start(t('Checking dashboard'), t('Dashboard checked'))
         const dashboard = await reconcileDashboardUpdate({ dryRun: request.dryRun, before: dashboardBefore, lang: request.lang, dashboardOptions: { packageRoot: globalPackage } })
         progress.finish(dashboard.ok)
-        dashboardRestored = true
+        dashboardRestored = dashboard.ok === true
         if (dashboard.action === 'enable' && request.dryRun) print('Would enable and start the Prumo dashboard')
         if (dashboard.action === 'restart' && request.dryRun) print('Would restart the enabled Prumo dashboard')
         else if (dashboard.action === 'disabled' && request.dryRun) print('Dashboard remains disabled by user preference')

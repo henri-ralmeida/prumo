@@ -4,12 +4,104 @@ import { AuditError, refusalText, BLOCKING_SEVERITIES, graphClosed, openAuditAtt
 import { dispatchOwners, assertRolePreferences, pauseRun } from '../scripts/run-metadata.mjs'
 import { occupancy } from '../scripts/execution-readiness.mjs'
 import { isSafeTouch } from '../scripts/task-scope.mjs'
-import { renumberBlockers } from '../scripts/task-renumber.mjs'
+import { renumberBlockers, renumberTasks } from '../scripts/task-renumber.mjs'
 import { Cvss4Error } from '../scripts/cvss4.mjs'
+import { proposeAuditContract, completeAuditCorrections } from '../scripts/security-audit.mjs'
 
 const t = (state, extra = {}) => ({ state, ...extra })
 const finding = (extra = {}) => ({ id: 'F1', severity: 'high', title: 'T', cwe: 'CWE-89', taskRefs: ['T1'], attackPath: 'a', evidence: 'e', reproduction: 'r', remediation: 'm', ...extra })
 const refusal = (action, pattern) => assert.throws(action, error => error instanceof AuditError && pattern.test(error.message), String(pattern))
+
+test('auditoria independente usa contrato de negócio sem criar tarefa ou reabrir a entrega', () => {
+  const state = { run: 'business', plan: { name: 'Checkout', description: 'Isolamento dos clientes' }, tasks: {
+    T1: { id: 'T1', title: 'Pedidos autorizados', state: 'done', deps: [], summary: 'Preservar isolamento', validationSummary: 'Clientes só acessam pedidos próprios' },
+    T2: { id: 'T2', title: 'Pagamento', state: 'done', deps: ['T1'] },
+  } }
+  const before = structuredClone(state), contract = proposeAuditContract(state, 'http://localhost:3000/app')
+  assert.equal(contract.source.tasks.length, 2); assert.equal(contract.scenarios.length, 2)
+  assert.deepEqual(state, before)
+  const { audit } = startAudit(state, startContext({ contract: JSON.parse(JSON.stringify(contract)) }))
+  state.securityAudit = audit
+  assert.deepEqual(audit.attempts[0].contract, contract, 'Cada tentativa preserva o contrato aceito, mesmo após outra auditoria')
+  const future = structuredClone(state)
+  future.securityAudit.state = 'awaiting-decision'
+  future.securityAudit.attempts[0].endedAt = 'now'
+  assert.deepEqual(startAudit(future, startContext()).attempt.contract, contract, 'O aceite pode ser reutilizado para o mesmo contrato')
+  future.tasks.T3 = { id: 'T3', state: 'done', title: 'Nova entrega', deps: [] }
+  assert.throws(() => startAudit(future, startContext()), /scope changed/)
+  const next = startAudit(future, startContext({ contract: proposeAuditContract(future, 'http://localhost:3000') }))
+  assert.deepEqual(next.audit.attempts[0].contract, contract)
+  assert.equal(next.attempt.contract.source.tasks.length, 3)
+  assert.equal(state.auditTasks, undefined)
+  assert.equal(Object.keys(state.tasks).length, 2)
+  assert.equal(securityAuditView(state).gate, false)
+  assert.deepEqual(securityBrief(state, () => '').auditContract, contract)
+  assert.throws(() => proposeAuditContract({ ...before, tasks: {} }, 'http://localhost'), /Finish every/)
+  assert.throws(() => proposeAuditContract(before, 'https://example.com'), /local environment/)
+  for (const mutate of [
+    value => { value.schema = 2 }, value => { value.run = 'another' }, value => { value.environment = 'http://localhost:9000' },
+    value => { value.businessContext = '' }, value => { value.businessContext = null }, value => { value.policy.sourceChanges = true },
+    value => { delete value.source }, value => { value.source.tasks = [] }, value => { value.source.tasks[0].title = 'Outra regra' },
+    value => { delete value.scenarios }, value => { value.scenarios = [] }, value => { value.scenarios[0] = null },
+    value => { value.scenarios[0].tasks = [] }, value => { value.scenarios[0].tasks = ['T99'] },
+    value => { value.scenarios[0].verification = '' }, value => { value.scenarios[0].businessBehavior = null },
+    value => { value.scenarios.pop() },
+  ]) {
+    const changed = structuredClone(contract); mutate(changed)
+    assert.throws(() => startAudit(before, startContext({ contract: changed })))
+  }
+  const defaultContext = { ...before, plan: { name: 'Checkout' }, tasks: { T1: { id: 'T1', title: 'Um comportamento', state: 'done' } } }
+  const minimal = proposeAuditContract(defaultContext, 'localhost')
+  assert.equal(minimal.businessContext, 'Checkout')
+  startAudit(defaultContext, startContext({ environment: 'localhost', contract: minimal }))
+})
+
+test('relatório mantém DONE e só a criação confirmada de correções reativa o mesmo grafo', () => {
+  const before = { run: 'business', plan: { name: 'Checkout' }, tasks: { T1: { id: 'T1', state: 'done', deps: [] } },
+    securityAudit: { advisory: true, state: 'blocked', attempts: [{ n: 1, endedAt: 'now', report: { findings: [finding(), finding({ id: 'F2', severity: 'medium' })] } }] } }
+  assert.equal(securityAuditView(before).gate, false)
+  assert.match(auditNotices(before)[0][0], /Delivery remains DONE/)
+  const state = structuredClone(before)
+  state.tasks.T2 = { id: 'T2', state: 'pending', tags: [findingTag(1, 'F1')] }
+  const complete = (added = ['T2'], options = {}) => completeAuditCorrections(state, before, added, { attempt: '1', confirmedByUser: true, ...options })
+  assert.throws(() => complete(['T2'], { attempt: '2' }), /Finish the audit report/)
+  assert.throws(() => complete(['T2'], { confirmedByUser: false }), /explicit user confirmation/)
+  assert.throws(() => complete([]), /new tasks/)
+  assert.throws(() => complete(['T1']), /reference a finding/)
+  const unfinished = { ...before, securityAudit: { advisory: true, state: 'running', attempts: [{ n: 1 }] } }
+  assert.throws(() => completeAuditCorrections(state, unfinished, ['T2'], { attempt: '1', confirmedByUser: true }), /Finish the audit report/)
+  complete(['T2'], { at: 'now' })
+  assert.equal(state.securityAudit.correctionDecision.at, 'now')
+  assert.deepEqual(state.securityAudit.correctionDecision.tasks, ['T2'])
+  assert.equal(state.tasks.T2.state, 'pending')
+  assert.equal(state.securityAudit.attempts[0].result, undefined)
+  assert.equal(state.securityAudit.attempts[0].report.findings[1].accepted, undefined)
+  assert.deepEqual(auditNotices(state), [])
+  assert.throws(() => completeAuditCorrections(state, state, ['T2'], { attempt: '1', confirmedByUser: true }), /Finish the audit/)
+  const declined = skipAudit(before, 'Avaliar depois', 'now')
+  assert.equal(declined.correctionDecision.choice, 'no-corrections')
+  assert.equal(declined.attempts[0].report.findings[0].accepted, undefined)
+  const clean = { ...before, securityAudit: { advisory: true, state: 'done', attempts: [{ n: 1, endedAt: 'now', report: { findings: [] } }] } }
+  assert.deepEqual(auditNotices(clean), [])
+  assert.throws(() => completeAuditCorrections(state, {}, ['T2'], { attempt: '1', confirmedByUser: true }), /Finish the audit/)
+})
+
+test('contrato e numeração das correções preservam aliases sem consumir números históricos livres', () => {
+  const state = { run: 'business', plan: { name: 'Checkout', phases: [] }, tasks: {
+    T1: { id: 'T1', state: 'done', title: 'Isolamento', deps: [], attempts: [], notes: [], validations: [], validation: [{ kind: 'functional', run: 'node --version', expect: 'Isolamento verificado' }] },
+  } }
+  const contract = proposeAuditContract(state, 'http://localhost:3000')
+  state.securityAudit = { state: 'awaiting-decision', advisory: true, contract, attempts: [{ n: 1, endedAt: 'now', contract }] }
+  const { state: renamed } = renumberTasks(state, { ...state.plan, tasks: Object.values(state.tasks) }, { T1: 'T2' })
+  assert.deepEqual(renamed.securityAudit.contract, contract)
+  assert.deepEqual(renamed.securityAudit.attempts[0].contract, contract)
+  startAudit(renamed, startContext({ contract }))
+  state.taskIdAliases = { T99: 'T1' }
+  state.securityAudit = { advisory: true, state: 'blocked', attempts: [{ n: 1, endedAt: 'now', report: { findings: [finding()] } }] }
+  assert.equal(securityFixPlan(state).tasks.at(-1).id, 'T2')
+  state.taskIdAliases.T2 = 'T1'
+  assert.equal(securityFixPlan(state).tasks.at(-1).id, 'T3')
+})
 
 test('graphClosed requires at least one done task and no open task', () => {
   for (const [tasks, expected] of [[{}, false], [{ A: t('skipped') }, false], [{ A: t('done') }, true], [{ A: t('done'), B: t('skipped') }, true], [{ A: t('done'), B: t('pending') }, false], [{ A: t('done'), B: t('blocked') }, false]])
@@ -266,7 +358,7 @@ test('closing the graph asks once, never retroactively invents a block and asks 
   const open = { tasks: { T1: t('done'), T2: t('pending') } }
   markAuditDecisionIfClosed(open, 'x'); assert.equal(open.securityAudit, undefined)
   const closed = { tasks: { T1: t('done') } }
-  markAuditDecisionIfClosed(closed, 'x'); assert.deepEqual(closed.securityAudit, { state: 'awaiting-decision', announcedAt: 'x' })
+  markAuditDecisionIfClosed(closed, 'x'); assert.deepEqual(closed.securityAudit, { state: 'awaiting-decision', advisory: true, announcedAt: 'x' })
   const defaulted = { tasks: { T1: t('done') } }
   markAuditDecisionIfClosed(defaulted); assert.equal(defaulted.securityAudit.state, 'awaiting-decision'); assert.ok(defaulted.securityAudit.announcedAt)
   const passed = { tasks: { T1: t('done'), T2: t('done') }, securityAudit: { state: 'done', attempts: [{ taskIds: ['T1'] }] } }

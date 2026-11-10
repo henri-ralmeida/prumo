@@ -122,7 +122,7 @@ for (const action of [enableDashboard, restartDashboard]) for (const stage of ['
     const result = await action(f.options)
     const ready = stage === 'login' || stage === 'launch'
     assert.equal(result.ok, ready)
-    assert.equal(result.process, ready ? 'running' : 'conflict')
+    assert.equal(result.process, ready ? 'running' : stage === 'unresponsive' ? 'unresponsive' : 'conflict')
     if (ready) {
       assert.equal(result.error, undefined)
       assert.equal(preference(f.home).pid, pid, 'o registro conserva o PID do servidor comprovado')
@@ -170,7 +170,7 @@ test('consulta lenta em porta ocupada respeita o prazo total sem encerrar o ocup
   })
   const result = await enableDashboard(f.options)
   assert.equal(result.ok, false)
-  assert.equal(result.process, 'conflict')
+  assert.equal(result.process, 'unresponsive')
   assert.equal(probes, 9, 'uma consulta inicial, uma rodada dentro do prazo e a leitura final do status')
 })
 
@@ -1019,11 +1019,12 @@ test('Linux falls back to XDG, starts detached, and only stops a proven PID', as
   assert.equal(existsSync(desktop), false)
 })
 
-test('foreign port ownership blocks enable without commands or process changes', async t => {
+test('unverified occupied port blocks enable without commands or process changes', async t => {
   const f = fixture(t, 'win32', { portAvailable: async () => false })
   const result = await enableDashboard(f.options)
   assert.equal(result.ok, false)
-  assert.equal(result.conflict, true)
+  assert.equal(result.process, 'unresponsive')
+  assert.equal(result.conflict, false)
   assert.equal(f.calls.some(([, args]) => args[0] === '/Create'), false)
   assert.equal(existsSync(join(f.home, '.local', 'share', 'prumo', 'dashboard.json')), false)
 })

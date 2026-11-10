@@ -1,6 +1,8 @@
 import { planTaskFromState } from './validation.mjs'
 import { scopeConflicts, isSafeTouch } from './task-scope.mjs'
 import { parseCvss4, scoreCvss4, Cvss4Error, CVSS4_BASE_METRICS } from './cvss4.mjs'
+import { businessContract } from './contract-drift.mjs'
+import { isDeepStrictEqual } from 'node:util'
 
 /** A refusal carries its message template and values so the engine can translate it without parsing text. */
 export class AuditError extends Error {
@@ -206,7 +208,8 @@ export function securityAuditView(state) {
   return {
     state: effective, stored: audit.state, graphClosed: closed,
     // The run stays complete for the dashboard; the gate says the demand must not be declared closed yet.
-    gate: ['running', 'pending-recheck'].includes(effective) || closed && GATE_STATES.includes(effective),
+    gate: audit.advisory !== true && (['running', 'pending-recheck'].includes(effective) || closed && GATE_STATES.includes(effective)),
+    ...(audit.advisory === true ? { advisory: true } : {}),
     attempts: attempts.map(item => ({ n: item.n, agent: item.agent, environment: item.environment, startedAt: item.startedAt, endedAt: item.endedAt ?? null, result: item.result ?? null, digest: item.report?.digest ?? null, counts: auditCounts(item.report?.findings) })),
     counts: auditCounts(findings), blocking: blockingFindings(last).map(finding => finding.id), findings, previousBlocking,
   }
@@ -228,6 +231,7 @@ export function securityBrief(state, command) {
     role: 'security', run: state.run, runPause: state.runPause ?? null,
     context: { name: state.plan.name, description: state.plan.description, phases: state.plan.phases ?? [], scopePolicy: state.plan.scopePolicy ?? null, cwd: state.plan.cwd ?? null },
     tasks, audit, previousBlocking,
+    ...(state.securityAudit?.contract ? { auditContract: state.securityAudit.contract } : {}),
     ...(previousBlocking.length ? { revalidation: 'Revalidate every unaccepted entry of previousBlocking against the current delivery before anything else: rerun its reproduction. Accepted entries are history only: do not retest them or report them again. Report again, with fresh evidence, each unaccepted finding that still reproduces; omit those that no longer reproduce and say so in the summary. List the ids of the unaccepted previous blocking findings you retested in the top-level revalidates of the report (the report is refused if any is missing). Then audit the delivery for new findings.' } : {}),
     rulesOfEngagement: ['Attack only the approved scope and the validated local environment.', 'Nothing destructive against real data; no data leaves this machine; no real credentials.', 'No load or denial-of-service testing; do not install tools on your own.', 'Clean up proof-of-concept artifacts; stop and report if real personal data appears.'],
     reference: 'references/security-audit.md',
@@ -265,7 +269,7 @@ export function auditAgentsInUse(state, dispatchOwners) {
 export function markAuditDecisionIfClosed(state, at = new Date().toISOString()) {
   if (!graphClosed(state)) return
   const audit = state.securityAudit
-  if (!audit) state.securityAudit = { state: 'awaiting-decision', announcedAt: at }
+  if (!audit) state.securityAudit = { state: 'awaiting-decision', advisory: true, announcedAt: at }
   // Work added after a passed audit was never audited, so the user is asked again without blocking.
   else if (audit.state === 'done' && audit.attempts?.at(-1) && Object.keys(state.tasks).some(id => !audit.attempts.at(-1).taskIds?.includes(id)))
     state.securityAudit = { ...audit, state: 'awaiting-decision', announcedAt: at }
@@ -281,12 +285,14 @@ export function enableAudit(state, at) {
 export function skipAudit(state, reason, at) {
   const audit = state.securityAudit
   if (audit?.state === 'running') throw new AuditError('security audit is running; audit-finish it first')
+  if (audit?.advisory && audit.attempts?.at(-1)?.endedAt)
+    return { ...audit, state: 'done', correctionDecision: { choice: 'no-corrections', attempt: audit.attempts.at(-1).n, reason, at, confirmedByUser: true } }
   if (audit?.state === 'blocked') throw new AuditError('security audit is blocked by findings; it cannot be skipped. Use audit-accept or fix the work and audit-start again')
   if (audit?.state === 'done') throw new AuditError('security audit is already done')
   return { ...(audit ?? {}), state: 'skipped', skip: { reason, at, confirmedByUser: true } }
 }
 /** Validates every precondition of audit-start and returns the next block; nothing is recorded by a refusal. */
-export function startAudit(state, { agent, environment, at, dispatchOwners, used, cap }) {
+export function startAudit(state, { agent, environment, contract, at, dispatchOwners, used, cap }) {
   const audit = state.securityAudit
   if (!graphClosed(state)) {
     const tasks = Object.values(state.tasks ?? {})
@@ -299,8 +305,11 @@ export function startAudit(state, { agent, environment, at, dispatchOwners, used
   if (auditAgentsInUse(state, dispatchOwners).has(agent.trim().toLowerCase())) throw new AuditError('{0} already executed, reviewed or planned a task; the auditor must be independent', agent)
   if (used >= cap) throw new AuditError('no agent slot available for the auditor ({0}/{1} in use)', used, cap)
   const origin = isLocalAuditEnvironment(environment) ?? (() => { throw new AuditError('the audit environment must be a local host (localhost, 127.0.0.1, [::1], *.localhost or *.test)') })()
-  const attempt = { n: (audit?.attempts?.length ?? 0) + 1, agent, environment: origin, startedAt: at, confirmedByUser: true, taskIds: Object.keys(state.tasks), reportSchema: REPORT_SCHEMA }
-  return { audit: { ...(audit ?? {}), state: 'running', attempts: [...(audit?.attempts ?? []), attempt] }, attempt }
+  const acceptedContract = contract ?? audit?.contract
+  if (acceptedContract) validateAuditContract(state, acceptedContract, origin)
+  const attempt = { n: (audit?.attempts?.length ?? 0) + 1, agent, environment: origin, startedAt: at, confirmedByUser: true, taskIds: Object.keys(state.tasks), reportSchema: REPORT_SCHEMA,
+    ...(acceptedContract ? { contract: structuredClone(acceptedContract) } : {}) }
+  return { audit: { ...(audit ?? {}), ...(acceptedContract ? { contract: structuredClone(acceptedContract), advisory: true } : {}), state: 'running', attempts: [...(audit?.attempts ?? []), attempt] }, attempt }
 }
 /** Stores the validated report on the running attempt and derives the audit result from the blocking findings. */
 export function recordAuditReport(state, attempt, { report, findings, path, digest, at }) {
@@ -335,6 +344,11 @@ export function auditActivityTarget(state, id, role, agent) {
 export function auditNotices(state) {
   const view = securityAuditView(state)
   if (!view) return []
+  if (view.advisory && view.state === 'awaiting-decision') return [['Delivery is DONE. Offer an optional independent audit: explain its importance, prepare audit-propose --environment <local URL>, show the complete business contract and ask the user before audit-start --contract <file.json> --agent <auditor> --environment <local URL> --confirmed-by-user.']]
+  if (view.advisory && !openAuditAttempt(state) && state.securityAudit.attempts?.at(-1)?.endedAt) {
+    if (state.securityAudit.correctionDecision?.attempt === state.securityAudit.attempts.at(-1).n || !view.findings.some(item => !item.accepted)) return []
+    return [['Delivery remains DONE. The audit report is finished. Present its findings and ask in the main chat whether to create correction tasks in this graph. Only after acceptance apply audit-fix-plan with sync-plan --propose --complete-audit {0} --confirmed-by-user. Declining corrections does not accept risks implicitly.', state.securityAudit.attempts.at(-1).n]]
+  }
   if (view.state === 'running') return [['security audit running (auditor {0}); finish it with audit-finish --report <report.json>', state.securityAudit.attempts.at(-1).agent]]
   if (view.state === 'pending-recheck') return [['security audit: tasks were reopened after blocking findings; finish the work, then run {0} again to revalidate', START_COMMAND]]
   if (!view.graphClosed) return []
@@ -362,20 +376,22 @@ export function auditGateNotice(state) {
  */
 export function securityFixPlan(state, testCommand) {
   const audit = state.securityAudit, attempt = audit?.attempts?.findLast(item => item.endedAt)
-  if (!attempt || audit.state !== 'blocked') throw new AuditError('there is no blocked security audit with a finished attempt')
-  const blocking = blockingFindings(attempt)
+  const advisory = audit?.advisory === true && ['blocked', 'done'].includes(audit.state) && audit.correctionDecision?.attempt !== attempt?.n
+  if (!attempt || !advisory && audit.state !== 'blocked') throw new AuditError('there is no blocked security audit with a finished attempt')
+  const blocking = advisory ? attempt.report.findings.filter(item => !item.accepted) : blockingFindings(attempt)
   if (!blocking.length) throw new AuditError('the last security audit has no blocking finding left to fix')
   const pending = blocking.filter(finding => !findingFixTask(state, attempt.n, finding.id))
   if (!pending.length) throw new AuditError('fix tasks for security audit {0} already exist: {1}', attempt.n, blocking.map(finding => `${finding.id}=${findingFixTask(state, attempt.n, finding.id)}`).join(', '))
   const run = testCommand ?? Object.values(state.tasks).findLast(task => task.state === 'done' && Array.isArray(task.validation) && task.validation.some(step => step.kind === 'functional'))?.validation.findLast(step => step.kind === 'functional').run
   if (!run) throw new AuditError('no functional validation command can be derived from the plan; pass --test-command <command>')
   const numbers = pattern => id => Number(pattern.exec(id)?.[1] ?? 0)
-  const ids = [...Object.keys(state.tasks), ...Object.keys(state.removedTasks ?? {}), ...Object.keys(state.taskIdAliases ?? {})]
+  const ids = [...Object.keys(state.tasks), ...Object.keys(state.removedTasks ?? {}), ...Object.keys(advisory ? {} : state.taskIdAliases ?? {})]
   let next = Math.max(0, ...ids.map(numbers(/^T(\d+)/i))) + 1
   const phaseId = 'F' + (Math.max(0, ...(state.plan.phases ?? []).map(phase => phase.id).map(numbers(/^F(\d+)$/))) + 1)
   const aliases = state.taskIdAliases ?? {}
   const fixes = []
   for (const finding of pending) {
+    while (Object.hasOwn(aliases, 'T' + next)) next++
     const refs = finding.taskRefs.map(ref => state.tasks[Object.hasOwn(aliases, ref) ? aliases[ref] : ref]).filter(Boolean)
     const project = refs.find(task => task.touches?.some(isSafeTouch))?.project
     const touches = [...new Set(refs.filter(task => task.project === project).flatMap(task => task.touches ?? []).filter(isSafeTouch))]
@@ -396,10 +412,63 @@ export function securityFixPlan(state, testCommand) {
   const existing = Object.values(state.tasks).map(task => ({ ...planTaskFromState(task), ...Object.fromEntries(['label', 'summary', 'validationSummary', 'timeCondition', 'manualEstimate'].filter(key => task[key] !== undefined).map(key => [key, task[key]])) }))
   return {
     name: state.plan.name, description: state.plan.description ?? '',
-    phases: [...(state.plan.phases ?? []), { id: phaseId, title: `Security fixes (audit #${attempt.n})` }],
+    phases: [...(state.plan.phases ?? []), { id: phaseId, title: advisory ? 'Security corrections' : `Security fixes (audit #${attempt.n})` }],
     maxParallel: state.plan.maxParallel, maxExecutors: state.plan.maxExecutors, requireReview: state.plan.requireReview,
     ...(state.plan.scopePolicy === undefined ? {} : { scopePolicy: state.plan.scopePolicy }),
     ...(state.plan.rolePreferences === undefined ? {} : { rolePreferences: state.plan.rolePreferences }),
     tasks: [...existing, ...fixes],
   }
+}
+
+function auditScope(state) {
+  return JSON.parse(JSON.stringify({ plan: businessContract(state.plan, {}).plan,
+    tasks: Object.values(state.tasks).map(task => ({ state: task.state, ...businessContract(state.plan, task).task })) }))
+}
+
+export function proposeAuditContract(state, environment) {
+  if (!graphClosed(state)) throw new AuditError('Finish every delivery task before proposing the audit')
+  const origin = isLocalAuditEnvironment(environment)
+  if (!origin) throw new AuditError('The audit contract needs a local environment')
+  return { schema: 1, run: state.run, environment: origin,
+    businessContext: state.plan.description || state.plan.name,
+    source: auditScope(state), policy: { localOnly: true, overloadTests: false, sourceChanges: false },
+    scenarios: Object.values(state.tasks).map(task => ({ tasks: [task.id], businessBehavior: task.title,
+      verification: task.validationSummary || task.summary || task.title })) }
+}
+
+function validateAuditContract(state, contract, environment) {
+  if (contract.schema !== 1 || contract.run !== state.run || contract.environment !== environment ||
+      typeof contract.businessContext !== 'string' || !contract.businessContext.trim() ||
+      !isDeepStrictEqual(contract.policy, { localOnly: true, overloadTests: false, sourceChanges: false }))
+    throw new AuditError('Invalid audit contract: preserve its run, local environment and safety policy')
+  const bind = scope => ({ plan: scope?.plan, tasks: Array.isArray(scope?.tasks) ? scope.tasks.map(task => {
+    const idFor = id => state.taskIdAliases?.[id] ?? id
+    const { phase, ...business } = task
+    return { ...business, id: idFor(task.id), deps: (task.deps ?? []).map(idFor).sort() }
+  }).sort((a, b) => a.id.localeCompare(b.id, 'en', { numeric: true })) : null })
+  if (!isDeepStrictEqual(bind(contract.source), bind(auditScope(state))))
+    throw new AuditError('The delivered business scope changed; prepare and approve a current audit contract')
+  const sourceIds = new Set(contract.source.tasks.map(task => task.id)), covered = new Set()
+  if (!Array.isArray(contract.scenarios) || !contract.scenarios.length)
+    throw new AuditError('The audit contract needs business scenarios covering every delivery task')
+  for (const scenario of contract.scenarios) {
+    if (!Array.isArray(scenario?.tasks) || !scenario.tasks.length || scenario.tasks.some(id => !sourceIds.has(id)) ||
+        [scenario.businessBehavior, scenario.verification].some(value => typeof value !== 'string' || !value.trim()))
+      throw new AuditError('Invalid business scenario in the audit contract')
+    scenario.tasks.forEach(id => covered.add(id))
+  }
+  if (covered.size !== sourceIds.size) throw new AuditError('The audit contract scenarios omit delivery tasks')
+}
+
+export function completeAuditCorrections(state, before, added, { attempt, confirmedByUser, at = new Date().toISOString() }) {
+  const audit = before.securityAudit, report = audit?.attempts?.at(-1)
+  if (!audit?.advisory || !report?.endedAt || String(report.n) !== attempt || audit.correctionDecision?.attempt === report.n)
+    throw new AuditError('Finish the audit report before creating its correction tasks')
+  if (confirmedByUser !== true || !added.length)
+    throw new AuditError('Creating corrections requires explicit user confirmation and new tasks')
+  const findings = report.report.findings.filter(item => !item.accepted)
+  if (added.some(id => !findings.some(item => state.tasks[id].tags?.includes(findingTag(report.n, item.id)))))
+    throw new AuditError('Every correction task must reference a finding from the finished audit')
+  state.securityAudit.state = 'done'
+  state.securityAudit.correctionDecision = { choice: 'corrections-created', attempt: report.n, tasks: [...added], confirmedByUser: true, at }
 }

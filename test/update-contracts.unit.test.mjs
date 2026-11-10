@@ -47,10 +47,10 @@ test('versão igual com conteúdo divergente exige atualização', () => {
 for (const disabled of [false, true]) for (const enabled of [false, true]) {
   for (const process of ['running', 'stopped']) for (const dryRun of [false, true]) {
     test(`dashboard respeita preferência: disabled=${disabled}, enabled=${enabled}, process=${process}, prévia=${dryRun}`, async () => {
-      const before = { disabled, enabled, process }, calls = []
+      const before = { disabled, enabled, process }, calls = [], statusCalls = []
       const options = { home: resolve('isolado') }
       const result = await reconcileDashboardUpdate({ before, dryRun, dashboardOptions: options, lang: 'pt-BR' }, {
-        status: () => { throw new Error('Estado já fornecido') },
+        status: async received => { statusCalls.push(received); return before },
         enable: async received => { calls.push(['enable', received]); return { ok: true } },
         restart: async received => { calls.push(['restart', received]); return { ok: true } },
       })
@@ -58,7 +58,25 @@ for (const disabled of [false, true]) for (const enabled of [false, true]) {
       assert.equal(result.action, action)
       assert.equal(result.ok, true)
       assert.deepEqual(calls, !dryRun && ['enable', 'restart'].includes(action) ? [[action, { ...options, lang: 'pt-BR' }]] : [])
+      assert.deepEqual(statusCalls, disabled ? [] : [{ ...options, lang: 'pt-BR' }])
       assert.deepEqual(options, { home: resolve('isolado') })
     })
   }
 }
+
+test('estado atual evita outro reinício após recuperação e respeita desativação posterior', async () => {
+  const before = { enabled: true, disabled: false, process: 'stopped' }
+  for (const current of [
+    { enabled: true, disabled: false, process: 'running', registered: true, contentCurrent: true },
+    { enabled: false, disabled: true, process: 'stopped' },
+  ]) {
+    const result = await reconcileDashboardUpdate({ before }, {
+      status: async () => current,
+      enable: () => assert.fail('Um serviço recuperado ou desativado não deve ser habilitado outra vez'),
+      restart: () => assert.fail('Um serviço recuperado ou desativado não deve reiniciar'),
+    })
+    assert.equal(result.ok, true)
+    assert.equal(result.action, current.disabled ? 'disabled' : 'none')
+    assert.equal(result.status, current)
+  }
+})

@@ -1,5 +1,5 @@
 export function createGuideDemoFrameController(frames, onState = () => {}) {
-  const cache = { board: false, results: false }
+  const cache = { board: false, results: false, security: false }
   let active = null, target = null, generation = 0
   function focus(mode) {
     const frame = frames[mode]
@@ -40,7 +40,7 @@ export function createGuideDemoFrameController(frames, onState = () => {}) {
     active = null; target = null
     if (!dispose) return
     generation += 1
-    for (const mode of ['board', 'results']) {
+    for (const mode of Object.keys(frames)) {
       const frame = frames[mode]
       frame.onload = null
       frame.removeAttribute('src')
@@ -79,6 +79,7 @@ export function createPrumoOnboarding({ root, launcher, document, window, transl
       { title: 'Maximum simultaneous agents', description: 'The default is 3 simultaneous agents per run, shared by discussion, planning, execution and review. Open the agents control to change it. Apply to all runs updates current runs and saves the default for future runs on this computer; leave it unchecked to change only the selected run.', target: 'agents' },
       { title: 'Task card', description: 'Click a task to read its summary, validation and dependencies. The expansion arrow opens the full details.', target: 'card' },
       { title: 'Progress and activity', description: 'Green counts completed tasks. The other colored segments show discussion, planning, execution and review in progress, without increasing completion.', target: 'activity' },
+      { title: 'Security audit cards', description: 'After delivery is DONE, an independent audit can run with your approval. It has its own results panel and no task cards or task filters. Only correction tasks approved in the main chat, after the report finishes, enter planning, execution and independent review.', target: 'security' },
     ] },
     { title: 'Run results', heading: 'Results', demos: [
       { title: 'Gain with Prumo', description: 'Compare the full baseline with measured parallel activity and the separate manual coordination estimate.', target: 'gain' },
@@ -146,8 +147,9 @@ export function createPrumoOnboarding({ root, launcher, document, window, transl
     for (const role of roles?.querySelectorAll('[data-guide-role]') ?? []) {
       mark(role, roleStep && role.dataset.guideRole === content.target)
       role.setAttribute('aria-pressed', String(roleStep && role.dataset.guideRole === content.target))
+      if (role.dataset.guideRole === 'security') role.classList.toggle('live', roleStep && content.target === 'security')
     }
-    if (boardStep || resultsStep) scheduleDemo(boardStep ? 'board' : 'results', content.target)
+    if (boardStep || resultsStep) scheduleDemo(boardStep ? content.target === 'security' ? 'security' : 'board' : 'results', content.target)
     else stopDemo()
     root.scrollTop = 0
     syncMotion()

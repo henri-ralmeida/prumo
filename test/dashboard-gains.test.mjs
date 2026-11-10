@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import { createTranslator, messages } from '../scripts/i18n.mjs'
-import { commandMetricsForRun, calculateGain, renderGainPanel, renderManualCoordination, taskManualEstimateMinutes } from '../scripts/dashboard-gains.mjs'
+import { commandMetricsForRun, calculateGain, renderGainPanel, renderManualCoordination, taskManualEstimateMinutes, renderSecurityAuditCards } from '../scripts/dashboard-gains.mjs'
 
 const esc = (value) => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;')
   .replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;')
@@ -16,6 +16,50 @@ const fmtMs = (value) => {
 }
 const localizer = (lang) => createTranslator(messages, lang)
 const spans = (...values) => values.map(([kind, from, to]) => [kind, from, to])
+
+test('cards de segurança distinguem auditoria ativa, histórico, risco aceito e revalidação sem executar conteúdo do relatório', () => {
+  for (const lang of ['en', 'pt-BR']) {
+    const tr = localizer(lang)
+    const finding = { id: '<achado>', title: '<img src=x onerror=alert(1)>', severity: 'high', cwe: 'CWE-79', taskRefs: ['T1'],
+      evidence: '<script>evidência</script>', reproduction: 'Reprodução local', remediation: 'Escapar a saída', fixTask: 'T1',
+      cvss: { score: 7.1, environmental: { computedScore: 8 } }, severityFloor: { class: 'xss' } }
+    const view = { state: 'running', attempts: [{ n: 1, agent: 'auditor-1', result: 'blocked', startedAt: '2026-01-01T09:00:00Z', endedAt: '2026-01-01T09:10:00Z' },
+      { n: 2, agent: 'auditor-2', startedAt: '2026-01-01T09:15:00Z', environment: 'http://localhost:3000' }],
+      findings: [{ ...finding, id: 'aceito', accepted: true }, { ...finding, id: 'ignorado', status: 'fix-skipped' }, { id: 'aberto', title: 'Achado sem correção', severity: 'inválida', cvss: { computedScore: 4, environmental: { score: 5 } } }],
+      previousBlocking: [finding, { ...finding, id: 'aceito-anterior', status: 'accepted' }],
+    }
+    let html = renderSecurityAuditCards(view, tr, esc)
+    assert.match(html, /security-attempt is-running/)
+    assert.match(html, /auditor-2/)
+    assert.match(html, lang === 'en' ? /Being revalidated/ : /Em revalidação/)
+    assert.match(html, lang === 'en' ? /Accepted/ : /Aceito/)
+    assert.match(html, lang === 'en' ? /Fix task T1 skipped/ : /T1.*ignorada|T1.*pulada/)
+    assert.match(html, /CVSS-B 7.1 · CVSS-BE 8/)
+    assert.match(html, /CVSS-B 4 · CVSS-BE 5/)
+    assert.match(html, /sev-info/)
+    assert.match(html, /jumpTo\(&quot;T1&quot;\)/)
+    assert.doesNotMatch(html, /<img|<script/)
+    assert.match(html, /&lt;script&gt;/)
+    html = renderSecurityAuditCards({ state: 'done', attempts: [{ result: 'done', startedAt: 'inválido' }, { result: 'desconhecido' }], findings: [] }, tr, esc)
+    assert.doesNotMatch(html, /is-running|Invalid Date/)
+    assert.match(html, lang === 'en' ? /No findings recorded/ : /Nenhum achado registrado/)
+    html = renderSecurityAuditCards(null, tr, esc)
+    assert.match(html, lang === 'en' ? /No security audit has started/ : /Nenhuma auditoria de segurança foi iniciada/)
+    for (const state of ['enabled', 'awaiting-decision', 'skipped', 'blocked', 'pending-recheck', 'done', 'running', 'legacy']) {
+      html = renderSecurityAuditCards({ state }, tr, esc)
+      assert.doesNotMatch(html, /No security audit has started|Nenhuma auditoria de segurança foi iniciada/)
+      assert.doesNotMatch(html, /security-attempt|security-finding/)
+    }
+    html = renderSecurityAuditCards({ state: 'optional' }, tr, esc)
+    assert.match(html, lang === 'en' ? /No security audit has started/ : /Nenhuma auditoria de segurança foi iniciada/)
+    html = renderSecurityAuditCards({ state: 'done', findings: [{ id: 'antigo', title: 'Registro preservado', evidence: '   ', reproduction: 0, remediation: '' }] }, tr, esc)
+    assert.match(html, /Registro preservado/)
+    assert.doesNotMatch(html, /security-attempt/)
+    assert.doesNotMatch(html, /<details>/)
+    html = renderSecurityAuditCards({ state: 'running', attempts: [{ n: 1 }], findings: [] }, tr, esc)
+    assert.match(html, lang === 'en' ? /when the auditor submits its report/ : /quando o auditor entrega o relatório/)
+  }
+})
 
 test('67 disparos elegiveis estimam 3h21 e comandos excluidos nao alteram barras nem economia', () => {
   const analysis = { per: [{ spans: spans(['exec', 0, 60000]) }, { spans: spans(['review', 0, 60000]) }] }
