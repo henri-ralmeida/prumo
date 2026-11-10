@@ -11,6 +11,48 @@ const html = readFileSync(new URL('../scripts/dashboard.html', import.meta.url),
 const canonicalScript = extractDashboardScript(html)
 const releaseCatalog = JSON.parse(readFileSync(new URL('../scripts/release-notes.json', import.meta.url), 'utf8'))
 
+test('refazer etapas mantém pareceres históricos sem mostrar aprovação atual nem concluir tentativa cancelada', () => {
+  for (const lang of ['en', 'pt-BR']) {
+    const ui = dashboard(lang)
+    const start = '2026-01-01T00:00:00Z', checked = '2026-01-01T00:01:00Z'
+    const value = task('T1', 'reviewing', { agent: 'executor', reviewer: 'reviewer',
+      attempts: [{ n: 1, agent: 'executor', reviewer: 'reviewer', startedAt: start, reviewStartedAt: start,
+        reviewRound: 2, reviewRoundHistory: [{ decision: { reason: '<nova conferência>' } }] }],
+      validations: [{ attempt: 1, by: 'review', agent: 'reviewer', ok: true, at: checked, evidence: 'Parecer anterior preservado' },
+        { attempt: 1, by: 'user', kind: 'review-reset', confirmedByUser: true, reviewRound: 2, ok: false,
+          token: 'redo-request', at: checked, reason: '<nova conferência>' }] })
+    const state = { run: 'redo', plan: {}, tasks: { T1: value }, derived: {} }
+    ui.render(state)
+    assert.equal(ui.run('subState(input)', { input: value }), 'working')
+    ui.run("POP_EXPANDED = true; fillPop('T1')")
+    let body = ui.nodes.get('#popBody').innerHTML
+    assert.match(body, lang === 'en' ? /Current review round: 2/ : /Rodada atual de revisão: 2/)
+    assert.match(body, /Parecer anterior preservado/)
+    assert.match(body, lang === 'en' ? /New review requested by user/ : /Nova revisão solicitada pelo usuário/)
+    assert.doesNotMatch(body, /vitem bad/)
+    const executionEvent = ui.run('eventSentence(input)', { input: { type: 'task_execution_redo_requested', task: 'T1' } })
+    const reviewEvent = ui.run('eventSentence(input)', { input: { type: 'task_review_redo_requested', task: 'T1', reviewRound: 2 } })
+    assert.match(executionEvent, lang === 'en' ? /User requested another execution/ : /usuário solicitou outra execução/)
+    assert.match(reviewEvent, lang === 'en' ? /review round 2/ : /rodada 2 de revisão/)
+    const unsafeEvent = ui.run('eventSentence(input)', { input: { type: 'task_review_redo_requested', task: 'T1', reviewRound: '<img src=x onerror=alert(1)>' } })
+    assert.doesNotMatch(unsafeEvent, /<img/)
+    value.validations.push({ attempt: 1, by: 'review', agent: 'reviewer', ok: false, token: 'old-round', at: checked })
+    ui.render(state); ui.run("fillPop('T1')")
+    assert.match(ui.nodes.get('#popBody').innerHTML, lang === 'en' ? /Interrupted by user request/ : /Interrompida por solicitação do usuário/)
+    value.state = 'pending'; value.attempts[0].result = 'cancelled'; value.attempts[0].endedAt = checked
+    value.attempts[0].redoRequest = { confirmedByUser: true, reason: '<repetir entrega>' }
+    ui.render(state); ui.run("fillPop('T1')")
+    body = ui.nodes.get('#popBody').innerHTML
+    assert.match(body, lang === 'en' ? /Cancelled by user/ : /Cancelada pelo usuário/)
+    assert.match(body, /&lt;repetir entrega&gt;/)
+    assert.doesNotMatch(body, /attempt-status[^>]*>[^<]*Approved|attempt-status[^>]*>[^<]*Aprovado/)
+    value.state = 'running'; value.attempts.push({ n: 2, agent: 'executor-2', startedAt: checked, redoOf: 1, redoReason: 'Pedido do usuário' })
+    ui.render(state); ui.run("POP_EXPANDED = false; fillPop('T1')")
+    assert.match(ui.nodes.get('#popBody').innerHTML, lang === 'en' ? /Execution repeated after attempt 1/ : /Execução refeita após a tentativa 1/)
+    assert.equal(ui.run('attemptReview(input, input.attempts[1])', { input: value }), undefined)
+  }
+})
+
 test('hacker ético permanece visível sem auditoria e distingue estados reais nos dois idiomas', () => {
   for (const lang of ['en', 'pt-BR']) {
     const ui = dashboard(lang)

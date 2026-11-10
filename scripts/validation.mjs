@@ -459,10 +459,15 @@ function currentRefreshedPhaseScope(state, task, plan, attempt) {
 
 function currentRetryPlan(state, task, plan, attempt) {
   const retry = task.retryPlan
-  const failed = task.attempts[attempt - 2]
+  const previous = task.attempts[attempt - 2]
+  const sourceAttempt = retry?.redoDecisionId ? retry.sourceAttempt : retry?.failedAttempt
+  const decision = previous?.redoRequest
   return retry?.attempt === attempt && plan.attempt < attempt && retry.planSourceAttempt === plan.attempt &&
-    retry.failedAttempt === attempt - 1 && failed?.n === retry.failedAttempt && failed.result === 'failed' &&
-    failed.reason === retry.reason && nonempty(retry.reason) &&
+    sourceAttempt === attempt - 1 && previous?.n === sourceAttempt &&
+    (retry.redoDecisionId ? previous.result === 'cancelled' && decision?.confirmedByUser === true &&
+      decision.decisionId === retry.redoDecisionId && decision.stage === 'execution' && decision.nextAttempt === attempt &&
+      decision.reason === retry.reason && decision.scope === planningContext(state, task, { scopeOnly: true, attempt: sourceAttempt })
+      : previous.result === 'failed' && previous.reason === retry.reason) && nonempty(retry.reason) &&
     (retry.context === planningContext(state, task, { attempt }) || currentRefreshedPhaseScope(state, task, plan, attempt)) &&
     retry.discoveryDigest === task.discovery?.digest && retry.planContext === plan.context && retry.planScope === plan.scope &&
     (plan.phaseId || plan.scope === planningContext(state, task, { scopeOnly: true, attempt: plan.attempt })) &&
@@ -645,11 +650,14 @@ export async function runValidation(task, cwd, previousReceipt = null, onCheck =
   }
   return { contract: contract.key, contractRevision: task.contractRevision ?? 0,
     scopeRevision: task.scopeRevision ?? 0,
+    ...(task.attempts?.at(-1)?.reviewRound ? { reviewRound: task.attempts.at(-1).reviewRound } : {}),
     stateRevision: task.stateRevision ?? 0, checks }
 }
 
 export function assertValidation(task, receipt) {
   insist(nonempty(receipt?.evidence), 'validation evidence must not be empty')
+  if (task.attempts?.at(-1)?.reviewRound)
+    insist(receipt.reviewRound === task.attempts.at(-1).reviewRound, 'review was restarted; validate the current review round again')
   const contract = validationContract(task)
   insist(receipt.contract === contract.key, 'validation lacks an execution receipt for this contract — validate again')
   insist((receipt.contractRevision ?? 0) === (task.contractRevision ?? 0),

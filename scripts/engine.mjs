@@ -981,6 +981,7 @@ function manualInspectionPending(state, task) {
   const receipt = task.validations?.at(-1)
   const currentScope = !task.planningRequired || receipt?.planningScope === currentPlanningScope(state, task, receipt?.attempt)
   return !(receipt?.ok && receipt.by === 'review' && receipt.agent === task.reviewer && task.reviewer !== task.agent &&
+    (receipt.reviewRound ?? 1) === (task.attempts?.at(-1)?.reviewRound ?? 1) &&
     receipt.attempt === task.attempts?.length && currentScope)
 }
 
@@ -2328,6 +2329,24 @@ function explicitSkipDecision(scope) {
     die(`${scope} needs --confirmed-by-user after the user explicitly chooses to skip`)
   const decisionId = randomUUID(), at = new Date().toISOString()
   return { decision: 'skipped', decisionId, digest: decisionId, reason, confirmedByUser: true, at }
+}
+
+function explicitRedoDecision(stage, task) {
+  if (typeof args.reason !== 'string' || !args.reason.trim()) die(tr('{0} needs a nonempty --reason', cmd))
+  if (args['confirmed-by-user'] !== true) die(tr('{0} needs --confirmed-by-user after the user explicitly requests another round', cmd))
+  return { decisionId: randomUUID(), stage, task: args._[0], attempt: task.attempts.length,
+    confirmedByUser: true, reason: args.reason.trim(), at: new Date().toISOString() }
+}
+
+function assertApprovedRetrySource(state, id) {
+  if (state.plan.source && existsSync(state.plan.source)) {
+    const { plan } = readPlan(state.plan.source, state)
+    if (!plan.tasks.some(candidate => candidate.id === id)) die(`approved plan no longer contains ${id} — inspect it before retry`)
+    const drift = contractDrift(state, { plan })
+    const changed = drift.tasks.find(item => item.task === id)?.fields ?? []
+    if (changed.length) die(`${id} contract differs from the approved plan (${changed.join(', ')}) — run sync-plan and inspect the persisted contract before retry`)
+    if (drift.planFields.length) die(`${id} global plan decisions differ from the approved plan (${drift.planFields.join(', ')}) — run sync-plan and inspect the persisted plan before retry`)
+  }
 }
 
 function currentPhasePlanning(state, phase, round = phase?.planningAttempts?.at(-1)) {
@@ -4096,7 +4115,7 @@ const commands = {
     const unscoped = assertTaskExecutionAuthorized(state, t)
     const dispatchConfirmation = manualDispatchConfirmation(t, 'manual authorization for {0} requires --confirmed-by-user before dispatch')
     assertNoOverdueQuestions(state, t)
-    if (!hasCurrentTaskPlan(state, t)) die(state.plan.planningMode === 'phase' && t.phase
+    if (!hasCurrentTaskPlan(state, t) || t.retryPlan?.redoDecisionId && !hasCurrentTaskScope(state, t, t.attempts.length + 1)) die(state.plan.planningMode === 'phase' && t.phase
       ? `${id} needs completed current planning for phase ${t.phase} — run begin-phase-discussion ${t.phase}, finish-phase-discussion, plan-phase and finish-phase-planning before start`
       : id + ' needs completed current planning — run plan-task and finish-planning before start')
     try { validationContract(t) } catch (error) {
@@ -4114,6 +4133,9 @@ const commands = {
     if (t.project && captureScopeBaseline(t.project).method !== 'git') die(tr('task {0} project must be an accessible Git repository root: {1}', id, t.project))
     try { deliveryBaseline = captureDelivery(t, t.project ?? state.plan.cwd) } catch (error) { die(error.message) }
     const concurrentScopes = recordConcurrentScopes(state, t)
+    const previous = t.attempts.at(-1)
+    const redo = previous?.result === 'cancelled' && previous.redoRequest?.confirmedByUser === true &&
+      previous.redoRequest.nextAttempt === t.attempts.length + 1 ? previous.redoRequest : null
     t.state = 'running'
     t.agent = agent
     t.attempts.push({ n: t.attempts.length + 1, agent, startedAt: new Date().toISOString(), deliveryBaseline,
@@ -4122,8 +4144,9 @@ const commands = {
       activityTiming: 'explicit', activityIntervals: [],
       ...(t.retryPlan?.attempt === t.attempts.length + 1 ? {
         planSourceAttempt: t.retryPlan.planSourceAttempt,
-        correctionOf: t.retryPlan.failedAttempt, correctionReason: t.retryPlan.reason,
+        ...(!t.retryPlan.redoDecisionId ? { correctionOf: t.retryPlan.failedAttempt, correctionReason: t.retryPlan.reason } : {}),
       } : {}), ...(planDigest ? { planDigest } : {}),
+      ...(redo ? { redoOf: previous.n, redoReason: redo.reason, redoDecisionId: redo.decisionId } : {}),
       ...(inputReceipt ? { inputReceipt: inputReceipt.inputs, inputDigest: inputReceipt.digest } : {}) })
     recordManualConfirmation(t.attempts.at(-1), 'dispatch', dispatchConfirmation)
     const total = t.taskPlan?.steps?.length
@@ -4369,6 +4392,7 @@ const commands = {
       t.validations.push({ ok: false, by, agent: by === 'review' ? t.reviewer : t.agent,
         evidence: args.evidence, ...(args.summary === undefined ? {} : { summary: args.summary }),
         at: new Date().toISOString(), attempt: t.attempts.length, token,
+        ...(t.attempts.at(-1)?.reviewRound ? { reviewRound: t.attempts.at(-1).reviewRound } : {}),
         ...(t.planningRequired ? { planningScope: currentPlanningScope(state, t) } : {}) })
       saveState(name, state)
       emit(name, 'task_validation_started', id, { token, attempt: t.attempts.length })
@@ -4544,18 +4568,7 @@ const commands = {
     if (t.state !== 'failed') die(`${id} is ${t.state}, not failed`)
     assertReauthorizedAfterContractChange(t)
     const retryConfirmation = manualDispatchConfirmation(t, 'manual authorization for {0} requires --confirmed-by-user before retry')
-    if (state.plan.source && existsSync(state.plan.source)) {
-      const { plan } = readPlan(state.plan.source, state)
-      if (!plan.tasks.some(candidate => candidate.id === id))
-        die(`approved plan no longer contains ${id} — inspect it before retry`)
-      const drift = contractDrift(state, { plan })
-      const taskChanges = drift.tasks.find(item => item.task === id)
-      const changed = taskChanges?.fields ?? []
-      if (changed.length) die(`${id} contract differs from the approved plan (${changed.join(', ')}) — run sync-plan and inspect the persisted contract before retry`)
-      const globalChanges = drift.planFields
-      if (globalChanges.length)
-        die(`${id} global plan decisions differ from the approved plan (${globalChanges.join(', ')}) — run sync-plan and inspect the persisted plan before retry`)
-    }
+    assertApprovedRetrySource(state, id)
     const cap = t.maxAttempts ?? MAX_ATTEMPTS_SOFT
     if (t.attempts.length >= cap && !args.force)
       die(`${id} already has ${t.attempts.length} attempts (cap ${cap}) — escalate instead, or --force`)
@@ -4610,6 +4623,73 @@ const commands = {
     saveState(name, state)
     emit(name, 'task_plan_discarded', id, { reason: decision.reason, decisionId: decision.decisionId, confirmedByUser: true })
     log('[prumo] ' + tr('Plan discarded for {0}; recorded history was preserved and new planning is required', id))
+  },
+
+  'redo-execution'() {
+    const name = runName(), id = args._[0], state = loadState(name), task = getTask(state, id)
+    if (!['running', 'reviewing'].includes(task.state)) die(tr('{0} needs active execution or review before redoing execution', id))
+    const decision = explicitRedoDecision('execution', task)
+    assertApprovedRetrySource(state, id)
+    const cap = task.maxAttempts ?? MAX_ATTEMPTS_SOFT
+    if (task.attempts.length >= cap && !args.force) die(`${id} already has ${task.attempts.length} attempts (cap ${cap}) — escalate instead, or --force`)
+    const attempt = task.attempts.at(-1)
+    if (!attempt || attempt.endedAt || attempt.result || attempt.agent !== task.agent)
+      die(tr('{0} has no matching open execution attempt', id))
+    const skipped = currentPlanningSkip(state, task)
+    const reuse = Boolean(skipped || task.planningRequired && Number.isSafeInteger(task.taskPlan?.attempt) && hasCurrentTaskScope(state, task))
+    Object.assign(decision, { nextAttempt: task.attempts.length + 1,
+      scope: planningContext(state, task, { scopeOnly: true, attempt: task.attempts.length }) })
+    if (reuse) task.retryPlan = {
+      ...(skipped ? { skippedPlanning: true } : { planSourceAttempt: task.taskPlan.attempt,
+        discoveryDigest: task.discovery?.digest, planContext: task.taskPlan.context, planScope: task.taskPlan.scope }),
+      sourceAttempt: task.attempts.length, attempt: decision.nextAttempt, redoDecisionId: decision.decisionId, reason: decision.reason,
+      context: planningContext(state, task, { attempt: decision.nextAttempt }),
+      scope: planningContext(state, task, { scopeOnly: true, attempt: decision.nextAttempt }),
+    }
+    else delete task.retryPlan
+    stopOpenActivity(attempt, decision.at)
+    Object.assign(attempt, { endedAt: decision.at, result: 'cancelled', redoRequest: decision })
+    task.state = 'pending'
+    task.agent = null; task.reviewer = null
+    task.stateRevision = (task.stateRevision ?? 0) + 1
+    saveState(name, state)
+    emit(name, 'task_execution_redo_requested', id, { ...decision, reusedPlan: reuse && !skipped, reusedPlanningSkip: Boolean(skipped) })
+    log('[prumo] ' + tr('{0} execution redo recorded; the previous attempt remains in history and the next attempt requires start', id))
+  },
+
+  'redo-review'() {
+    const name = runName(), id = args._[0], state = loadState(name), task = getTask(state, id)
+    if (task.state !== 'reviewing') die(tr('{0} needs an active review before redoing review', id))
+    const decision = explicitRedoDecision('review', task)
+    const reviewer = args.agent ?? task.reviewer
+    if (!reviewer || reviewer === task.agent) die('passing validation requires the current independent reviewer')
+    assertReauthorizedAfterContractChange(task)
+    const confirmation = manualDispatchConfirmation(task, 'manual authorization for {0} requires --confirmed-by-user before dispatch')
+    assertCurrentTaskScope(state, task); assertCurrentExecutionInputs(state, task)
+    assertAvailable(state, task, 'reviewing', reviewer)
+    const attempt = task.attempts.at(-1)
+    if (!attempt || attempt.endedAt || attempt.result || attempt.agent !== task.agent)
+      die(tr('{0} has no matching open execution attempt', id))
+    const delivery = checkDelivery(state, task, state.plan.cwd), baseline = attempt.reviewDelivery
+    if (baseline && (baseline.contentFingerprint ? baseline.contentFingerprint !== delivery.contentFingerprint : baseline.fingerprint !== delivery.fingerprint))
+      die(tr('{0} delivery changed after the review started; redo execution before requesting another review', id))
+    const previousRound = attempt.reviewRound ?? 1
+    attempt.reviewRoundHistory ??= []
+    attempt.reviewRoundHistory.push({ n: previousRound, reviewer: task.reviewer,
+      startedAt: attempt.reviewRoundStartedAt ?? attempt.reviewStartedAt ?? null, endedAt: decision.at,
+      result: 'superseded', decision, ...(attempt.reviewProgress ? { progress: structuredClone(attempt.reviewProgress) } : {}) })
+    stopOpenActivity(attempt, decision.at)
+    attempt.reviewRound = previousRound + 1; attempt.reviewRoundStartedAt = decision.at
+    task.reviewer = reviewer; attempt.reviewer = reviewer
+    reviewProgressRecord(state, task, reviewer, reviewDenominator(task), delivery)
+    recordManualConfirmation(attempt, 'review', confirmation)
+    task.stateRevision = (task.stateRevision ?? 0) + 1
+    task.validations.push({ kind: 'review-reset', ok: false, by: 'user', confirmedByUser: true,
+      reason: decision.reason, at: decision.at, attempt: task.attempts.length, reviewRound: attempt.reviewRound,
+      token: decision.decisionId, requestedReviewer: reviewer })
+    saveState(name, state)
+    emit(name, 'task_review_redo_requested', id, { ...decision, reviewer, reviewRound: attempt.reviewRound })
+    log('[prumo] ' + tr('{0} review round {1} opened; previous verdicts remain in history and a new validation is required', id, attempt.reviewRound))
   },
 
   defer() { return commands.block() },
@@ -5047,10 +5127,10 @@ if (!['init', 'runs', 'migrate', 'sync-plan', 'renumber-tasks', 'reorder-phases'
   })
 }
 } catch (error) { atomicWriteFailure(error) }
-const BLOCKED_ACTIONS = new Set(['begin-discussion', 'finish-discussion', 'skip-discussion', 'plan-task', 'finish-planning', 'skip-planning', 'start', 'progress', 'review', 'review-progress', 'validate', 'done', 'fail', 'retry', 'skip', 'activity-start', 'pause-replanning'])
+const BLOCKED_ACTIONS = new Set(['begin-discussion', 'finish-discussion', 'skip-discussion', 'plan-task', 'finish-planning', 'skip-planning', 'start', 'progress', 'review', 'review-progress', 'validate', 'done', 'fail', 'retry', 'redo-execution', 'redo-review', 'skip', 'activity-start', 'pause-replanning'])
 function runCommand() {
   if (['renumber-tasks', 'reorder-phases'].includes(cmd)) return commands[cmd]()
-  if (['start', 'review', 'validate', 'done'].includes(cmd)) {
+  if (['start', 'review', 'redo-review', 'validate', 'done'].includes(cmd)) {
     const state = loadState(runName()), task = state.tasks[args._[0]]
     const phase = state.phaseWorkflows?.[task?.phase]
     if (task?.contractConfirmationRequired?.proposed ||
@@ -5059,7 +5139,7 @@ function runCommand() {
   }
   if (BLOCKED_ACTIONS.has(cmd) && args.scope !== 'phase') assertExternalBlockAction(loadState(runName()), args._[0])
   const paused = !['init', 'runs'].includes(cmd) ? loadState(runName()).runPause : null
-  if (paused && !paused.endedAt && /^(?:begin-|plan-|finish-|skip-|discard-plan$|defer$|start$|review$|retry$|unblock$|activity-start$|audit-start$|validate$|done$|progress$|review-progress$)/.test(cmd)) die('Run is paused; resume-run explicitly. External harness processes are not interrupted.')
+  if (paused && !paused.endedAt && /^(?:begin-|plan-|finish-|skip-|redo-|discard-plan$|defer$|start$|review$|retry$|unblock$|activity-start$|audit-start$|validate$|done$|progress$|review-progress$)/.test(cmd)) die('Run is paused; resume-run explicitly. External harness processes are not interrupted.')
   return commands[cmd]()
 }
 try {

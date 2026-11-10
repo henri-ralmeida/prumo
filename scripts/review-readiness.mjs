@@ -6,6 +6,7 @@ export function isReviewRejected(task) {
   const start = Date.parse(attempt.startedAt ?? '')
   const number = attempt.n ?? task.attempts.length
   const receipt = (task.validations ?? []).filter(validation => validation.by === 'review' &&
+    (validation.reviewRound ?? 1) === (attempt.reviewRound ?? 1) &&
     (validation.attempt == null || Number(validation.attempt) === Number(number)) &&
     Date.parse(validation.at ?? '') >= start).at(-1)
   // Durante a validação, ok=false apenas invalida o parecer anterior; error só existe no resultado concluído.

@@ -12,6 +12,7 @@ rules the reviewer applies are in [contracts.md](contracts.md).
 - [How deep the review goes](#how-deep-the-review-goes)
 - [Inspecting checks and recording the verdict](#inspecting-checks-and-recording-the-verdict)
 - [Failures that are not rejections](#failures-that-are-not-rejections)
+- [User-requested stage redo](#user-requested-stage-redo)
 - [After the verdict](#after-the-verdict)
 - [Real rejection, including an approved contract change](#real-rejection-including-an-approved-contract-change)
 
@@ -162,6 +163,18 @@ The engine checks scope during `validate` and again at `done`, but Git-ignored f
 O contexto Git registra o HEAD do início e o atual para explicar trocas de checkout; a diferença entre commits não prova autoria nem constitui, sozinha, violação de escopo. Uma tarefa `read-only` pode validar na mesma tentativa após uma entrega concorrente quando os caminhos alterados pertencem aos escopos concorrentes registrados e o revisor independente fornece a atribuição por `--scope-evidence`. Sem essa correspondência, a recusa permanece: não refaça a baseline nem atribua automaticamente mudanças a outro executor para liberar a tarefa. Tentativas antigas sem HEAD registrado continuam verificando os arquivos e exibem esse contexto como indisponível.
 
 The attempt records the disjoint file scopes of contemporaneous executors; a new executor also updates earlier active attempts with its scope. Git observes changed paths globally, not authorship. Changes outside this task may be excluded only when they fit those recorded other scopes and the current independent reviewer supplies explicit attribution through `--scope-evidence`. The scope receipt records `excludedPaths` and the authorship limitation. Observed changes outside every authorized recorded scope always block, even with reviewer evidence. `done` requires the same delivery fingerprint and reviewer identity as the passing receipt; changes after validation require fresh verification. Ignored files are not audited automatically: the scope receipt always exposes that limitation and the independent reviewer must inspect them separately, without a mandatory `--scope-evidence` flag just for ignored paths. Unavailable Git/baseline, submodules and non-Git workspaces require explicit `--scope-evidence`, as does attribution to another executor; external-resource effects need their own observations. The fingerprint conservatively covers all Git-visible changes: any change after validation, including another executor's change, requires new validation so attribution evidence cannot become stale.
+
+## User-requested stage redo
+
+An explicit user request to repeat work is a separate decision from a rejection. Record its reason and
+`--confirmed-by-user` with `redo-execution` for another execution attempt, or `redo-review` for another
+independent review round of the same delivery. Keep the previous attempts and verdicts as history.
+Never invoke these commands automatically to escape an obstacle, a blocked decision, an attempt limit
+or a pending contract acceptance. Completed tasks require a linked follow-up task.
+
+Stop the selected native worker through its harness before recording the change; the commands do not
+stop processes, undo files or dispatch agents. New review rounds require new validation and cannot use
+the previous verdict. See [runtime.md](runtime.md#user-requested-stage-redo) for the state transitions and guards.
 
 ## After the verdict
 

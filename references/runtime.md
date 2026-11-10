@@ -516,6 +516,27 @@ Confirm the actual agent handle; if dispatch is unavailable or the user paused, 
 orchestration reason. Do not invent another failed implementation or claim an agent is running
 from its engine label alone. Record corrections in notes, preserving historical attempts.
 
+### User-requested stage redo
+
+`redo-execution <task> --reason <text> --confirmed-by-user` accepts running or reviewing tasks.
+It closes the current attempt as cancelled by user choice and returns the task to pending. A subsequent
+`start` opens another attempt. A current approved plan or waiver can be reused with its recorded origin;
+contract drift and attempt limits still apply. Previous receipts cannot approve the next attempt.
+Cancelling an attempt does not accept a proposed contract: its pending decision remains and prevents
+another execution until the existing contract-acceptance and planning requirements are satisfied.
+
+`redo-review <task> [--agent <independent-reviewer>] --reason <text> --confirmed-by-user` accepts an active
+review. It keeps the execution attempt and delivered files, archives the previous review round and opens
+another round with progress reset. The previous verdict remains history; new validation is mandatory and
+checks cached in the prior round are not reused. A changed delivery must return to execution instead.
+The user-requested reset is recorded separately from verdicts and invalidates the prior approval without
+changing its original receipt, including for readers that do not understand review-round metadata.
+
+Both actions require an explicit user request, preserve other tasks, and refuse blocked, paused or terminal
+work. Completed work uses a linked follow-up task. They do not undo files or commits, stop harness processes,
+or dispatch agents. The coordinator stops the selected native worker through its harness before recording
+the redo, then dispatches the requested stage within the existing authorization and capacity controls.
+
 ### Pause and resume
 
 In phase mode, individual `skip-discussion` and `skip-planning` decisions apply only to the selected
@@ -989,6 +1010,8 @@ Resolve `scripts/engine.mjs` from the installed skill. Add `--run <name>` to sel
 | `done <task>` | Completes with valid evidence from the current attempt and reviewer |
 | `fail <task> --reason <text> [--plan-defect]` | Records a real attempt failure; `--plan-defect` marks the plan itself as wrong |
 | `retry <task>` | Returns failed to pending; reuses the current plan only for a bounded correction with unchanged context and a valid review reason |
+| `redo-execution <task> --reason <text> --confirmed-by-user` | Cancels an active attempt by user choice; preserves its history and requires an explicit start for the next attempt |
+| `redo-review <task> [--agent <name>] --reason <text> --confirmed-by-user` | Opens another independent review round without repeating execution or reusing the previous verdict |
 | `block <task> --reason <text> [--question <text>] [--option <text>...]` | Pauses, preserving the previous phase and, when given, the decision needed to resume |
 | `pause-replanning <task> --reason <text>` | Internally pauses an active planning-required attempt so task planning can refresh before the same attempt resumes |
 | `unblock <task> [--answer <text>]` | Restores the previous phase; records question and answer in history when there is a decision |

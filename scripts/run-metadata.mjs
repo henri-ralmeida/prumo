@@ -120,6 +120,8 @@ export function taskBrief(state, task, role, command) {
     context: { name: state.plan.name, description: state.plan.description },
     contract: Object.fromEntries(['title', 'project', 'deps', 'touches', 'writeScope', 'sharedResources', 'unavailable', 'validation', 'validationMode', 'inspectionReason', 'textRules', 'deliveries', 'numericProvenance'].filter(key => task[key] !== undefined).map(key => [key, task[key]])),
     taskPlan: task.taskPlan ?? null, planIdentity: recordedPlanIdentity(task), planningSkips: task.planningSkips ?? [], discussionSkips: task.discussionSkips ?? [],
+    ...(attempt?.redoOf ? { executionRedo: { sourceAttempt: attempt.redoOf, reason: attempt.redoReason, decisionId: attempt.redoDecisionId } } : {}),
+    ...(attempt?.reviewRound ? { reviewRedo: { round: attempt.reviewRound, reason: attempt.reviewRoundHistory?.at(-1)?.decision?.reason } } : {}),
     discovery: task.discovery ?? null,
     phaseContext: phase ? { phase: task.phase, discovery: phase.discovery ?? null, discussionSkips: phase.discussionSkips ?? [], planningSkips: phase.planningSkips ?? [] } : null,
     dependencyDeliveries: (task.deps ?? []).map(id => ({ task: id, state: state.tasks[id]?.state, deliveries: state.tasks[id]?.deliveries ?? [], terminalReceipt: state.tasks[id]?.state === 'done' ? state.tasks[id].validations?.at(-1) ?? null : null, skipReason: state.tasks[id]?.skipReason ?? null })),

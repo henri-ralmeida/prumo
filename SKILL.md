@@ -350,6 +350,7 @@ at its first `activity-start`; `activityLegacy: true` indicates that earlier wor
 | `ready` | Record the pre-start baseline; dispatch a real executor in the same message | `start --agent` | dispatch.md |
 | `running` | Keep the executor on recoverable obstacles; record step progress | `progress --step --agent`; then `review --agent` | dispatch.md |
 | `reviewing` | Dispatch a fresh reviewer with contract + diff only; the reviewer validates | `show-check`, `review-progress`, `validate --ok\|--failed` | review.md |
+| explicit user request to repeat active execution or review | Record the reason and confirmation; preserve history and dispatch the requested stage explicitly | `redo-execution --reason --confirmed-by-user`, `redo-review [--agent] --reason --confirmed-by-user` | review.md |
 | `reviewing` with an approved validation | Close the task | `done` | review.md |
 | `failed` | Unchanged contract: reuse the plan. Changed contract: sync first | `fail --reason`, `retry`, `sync-plan` | review.md |
 | `blocked` | Present the recorded question; resume with the answer | `block --question --option`, `unblock [--answer\|--reviewer]` | recovery.md |
