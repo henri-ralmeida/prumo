@@ -28,6 +28,19 @@ test('pulo individual não altera rodada ativa nem dispensa confirmação de con
   assert.deepEqual(f.state(), before); assert.equal(f.events(), events)
 })
 
+test('adiamento exige motivo antes de alterar a tarefa ou o histórico', t => {
+  const f = fixture(t, { phase: true, tasks: [{ id: 'T1' }, { id: 'T2' }] })
+  const before = f.state(), events = f.events()
+  for (const [args, expected] of [[[], /defer needs --reason/], [['--reason'], /Option --reason requires a value/], [['--reason', '   '], /defer needs --reason/]]) {
+    f.rejects(expected, 'defer', 'T1', ...args)
+    assert.deepEqual(f.state(), before)
+    assert.equal(f.events(), events)
+  }
+  f.ok('defer', 'T1', '--reason', 'Dependência externa ainda indisponível')
+  assert.equal(f.state().tasks.T1.state, 'blocked')
+  assert.deepEqual(f.state().tasks.T2, before.tasks.T2)
+})
+
 test('adiar uma tarefa libera os outros planos e retoma somente a tarefa adiada', t => {
   const f = fixture(t, { phase: true, tasks: [{ id: 'T1' }, { id: 'T2' }, { id: 'T3' }] })
   f.ok('begin-phase-discussion', 'F1'); f.ok('finish-phase-discussion', 'F1', '--context', f.discovery('F1'))

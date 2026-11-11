@@ -158,6 +158,25 @@ for (const occupant of ['prumo', 'other']) {
   })
 }
 
+test('status identifica resposta lenta do Prumo sem declarar parada ou encerrar o processo', async t => {
+  let clock = 0
+  t.mock.method(performance, 'now', () => clock)
+  const f = fixture(t, 'win32', {
+    fetch: async () => {
+      clock += 2400
+      return { ok: true, json: async () => ({ product: 'prumo', mode: 'global', readOnly: true, version: '1.3.0' }) }
+    },
+    spawn: () => assert.fail('uma resposta lenta não autoriza criar outro processo'),
+    kill: () => assert.fail('uma resposta lenta não autoriza encerrar o processo'),
+  })
+  const result = await dashboardStatus(f.options)
+  assert.equal(result.process, 'running')
+  assert.equal(result.conflict, false)
+  assert.equal(result.slow, true)
+  assert.equal(result.responseMs, 2400)
+  assert.ok(f.calls.every(([, args]) => args[0] === '/Query'), 'o status pode consultar o registro, sem alterá-lo')
+})
+
 test('consulta lenta em porta ocupada respeita o prazo total sem encerrar o ocupante', async t => {
   let clock = 0, probes = 0
   t.mock.method(Date, 'now', () => { clock += 1000; return clock })
