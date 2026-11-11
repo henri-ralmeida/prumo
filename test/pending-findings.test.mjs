@@ -188,6 +188,45 @@ test('sincronizacao exige remocao explicita de tarefa nunca executada e preserva
   f.rejects(/removed.*identifier|identificador.*removid/, 'sync-plan', '--plan', f.source)
 })
 
+for (const legacy of [false, true]) test(`remoção de tarefa ignorada sem execução preserva notas e fase; legado=${legacy}`, t => {
+  const f = fixture(t, { phase: true, tasks: [{ id: 'T1', phase: 'F1' }, { id: 'T2', phase: 'F2' }] })
+  f.ok('note', 'T2', '--text', 'Escopo substituído antes de executar')
+  f.ok('skip', 'T2', '--reason', 'Retirada aprovada pelo usuário')
+  if (legacy) {
+    const state = f.state(); delete state.phaseWorkflows
+    state.plan.planningMode = f.plan.planningMode = 'task'
+    f.importState(state)
+  }
+  const before = f.state(), events = f.events()
+  f.plan.tasks.pop(); f.plan.phases.pop(); f.writePlan()
+  const args = ['sync-plan', '--plan', f.source, '--remove', 'T2', '--reason', 'Consolidar escopo cancelado']
+  f.ok(...args, '--dry-run')
+  assert.deepEqual(f.state(), before); assert.equal(f.events(), events)
+  f.ok(...args)
+  const state = f.state()
+  assert.equal(state.tasks.T2, undefined)
+  assert.deepEqual(state.removedTasks.T2.task, before.tasks.T2)
+  assert.deepEqual(state.removedTasks.T2.phase, before.plan.phases.find(phase => phase.id === 'F2'))
+  assert.deepEqual(state.removedTasks.T2.phaseWorkflow, before.phaseWorkflows?.F2)
+  assert.equal(state.phaseWorkflows?.F2, undefined)
+  assert.deepEqual(state.plan.phases.map(phase => phase.id), ['F1'])
+  assert.ok(f.events().startsWith(events))
+  assert.match(f.events(), /task_removed/)
+  f.ok('status'); f.ok('ready')
+})
+
+test('remoção continua recusando tarefa ignorada que já executou e tarefa pendente com notas', t => {
+  const f = fixture(t, { tasks: [{ id: 'T1' }, { id: 'T2' }] })
+  f.ok('note', 'T2', '--text', 'Preservar a decisão registrada')
+  f.plan.tasks.pop(); f.writePlan()
+  const args = ['sync-plan', '--plan', f.source, '--remove', 'T2', '--reason', 'Retirada solicitada']
+  f.rejects(/Cannot remove|Não é possível remover/, ...args)
+  f.skipTaskPlan('T2'); f.ok('start', 'T2', '--agent', 'executor'); f.ok('skip', 'T2', '--reason', 'Cancelar trabalho iniciado')
+  const before = f.state(), events = f.events()
+  f.rejects(/Cannot remove|Não é possível remover/, ...args)
+  assert.deepEqual(f.state(), before); assert.equal(f.events(), events)
+})
+
 test('progresso de revisao orienta registrar observacoes na validacao sem inventar comprovacao', t => {
   const f = fixture(t, { phase: true, tasks: [{ id: 'T1', validationMode: 'inspection', inspectionReason: 'A entrega altera somente documentacao.', validation: 'Conferir a clareza da explicacao' }] })
   f.planPhase('F1', value => { value.verification = [{ criterion: 'A explicacao corresponde ao comportamento entregue', check: 'inspection' }] })

@@ -434,10 +434,12 @@ approved definition; it is not proof that active work meets it.
 
 To remove approved planning mistakes before execution, omit the tasks from the source and use
 `sync-plan --plan <approved-plan.json> --remove T14,T15 --reason "approved consolidation"`.
-Only pending tasks without execution attempts, notes, validation receipts, dependents or open
-discussion/planning work qualify. References from current plans and question deadlines also prevent
+Pending tasks without notes and skipped tasks qualify only without execution attempts, validation
+receipts, dependents or open discussion/planning work. References from current plans and question deadlines also prevent
 removal, as do unanswered questions from the removed task that govern other work. The full record
-remains in `removedTasks` and each removal appends an event with its reason;
+remains in `removedTasks` and each removal appends an event with its reason. Skipped tasks retain their
+notes and cancellation reason; an explicitly omitted empty phase retains its definition and workflow
+under the removed tasks before leaving the active graph;
 removed IDs remain reserved. `--dry-run` checks eligibility without changes. Ordinary synchronization
 still refuses implicit removal, and `--propose` cannot remove tasks. This command does not modify
 external work items or reopen completed/skipped work.

@@ -266,13 +266,20 @@ function saveState(name, state) {
   const previous = existsSync(join(runDir(name), 'state.json')) ? loadState(name) : { tasks: {} }
   const aliases = state.taskIdAliases ?? {}
   const redispatchTask = cmd === 'unblock' ? Object.hasOwn(aliases, args._[0]) ? aliases[args._[0]] : args._[0] : undefined
-  for (const record of ['renumber-tasks', 'reorder-phases'].includes(cmd) ? [] : recordDispatchMetadata(previous, state, args, redispatchTask)) log('[prumo] model dispatch (reported, not verified): ' + JSON.stringify(record))
+  const dispatches = ['renumber-tasks', 'reorder-phases'].includes(cmd) ? [] : recordDispatchMetadata(previous, state, args, redispatchTask)
   closeInactiveActivity(state, state.updatedAt)
   const dir = runDir(name)
-  compactDiscoveries(state, dir)
-  writeAtomicState(join(dir, 'state.json'), JSON.stringify(state, null, 2), { validateJson: true })
+  try {
+    compactDiscoveries(state, dir)
+    writeAtomicState(join(dir, 'state.json'), JSON.stringify(state, null, 2), { validateJson: true })
+  } catch (error) {
+    if (cmd === 'start') die(tr('Execution of task {0} was not recorded: {1}. Check the run state before dispatching an executor.', args._[0], error.message))
+    throw error
+  }
   // Diagnósticos após a gravação precisam do mesmo histórico disponível na próxima leitura.
   hydrateDiscoveries(state, dir)
+  if (cmd !== 'start') for (const record of dispatches) log('[prumo] model dispatch (reported, not verified): ' + JSON.stringify(record))
+  return dispatches
 }
 
 function stopOpenActivity(owner, at) {
@@ -1189,8 +1196,8 @@ function approvedTaskRemovals(state, plan) {
   if (args.propose) die(tr('sync-plan --remove cannot be combined with --propose; approve the removal before changing the active plan'))
   for (const id of requested) {
     const task = state.tasks[id]
-    if (task.state !== 'pending' || task.attempts.length || task.notes?.length || task.validations?.length)
-      die(tr('Cannot remove {0}: only pending tasks without execution attempts, notes or validation receipts can be removed; preserve executed history', id))
+    if (!['pending', 'skipped'].includes(task.state) || task.attempts.length || task.validations?.length || task.state === 'pending' && task.notes?.length)
+      die(tr('Cannot remove {0}: only pending tasks without notes or skipped tasks, without execution attempts or validation receipts, can be removed; preserve executed history', id))
     const dependent = Object.values(state.tasks).find(other => other.deps.includes(id) ||
       other.taskPlan?.unresolvedInputs?.some(input => input.task === id) ||
       other.taskPlan?.openQuestions?.some(question => question?.decideBy?.beforeTask === id))
@@ -2864,6 +2871,13 @@ const commands = {
       for (const id of removed) state.removedTasks[id] = {
         task: beforeState.tasks[id], reason: args.reason.trim(), removedAt: new Date().toISOString(), source,
       }
+      for (const id of removed) {
+        const phase = beforeState.plan.phases?.find(phase => phase.id === beforeState.tasks[id].phase)
+        if (phase && !nextPlan.phases?.some(current => current.id === phase.id)) {
+          Object.assign(state.removedTasks[id], { phase, phaseWorkflow: beforeState.phaseWorkflows?.[phase.id] })
+          delete state.phaseWorkflows?.[phase.id]
+        }
+      }
     }
     state.plan = nextPlan
     if (state.plan.planningMode === 'phase') {
@@ -4155,11 +4169,13 @@ const commands = {
     recordManualConfirmation(t.attempts.at(-1), 'dispatch', dispatchConfirmation)
     const total = t.taskPlan?.steps?.length
     if (total) Object.assign(t.attempts.at(-1), { executionStep: 1, executionSteps: [1] })
-    saveState(name, state)
+    const dispatches = saveState(name, state)
     emit(name, 'task_start', id, { agent, attempt: t.attempts.length,
       ...(planDigest ? { planDigest: planDigest.slice(0, 4) } : {}),
       ...(dispatchConfirmation ? { manualDispatchConfirmation: dispatchConfirmation } : {}),
       ...(total ? { current: 1, total } : {}) })
+    // A saída pode ser truncada pelo consumidor; só anuncie após persistir o início e seu histórico.
+    for (const record of dispatches) log('[prumo] model dispatch (reported, not verified): ' + JSON.stringify(record))
     log(`[prumo] ${id} running (agent ${agent}, attempt ${t.attempts.length})`)
     if (concurrentScopes.length) log('[prumo] ' + tr('If concurrent deliveries changed files outside this task, the independent reviewer needs: validate {0} --ok --evidence <evidence> --scope-evidence <paths and attribution>', id))
     if (t.taskPlan) log('[prumo] current recorded plan: ' + JSON.stringify(recordedPlanIdentity(t)))

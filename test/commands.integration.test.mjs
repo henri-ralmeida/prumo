@@ -166,6 +166,50 @@ fs.writeFileSync = (file, ...args) => {
   assert.equal(f.state().tasks.T1.notes.at(-1).text, 'Resultado registrado')
 })
 
+for (const lang of ['en', 'pt-BR']) test(`start não anuncia despacho quando a gravação falha em ${lang}`, t => {
+  const f = fixture(t); f.init(); f.prepare()
+  const preload = join(f.root, 'start-write-failure.mjs')
+  writeFileSync(preload, `import fs from 'node:fs';
+const rename = fs.renameSync;
+fs.renameSync = (from, to, ...args) => {
+  if (String(to) === ${JSON.stringify(f.statePath)}) throw Object.assign(new Error('persistencia indisponivel'), { code: 'EBUSY' });
+  return rename(from, to, ...args);
+};`)
+  const before = f.snapshot()
+  const failed = spawnSync(process.execPath, [engine, 'start', 'T1', '--agent', 'executor', '--lang', lang], {
+    env: { ...f.env, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(preload).href}`.trim() },
+    cwd: f.root, encoding: 'utf8', timeout: 20000, windowsHide: true,
+  })
+  assert.equal(failed.status, 1)
+  assert.doesNotMatch(failed.stdout, /model dispatch/)
+  assert.match(failed.stderr, lang === 'en' ? /Execution of task T1 was not recorded/ : /execução da tarefa T1 não foi registrada/)
+  assert.match(failed.stderr, /persistencia indisponivel/)
+  assert.deepEqual(f.snapshot(), before)
+  const retried = f.ok('start', 'T1', '--agent', 'executor', '--lang', lang)
+  assert.match(retried.stdout, /model dispatch/)
+  assert.equal(f.state().tasks.T1.attempts.length, 1)
+})
+
+test('saída truncada no PowerShell só recebe despacho depois do estado e do evento', { skip: process.platform !== 'win32' }, t => {
+  const f = fixture(t); f.init(); f.prepare()
+  const preload = join(f.root, 'slow-state-write.mjs')
+  writeFileSync(preload, `import fs from 'node:fs';
+const rename = fs.renameSync;
+fs.renameSync = (from, to, ...args) => {
+  if (String(to) === ${JSON.stringify(f.statePath)}) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
+  return rename(from, to, ...args);
+};`)
+  const literal = value => "'" + value.replaceAll("'", "''") + "'"
+  const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+    '& ' + [process.execPath, engine, 'start', 'T1', '--agent', 'executor'].map(literal).join(' ') + ' 2>&1 | Select-Object -First 1'], {
+    cwd: f.root, env: { ...f.env, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(preload).href}`.trim() },
+    encoding: 'utf8', windowsHide: true, timeout: 20000,
+  })
+  assert.ifError(result.error)
+  assert.equal(f.state().tasks.T1.state, 'running', result.stdout + result.stderr)
+  assert.match(readFileSync(join(f.graphDir, 'example/events.ndjson'), 'utf8'), /"type":"task_start"/)
+})
+
 for (const lang of ['en', 'pt-BR']) test(`init distingue touches ausente, inválido e seguro em ${lang}`, t => {
   const f = fixture(t), task = f.plan.tasks[0]
   f.plan.scopePolicy = 'explicit'

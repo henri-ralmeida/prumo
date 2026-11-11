@@ -54,9 +54,11 @@ current lifecycle, agents, attempts, notes and evidence. Active work whose scope
 through review or completion until current planning is restored; use `pause-replanning` for an active
 planning-required attempt, then replan and explicitly `unblock` it without inventing a failure. An ordinary
 external `block` must be unblocked before planning. Done/skipped contracts remain immutable history and need an explicit follow-up task. Task removal
-requires explicit `--remove <task,...> --reason <reason>` and is limited to pending, never-executed tasks
-without notes, validation receipts, dependents or open planning/discussion. The complete record stays
-in removal history and its ID cannot be reused. Use `--dry-run` first; an implicit omission still refuses
+requires explicit `--remove <task,...> --reason <reason>` and is limited to never-executed pending tasks
+without notes, or skipped tasks whose notes and cancellation reason are preserved. Execution attempts,
+validation receipts, dependents and open planning/discussion still prevent removal. The complete record stays
+in removal history and its ID cannot be reused. An explicitly omitted empty phase is archived with its
+removed tasks, including its workflow history. Use `--dry-run` first; an implicit omission still refuses
 synchronization. External work items are unchanged. If a migrated run still names a missing graph-foreman source, `sync-plan` recovers the matching
 plan from the central Prumo workspace. Its output lists bounded per-task field changes, summarizes validation
 contracts without printing their contents and warns when a waiting `blockReason` contradicts dependency
