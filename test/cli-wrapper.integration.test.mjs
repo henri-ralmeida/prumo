@@ -722,6 +722,40 @@ test('install preserva progresso TTY com e sem métodos de limpeza e respeita NO
   assert.match(noColor.output, /\r\x1b\[2K/)
 })
 
+for (const lang of ['en', 'pt-BR']) test(`prévia usa o pacote candidato sem modificar a instalação global antiga: ${lang}`, t => {
+  const f = detectedClaude(t, 'prumo-cli-preview-legacy-')
+  installHarness(f, 'claude')
+  const globalRoot = join(f.home, 'npm-global', 'node_modules')
+  const legacyPackage = join(globalRoot, '@henri-ralmeida', 'prumo', 'package.json')
+  mkdirSync(dirname(legacyPackage), { recursive: true })
+  writeFileSync(legacyPackage, JSON.stringify({ name: '@henri-ralmeida/prumo', version: '2.11.12' }))
+  const preference = join(f.home, '.local/share/prumo/dashboard.json')
+  mkdirSync(dirname(preference), { recursive: true })
+  writeFileSync(preference, JSON.stringify({ enabled: true, lang }))
+  const marker = join(f.home, '.claude/skills/prumo/.prumo-install.json')
+  const paths = [legacyPackage, preference, marker, join(f.home, '.claude/settings.json')]
+  const before = paths.map(path => readFileSync(path, 'utf8'))
+  const preload = join(f.home, 'isolated-npm.mjs')
+  writeFileSync(preload, `import childProcess from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
+const original = childProcess.spawnSync;
+childProcess.spawnSync = (file, args, options) => {
+  if (args?.includes('npm') || file === 'npm') {
+    if (!args.includes('root') || !args.includes('--global')) throw new Error('A prévia não pode instalar pacotes');
+    return { status: 0, stdout: ${JSON.stringify(globalRoot)}, stderr: '' };
+  }
+  return original(file, args, options);
+}; syncBuiltinESMExports();`)
+  const response = runCli(f.home, ['_update'], {
+    NODE_OPTIONS: `--import=${pathToFileURL(preload).href}`,
+    PRUMO_UPDATE_REQUEST: JSON.stringify({ dryRun: true, cwd: f.project, projects: [], updateCli: true, lang, sourceVersion: packageVersion }),
+  }, f.project)
+  assert.equal(response.status, 0, response.output)
+  assert.match(response.output, /Would restart the enabled Prumo dashboard|Reiniciaria o dashboard ativado do Prumo/)
+  assert.deepEqual(paths.map(path => readFileSync(path, 'utf8')), before)
+  assert.equal(existsSync(join(f.home, '.local/share/prumo/update-pending.json')), false)
+})
+
 test('worker _update preserva o fluxo local quando updateCli está desabilitado', t => {
   const f = detectedClaude(t, 'prumo-cli-worker-update-')
   writeFileSync(join(f.home, '.claude.json'), JSON.stringify({ theme: 'dark' }))

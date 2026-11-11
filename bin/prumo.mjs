@@ -319,7 +319,8 @@ try {
             }
           } catch (error) { progress.clear(); console.error(`[prumo] ${t(error.message)}`); process.exitCode = 2 }
         }
-        const globalPackage = globalCliState(packageRoot).packageRoot ?? packageRoot
+        // A prévia avalia o pacote que seria instalado; o global ainda pode não conter seus arquivos.
+        const globalPackage = request.dryRun && request.updateCli ? packageRoot : globalCliState(packageRoot).packageRoot ?? packageRoot
         progress.start(t('Checking dashboard'), t('Dashboard checked'))
         const dashboard = await reconcileDashboardUpdate({ dryRun: request.dryRun, before: dashboardBefore, lang: request.lang, dashboardOptions: { packageRoot: globalPackage } })
         progress.finish(dashboard.ok)
