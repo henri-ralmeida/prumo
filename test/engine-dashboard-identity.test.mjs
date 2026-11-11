@@ -1,9 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, copyFileSync, appendFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, copyFileSync, appendFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { spawn } from 'node:child_process'
+import { setTimeout } from 'node:timers/promises'
 import { installationBundle, contentId, engineDashboardMismatch, registeredDashboardIdentity, registeredDashboardDiagnostics } from '../scripts/installation-bundle.mjs'
 import { packageDistributionFiles } from '../scripts/package-content.mjs'
 
@@ -32,13 +34,50 @@ test('diagnóstico verifica catálogo e versão com prazo único sem exigir dash
       if (mode === 'timeout') return new Promise(() => {})
       if (mode === 'invalid') throw new Error('Resposta inválida')
       if (url.endsWith('/runs') && mode === 'catalog') return new Promise(() => {})
-      return { ok: mode !== 'http', json: async () => url.endsWith('/runs') ? [] : mode === 'foreign' ? { product: 'outro' } : health }
+      return { ok: mode !== 'http', json: async () => url.endsWith('/runs') ? { currentRoot: null, current: null, runs: [] } : mode === 'foreign' ? { product: 'outro' } : health }
     } })
     assert.equal(result.available, mode === 'healthy')
     assert.equal(result.version, ['healthy', 'catalog'].includes(mode) ? '2.0.0' : null)
     assert.equal(signals.size, 1)
     assert.ok(performance.now() - start < 1000, 'o catálogo não pode bloquear o comando')
   }
+})
+
+test('diagnóstico aceita a API real e respostas lentas sem alterar o dashboard', { timeout: 30000 }, async t => {
+  const f = fixture(t)
+  f.save({ enabled: true, script: join(root, 'scripts/serve.mjs') })
+  const child = spawn(process.execPath, [join(root, 'scripts/serve.mjs'), '--global', '--port', '0'], {
+    cwd: f.home, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, HOME: f.home, USERPROFILE: f.home, PRUMO_HOME: join(f.home, 'data'), PRUMO_ROOT: f.home, GRAPH_ROOT: f.home, PRUMO_LANG: 'en' },
+  })
+  let output = ''
+  child.stdout.on('data', chunk => { output += chunk }); child.stderr.on('data', chunk => { output += chunk })
+  const closed = new Promise((resolve, reject) => { child.once('close', resolve); child.once('error', reject) })
+  try {
+    const deadline = Date.now() + 15000
+    while (!/localhost:\d+/.test(output) && child.exitCode === null && Date.now() < deadline) await setTimeout(40)
+    const port = output.match(/localhost:(\d+)/)?.[1]
+    assert.ok(port, output)
+    const address = `http://127.0.0.1:${port}`
+    const catalog = await (await fetch(address + '/api/runs')).json()
+    assert.equal(Array.isArray(catalog), false)
+    assert.equal(Array.isArray(catalog.runs), true)
+    for (const delay of [0, 1500]) await t.test(`resposta real após ${delay} ms`, async () => {
+      const result = await registeredDashboardDiagnostics({ home: f.home, fetch: async (url, options) => {
+        await setTimeout(delay, undefined, { signal: options.signal })
+        return fetch(address + new URL(url).pathname, options)
+      } })
+      assert.equal(result.available, true)
+      assert.equal(result.version, JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version)
+      assert.equal((await (await fetch(address + '/api/health')).json()).pid, child.pid)
+    })
+    const health = { product: 'prumo', mode: 'global', readOnly: true }
+    for (const catalog of [null, [], {}, { runs: null }, { runs: {} }]) {
+      const result = await registeredDashboardDiagnostics({ home: f.home,
+        fetch: async url => ({ ok: true, json: async () => url.endsWith('/runs') ? catalog : health }) })
+      assert.equal(result.available, false, JSON.stringify(catalog))
+    }
+  } finally { if (child.exitCode === null) child.kill(); await closed }
 })
 function fixture(t) {
   const home = mkdtempSync(join(tmpdir(), 'prumo-dashboard-identity-'))

@@ -65,7 +65,7 @@ export function engineDashboardMismatch(engineRoot, dashboardContentId) {
   } catch { return null }
 }
 
-export async function registeredDashboardDiagnostics({ home, fetch = globalThis.fetch, timeout = 300 }) {
+export async function registeredDashboardDiagnostics({ home, fetch = globalThis.fetch, timeout = 3000 }) {
   let preference
   try { preference = JSON.parse(readFileSync(join(home, '.local', 'share', 'prumo', 'dashboard.json'), 'utf8')) }
   catch { return null }
@@ -83,7 +83,7 @@ export async function registeredDashboardDiagnostics({ home, fetch = globalThis.
   clearTimeout(timer)
   const health = replies.health
   const trusted = health?.product === 'prumo' && health.mode === 'global' && health.readOnly === true
-  return { available: trusted && Array.isArray(replies.runs), version: trusted ? health.version ?? null : null,
+  return { available: trusted && Array.isArray(replies.runs?.runs), version: trusted ? health.version ?? null : null,
     about: trusted && replies.about?.product === 'prumo' ? replies.about : null, port: DEFAULT_DASHBOARD_PORT }
 }
 
