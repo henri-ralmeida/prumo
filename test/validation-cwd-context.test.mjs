@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, writeFileSync, readFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync, readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { fixture } from './fixtures/approved-graph.mjs'
 
@@ -25,7 +25,7 @@ for (const lang of ['en', 'pt-BR']) test(`cada verificação executa no cwd apro
   f.ok('start', 'T1', '--agent', 'executor'); f.ok('review', 'T1', '--agent', 'reviewer')
   const output = f.ok('validate', 'T1', '--ok', '--cwd', f.project, '--evidence', 'Cada verificação foi executada no projeto previsto')
   for (const [index, cwd] of directories.entries()) {
-    assert.equal(readFileSync(join(cwd, 'ran.txt'), 'utf8').replaceAll('\\', '/'), cwd.replaceAll('\\', '/'))
+    assert.equal(realpathSync(readFileSync(join(cwd, 'ran.txt'), 'utf8')), realpathSync(cwd))
     assert.ok(output.includes((lang === 'en' ? `Validation check ${index + 1}/2 directory: ` : `Diretório da verificação ${index + 1}/2: `) + cwd))
   }
   const checks = f.state().tasks.T1.validations.at(-1).checks

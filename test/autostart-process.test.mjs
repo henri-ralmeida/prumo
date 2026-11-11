@@ -254,16 +254,27 @@ for (const recorded of ['missing', 'stale', 'missing identity']) {
   })
 }
 
-for (const command of ['update', '_update']) test(`${command} para antes do npm e restaura o dashboard quando a instalacao falha`, { skip: process.platform !== 'win32', timeout: 120000 }, async t => {
+for (const command of ['update', '_update']) for (const stage of ['preparation', 'replacement']) test(`${command} preserva disponibilidade quando falha em ${stage}`, { skip: process.platform !== 'win32', timeout: 120000 }, async t => {
   const f = await isolatedDashboard(t)
   const old = f.start(null, true)
   assert.ok(await waitFor(async () => (await f.health())?.pid === old.pid))
   f.write({ enabled: true, mechanism: 'windows-startup', node: process.execPath, script: f.script })
+  const preferenceBefore = f.preference()
   const attempt = join(f.home, 'npm-attempt.json')
   const npm = join(f.home, 'fake-npm')
   mkdirSync(npm)
   const helper = join(npm, 'install.mjs')
-  writeFileSync(helper, `import { writeFileSync } from 'node:fs';
+  writeFileSync(helper, `import { writeFileSync, mkdirSync, cpSync } from 'node:fs';
+import { join } from 'node:path';
+const command = process.argv[2];
+if (command === 'root') { console.log(join(process.env.npm_config_prefix, 'node_modules')); process.exit(0); }
+if (${JSON.stringify(stage)} === 'replacement') {
+  if (command === 'pack') { writeFileSync('prumo.tgz', 'pacote isolado'); process.exit(0); }
+  if (process.env.npm_config_prefix.endsWith('validation-prefix')) {
+    const destination = join(process.env.npm_config_prefix, 'node_modules/@henri-ralmeida/prumo');
+    mkdirSync(destination, { recursive: true }); cpSync(process.cwd(), destination, { recursive: true }); process.exit(0);
+  }
+}
 let running = false;
 try { running = (await fetch('http://127.0.0.1:${f.port}/api/health')).ok } catch {}
 writeFileSync(${JSON.stringify(attempt)}, JSON.stringify({ running }));
@@ -271,12 +282,13 @@ process.exit(1);
 `)
   const version = JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8')).version
   const cli = process.env.PRUMO_TEST_UPDATE_CLI ?? join(repo, 'bin/prumo.mjs')
-  writeFileSync(join(npm, 'npm.cmd'), `@echo off\r\nif "%~1"=="root" (\r\n echo ${join(f.home, 'node_modules')}\r\n exit /b 0\r\n)\r\nif "%~1"=="view" (\r\n echo "${version}"\r\n exit /b 0\r\n)\r\nif "%~1"=="exec" (\r\n "${process.execPath}" "${cli}" _update\r\n exit /b 1\r\n)\r\n"${process.execPath}" "${helper}"\r\nexit /b 1\r\n`)
+  writeFileSync(join(npm, 'npm.cmd'), `@echo off\r\nif "%~1"=="view" (\r\n echo "${version}"\r\n exit /b 0\r\n)\r\nif "%~1"=="exec" (\r\n "${process.execPath}" "${cli}" _update\r\n exit /b 1\r\n)\r\n"${process.execPath}" "${helper}" %*\r\nexit /b %errorlevel%\r\n`)
   const env = { ...f.options.env }
   const pathKey = Object.keys(env).find(key => key.toLowerCase() === 'path')
   const path = env[pathKey] ?? ''
   for (const key of Object.keys(env)) if (key.toLowerCase() === 'path') delete env[key]
   env.PATH = `${npm};${path}`
+  env.npm_config_prefix = f.home
   env.NODE_OPTIONS = `${env.NODE_OPTIONS ?? ''} --import="${pathToFileURL(join(repo, 'test/fixtures/dashboard-port.mjs')).href}"`.trim()
   env.PRUMO_TEST_DASHBOARD_PORT = String(f.port)
   env.PRUMO_UPDATE_REQUEST = JSON.stringify({ dryRun: false, cwd: f.home, projects: [], updateCli: true,
@@ -288,12 +300,18 @@ process.exit(1);
   const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve) })
   assert.notEqual(code, 0, output)
   assert.match(output, /Global Prumo CLI update failed/)
-  assert.deepEqual(JSON.parse(readFileSync(attempt, 'utf8')), { running: false }, 'o instalador nao pode receber o dashboard ainda rodando')
+  assert.deepEqual(JSON.parse(readFileSync(attempt, 'utf8')), { running: stage === 'preparation' }, 'somente a troca global deve receber o dashboard parado')
   const restored = await f.health()
-  assert.ok(restored?.pid && restored.pid !== old.pid, output)
+  assert.ok(restored?.pid, output)
   assert.equal(f.preference().enabled, true)
-  assert.equal(f.preference().pid, restored.pid)
-  assert.equal(alive(old.pid), false)
+  if (stage === 'replacement') {
+    assert.notEqual(restored.pid, old.pid)
+    assert.equal(f.preference().pid, restored.pid)
+    assert.equal(alive(old.pid), false)
+  } else {
+    assert.equal(restored.pid, old.pid, 'falha na preparação mantém o mesmo processo disponível')
+    assert.deepEqual(f.preference(), preferenceBefore)
+  }
   assert.equal(existsSync(join(f.home, '.local/share/prumo/update-pending.json')), true, 'a falha continua pendente para a proxima tentativa')
 })
 
@@ -338,6 +356,6 @@ test('update restart never stops a port occupant that is not the managed Prumo d
   assert.notEqual(code, 0, output)
   assert.match(output, /ownership verification failed/)
   assert.equal(alive(impostor.pid), true)
-  assert.equal(existsSync(join(f.home, '.local/share/prumo/update-pending.json')), false, 'a recusa acontece antes de gravar a atualizacao')
+  assert.equal(existsSync(join(f.home, '.local/share/prumo/update-pending.json')), true, 'a recusa preserva o checkpoint para retomar a atualização')
   assert.deepEqual(f.preference(), recordedPreference)
 })
