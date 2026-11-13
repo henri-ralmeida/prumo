@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { writeFileSync } from 'node:fs'
+import { writeFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { fixture } from './fixtures/approved-graph.mjs'
 
@@ -180,6 +180,9 @@ test('dispensa futura de execução preserva o planejador ativo até entregar se
   assert.deepEqual(f.state().phaseWorkflows.F1.planningAttempts.at(-1), round)
   f.artifacts('F1'); f.ok('finish-phase-planning', 'F1', '--plan-dir', f.plans)
   assert.equal(graph(f).derived.T1.effective, 'ready_for_review')
+  f.ok('review', 'T1', '--agent', 'reviewer')
+  assert.equal(f.state().tasks.T1.taskPlan.phaseId, 'F1')
+  assert.ok(Array.isArray(f.state().tasks.T1.attempts[0].inputReceipt))
 })
 
 test('dispensa aguarda a confirmação da fase da tarefa sem bloquear outra tarefa autorizada', t => {
@@ -388,4 +391,43 @@ test('contrato alterado invalida a dispensa anterior e dispensar execução não
   f.ok('authorize', '--scope', 'tasks:T1', '--confirmed-by-user')
   f.ok('review', 'T1', '--agent', 'reviewer')
   assert.equal(f.state().tasks.T1.state, 'reviewing')
+})
+
+test('revisão sem execução respeita pergunta pendente do plano individual e avança após resposta explícita', t => {
+  const f = fixture(t)
+  f.ok('skip-discussion', 'T1', '--reason', 'Escopo já discutido', '--confirmed-by-user')
+  f.ok('plan-task', 'T1', '--agent', 'planner')
+  const path = join(f.home, 'task-plan.json')
+  writeFileSync(path, JSON.stringify({ research: [{ source: f.source, findings: 'Contrato e entrega existentes conferidos.' }],
+    decisions: [], steps: ['Conferir o comportamento aprovado.'],
+    verification: [{ criterion: 'Comportamento aprovado preservado', check: 1 }],
+    openQuestions: [{ question: 'Qual regra deve valer?', blocking: false, decideBy: 'user-now' }] }))
+  f.ok('finish-planning', 'T1', '--plan', path)
+  f.ok('skip-execution', 'T1', '--reason', 'Implementação existente será revisada', '--confirmed-by-user')
+  assert.match(f.ok('ready'), /Resolve due questions before review/)
+  const before = f.state(), events = f.events()
+  f.rejects(/unresolved questions/, 'review', 'T1', '--agent', 'reviewer')
+  assert.deepEqual(f.state(), before); assert.equal(f.events(), events)
+  const ref = before.tasks.T1.taskPlan.openQuestions[0].questionRef
+  f.ok('answer-question', ref, '--answer', 'Preservar a regra aprovada.', '--confirmed-by-user')
+  f.ok('review', 'T1', '--agent', 'reviewer')
+  const attempt = f.state().tasks.T1.attempts[0]
+  assert.equal(attempt.kind, 'review-only')
+  assert.equal(attempt.inputReceipt, undefined)
+  assert.equal(attempt.inputDigest, undefined)
+})
+
+test('revisão sem execução captura a linha de base Git quando há escopo explícito', t => {
+  const f = fixture(t, { git: true, tasks: [{ id: 'T1', writeScope: 'files', touches: ['check.cjs'] }] })
+  f.plan.scopePolicy = 'explicit'; f.writePlan()
+  const state = f.state(); state.plan.scopePolicy = 'explicit'; f.importState(state)
+  f.skipTaskPlan(); f.ok('authorize', '--scope', 'tasks:T1', '--confirmed-by-user')
+  f.ok('skip-execution', 'T1', '--reason', 'Conferir a entrega existente dentro do escopo', '--confirmed-by-user')
+  f.ok('review', 'T1', '--agent', 'reviewer')
+  const attempt = f.state().tasks.T1.attempts[0]
+  assert.equal(attempt.kind, 'review-only')
+  assert.equal(attempt.agent, null)
+  assert.equal(attempt.scopeBaseline.method, 'git')
+  assert.equal(attempt.scopeBaseline.cwd, realpathSync.native(f.project))
+  assert.ok(Object.hasOwn(attempt.scopeBaseline.files, 'check.cjs'))
 })
