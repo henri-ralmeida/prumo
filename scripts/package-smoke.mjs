@@ -143,7 +143,8 @@ if (process.argv[1]?.replaceAll('\\\\', '/').endsWith('/bin/prumo.mjs')) {
   const autoEnv = { ...env, HOME: autoHome, USERPROFILE: autoHome, CODEX_HOME: join(autoHome, '.codex'), DSH_HOME: join(autoHome, '.dsh'), COPILOT_HOME: join(autoHome, '.copilot'),
     APPDATA: join(autoHome, 'AppData', 'Roaming'), LOCALAPPDATA: join(autoHome, 'AppData', 'Local'),
     PRUMO_HOME: join(autoHome, 'data'), npm_config_prefix: autoPrefix,
-    npm_config_allow_scripts: name,
+    // Este prefixo descartável recebe somente o candidato conhecido, sem dependências; o teste precisa executar seu postinstall real.
+    npm_config_dangerously_allow_all_scripts: 'true',
     npm_config_cache: join(autoHome, 'npm-cache'), NODE_OPTIONS: `${process.env.NODE_V8_COVERAGE && process.env.PRUMO_TEST_COVERAGE_FLUSH === '1'
       ? `--import="${new URL('../test/fixtures/coverage-flush.mjs', import.meta.url).href}"` : ''} --import=${pathToFileURL(preload).href}`.trim() }
   delete autoEnv.CLAUDE_CONFIG_DIR

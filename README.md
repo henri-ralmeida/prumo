@@ -292,6 +292,15 @@ Installer and engine checks for Windows, macOS and Linux with Node.js 22 and 24 
 
 Pushing to `main` runs CI; it does not publish an npm package or update a GitHub release. Each published update needs a new version in `package.json`, matching release checks and changelog, passing CI, and a corresponding Git tag and GitHub release. Publish the tested archive to npm as `@henri-ralmeida/prumo`; the `latest` npm tag selects the version installed by the commands above.
 
+## Explicit control of task stages
+
+You may explicitly dispense discussion, planning, execution or review for a named task, individually
+or together. The Orchestrator explains the consequences and waits for your choice. Dispensing execution
+advances to review; dispensing review waits for execution to finish. If no stage remains, the task is
+completed by user decision and releases dependents. Cards and details identify the dispensed stages;
+history is preserved and no execution or passing review is fabricated. See
+[stage waivers](references/runtime.md#explicit-task-stage-waivers) for commands and scope.
+
 ## Develop and license
 
 ```sh

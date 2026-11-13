@@ -1,5 +1,10 @@
 # Independent review, validation and rejection
 
+Independent review remains the default. An explicit task-specific `skip-review` or `skip-stages`
+decision may dispense it; that route records completion by user choice and never a passing review.
+Dispensing execution alone still requires the actual reviewer to evaluate the existing delivery.
+See [explicit task stage waivers](runtime.md#explicit-task-stage-waivers) before applying such a choice.
+
 `validate --ok` checks `requiresEnv` for every step before recording a receipt or running any command. Missing or blank values refuse the request without changing validation history; diagnostics contain names and configuration guidance, never values. The same preflight protects direct `runValidation` calls, and each command receives the checked effective environment. A static step with nonempty `requiresEnv` cannot reuse an earlier cached check even when the workspace is unchanged.
 
 Read this when a task is `reviewing` or has a current validation receipt, before dispatching a reviewer,

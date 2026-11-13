@@ -302,6 +302,15 @@ Os testes do instalador e motor para Windows, macOS e Linux, com Node.js 22 e 24
 
 Enviar alterações para `main` executa o CI; isso não publica o pacote npm nem atualiza uma release do GitHub. Cada atualização publicada precisa de uma nova versão em `package.json`, verificações de release e changelog correspondentes, CI aprovado, tag Git e release do GitHub. Publique o arquivo testado no npm como `@henri-ralmeida/prumo`; a tag `latest` do npm determina a versão instalada pelos comandos acima.
 
+## Controle explícito das etapas de uma tarefa
+
+Você pode dispensar discussão, planejamento, execução ou revisão de uma tarefa identificada, uma a uma
+ou em conjunto. O Orquestrador explica as consequências e aguarda sua escolha. Dispensar execução
+avança para revisão; dispensar revisão aguarda a execução terminar. Quando não restar etapa, a tarefa
+fica concluída por decisão do usuário e libera dependentes. Cards e detalhes identificam as etapas
+dispensadas; o histórico é preservado, sem inventar execução ou revisão aprovada. Veja os
+[comandos e o alcance das dispensas](references/runtime.md#explicit-task-stage-waivers).
+
 ## Desenvolvimento e licença
 
 ```sh

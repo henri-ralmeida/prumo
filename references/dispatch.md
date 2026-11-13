@@ -45,6 +45,13 @@ node $ENGINE unblock T4 --confirmed-by-user                   # resuming active 
 
 ## Recording a role does not create an agent
 
+If the user explicitly dispensed execution, inspect `currentStageSkips` and follow the remaining review
+without launching an executor. `review` opens a clearly identified review-only attempt. If review was
+dispensed, report real execution activity normally and inspect state after stopping it: the recorded
+user choice can complete the task automatically. Do not manufacture progress, validation or an agent
+dispatch to fill a dispensed stage. These choices are task-specific; ordinary dispatch requirements
+continue to protect every stage the user did not dispense.
+
 Run the suggested `start` command from `ready` and require a successful result before dispatching the executor. Capture the complete result and exit status before shortening it for display: an early-closing output pipeline can interrupt a native process. A `model dispatch` diagnostic is self-reported metadata; confirm the persisted `running` state and attempt before launching the native executor. If it fails, correct the command or resolve the reported gate before dispatch; an agent must not start product work without its recorded attempt. `start` does not accept `--cwd`: record the project directory with `init --cwd` or `sync-plan --cwd`, and use `validate --cwd` for executable checks. Only call `activity-start` when work actually begins; call `activity-stop` before waiting or finishing so elapsed stage time is not presented as active work.
 
 **Use one native subagent for each active plan-phase target when available; otherwise report the limitation and follow the local, read-only planner fallback in [planning.md](planning.md). Every start still requires an actual native executor dispatch in the SAME message.**

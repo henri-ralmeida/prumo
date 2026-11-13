@@ -636,10 +636,16 @@ test('motor instalado inclui as dependências e executa comandos fora do checkou
   assert.ok(installed.groups.every(g => g.status !== 'conflict'), JSON.stringify(installed.groups))
   const installedEngine = join(f.home, '.agents/skills/prumo/scripts/engine.mjs')
   const installedRoot = dirname(dirname(installedEngine))
-  for (const name of ['lib/release-notes.mjs', 'scripts/release-notes.json']) {
+  for (const name of ['lib/release-notes.mjs', 'scripts/release-notes.json', 'scripts/stage-skips.mjs']) {
     assert.equal(readFileSync(join(installedRoot, name), 'utf8'), readFileSync(join(source, name), 'utf8'), 'a skill instalada preserva o histórico de versões necessário ao dashboard')
   }
   const r = f.run(installedEngine, 'runs'); assert.equal(r.status, 0, r.output); assert.match(r.output, /no runs/)
+  const initialized = f.run(installedEngine, 'init', '--plan', f.planPath, '--run', 'example')
+  assert.equal(initialized.status, 0, initialized.output)
+  const accepted = f.run(installedEngine, 'skip-stages', 'T1', '--stages', 'discussion,planning,execution,review',
+    '--reason', 'O usuário dispensou as etapas desta tarefa', '--confirmed-by-user', '--run', 'example')
+  assert.equal(accepted.status, 0, accepted.output)
+  assert.equal(f.state().tasks.T1.completionDecision.by, 'user')
   const dashboard = join(dirname(installedEngine), 'serve.mjs')
   const rejected = f.run(dashboard, '--global', '--dry-run')
   assert.equal(rejected.status, 1, rejected.output)

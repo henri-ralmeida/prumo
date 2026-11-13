@@ -4,6 +4,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { delimiter, isAbsolute, join, resolve } from 'node:path'
 import { existsSync, statSync } from 'node:fs'
+import { currentStageSkips } from './stage-skips.mjs'
 
 const nonempty = (value) => typeof value === 'string' && value.trim().length > 0
 const insist = (condition, message) => { if (!condition) throw new Error(message) }
@@ -330,6 +331,13 @@ export function executionInputReceipt(state, task) {
     if (dep.state === 'skipped') {
       insist(nonempty(dep.skipReason), `${id} skip waiver needs a reason`)
       return { task: id, phase: dep.phase ?? null, result: 'waived', reason: dep.skipReason }
+    }
+    if (dep.completionDecision?.by === 'user') {
+      const ids = Array.isArray(dep.completionDecision.decisions) ? dep.completionDecision.decisions : []
+      const choices = currentStageSkips(state, dep).filter(choice => ids.includes(choice.decisionId))
+      insist(choices.some(choice => choice.stages.includes('review')), `${id} has no current explicit user completion decision`)
+      return { task: id, phase: dep.phase ?? null, result: 'user-accepted', reason: dep.completionDecision.reason,
+        stages: dep.completionDecision.stages, decision: digest([dep.completionDecision, choices]) }
     }
     const validation = dep.validations?.at(-1)
     insist(validation?.ok && validation.attempt === dep.attempts?.length,

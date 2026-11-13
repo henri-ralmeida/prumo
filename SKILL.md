@@ -1,13 +1,14 @@
 ---
 name: prumo
-description: Executes an approved global plan as a task GRAPH — optional user-decided phase discussion and planning, persistent executors, and mandatory independent review before done. Includes PO First and a live dashboard.
+description: Executes an approved global plan as a task GRAPH with explicit user control of stage waivers, persistent executors and independent review by default. User-completed tasks preserve every dispensed stage. Includes PO First and a live dashboard.
 ---
 
 # /prumo [plan|run]
 
 Runs an **already approved** global plan through the graph engine bundled with this skill: a DAG of
-tasks, optional phase discussion and read-only planning chosen explicitly by the user, parallel executors, a validation gate before anything
-is `done`, and a dashboard for observing work and adjusting its agent limit through the engine.
+tasks, explicitly chosen stage waivers, parallel executors and independent validation by default.
+Completion by user decision identifies dispensed stages instead of claiming validation. A dashboard
+observes work and lets the user adjust the agent limit through the engine.
 
 This file is the router: it says what to do in each state and which reference holds the detail. Read a
 reference when the state machine below sends you there, not up front.
@@ -16,7 +17,7 @@ reference when the state machine below sends you there, not up front.
 
 - An **approved plan of ~5+ tasks** where the ORDER of work matters
 - Tasks **independent enough to parallelise** across subagents — that is the graph's payoff
-- When "done" must mean something **checked** by a fresh reviewer, never a self-report
+- When completion must distinguish **checked** work from explicit user acceptance without validation
 - Long runs the dev wants to **watch live** instead of reading a report afterwards
 
 ## When NOT to use
@@ -375,11 +376,25 @@ These hold in every state; each one protects the property that makes the graph t
   reviewer on a verdict everyone already knows ([dispatch.md](references/dispatch.md#recoverable-obstacles-stay-with-the-executor)).
 - **Author ≠ verifier.** The executor never approves its own work and the orchestrator never impersonates
   the reviewer. `done` requires a passing independent validation for the current attempt. Discussion and
-  planning skips never waive review.
+  planning skips never waive review. A separate explicit review waiver records completion by user
+  decision, without claiming validation or inventing a reviewer.
 - **One agent, one active task; a fresh reviewer per task.** All roles share `maxAgents`; a handoff
   replaces the current role in its slot, with no hidden reservation ([dispatch.md](references/dispatch.md#capacity)).
-- **Gates are the user's choice.** Discussion and planning are optional only by the user's explicit choice,
-  recorded with `--reason` and `--confirmed-by-user`; never skip for token economy.
+- **Gates are the user's choice.** Use `skip-stages <task> --stages discussion,planning,execution,review`
+  with the selected subset, `--reason` and `--confirmed-by-user` only after the user names the task and
+  stages to dispense. One explicit choice can cover all four. Do not infer it from “continue”, cost,
+  failures or a general execution authorization. Explain relevant alternatives and their consequences,
+  then wait for the choice; never present skipping as necessary just to make a failing check pass.
+  Record the actual request as the reason when no further explanation was supplied. Stop the selected
+  native worker before dispensing its active stage. Other tasks retain their controls and workers.
+  Execution dispensed advances to actual review; review dispensed waits for actual execution to stop.
+  If every remaining requirement is completed or dispensed, the task becomes DONE by user decision,
+  releases dependents and shows its waivers. Preserve history and never fabricate an attempt or receipt.
+  Recommend a waiver only with concrete context, such as an existing external delivery or a step the
+  user identifies as redundant; describe what remains unverified. Recommend redoing a stage when its
+  work needs another attempt. A recommendation is never permission to apply it.
+  After every transition inspect persisted state before dispatch: a previously authorized future waiver
+  may complete the task as soon as its remaining prerequisites finish. See [runtime.md](references/runtime.md#explicit-task-stage-waivers).
 - **Eligibility is not permission.** A phase opens only when every external dependency of every unfinished member is `done` or `skipped`,
   and even then it waits for the user to choose it.
 - **A named task in the user's request is a hard scope boundary.** Its prerequisites and internal

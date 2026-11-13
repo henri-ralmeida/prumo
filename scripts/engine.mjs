@@ -23,6 +23,8 @@
  *
  * AUTOR ≠ VERIFICADOR: o executor escreve, um agente REVIEWER bate o martelo. `done` exige uma
  * validação aprovada registrada durante a revisão, por um agente diferente daquele que fez o trabalho.
+ * Uma dispensa explícita de etapas usa outra trilha: conclusão por decisão do usuário, com histórico
+ * visível das dispensas, sem inventar execução nem validação. Dependentes recebem um aceite distinto.
  *
  * A prontidão é DERIVED: deps satisfeitas → ready_to_plan; plano atual da tarefa → ready.
  * Tarefas sem planningRequired (ou marcadas explicitamente como false durante a migração)
@@ -108,6 +110,7 @@ import { scoreCvss4 } from './cvss4.mjs'
 import { refusalText, proposeAuditContract, completeAuditCorrections, graphClosed, openAuditAttempt, validateAuditReport, securityAuditView, securityBrief, securityFixPlan, SECURITY_FINDING_TAG, markAuditDecisionIfClosed, enableAudit, skipAudit, startAudit, recordAuditReport, acceptFinding, auditActivityTarget, auditNotices, auditGateNotice } from './security-audit.mjs'
 import { newCommandRecord, recordCommand } from './command-metrics.mjs'
 import { questionAnswerOrigin, missingExecutionSteps, phaseOrderChange } from './planning-context.mjs'
+import { TASK_STAGES, stageSkipScope, stageSkipAttempt, stageSkipReviewRound, currentStageSkips, currentStageSkip } from './stage-skips.mjs'
 
 // A ajuda geral também funciona fora de um workspace; consultar opções não grava métricas nem estado.
 const [, , cmd, ...rest] = process.argv
@@ -263,6 +266,7 @@ function loadState(name) {
 
 function saveState(name, state) {
   state.updatedAt = new Date().toISOString()
+  const userCompletions = advanceStageSkips(state)
   const previous = existsSync(join(runDir(name), 'state.json')) ? loadState(name) : { tasks: {} }
   const aliases = state.taskIdAliases ?? {}
   const redispatchTask = cmd === 'unblock' ? Object.hasOwn(aliases, args._[0]) ? aliases[args._[0]] : args._[0] : undefined
@@ -278,6 +282,7 @@ function saveState(name, state) {
   }
   // Diagnósticos após a gravação precisam do mesmo histórico disponível na próxima leitura.
   hydrateDiscoveries(state, dir)
+  for (const task of userCompletions) emit(name, 'task_done', task.id, { completionBy: 'user', ...task.completionDecision })
   if (cmd !== 'start') for (const record of dispatches) log('[prumo] model dispatch (reported, not verified): ' + JSON.stringify(record))
   return dispatches
 }
@@ -1358,19 +1363,20 @@ function logExcludedTasks(state, phaseId) {
   if (tasks.length) log('[prumo] ' + tr('Outside this round (blocked): {0}', tasks.map(task => `${task.id} — ${task.blockReason || tr('external input pending')}`).join('; ')))
 }
 
-function excludeBlockedPhaseTask(state, task) {
+function excludeBlockedPhaseTask(state, task, decision = null) {
   const phase = state.phaseWorkflows?.[task.phase]
-  if (!phase || !isExternalBlock(task)) return
+  if (!phase || !isExternalBlock(task) && !decision) return
   task.individualPlanning = true
   for (const record of [phase.discussionAttempts?.at(-1), phase.discussionSkips?.at(-1), phase.planningAttempts?.at(-1)]) {
     if (!record?.targets?.includes(task.id) || record.endedAt) continue
     record.originalTargets ??= [...record.targets]
     record.excludedTargets ??= []
-    record.excludedTargets.push({ task: task.id, reason: task.blockReason, at: new Date().toISOString() })
+    record.excludedTargets.push({ task: task.id, reason: decision?.reason ?? task.blockReason, at: new Date().toISOString() })
     record.targets = record.targets.filter(id => id !== task.id)
     if (Object.hasOwn(record.workers ?? {}, task.id)) {
       stopOpenActivity(record.workers[task.id], new Date().toISOString())
       record.workers[task.id].endedAt = new Date().toISOString()
+      if (decision) record.workers[task.id].result = 'skipped'
     }
     if (record.activeTargets) record.activeTargets = record.activeTargets.filter(id => id !== task.id)
     if (record.queuedTargets) record.queuedTargets = record.queuedTargets.filter(id => id !== task.id)
@@ -1383,6 +1389,12 @@ function excludeBlockedPhaseTask(state, task) {
     record.contextSnapshot = phaseContextSnapshot(state, targets)
     if (phase.discovery && phase.discovery.roundId === record.roundId) phase.discovery.context = record.context
     if (record.discovery && record.discovery.roundId === record.roundId) record.discovery.context = record.context
+    if (decision && !record.targets.length) {
+      Object.assign(record, { endedAt: decision.at, result: 'superseded', cause: 'Task stages dispensed by user' })
+      phase.state = 'pending'
+    }
+    if (decision && record.queuedTargets?.length)
+      activatePhaseWorkers(state, record, record === phase.discussionAttempts.at(-1) ? 'discussion' : 'planning')
   }
 }
 
@@ -1802,6 +1814,19 @@ function executionSlots(state) {
 
 function actionForTask(state, task, slots) {
   if (state.runPause && !state.runPause.endedAt) return ''
+  if (task.effective === 'ready_for_review') {
+    if (task.state === 'pending') {
+      const authorization = taskAuthorization(task)
+      if (!authorization && runHasAuthorizationScope(state)) return `${tr('ask user to authorize')}: authorize --scope tasks:${task.id} --confirmed-by-user`
+      if (authorization?.mode === 'manual') return tr('ask user before dispatching {0}', task.id)
+      const due = overdueQuestions(state, task.id, task.phase)
+      if (due.length) return tr('Resolve due questions before review: {0}', due.map(question => question.ref).join(', '))
+    }
+    const occupied = occupancy(state)
+    if (occupied.busy.filter(other => other.id !== task.id).length >= occupied.cap)
+      return tr('Wait for an agent slot before reviewing {0}', task.id)
+    return `review ${task.id} --agent <reviewer>`
+  }
   if (!['ready_for_discussion', 'ready_to_plan', 'ready'].includes(task.effective)) return ''
   if (task.effective === 'ready_for_discussion')
     return state.plan.planningMode === 'phase' ? tr('ask user to begin discussion for {0}', task.phase) :
@@ -1826,7 +1851,7 @@ function printDispatchSuggestions(state, tasks = null) {
   printPlanningRecoveryWarnings(state)
   if (state.runPause && !state.runPause.endedAt) return
   const d = derive(state)
-  const candidates = tasks ?? Object.values(d).filter(task => ['ready_for_discussion', 'ready_to_plan', 'ready'].includes(task.effective))
+  const candidates = tasks ?? Object.values(d).filter(task => ['ready_for_discussion', 'ready_to_plan', 'ready', 'ready_for_review'].includes(task.effective))
   let slots = executionSlots(state)
   for (const task of candidates) {
     const current = d[task.id] ?? task
@@ -1834,6 +1859,8 @@ function printDispatchSuggestions(state, tasks = null) {
     if (action) log('[prumo] ' + tr('suggested action for {0}: {1}', current.id, action))
     if (current.effective === 'ready' && taskAuthorization(current)?.mode === 'auto' && slots > 0 &&
         !overdueQuestions(state, current.id, current.phase).length) slots -= 1
+    if (['ready_for_discussion', 'ready_to_plan', 'ready', 'ready_for_review'].includes(current.effective))
+      log('[prumo] ' + tr('When concrete context makes a stage unnecessary, explain what remains unverified and ask before skip-stages {0} --stages <selected-stages> --reason <reason> --confirmed-by-user; never infer consent from a failure or a request to continue', current.id))
   }
 }
 
@@ -2338,6 +2365,68 @@ function explicitSkipDecision(scope) {
   return { decision: 'skipped', decisionId, digest: decisionId, reason, confirmedByUser: true, at }
 }
 
+function stageDiscussionReady(state, task) {
+  if (!task.discussionRequired || currentTaskDiscussionDecision(state, task)) return true
+  const phase = state.phaseWorkflows?.[task.phase]
+  return Boolean(phase && currentPhaseDiscussionDecision(state, phase)?.targets.includes(task.id))
+}
+
+function advanceStageSkips(state) {
+  const completed = []
+  if (state.runPause && !state.runPause.endedAt) return completed
+  let changed
+  do {
+    changed = false
+    for (const task of Object.values(state.tasks ?? {})) {
+      if (!['pending', 'running', 'reviewing'].includes(task.state) || !(task.stageSkips?.length)) continue
+      const decisions = currentStageSkips(state, task)
+      const phase = state.phaseWorkflows?.[task.phase]
+      const confirmation = phase?.contractConfirmationRequired
+      if (!decisions.length || task.deps.some(id => !['done', 'skipped'].includes(state.tasks[id]?.state)) ||
+          task.contractConfirmationRequired || confirmation && (!confirmation.tasks || confirmation.tasks.includes(task.id)) ||
+          overdueQuestions(state, task.id, task.phase).length) continue
+      const assigned = !task.individualPlanning && ['discussing', 'planning'].includes(phase?.state) &&
+        phase[phase.state === 'discussing' ? 'discussionAttempts' : 'planningAttempts']?.at(-1)?.targets.includes(task.id)
+      if (task.state === 'pending' && !hasCurrentTaskPlan(state, task) && !assigned) {
+        for (const stage of ['discussion', 'planning']) {
+          const decision = decisions.findLast(item => item.stages.includes(stage))
+          if (!decision || stage === 'planning' && !stageDiscussionReady(state, task)) continue
+          if (state.plan.planningMode === 'phase') task.individualPlanning = true
+          const history = stage === 'discussion' ? 'discussionSkips' : 'planningSkips'
+          const current = stage === 'discussion' ? currentTaskDiscussionSkip(state, task) : currentPlanningSkip(state, task)
+          if (!current) {
+            task[history] ??= []
+            task[history].push({ ...decision, task: task.id, stageSkipId: decision.decisionId,
+              scope: phasePlanningContext(state, task), context: planningContext(state, task), contextSnapshot: taskContextSnapshot(state, task) })
+          }
+        }
+      }
+      if (!hasCurrentTaskPlan(state, task) || !currentStageSkip(state, task, 'review')) continue
+      const executionSkipped = currentStageSkip(state, task, 'execution')
+      const executionStopped = isReadyForReview({ ...task, requireReview: true }, { ...state.plan, requireReview: true })
+      if (!executionSkipped && task.state !== 'reviewing' && !executionStopped) continue
+      assertCurrentExecutionInputs(state, task)
+      const attempt = task.attempts.at(-1)
+      // Uma dispensa não autoriza alterações observadas fora do escopo aprovado.
+      if (attempt?.scopeBaseline?.method === 'git') {
+        try { verifyTaskScope(task, attempt.scopeBaseline, undefined, attempt.concurrentScopes) }
+        catch (error) { die(error.message) }
+      }
+      const at = new Date().toISOString()
+      task.completionDecision = { by: 'user', at, attempt: stageSkipAttempt(task),
+        stages: TASK_STAGES.filter(stage => decisions.some(item => item.stages.includes(stage)) ||
+          stage === 'discussion' && currentTaskDiscussionSkip(state, task) || stage === 'planning' && currentPlanningSkip(state, task)),
+        decisions: decisions.map(item => item.decisionId), reason: decisions.at(-1).reason }
+      task.state = 'done'
+      if (attempt && !attempt.endedAt) Object.assign(attempt, { endedAt: at, result: 'done', completionBy: 'user' })
+      completed.push(task)
+      changed = true
+    }
+  } while (changed)
+  if (completed.length) markAuditDecisionIfClosed(state)
+  return completed
+}
+
 function explicitRedoDecision(stage, task) {
   if (typeof args.reason !== 'string' || !args.reason.trim()) die(tr('{0} needs a nonempty --reason', cmd))
   if (args['confirmed-by-user'] !== true) die(tr('{0} needs --confirmed-by-user after the user explicitly requests another round', cmd))
@@ -2420,6 +2509,8 @@ export function derive(state) {
             t.discussionRequired && !currentTaskDiscussionDecision(state, t) ? 'ready_for_discussion' : 'ready_to_plan'
       }
     }
+    if (['pending', 'running'].includes(t.state) && currentStageSkip(state, t, 'execution') &&
+        ['ready', 'running'].includes(effective)) effective = 'ready_for_review'
     const planningStatus = !usesCurrentPlanning(state, t) ? 'legacy_lifecycle' :
       state.legacyPhaseAdoption && !phase?.adoptedLegacy ? 'awaiting_phase_adoption' : currentPlanningSkip(state, t) ? 'planning_skipped' :
       hasCurrentTaskPlan(state, t) ? 'planned' :
@@ -2431,17 +2522,18 @@ export function derive(state) {
       const inputs = entries.map(({ task }) => task)
       inputStatus = unresolved.length ?
         (unresolved.every(({ task }) => task && task.phase !== t.phase) ? 'unresolved_later_phase_input' : 'unresolved_input') :
-        inputs.some(dep => dep.state === 'skipped') ? 'waived_input' : 'validated_input'
+        inputs.some(dep => dep.completionDecision?.by === 'user') ? 'user_accepted_input' :
+          inputs.some(dep => dep.state === 'skipped') ? 'waived_input' : 'validated_input'
     }
     const showPlanningStatus = state.plan.planningMode === 'phase' && usesCurrentPlanning(state, t) && !['done', 'skipped'].includes(t.state)
-    out[id] = { ...t, effective, blockedBy, ...(manualInspectionPending(state, t) ? { manualInspectionPending: true } : {}), ...(showPlanningStatus ?
+    out[id] = { ...t, effective, blockedBy, currentStageSkips: currentStageSkips(state, t), ...(manualInspectionPending(state, t) ? { manualInspectionPending: true } : {}), ...(showPlanningStatus ?
       { planningStatus, ...(planningBlockedBy.length ? { planningBlockedBy } : {}), ...(inputStatus ? { inputStatus } : {}) } : {}) }
     const agentRound = phase?.[phase.state === 'discussing' ? 'discussionAttempts' : 'planningAttempts']?.at(-1)
     const worker = Object.hasOwn(agentRound?.workers ?? {}, id) ? agentRound.workers[id] : null
     if (worker && !worker.endedAt && ['planning', 'discussing'].includes(effective)) out[id].activeAgent = worker.agent
     if (t.state === 'discussing' && t.discussionAttempts?.at(-1)?.agent) out[id].activeAgent = t.discussionAttempts.at(-1).agent
     if (t.state === 'pending' && agentRound?.queuedTargets?.includes(id)) Object.assign(out[id], { effective: 'waiting', agentQueued: true })
-    if (t.state === 'pending' && worker?.endedAt && !agentRound.endedAt && ['planning', 'discussing'].includes(phase.state))
+    if (t.state === 'pending' && !t.individualPlanning && worker?.endedAt && !agentRound.endedAt && agentRound.targets.includes(id) && ['planning', 'discussing'].includes(phase.state))
       Object.assign(out[id], { effective: 'waiting', phaseBatchPending: true })
     if (migrationPending && t.state === 'pending' && usesCurrentPlanning(state, t))
       Object.assign(out[id], { effective: 'pending', planningStatus: 'awaiting_migration' })
@@ -3296,6 +3388,9 @@ const commands = {
       const block = blockedTaskNotice(state, t)
       const rejected = isReviewRejected(t) ? `  [${reviewRejectionNotice(t)}]` : ''
       const timing = t.timeCondition && !['done', 'skipped'].includes(t.state) ? `  [${tr('time condition')}: ${t.timeCondition}]` : ''
+      if (t.currentStageSkips.length) log('[prumo] ' + tr('Stages dispensed by user: {0}',
+        [...new Set(t.currentStageSkips.flatMap(choice => choice.stages))].map(stage => tr(stage + ' stage')).join(', ')))
+      if (t.completionDecision?.by === 'user') log('[prumo] ' + tr('{0} completed by user decision; dispensed stages are not validation evidence', t.id))
       console.log(`  ${t.id.padEnd(width)}${t.previousTaskId ? ` (${t.previousTaskId} → ${t.id})` : ''}  ${tr(t.effective).padEnd(8)}${agent}${attempts}${wait}${manual}${plan}${auth}${reviewLabel}${rejected}${timing}${block ? `  [${block}]` : ''}${action ? `  → ${action}` : ''}`)
     }
     for (const phase of state.plan.phases) {
@@ -3343,7 +3438,7 @@ const commands = {
     const d = derive(state)
     printSharedValidationWarnings(state, d)
     const occ = occupancy(state)
-    const list = Object.values(d).filter((t) => ['ready_for_discussion', 'ready_to_plan', 'ready'].includes(t.effective))
+    const list = Object.values(d).filter((t) => ['ready_for_discussion', 'ready_to_plan', 'ready', 'ready_for_review'].includes(t.effective))
     const slots = executionSlots(state)
     const actions = suggestedActionsByTask(state)
     const scoped = runHasAuthorizationScope(state)
@@ -4068,6 +4163,40 @@ const commands = {
     log('[prumo] ' + tr('{0} planning skipped by explicit user choice; ready to execute when dependencies allow', id))
   },
 
+  'skip-execution'() { return commands['skip-stages']() },
+  'skip-review'() { return commands['skip-stages']() },
+  'skip-stages'() {
+    const name = runName(), id = args._[0] ?? die('skip-stages <task> --stages <selected-stages> --reason <text> --confirmed-by-user')
+    const state = loadState(name), task = getTask(state, id)
+    if (['done', 'skipped'].includes(task.state)) die(tr('Cannot dispense stages of a terminal task'))
+    const stages = cmd === 'skip-execution' ? ['execution'] : cmd === 'skip-review' ? ['review'] :
+      typeof args.stages === 'string' ? args.stages.split(',').map(stage => stage.trim()) : []
+    if (!stages.length || stages.some(stage => !TASK_STAGES.includes(stage)) || new Set(stages).size !== stages.length)
+      die(tr('Select unique stages from discussion,planning,execution,review with --stages'))
+    const confirmation = state.phaseWorkflows?.[task.phase]?.contractConfirmationRequired
+    if (task.contractConfirmationRequired || confirmation && (!confirmation.tasks || confirmation.tasks.includes(id)))
+      die(tr('{0} requires the pending contract confirmation before an individual skip', id))
+    assertApprovedRetrySource(state, id)
+    const choice = explicitSkipDecision(cmd)
+    task.stageSkipIdentity ??= randomUUID()
+    const decision = { ...choice, run: state.run, task: id, stages: TASK_STAGES.filter(stage => stages.includes(stage)),
+      scope: stageSkipScope(state, task), attempt: stageSkipAttempt(task), reviewRound: stageSkipReviewRound(task) }
+    if (task.state === 'failed' && stages.includes('execution')) task.state = 'pending'
+    if (stages.includes('discussion') && task.state === 'discussing') { closeDiscussion(task, 'skipped'); task.state = 'pending' }
+    if (stages.includes('planning') && task.state === 'planning') { closePlanning(task, 'skipped'); task.state = 'pending' }
+    const phase = state.phaseWorkflows?.[task.phase]
+    if (phase && (stages.includes('discussion') && phase.state === 'discussing' || stages.includes('planning') && phase.state === 'planning'))
+      excludeBlockedPhaseTask(state, task, decision)
+    if (stages.includes('execution') && task.state === 'running') stopOpenActivity(task.attempts.at(-1), decision.at)
+    task.stageSkips ??= []
+    task.stageSkips.push(decision)
+    saveState(name, state)
+    emit(name, 'task_stages_skipped', id, decision)
+    log('[prumo] ' + tr('{0} stages dispensed by explicit user choice: {1}', id, decision.stages.map(stage => tr(stage + ' stage')).join(', ')))
+    if (task.completionDecision?.by === 'user') log('[prumo] ' + tr('{0} completed by user decision; dispensed stages are not validation evidence', id))
+    printDispatchSuggestions(state)
+  },
+
   'finish-planning'() {
     const name = runName()
     const id = args._[0] ?? die('finish-planning <task> --plan <task-plan.json>')
@@ -4130,6 +4259,7 @@ const commands = {
     const state = loadState(name)
     const t = getTask(state, id)
     if (t.state !== 'pending') die(`${id} is ${t.state}, not pending`)
+    if (currentStageSkip(state, t, 'execution')) die(tr('Execution is dispensed for {0}; follow the remaining review stage', id))
     const unscoped = assertTaskExecutionAuthorized(state, t)
     const dispatchConfirmation = manualDispatchConfirmation(t, 'manual authorization for {0} requires --confirmed-by-user before dispatch')
     assertNoOverdueQuestions(state, t)
@@ -4229,6 +4359,21 @@ const commands = {
     const reviewer = args.agent ?? die('review needs --agent <name>')
     const state = loadState(name)
     const t = getTask(state, id)
+    if (currentStageSkip(state, t, 'review')) die(tr('Review is dispensed for {0}; finish the remaining execution', id))
+    if (t.state === 'pending' && currentStageSkip(state, t, 'execution')) {
+      assertTaskExecutionAuthorized(state, t)
+      assertNoOverdueQuestions(state, t)
+      if (!hasCurrentTaskPlan(state, t)) die(tr('{0} still requires discussion and planning before review', id))
+      assertAvailable(state, t, 'reviewing', reviewer)
+      const input = t.taskPlan?.phaseId || currentPlanningSkip(state, t) ? executionInputReceipt(state, t) : null
+      t.attempts.push({ n: t.attempts.length + 1, agent: null, kind: 'review-only', startedAt: new Date().toISOString(),
+        executionWaiver: currentStageSkip(state, t, 'execution').decisionId,
+        deliveryBaseline: captureDelivery(t, t.project ?? state.plan.cwd),
+        ...(state.plan.scopePolicy === 'explicit' || externalTouchPaths(t).length ? { scopeBaseline: captureScopeBaseline(t.project ?? state.plan.cwd) } : {}),
+        ...(input ? { inputDigest: input.digest, inputReceipt: input.inputs } : {}), activityTiming: 'explicit', activityIntervals: [] })
+      t.agent = t.attempts.findLast(attempt => attempt.kind !== 'review-only')?.agent ?? null
+      t.state = 'running'
+    }
     if (t.state !== 'running') die(`${id} is ${t.state}, not running`)
     assertReauthorizedAfterContractChange(t)
     const dispatchConfirmation = manualDispatchConfirmation(t, 'manual authorization for {0} requires --confirmed-by-user before dispatch')
@@ -4253,10 +4398,12 @@ const commands = {
       ...(dispatchConfirmation ? { manualDispatchConfirmation: dispatchConfirmation } : {}) })
     log(`[prumo] ${id} in review (reviewer ${reviewer})`)
     printReviewCriteria(t)
-    const executedStep = t.attempts.at(-1).executionStep ?? 1
-    if (t.taskPlan?.steps?.length > 1 && executedStep < t.taskPlan.steps.length && (missingExecutionSteps(t)?.length ?? 1))
-      log(`[prumo] WARNING: executor progress stayed at ${executedStep}/${t.taskPlan.steps.length}; the position is not proof of completed work`)
-    printMissingExecutionSteps(t)
+    if (!currentStageSkip(state, t, 'execution')) {
+      const executedStep = t.attempts.at(-1).executionStep ?? 1
+      if (t.taskPlan?.steps?.length > 1 && executedStep < t.taskPlan.steps.length && (missingExecutionSteps(t)?.length ?? 1))
+        log(`[prumo] WARNING: executor progress stayed at ${executedStep}/${t.taskPlan.steps.length}; the position is not proof of completed work`)
+      printMissingExecutionSteps(t)
+    } else log('[prumo] ' + tr('execution dispensed; the independent reviewer evaluates the existing delivery'))
     announceFreedSlot(name, state, id, 'review', slotsBeforeReview)
     printDispatchSuggestions(state)
   },
@@ -5162,7 +5309,7 @@ if (!['init', 'runs', 'migrate', 'sync-plan', 'renumber-tasks', 'reorder-phases'
   })
 }
 } catch (error) { atomicWriteFailure(error) }
-const BLOCKED_ACTIONS = new Set(['begin-discussion', 'finish-discussion', 'skip-discussion', 'plan-task', 'finish-planning', 'skip-planning', 'start', 'progress', 'review', 'review-progress', 'validate', 'done', 'fail', 'retry', 'redo-execution', 'redo-review', 'skip', 'activity-start', 'pause-replanning'])
+const BLOCKED_ACTIONS = new Set(['begin-discussion', 'finish-discussion', 'skip-discussion', 'plan-task', 'finish-planning', 'skip-planning', 'skip-stages', 'skip-execution', 'skip-review', 'start', 'progress', 'review', 'review-progress', 'validate', 'done', 'fail', 'retry', 'redo-execution', 'redo-review', 'skip', 'activity-start', 'pause-replanning'])
 function runCommand() {
   if (['renumber-tasks', 'reorder-phases'].includes(cmd)) return commands[cmd]()
   if (['start', 'review', 'redo-review', 'validate', 'done'].includes(cmd)) {

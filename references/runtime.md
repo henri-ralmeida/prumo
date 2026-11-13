@@ -524,6 +524,27 @@ Confirm the actual agent handle; if dispatch is unavailable or the user paused, 
 orchestration reason. Do not invent another failed implementation or claim an agent is running
 from its engine label alone. Record corrections in notes, preserving historical attempts.
 
+### Explicit task stage waivers
+
+Only an explicit user choice can dispense task stages. Use
+`skip-stages T4 --stages execution,review --reason "the user's recorded choice" --confirmed-by-user`
+with any nonempty subset of `discussion,planning,execution,review`. `skip-execution` and `skip-review`
+are single-stage aliases. Existing discussion/planning commands remain compatible. The decision binds
+the selected task, current contract and attempt; another task, contract or attempt receives no waiver.
+`--force` cannot replace confirmation. A request to continue or a general execution authorization does
+not authorize a waiver. Explain when a stage may be unnecessary and what will remain unverified, then
+wait for the user. One explicit decision may dispense all four; record it without asking again.
+
+Dispensing execution advances to actual review of the existing delivery, without an executor dispatch
+or a fictional execution attempt. Dispensing review waits for the remaining execution to stop. Future
+waivers wait for prerequisites; they never satisfy another task's dependencies or pending contract
+confirmation. Stop a selected native worker through its harness before dispensing an active stage.
+When every remaining requirement is completed or dispensed, the engine records DONE by user decision
+and releases dependents with a distinct user-accepted input, without claiming independent validation.
+The dashboard shows the selected stages and reasons. Earlier attempts, failures and receipts remain
+history; completed tasks are not reopened, files/commits are not undone, and external blocks or paused
+runs still require their normal explicit resolution. Inspect state after each transition before dispatch.
+
 ### User-requested stage redo
 
 `redo-execution <task> --reason <text> --confirmed-by-user` accepts running or reviewing tasks.

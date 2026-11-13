@@ -3,6 +3,7 @@ import { personalAgentLimit } from './storage.mjs'
 import { hasCurrentTaskPlan, usesCurrentPlanning } from './validation.mjs'
 import { scopeConflicts } from './task-scope.mjs'
 import { openAuditAttempt } from './security-audit.mjs'
+import { currentStageSkip } from './stage-skips.mjs'
 
 const digestValue = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 
@@ -10,6 +11,7 @@ export function executionReadiness(state, task, derived) {
   const reasons = []
   const add = (code, message, details = {}) => reasons.push({ code, message, ...details })
   if (task.state !== 'pending') add('state', 'Task is not pending execution')
+  if (currentStageSkip(state, task, 'execution')) add('execution_dispensed', 'Execution was dispensed by explicit user choice')
   if (state.plan.scopePolicy === 'explicit' && (!task.writeScope || task.writeScope === 'unknown')) add('scope_unknown', 'Write scope must be resolved before execution')
   if (derived.blockedBy.length) add('dependencies', 'Dependencies are not complete', { taskIds: derived.blockedBy })
   if (usesCurrentPlanning(state, task) && (!hasCurrentTaskPlan(state, task) || !['phase', 'task'].includes(state.plan.planningMode))) add('planning', 'Current planning is required before execution')

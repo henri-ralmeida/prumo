@@ -22,9 +22,11 @@ export function commandMetricsForRun(tasks = {}, options = {}) {
     activity_start: 'activity-start', activity_stop: 'activity-stop',
     task_contract_refreshed: 'refresh-contract', task_validate: 'validate', task_done: 'done', task_fail: 'fail',
     task_retry: 'retry', task_block: 'block', task_block_updated: 'block', task_unblock: 'unblock', task_skip: 'skip', task_note: 'note',
+    task_stages_skipped: 'skip-stages',
   }
   if (Array.isArray(options.events)) {
     for (const event of options.events) {
+      if (event.type === 'task_done' && event.completionBy === 'user') continue
       const time = Date.parse(event.at ?? event.ts)
       if (Number.isFinite(cutoff) && (!Number.isFinite(time) || time >= cutoff)) continue
       if (Object.hasOwn(primary, event.type)) add(primary[event.type])
@@ -33,8 +35,9 @@ export function commandMetricsForRun(tasks = {}, options = {}) {
     // Sem eventos, as tentativas fornecem somente uma contagem mínima dos disparos.
     for (const task of Object.values(tasks)) {
       const attempts = task?.attempts ?? []
-      add('start', attempts.length > 0 ? 1 : 0)
-      add('retry', Math.max(0, attempts.length - 1))
+      const executions = attempts.filter(attempt => attempt.kind !== 'review-only')
+      add('start', executions.length > 0 ? 1 : 0)
+      add('retry', Math.max(0, executions.length - 1))
       add('review', Math.max((task?.validations ?? []).filter(item => item.by === 'review').length, attempts.filter(item => item.reviewStartedAt).length))
       add('plan-task', (task?.planningAttempts ?? []).length)
       add('begin-discussion', (task?.discussionAttempts ?? []).length)
@@ -88,7 +91,7 @@ export function calculateGain(analysis, tasks = {}, eventsComplete = false, opti
     ? rawCriticalPathMs : null
 
   // Estimativa humana: só existe quando o plano traz manualEstimate; nunca é derivada do tempo dos agentes.
-  const countedEntries = Object.entries(tasks ?? {}).filter(([, task]) => task?.state !== 'skipped')
+  const countedEntries = Object.entries(tasks ?? {}).filter(([, task]) => task?.state !== 'skipped' && task?.completionDecision?.by !== 'user')
   const counted = countedEntries.map(([, task]) => task)
   const estimatedIds = new Set(countedEntries.filter(([, task]) => taskManualEstimateMinutes(task) != null).map(([id]) => id))
   const estimates = counted.map(taskManualEstimateMinutes).filter((minutes) => minutes != null)

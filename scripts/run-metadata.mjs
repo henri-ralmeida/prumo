@@ -28,7 +28,7 @@ export function dispatchOwners(state) {
         } else owners.push({ key: `${scope}:${id}:${role}:${index}`, task: scope === 'task' ? id : null, role, owner: round, agent: round.agent ?? round.activityAgent, startedAt: round.startedAt })
       })
       if (scope === 'task') (target.attempts ?? []).forEach((attempt, index) => {
-        owners.push({ key: `${scope}:${id}:execution:${index}`, task: id, role: 'execution', owner: attempt, agent: attempt.agent, startedAt: attempt.startedAt })
+        if (attempt.kind !== 'review-only') owners.push({ key: `${scope}:${id}:execution:${index}`, task: id, role: 'execution', owner: attempt, agent: attempt.agent, startedAt: attempt.startedAt })
         if (attempt.reviewStartedAt) owners.push({ key: `${scope}:${id}:review:${index}`, task: id, role: 'review', owner: attempt, agent: attempt.reviewer, startedAt: attempt.reviewStartedAt })
       })
     }
@@ -65,7 +65,7 @@ export function reportedUsageTotals(state) {
   const tasks = Object.create(null), run = { tokens: 0, tools: 0, receipts: 0, selfReported: true }
   for (const item of dispatchOwners(state)) {
     // Execution and review share an owner; its receipts must only be visited once.
-    if (item.role === 'review') continue
+    if (item.role === 'review' && item.owner.kind !== 'review-only') continue
     for (const receipt of item.owner.usageReports ?? []) {
       const total = tasks[receipt.task] ??= { tokens: 0, tools: 0, receipts: 0, selfReported: true }
       for (const key of ['tokens', 'tools']) {
@@ -124,7 +124,10 @@ export function taskBrief(state, task, role, command) {
     ...(attempt?.reviewRound ? { reviewRedo: { round: attempt.reviewRound, reason: attempt.reviewRoundHistory?.at(-1)?.decision?.reason } } : {}),
     discovery: task.discovery ?? null,
     phaseContext: phase ? { phase: task.phase, discovery: phase.discovery ?? null, discussionSkips: phase.discussionSkips ?? [], planningSkips: phase.planningSkips ?? [] } : null,
-    dependencyDeliveries: (task.deps ?? []).map(id => ({ task: id, state: state.tasks[id]?.state, deliveries: state.tasks[id]?.deliveries ?? [], terminalReceipt: state.tasks[id]?.state === 'done' ? state.tasks[id].validations?.at(-1) ?? null : null, skipReason: state.tasks[id]?.skipReason ?? null })),
+    ...(task.stageSkips?.length ? { stageSkips: task.stageSkips } : {}),
+    dependencyDeliveries: (task.deps ?? []).map(id => ({ task: id, state: state.tasks[id]?.state, deliveries: state.tasks[id]?.deliveries ?? [],
+      ...(state.tasks[id]?.completionDecision?.by === 'user' ? { completionDecision: state.tasks[id].completionDecision } : {}),
+      terminalReceipt: state.tasks[id]?.state === 'done' && state.tasks[id].completionDecision?.by !== 'user' ? state.tasks[id].validations?.at(-1) ?? null : null, skipReason: state.tasks[id]?.skipReason ?? null })),
     baseline: attempt?.deliveryBaseline ? { paths: Object.keys(attempt.deliveryBaseline.files), limitation: attempt.deliveryBaseline.limitation ?? null } : null,
     scopeBaseline: attempt?.scopeBaseline ? { method: attempt.scopeBaseline.method, cwd: attempt.scopeBaseline.cwd, limitation: attempt.scopeBaseline.limitation } : null,
     receipts: task.validations ?? [], inputReceipt: attempt?.inputReceipt ?? null,
